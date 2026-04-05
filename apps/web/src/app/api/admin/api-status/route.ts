@@ -3,6 +3,9 @@ import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/server/db';
 import { apiSuccess, apiError } from '@/lib/server/response';
 
+// Extend timeout to 30s for this route (Vercel Pro supports up to 300s)
+export const maxDuration = 30;
+
 function isSuperAdmin(userId: string | null): boolean {
   const adminId = process.env.SUPER_ADMIN_USER_ID?.trim();
   return !!userId && !!adminId && userId === adminId;
@@ -17,19 +20,25 @@ interface ApiCheckResult {
   tenantsConnected?: number;
 }
 
-async function checkWithTimeout<T>(
-  fn: () => Promise<T>,
-  timeoutMs = 3000,
+async function fetchCheck(
+  url: string,
+  init: RequestInit,
+  timeoutMs = 5000,
 ): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
   const start = Date.now();
   try {
-    await Promise.race([
-      fn(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeoutMs)),
-    ]);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return { ok: true, latencyMs: Date.now() - start };
   } catch (err: any) {
-    return { ok: false, latencyMs: Date.now() - start, error: err.message };
+    return {
+      ok: false,
+      latencyMs: Date.now() - start,
+      error: err.name === 'AbortError' ? 'Timeout' : err.message,
+    };
   }
 }
 
@@ -37,7 +46,13 @@ export async function GET(_request: NextRequest) {
   const { userId } = await auth();
   if (!isSuperAdmin(userId)) return apiError('Forbidden', 403);
 
-  // Run ALL checks in parallel to stay within Vercel's function timeout
+  // Run ALL checks in parallel — use plain fetch instead of heavy SDKs
+  const twilioSid = process.env.TWILIO_MASTER_ACCOUNT_SID;
+  const twilioToken = process.env.TWILIO_MASTER_AUTH_TOKEN;
+  const stripeKey = process.env.STRIPE_SECRET_KEY;
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const resendKey = process.env.RESEND_API_KEY;
+
   const [
     dbResult,
     twilioCount,
@@ -46,55 +61,51 @@ export async function GET(_request: NextRequest) {
     cloverCount,
     toastCount,
     shopifyCount,
-    twilioCheck,
-    anthropicCheck,
-    stripeCheck,
-    resendCheck,
+    twilioResult,
+    anthropicResult,
+    stripeResult,
+    resendResult,
   ] = await Promise.all([
     // DB ping
-    checkWithTimeout(() => prisma.$queryRaw`SELECT 1`),
-    // Tenant counts (fast DB queries)
+    (async () => {
+      const start = Date.now();
+      try {
+        await prisma.$queryRaw`SELECT 1`;
+        return { ok: true, latencyMs: Date.now() - start };
+      } catch (e: any) {
+        return { ok: false, latencyMs: Date.now() - start, error: e.message };
+      }
+    })(),
+    // Tenant counts
     prisma.tenant.count({ where: { twilioSubAccountSid: { not: null } } }),
     prisma.tenant.count({ where: { stripeCustomerId: { not: null } } }),
     prisma.tenant.count({ where: { posProvider: 'square' } }),
     prisma.tenant.count({ where: { posProvider: 'clover' } }),
     prisma.tenant.count({ where: { posProvider: 'toast' } }),
     prisma.tenant.count({ where: { posProvider: 'shopify' } }),
-    // Live API checks (only if configured)
-    process.env.TWILIO_MASTER_ACCOUNT_SID && process.env.TWILIO_MASTER_AUTH_TOKEN
-      ? checkWithTimeout(async () => {
-          const twilio = await import('twilio');
-          const client = twilio.default(
-            process.env.TWILIO_MASTER_ACCOUNT_SID,
-            process.env.TWILIO_MASTER_AUTH_TOKEN,
-          );
-          await client.api.accounts(process.env.TWILIO_MASTER_ACCOUNT_SID!).fetch();
+    // Twilio — plain REST, no SDK import
+    twilioSid && twilioToken
+      ? fetchCheck(
+          `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}.json`,
+          { headers: { Authorization: 'Basic ' + Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64') } },
+        )
+      : Promise.resolve(null),
+    // Anthropic
+    anthropicKey
+      ? fetchCheck('https://api.anthropic.com/v1/models', {
+          headers: { 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
         })
       : Promise.resolve(null),
-    process.env.ANTHROPIC_API_KEY
-      ? checkWithTimeout(async () => {
-          const res = await fetch('https://api.anthropic.com/v1/models', {
-            headers: {
-              'x-api-key': process.env.ANTHROPIC_API_KEY!,
-              'anthropic-version': '2023-06-01',
-            },
-          });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // Stripe — plain REST, no SDK import
+    stripeKey
+      ? fetchCheck('https://api.stripe.com/v1/balance', {
+          headers: { Authorization: `Bearer ${stripeKey}` },
         })
       : Promise.resolve(null),
-    process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET
-      ? checkWithTimeout(async () => {
-          const Stripe = (await import('stripe')).default;
-          const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2023-10-16' });
-          await stripe.balance.retrieve();
-        })
-      : Promise.resolve(null),
-    process.env.RESEND_API_KEY
-      ? checkWithTimeout(async () => {
-          const res = await fetch('https://api.resend.com/domains', {
-            headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
-          });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // Resend
+    resendKey
+      ? fetchCheck('https://api.resend.com/domains', {
+          headers: { Authorization: `Bearer ${resendKey}` },
         })
       : Promise.resolve(null),
   ]);
@@ -109,33 +120,33 @@ export async function GET(_request: NextRequest) {
     },
     {
       name: 'Twilio',
-      configured: !!(process.env.TWILIO_MASTER_ACCOUNT_SID && process.env.TWILIO_MASTER_AUTH_TOKEN),
-      status: twilioCheck ? (twilioCheck.ok ? 'ok' : 'error') : 'unconfigured',
-      latencyMs: twilioCheck?.latencyMs,
-      error: twilioCheck?.error,
+      configured: !!(twilioSid && twilioToken),
+      status: twilioResult ? (twilioResult.ok ? 'ok' : 'error') : 'unconfigured',
+      latencyMs: twilioResult?.latencyMs,
+      error: twilioResult?.error,
       tenantsConnected: twilioCount,
     },
     {
       name: 'Anthropic (Claude AI)',
-      configured: !!process.env.ANTHROPIC_API_KEY,
-      status: anthropicCheck ? (anthropicCheck.ok ? 'ok' : 'error') : 'unconfigured',
-      latencyMs: anthropicCheck?.latencyMs,
-      error: anthropicCheck?.error,
+      configured: !!anthropicKey,
+      status: anthropicResult ? (anthropicResult.ok ? 'ok' : 'error') : 'unconfigured',
+      latencyMs: anthropicResult?.latencyMs,
+      error: anthropicResult?.error,
     },
     {
       name: 'Stripe',
-      configured: !!(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET),
-      status: stripeCheck ? (stripeCheck.ok ? 'ok' : 'error') : 'unconfigured',
-      latencyMs: stripeCheck?.latencyMs,
-      error: stripeCheck?.error,
+      configured: !!(stripeKey && process.env.STRIPE_WEBHOOK_SECRET),
+      status: stripeResult ? (stripeResult.ok ? 'ok' : 'error') : 'unconfigured',
+      latencyMs: stripeResult?.latencyMs,
+      error: stripeResult?.error,
       tenantsConnected: stripeCount,
     },
     {
       name: 'Resend (Email)',
-      configured: !!process.env.RESEND_API_KEY,
-      status: resendCheck ? (resendCheck.ok ? 'ok' : 'error') : 'unconfigured',
-      latencyMs: resendCheck?.latencyMs,
-      error: resendCheck?.error,
+      configured: !!resendKey,
+      status: resendResult ? (resendResult.ok ? 'ok' : 'error') : 'unconfigured',
+      latencyMs: resendResult?.latencyMs,
+      error: resendResult?.error,
     },
     {
       name: 'Clerk (Auth)',
