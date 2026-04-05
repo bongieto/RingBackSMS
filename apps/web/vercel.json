@@ -1,0 +1,6 @@
+{
+  "installCommand": "cd ../.. && pnpm install",
+  "buildCommand": "cd ../.. && pnpm --filter=@ringbacksms/web build",
+  "outputDirectory": ".next",
+  "framework": "nextjs"
+}
