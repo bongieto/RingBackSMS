@@ -5,11 +5,16 @@ export const dynamic = 'force-dynamic';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const { userId } = await auth();
-  const adminId = process.env.SUPER_ADMIN_CLERK_USER_ID;
+  const adminId = process.env.SUPER_ADMIN_CLERK_USER_ID?.trim();
 
-  // If not logged in or not the super admin, redirect
-  if (!userId || (adminId && userId !== adminId)) {
+  // Must be logged in
+  if (!userId) {
     redirect('/sign-in');
+  }
+
+  // If admin gate is configured, enforce it
+  if (adminId && userId !== adminId) {
+    redirect('/dashboard');
   }
 
   return (
