@@ -48,11 +48,11 @@ export async function handlePosWebhookEvent(
         eventType,
       });
       try {
-        const count = await adapter.syncCatalogFromPOS(tenantId);
+        const result = await adapter.syncCatalogFromPOS(tenantId);
         logger.info('Webhook-triggered catalog sync completed', {
           provider,
           tenantId,
-          syncedCount: count,
+          syncResult: result,
         });
       } catch (err) {
         logger.error('Webhook-triggered catalog sync failed', {

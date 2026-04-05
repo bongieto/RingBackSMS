@@ -3,10 +3,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { Phone, MessageSquare, ShoppingBag, Calendar, TrendingUp, Clock } from 'lucide-react';
 import { StatCard } from '@/components/dashboard/StatCard';
+import { PosStatusCard } from '@/components/dashboard/PosStatusCard';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { analyticsApi, conversationApi } from '@/lib/api';
+import { analyticsApi, conversationApi, tenantApi } from '@/lib/api';
 import { formatRelativeTime, maskPhone } from '@/lib/utils';
 import { useOrganization } from '@clerk/nextjs';
 
@@ -24,6 +25,11 @@ export default function DashboardPage() {
     queryKey: ['conversations', tenantId, 'recent'],
     queryFn: () => conversationApi.list(tenantId!, { pageSize: 5, isActive: true }),
     enabled: !!tenantId,
+  });
+
+  const { data: tenant } = useQuery({
+    queryKey: ['tenant-me'],
+    queryFn: () => tenantApi.getMe(),
   });
 
   const recentConversations = conversationsData?.data ?? [];
@@ -70,6 +76,18 @@ export default function DashboardPage() {
           changeType="positive"
         />
       </div>
+
+      {/* POS Status */}
+      {tenant && (
+        <div className="mb-6">
+          <PosStatusCard
+            posProvider={tenant.posProvider}
+            posMerchantId={tenant.posMerchantId}
+            posTokenExpiresAt={tenant.posTokenExpiresAt}
+            plan={tenant.plan}
+          />
+        </div>
+      )}
 
       {/* Recent Conversations */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

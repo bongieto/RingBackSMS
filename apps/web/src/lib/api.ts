@@ -137,4 +137,6 @@ export const posApi = {
     api.post(`/integrations/${provider}/refresh`, null, { params: { tenantId } }).then((r) => r.data.data),
   getStatus: (tenantId: string, provider: string) =>
     api.get(`/integrations/${provider}/status`, { params: { tenantId } }).then((r) => r.data.data),
+  getSyncHistory: (tenantId: string) =>
+    api.get('/integrations/sync-history', { params: { tenantId } }).then((r) => r.data.data),
 };

@@ -14,6 +14,7 @@ import {
   CreditCard,
   Zap,
   Phone,
+  Plug2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { UserButton, OrganizationSwitcher } from '@clerk/nextjs';
@@ -27,6 +28,7 @@ const navItems = [
   { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/dashboard/menu', label: 'Menu', icon: UtensilsCrossed },
   { href: '/dashboard/flows', label: 'Flows', icon: Zap },
+  { href: '/dashboard/integrations', label: 'Integrations', icon: Plug2 },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
   { href: '/dashboard/billing', label: 'Billing', icon: CreditCard },
 ];

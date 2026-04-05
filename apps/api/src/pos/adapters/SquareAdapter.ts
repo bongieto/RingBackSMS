@@ -1,6 +1,6 @@
 import { Client, Environment } from 'square';
 import axios from 'axios';
-import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult } from './base';
+import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult } from './base';
 import { encrypt } from '../../utils/encryption';
 import { logger } from '../../utils/logger';
 
@@ -137,7 +137,7 @@ export class SquareAdapter extends BasePosAdapter {
     });
   }
 
-  async syncCatalogFromPOS(tenantId: string): Promise<number> {
+  async syncCatalogFromPOS(tenantId: string): Promise<SyncResult> {
     const tokens = await this.loadTokens(tenantId);
     if (!tokens) throw new Error('Tenant not connected to Square');
 
@@ -145,51 +145,56 @@ export class SquareAdapter extends BasePosAdapter {
     const response = await client.catalogApi.listCatalog(undefined, 'ITEM');
     const items = response.result.objects ?? [];
 
-    let syncedCount = 0;
+    const result: SyncResult = { total: 0, newItems: 0, updated: 0, unchanged: 0, errors: 0 };
 
     for (const item of items) {
       if (!item.itemData) continue;
 
-      const variation = item.itemData.variations?.[0];
-      const priceMoney = variation?.itemVariationData?.priceMoney;
-      const price = priceMoney ? Number(priceMoney.amount ?? 0) / 100 : 0;
+      try {
+        const variation = item.itemData.variations?.[0];
+        const priceMoney = variation?.itemVariationData?.priceMoney;
+        const price = priceMoney ? Number(priceMoney.amount ?? 0) / 100 : 0;
 
-      const existing = await this.prisma.menuItem.findFirst({
-        where: { tenantId, posCatalogId: item.id },
-      });
-
-      const itemData = {
-        name: item.itemData.name ?? 'Unnamed Item',
-        description: item.itemData.description ?? null,
-        price,
-        posCatalogId: item.id,
-        posVariationId: variation?.id ?? null,
-        // Backward compatibility
-        squareCatalogId: item.id,
-        squareVariationId: variation?.id ?? null,
-        lastSyncedAt: new Date(),
-      };
-
-      if (existing) {
-        await this.prisma.menuItem.update({
-          where: { id: existing.id },
-          data: itemData,
+        const existing = await this.prisma.menuItem.findFirst({
+          where: { tenantId, posCatalogId: item.id },
         });
-      } else {
-        await this.prisma.menuItem.create({
-          data: {
-            tenantId,
-            isAvailable: true,
-            ...itemData,
-          },
-        });
+
+        const itemData = {
+          name: item.itemData.name ?? 'Unnamed Item',
+          description: item.itemData.description ?? null,
+          price,
+          posCatalogId: item.id,
+          posVariationId: variation?.id ?? null,
+          squareCatalogId: item.id,
+          squareVariationId: variation?.id ?? null,
+          lastSyncedAt: new Date(),
+        };
+
+        if (existing) {
+          const changed = existing.name !== itemData.name ||
+            existing.description !== itemData.description ||
+            Number(existing.price) !== itemData.price;
+          await this.prisma.menuItem.update({
+            where: { id: existing.id },
+            data: itemData,
+          });
+          if (changed) result.updated++;
+          else result.unchanged++;
+        } else {
+          await this.prisma.menuItem.create({
+            data: { tenantId, isAvailable: true, ...itemData },
+          });
+          result.newItems++;
+        }
+        result.total++;
+      } catch (err) {
+        result.errors++;
+        logger.warn('Failed to sync item from Square', { tenantId, itemId: item.id, error: (err as Error).message });
       }
-
-      syncedCount++;
     }
 
-    logger.info('Catalog synced from Square', { tenantId, count: syncedCount });
-    return syncedCount;
+    logger.info('Catalog synced from Square', { tenantId, result });
+    return result;
   }
 
   async pushCatalogToPOS(tenantId: string): Promise<number> {

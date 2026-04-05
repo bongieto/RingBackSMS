@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult } from './base';
+import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult } from './base';
 import { logger } from '../../utils/logger';
 
 const TOAST_API_BASE = 'https://ws-api.toasttab.com';
@@ -117,7 +117,7 @@ export class ToastAdapter extends BasePosAdapter {
     logger.info('Toast token refreshed', { tenantId });
   }
 
-  async syncCatalogFromPOS(tenantId: string): Promise<number> {
+  async syncCatalogFromPOS(tenantId: string): Promise<SyncResult> {
     const tokens = await this.loadTokens(tenantId);
     if (!tokens) throw new Error('Tenant not connected to Toast');
 
@@ -140,9 +140,8 @@ export class ToastAdapter extends BasePosAdapter {
       }>;
     }>;
 
-    let syncedCount = 0;
+    const result: SyncResult = { total: 0, newItems: 0, updated: 0, unchanged: 0, errors: 0 };
 
-    // Toast menus are nested: menus -> groups -> items
     for (const menuWrapper of menus) {
       const menuList = menuWrapper.menus ?? [menuWrapper];
       for (const menu of menuList) {
@@ -157,50 +156,52 @@ export class ToastAdapter extends BasePosAdapter {
             const toastItemGuid = item.guid as string;
             if (!toastItemGuid) continue;
 
-            const name = (item.name as string) ?? 'Unnamed Item';
-            const price =
-              typeof item.price === 'number' ? item.price : 0;
-            const description =
-              typeof item.description === 'string'
-                ? item.description
-                : null;
+            try {
+              const name = (item.name as string) ?? 'Unnamed Item';
+              const price = typeof item.price === 'number' ? item.price : 0;
+              const description = typeof item.description === 'string' ? item.description : null;
 
-            const existing = await this.prisma.menuItem.findFirst({
-              where: { tenantId, posCatalogId: toastItemGuid },
-            });
-
-            const itemData = {
-              name,
-              description,
-              price,
-              posCatalogId: toastItemGuid,
-              posVariationId: null,
-              lastSyncedAt: new Date(),
-            };
-
-            if (existing) {
-              await this.prisma.menuItem.update({
-                where: { id: existing.id },
-                data: itemData,
+              const existing = await this.prisma.menuItem.findFirst({
+                where: { tenantId, posCatalogId: toastItemGuid },
               });
-            } else {
-              await this.prisma.menuItem.create({
-                data: {
-                  tenantId,
-                  isAvailable: true,
-                  ...itemData,
-                },
-              });
+
+              const itemData = {
+                name,
+                description,
+                price,
+                posCatalogId: toastItemGuid,
+                posVariationId: null,
+                lastSyncedAt: new Date(),
+              };
+
+              if (existing) {
+                const changed = existing.name !== name ||
+                  existing.description !== description ||
+                  Number(existing.price) !== price;
+                await this.prisma.menuItem.update({
+                  where: { id: existing.id },
+                  data: itemData,
+                });
+                if (changed) result.updated++;
+                else result.unchanged++;
+              } else {
+                await this.prisma.menuItem.create({
+                  data: { tenantId, isAvailable: true, ...itemData },
+                });
+                result.newItems++;
+              }
+              result.total++;
+            } catch (err) {
+              result.errors++;
+              logger.warn('Failed to sync item from Toast', { tenantId, itemGuid: toastItemGuid, error: (err as Error).message });
             }
-
-            syncedCount++;
           }
         }
       }
     }
 
-    logger.info('Catalog synced from Toast', { tenantId, count: syncedCount });
-    return syncedCount;
+    logger.info('Catalog synced from Toast', { tenantId, result });
+    return result;
   }
 
   async pushCatalogToPOS(tenantId: string): Promise<number> {
