@@ -1,8 +1,10 @@
 import { NextRequest } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
+import { z } from 'zod';
+import { BusinessType, Plan } from '@prisma/client';
 import { prisma } from '@/lib/server/db';
-import { apiError, apiPaginated } from '@/lib/server/response';
-import { Plan } from '@prisma/client';
+import { apiError, apiPaginated, apiCreated } from '@/lib/server/response';
+import { logger } from '@/lib/server/logger';
 
 function isSuperAdmin(userId: string | null): boolean {
   const adminId = process.env.SUPER_ADMIN_USER_ID?.trim();
@@ -62,4 +64,50 @@ export async function GET(request: NextRequest) {
   ]);
 
   return apiPaginated(tenants, total, page, pageSize);
+}
+
+export async function POST(request: NextRequest) {
+  const { userId } = await auth();
+  if (!isSuperAdmin(userId)) return apiError('Forbidden', 403);
+
+  const CreateSchema = z.object({
+    name: z.string().min(1).max(255),
+    businessType: z.nativeEnum(BusinessType),
+    plan: z.nativeEnum(Plan).default('STARTER'),
+    ownerEmail: z.string().email().optional(),
+    ownerPhone: z.string().optional(),
+    greeting: z.string().optional(),
+  });
+
+  let body: z.infer<typeof CreateSchema>;
+  try {
+    body = CreateSchema.parse(await request.json());
+  } catch (err: any) {
+    return apiError(err.message ?? 'Invalid body', 400);
+  }
+
+  const tenant = await prisma.tenant.create({
+    data: {
+      name: body.name,
+      businessType: body.businessType,
+      plan: body.plan,
+      isActive: true,
+    },
+  });
+
+  // Auto-create config if contact info provided
+  if (body.ownerEmail || body.ownerPhone || body.greeting) {
+    await prisma.tenantConfig.create({
+      data: {
+        tenantId: tenant.id,
+        greeting: body.greeting ?? `Hi! Thanks for calling ${body.name}. We missed your call but we're here to help via text!`,
+        ownerEmail: body.ownerEmail ?? null,
+        ownerPhone: body.ownerPhone ?? null,
+        businessDays: [1, 2, 3, 4, 5],
+      },
+    });
+  }
+
+  logger.info('Admin created tenant', { adminAction: true, tenantId: tenant.id, name: body.name });
+  return apiCreated(tenant);
 }

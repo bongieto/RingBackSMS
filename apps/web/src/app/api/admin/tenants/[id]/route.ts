@@ -64,6 +64,14 @@ const UpdateSchema = z.object({
   plan: z.nativeEnum(Plan).optional(),
   isActive: z.boolean().optional(),
   name: z.string().min(1).optional(),
+  // Config fields
+  greeting: z.string().optional(),
+  ownerEmail: z.string().email().nullable().optional(),
+  ownerPhone: z.string().nullable().optional(),
+  businessHoursStart: z.string().optional(),
+  businessHoursEnd: z.string().optional(),
+  timezone: z.string().optional(),
+  aiPersonality: z.string().nullable().optional(),
 });
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
@@ -80,10 +88,29 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   const existing = await prisma.tenant.findUnique({ where: { id: params.id } });
   if (!existing) return apiError('Tenant not found', 404);
 
+  const { greeting, ownerEmail, ownerPhone, businessHoursStart, businessHoursEnd, timezone, aiPersonality, ...tenantFields } = body;
+
   const tenant = await prisma.tenant.update({
     where: { id: params.id },
-    data: body,
+    data: tenantFields,
   });
+
+  const configFields = ['ownerEmail', 'ownerPhone', 'greeting', 'businessHoursStart', 'businessHoursEnd', 'timezone', 'aiPersonality'];
+  const configUpdate = Object.fromEntries(
+    Object.entries(body).filter(([k]) => configFields.includes(k)).map(([k, v]) => [k, v])
+  );
+  if (Object.keys(configUpdate).length > 0) {
+    await prisma.tenantConfig.upsert({
+      where: { tenantId: params.id },
+      update: configUpdate,
+      create: {
+        tenantId: params.id,
+        greeting: (configUpdate.greeting as string) ?? `Welcome! We missed your call.`,
+        businessDays: [1, 2, 3, 4, 5],
+        ...configUpdate,
+      },
+    });
+  }
 
   logger.info('Admin updated tenant', {
     adminAction: true,
@@ -92,4 +119,18 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   });
 
   return apiSuccess(tenant);
+}
+
+export async function DELETE(_request: NextRequest, { params }: { params: { id: string } }) {
+  const { userId } = await auth();
+  if (!isSuperAdmin(userId)) return apiError('Forbidden', 403);
+
+  const existing = await prisma.tenant.findUnique({ where: { id: params.id } });
+  if (!existing) return apiError('Tenant not found', 404);
+
+  // Hard delete — cascades to all related records via Prisma schema
+  await prisma.tenant.delete({ where: { id: params.id } });
+
+  logger.info('Admin deleted tenant', { adminAction: true, tenantId: params.id, name: existing.name });
+  return apiSuccess({ deleted: true, id: params.id, name: existing.name });
 }
