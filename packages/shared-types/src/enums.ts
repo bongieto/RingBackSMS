@@ -47,4 +47,5 @@ export enum UsageType {
   AI_CALL = 'AI_CALL',
   CALL_WEBHOOK = 'CALL_WEBHOOK',
   SQUARE_ORDER = 'SQUARE_ORDER',
+  POS_ORDER = 'POS_ORDER',
 }

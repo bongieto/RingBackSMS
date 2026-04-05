@@ -1,74 +1,167 @@
 import { Router, Request, Response } from 'express';
 import { requireOrgAuth } from '../middleware/authMiddleware';
-import {
-  getOAuthUrl,
-  exchangeOAuthCode,
-  disconnectSquare,
-  refreshSquareToken,
-  syncCatalogFromSquare,
-  pushCatalogToSquare,
-} from '../services/squareService';
-import { sendSuccess } from '../utils/response';
+import { posRegistry } from '../pos/registry';
+import { sendSuccess, sendError } from '../utils/response';
 import { logger } from '../utils/logger';
+import { PrismaClient } from '@prisma/client';
 
 const router: Router = Router();
+const prisma = new PrismaClient();
 
-// GET /integrations/square/connect — returns OAuth URL
-router.get('/square/connect', requireOrgAuth, (req: Request, res: Response) => {
-  const tenantId = req.query.tenantId as string;
+// ── Plan gate middleware ─────────────────────────────────────────────────────
+
+async function requirePosAccess(req: Request, res: Response, next: Function): Promise<void> {
+  const tenantId = (req.query.tenantId || req.body?.tenantId) as string;
   if (!tenantId) {
-    res.status(400).json({ success: false, error: 'tenantId required' });
+    sendError(res, 'tenantId required', 400);
     return;
   }
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { plan: true },
+  });
+  if (!tenant) {
+    sendError(res, 'Tenant not found', 404);
+    return;
+  }
+  // STARTER plan cannot use POS integrations
+  if (tenant.plan === 'STARTER') {
+    sendError(res, 'POS integration requires Growth plan or above', 403);
+    return;
+  }
+  next();
+}
 
-  const url = getOAuthUrl(tenantId);
-  sendSuccess(res, { url });
+// ── List available providers ─────────────────────────────────────────────────
+
+router.get('/providers', requireOrgAuth, async (req: Request, res: Response) => {
+  const tenantId = req.query.tenantId as string;
+
+  const tenant = tenantId ? await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { posProvider: true, posMerchantId: true, posLocationId: true, plan: true },
+  }) : null;
+
+  const providers = posRegistry.getAll().map((adapter) => ({
+    provider: adapter.provider,
+    displayName: adapter.displayName,
+    authType: adapter.authType,
+    connected: tenant?.posProvider === adapter.provider && !!tenant?.posMerchantId,
+    merchantId: tenant?.posProvider === adapter.provider ? tenant?.posMerchantId : null,
+    locationId: tenant?.posProvider === adapter.provider ? tenant?.posLocationId : null,
+    planGated: tenant?.plan === 'STARTER',
+  }));
+
+  sendSuccess(res, providers);
 });
 
-// GET /integrations/square/callback — OAuth redirect handler
-router.get('/square/callback', async (req: Request, res: Response) => {
-  const { code, state: tenantId, error } = req.query;
+// ── Generic provider routes ──────────────────────────────────────────────────
+
+// GET /integrations/:provider/connect — returns OAuth URL
+router.get('/:provider/connect', requireOrgAuth, requirePosAccess, (req: Request, res: Response) => {
+  const { provider } = req.params;
+  const tenantId = req.query.tenantId as string;
+
+  try {
+    const adapter = posRegistry.get(provider);
+    const url = adapter.getOAuthUrl(tenantId);
+    sendSuccess(res, { url, provider });
+  } catch (err: any) {
+    sendError(res, err.message, 400);
+  }
+});
+
+// GET /integrations/:provider/callback — OAuth redirect handler (no auth - redirect from provider)
+router.get('/:provider/callback', async (req: Request, res: Response) => {
+  const { provider } = req.params;
+  const { code, state: tenantId, error, shop } = req.query;
+  const dashboardUrl = process.env.FRONTEND_URL || process.env.BASE_URL || 'http://localhost:3000';
 
   if (error || !code || !tenantId) {
-    res.redirect(`${process.env.BASE_URL}/settings?square_error=access_denied`);
+    res.redirect(`${dashboardUrl}/dashboard/settings/integrations?pos_error=access_denied&provider=${provider}`);
     return;
   }
 
   try {
-    await exchangeOAuthCode(tenantId as string, code as string);
-    res.redirect(`${process.env.BASE_URL}/settings?square_connected=true`);
+    const adapter = posRegistry.get(provider);
+    await adapter.exchangeCode(tenantId as string, code as string);
+    res.redirect(`${dashboardUrl}/dashboard/settings/integrations?pos_connected=true&provider=${provider}`);
   } catch (err) {
-    logger.error('Square OAuth callback error', { err, tenantId });
-    res.redirect(`${process.env.BASE_URL}/settings?square_error=oauth_failed`);
+    logger.error('POS OAuth callback error', { err, provider, tenantId });
+    res.redirect(`${dashboardUrl}/dashboard/settings/integrations?pos_error=oauth_failed&provider=${provider}`);
   }
 });
 
-// DELETE /integrations/square/disconnect
-router.delete('/square/disconnect', requireOrgAuth, async (req: Request, res: Response) => {
-  const tenantId = req.query.tenantId as string;
-  await disconnectSquare(tenantId);
-  sendSuccess(res, { disconnected: true });
+// POST /integrations/:provider/configure — for API key providers (Toast, etc)
+router.post('/:provider/configure', requireOrgAuth, requirePosAccess, async (req: Request, res: Response) => {
+  const { provider } = req.params;
+  const tenantId = req.query.tenantId as string || req.body.tenantId;
+  const credentials = req.body.credentials;
+
+  try {
+    const adapter = posRegistry.get(provider);
+    // Pass credentials as JSON-encoded "code" for API key providers
+    await adapter.exchangeCode(tenantId, JSON.stringify(credentials));
+    sendSuccess(res, { configured: true, provider });
+  } catch (err: any) {
+    logger.error('POS configure error', { err, provider, tenantId });
+    sendError(res, err.message, 400);
+  }
 });
 
-// POST /integrations/square/refresh
-router.post('/square/refresh', requireOrgAuth, async (req: Request, res: Response) => {
+// DELETE /integrations/:provider/disconnect
+router.delete('/:provider/disconnect', requireOrgAuth, async (req: Request, res: Response) => {
+  const { provider } = req.params;
   const tenantId = req.query.tenantId as string;
-  await refreshSquareToken(tenantId);
-  sendSuccess(res, { refreshed: true });
+  const adapter = posRegistry.get(provider);
+  await adapter.disconnect(tenantId);
+  sendSuccess(res, { disconnected: true, provider });
 });
 
-// POST /integrations/square/sync-catalog
-router.post('/square/sync-catalog', requireOrgAuth, async (req: Request, res: Response) => {
+// POST /integrations/:provider/refresh
+router.post('/:provider/refresh', requireOrgAuth, async (req: Request, res: Response) => {
+  const { provider } = req.params;
   const tenantId = req.query.tenantId as string;
-  const count = await syncCatalogFromSquare(tenantId);
-  sendSuccess(res, { synced: count });
+  const adapter = posRegistry.get(provider);
+  await adapter.refreshToken(tenantId);
+  sendSuccess(res, { refreshed: true, provider });
 });
 
-// POST /integrations/square/push-catalog
-router.post('/square/push-catalog', requireOrgAuth, async (req: Request, res: Response) => {
+// POST /integrations/:provider/sync-catalog — pull from POS
+router.post('/:provider/sync-catalog', requireOrgAuth, requirePosAccess, async (req: Request, res: Response) => {
+  const { provider } = req.params;
   const tenantId = req.query.tenantId as string;
-  const count = await pushCatalogToSquare(tenantId);
-  sendSuccess(res, { pushed: count });
+  const adapter = posRegistry.get(provider);
+  const count = await adapter.syncCatalogFromPOS(tenantId);
+  sendSuccess(res, { synced: count, provider });
+});
+
+// POST /integrations/:provider/push-catalog — push to POS
+router.post('/:provider/push-catalog', requireOrgAuth, requirePosAccess, async (req: Request, res: Response) => {
+  const { provider } = req.params;
+  const tenantId = req.query.tenantId as string;
+  const adapter = posRegistry.get(provider);
+  const count = await adapter.pushCatalogToPOS(tenantId);
+  sendSuccess(res, { pushed: count, provider });
+});
+
+// GET /integrations/:provider/status
+router.get('/:provider/status', requireOrgAuth, async (req: Request, res: Response) => {
+  const { provider } = req.params;
+  const tenantId = req.query.tenantId as string;
+
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { posProvider: true, posMerchantId: true, posLocationId: true, posTokenExpiresAt: true },
+  });
+
+  sendSuccess(res, {
+    provider,
+    connected: tenant?.posProvider === provider && !!tenant?.posMerchantId,
+    merchantId: tenant?.posProvider === provider ? tenant?.posMerchantId : null,
+    locationId: tenant?.posProvider === provider ? tenant?.posLocationId : null,
+    tokenExpiresAt: tenant?.posProvider === provider ? tenant?.posTokenExpiresAt : null,
+  });
 });
 
 export default router;

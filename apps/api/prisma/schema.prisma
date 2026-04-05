@@ -56,6 +56,14 @@ enum UsageType {
   AI_CALL
   CALL_WEBHOOK
   SQUARE_ORDER
+  POS_ORDER
+}
+
+enum PosProviderType {
+  square
+  clover
+  toast
+  shopify
 }
 
 model Tenant {
@@ -74,6 +82,14 @@ model Tenant {
   squareLocationId      String?
   squareMerchantId      String?
   squareTokenExpiresAt  DateTime?
+  // Provider-agnostic POS fields
+  posProvider          PosProviderType?
+  posAccessToken       String?      // AES-256-GCM encrypted
+  posRefreshToken      String?      // AES-256-GCM encrypted
+  posTokenExpiresAt    DateTime?
+  posLocationId        String?
+  posMerchantId        String?
+  posRaw               Json?        // provider-specific metadata
   isActive              Boolean      @default(true)
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
@@ -108,6 +124,8 @@ model TenantConfig {
   ownerPhone          String?
   squareSyncEnabled   Boolean  @default(false)
   squareAutoSync      Boolean  @default(false)
+  posSyncEnabled      Boolean  @default(false)
+  posAutoSync         Boolean  @default(false)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 }
@@ -177,6 +195,8 @@ model Order {
   notes          String?     @db.Text
   squareOrderId  String?
   squarePaymentId String?
+  posOrderId          String?
+  posPaymentId        String?
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
@@ -216,6 +236,8 @@ model MenuItem {
   squareCatalogId  String?
   squareVariationId String?
   lastSyncedAt     DateTime?
+  posCatalogId        String?
+  posVariationId      String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

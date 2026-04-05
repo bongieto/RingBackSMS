@@ -6,6 +6,7 @@ export interface PlanLimits {
   overagePricePerSms: number; // in cents
   maxFlows: number;
   squareIntegration: boolean;
+  posIntegration: boolean;
   calcomIntegration: boolean;
   slackNotifications: boolean;
   prioritySupport: boolean;
@@ -18,6 +19,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     overagePricePerSms: 5, // $0.05
     maxFlows: 2,
     squareIntegration: false,
+    posIntegration: false,
     calcomIntegration: false,
     slackNotifications: false,
     prioritySupport: false,
@@ -28,6 +30,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     overagePricePerSms: 4, // $0.04
     maxFlows: 5,
     squareIntegration: true,
+    posIntegration: true,
     calcomIntegration: true,
     slackNotifications: true,
     prioritySupport: false,
@@ -38,6 +41,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     overagePricePerSms: 3, // $0.03
     maxFlows: 20,
     squareIntegration: true,
+    posIntegration: true,
     calcomIntegration: true,
     slackNotifications: true,
     prioritySupport: true,
@@ -48,6 +52,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     overagePricePerSms: 2, // $0.02
     maxFlows: 999,
     squareIntegration: true,
+    posIntegration: true,
     calcomIntegration: true,
     slackNotifications: true,
     prioritySupport: true,

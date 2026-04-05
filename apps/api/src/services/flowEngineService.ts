@@ -239,10 +239,68 @@ async function processSideEffect(
       });
       break;
 
-    case 'CREATE_SQUARE_ORDER':
-      // Square order creation is handled async after order is saved
-      logger.info('CREATE_SQUARE_ORDER side effect — deferring to Square service', { tenantId });
+    case 'CREATE_SQUARE_ORDER': {
+      // Legacy — delegate to generic POS order creation
+      try {
+        const { posRegistry } = await import('../pos/registry');
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: tenantId },
+          select: { posProvider: true, posLocationId: true },
+        });
+        if (tenant?.posProvider && tenant.posLocationId) {
+          const adapter = posRegistry.get(tenant.posProvider);
+          const posItems = effect.payload.items
+            .filter((i: any) => i.squareVariationId || i.posVariationId)
+            .map((i: any) => ({
+              externalVariationId: i.squareVariationId || i.posVariationId,
+              quantity: i.quantity,
+            }));
+          if (posItems.length > 0) {
+            const result = await adapter.createOrder(tenantId, posItems, {
+              locationId: effect.payload.locationId || tenant.posLocationId,
+              idempotencyKey: `ringback-${conversationId}-${Date.now()}`,
+            });
+            logger.info('POS order created (via legacy CREATE_SQUARE_ORDER)', { tenantId, externalOrderId: result.externalOrderId });
+          }
+        }
+      } catch (err) {
+        logger.error('CREATE_SQUARE_ORDER side effect failed', { tenantId, error: err });
+      }
       break;
+    }
+
+    case 'CREATE_POS_ORDER': {
+      try {
+        const { posRegistry } = await import('../pos/registry');
+        const tenant = await prisma.tenant.findUnique({
+          where: { id: tenantId },
+          select: { posProvider: true, posLocationId: true },
+        });
+        if (!tenant?.posProvider || !tenant.posLocationId) {
+          logger.warn('CREATE_POS_ORDER: tenant has no POS configured', { tenantId });
+          break;
+        }
+        const adapter = posRegistry.get(tenant.posProvider);
+        const posItems = effect.payload.items
+          .filter((i: any) => i.posVariationId || i.squareVariationId)
+          .map((i: any) => ({
+            externalVariationId: i.posVariationId || i.squareVariationId,
+            quantity: i.quantity,
+          }));
+        if (posItems.length === 0) {
+          logger.warn('CREATE_POS_ORDER: no items with POS variation IDs', { tenantId });
+          break;
+        }
+        const result = await adapter.createOrder(tenantId, posItems, {
+          locationId: tenant.posLocationId,
+          idempotencyKey: `ringback-${conversationId}-${Date.now()}`,
+        });
+        logger.info('POS order created', { tenantId, provider: tenant.posProvider, externalOrderId: result.externalOrderId });
+      } catch (err) {
+        logger.error('CREATE_POS_ORDER failed', { tenantId, error: err });
+      }
+      break;
+    }
 
     default:
       logger.warn('Unknown side effect type', { effect });

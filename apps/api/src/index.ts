@@ -82,4 +82,15 @@ app.listen(PORT, () => {
   });
 });
 
+// ── POS Token Refresh Job ────────────────────────────────────────────────────
+import { refreshExpiringPosTokens } from './pos/tokenRefreshJob';
+
+const THIRTY_MINUTES = 30 * 60 * 1000;
+setInterval(() => {
+  refreshExpiringPosTokens().catch((e: unknown) => logger.error('Token refresh job failed', { error: e }));
+}, THIRTY_MINUTES);
+
+// Run once on startup
+refreshExpiringPosTokens().catch((e: unknown) => logger.error('Initial token refresh failed', { error: e }));
+
 export default app;

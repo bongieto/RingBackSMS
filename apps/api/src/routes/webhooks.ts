@@ -176,4 +176,37 @@ router.post('/square', async (req: Request, res: Response) => {
   res.status(200).json({ received: true });
 });
 
+// ── Generic POS webhook ──────────────────────────────────────────────────────
+
+router.post('/pos/:provider', async (req: Request, res: Response) => {
+  const { provider } = req.params;
+
+  try {
+    const { posRegistry } = await import('../pos/registry');
+    const adapter = posRegistry.get(provider);
+
+    const signature = (req.headers['x-square-hmacsha256-signature']
+                    || req.headers['x-shopify-hmac-sha256']
+                    || req.headers['x-toast-hmac-sha256']
+                    || req.headers['x-clover-hmac']
+                    || '') as string;
+
+    const notificationUrl = `${process.env.BASE_URL}/webhooks/pos/${provider}`;
+    const isValid = adapter.verifyWebhook(JSON.stringify(req.body), signature, { notificationUrl });
+
+    if (!isValid) {
+      logger.warn('POS webhook signature invalid', { provider });
+      res.status(403).send('Invalid signature');
+      return;
+    }
+
+    const { handlePosWebhookEvent } = await import('../pos/webhookDispatcher');
+    await handlePosWebhookEvent(provider, req.body);
+    res.status(200).json({ received: true });
+  } catch (err) {
+    logger.error('POS webhook error', { err, provider });
+    res.status(500).json({ error: 'Webhook processing error' });
+  }
+});
+
 export default router;

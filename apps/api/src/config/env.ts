@@ -27,10 +27,10 @@ const EnvSchema = z.object({
   STRIPE_SMS_METERED_PRICE_ID: z.string().optional(),
 
   // Square
-  SQUARE_APPLICATION_ID: z.string().min(1),
-  SQUARE_APPLICATION_SECRET: z.string().min(1),
+  SQUARE_APPLICATION_ID: z.string().optional(),
+  SQUARE_APPLICATION_SECRET: z.string().optional(),
   SQUARE_ENVIRONMENT: z.enum(['sandbox', 'production']).default('sandbox'),
-  SQUARE_WEBHOOK_SIGNATURE_KEY: z.string().min(1),
+  SQUARE_WEBHOOK_SIGNATURE_KEY: z.string().optional(),
 
   // Resend
   RESEND_API_KEY: z.string().min(1),
@@ -39,6 +39,24 @@ const EnvSchema = z.object({
   // Axiom (optional)
   AXIOM_DATASET: z.string().optional(),
   AXIOM_TOKEN: z.string().optional(),
+
+  // Clover (optional)
+  CLOVER_APP_ID: z.string().optional(),
+  CLOVER_APP_SECRET: z.string().optional(),
+  CLOVER_ENVIRONMENT: z.enum(['sandbox', 'production']).optional().default('sandbox'),
+  CLOVER_WEBHOOK_SECRET: z.string().optional(),
+
+  // Toast (optional)
+  TOAST_WEBHOOK_SECRET: z.string().optional(),
+
+  // Shopify (optional)
+  SHOPIFY_CLIENT_ID: z.string().optional(),
+  SHOPIFY_CLIENT_SECRET: z.string().optional(),
+  SHOPIFY_SCOPES: z.string().optional().default('read_products,write_products,read_orders,write_orders'),
+  SHOPIFY_WEBHOOK_SECRET: z.string().optional(),
+
+  // Frontend URL for redirects
+  FRONTEND_URL: z.string().optional(),
 
   // Encryption
   ENCRYPTION_KEY: z.string().length(64),

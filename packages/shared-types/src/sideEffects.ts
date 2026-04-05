@@ -6,7 +6,8 @@ export type SideEffectType =
   | 'SAVE_ORDER'
   | 'BOOK_MEETING'
   | 'NOTIFY_OWNER'
-  | 'CREATE_SQUARE_ORDER';
+  | 'CREATE_SQUARE_ORDER'
+  | 'CREATE_POS_ORDER';
 
 export interface SaveOrderSideEffect {
   type: 'SAVE_ORDER';
@@ -45,8 +46,19 @@ export interface CreateSquareOrderSideEffect {
   };
 }
 
+export interface CreatePosOrderSideEffect {
+  type: 'CREATE_POS_ORDER';
+  payload: {
+    items: OrderItem[];
+    pickupTime: string | null;
+    locationId: string;
+    provider: string;
+  };
+}
+
 export type SideEffect =
   | SaveOrderSideEffect
   | BookMeetingSideEffect
   | NotifyOwnerSideEffect
-  | CreateSquareOrderSideEffect;
+  | CreateSquareOrderSideEffect
+  | CreatePosOrderSideEffect;
