@@ -46,10 +46,11 @@ function StatusBadge({ status }: { status: ApiCheckResult['status'] }) {
 export default function AdminApiStatusPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const { data, isLoading, refetch } = useQuery<ApiStatusData>({
+  const { data, isLoading, isError, refetch } = useQuery<ApiStatusData>({
     queryKey: ['admin-api-status'],
     queryFn: () => api.get('/admin/api-status').then((r) => r.data.data),
     staleTime: 30_000,
+    retry: 1,
   });
 
   const handleRefresh = async () => {
@@ -84,6 +85,14 @@ export default function AdminApiStatusPage() {
           Refresh
         </Button>
       </div>
+
+      {/* Error state */}
+      {isError && !isLoading && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-red-800 bg-red-900/20 text-red-300 mb-8">
+          <XCircle className="h-4 w-4" />
+          <span className="text-sm">Failed to load API status. The health check may have timed out — try refreshing.</span>
+        </div>
+      )}
 
       {/* Summary bar */}
       {!isLoading && data && (
