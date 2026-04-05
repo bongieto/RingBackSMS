@@ -1,0 +1,117 @@
+import { Prisma, PosProviderType } from '@prisma/client';
+import { encrypt, decrypt, encryptNullable, decryptNullable } from '../../encryption';
+import { logger } from '../../logger';
+import { prisma } from '../../db';
+
+export interface PosTokenData {
+  accessToken: string;
+  refreshToken: string | null;
+  expiresAt: Date | null;
+  locationId: string | null;
+  merchantId: string | null;
+  raw?: Record<string, unknown>;
+}
+
+export interface PosOrderItem {
+  externalVariationId: string;
+  quantity: number;
+}
+
+export interface PosOrderResult {
+  externalOrderId: string;
+  raw: Record<string, unknown>;
+}
+
+export abstract class BasePosAdapter {
+  abstract readonly provider: string;
+  abstract readonly displayName: string;
+  abstract readonly authType: 'oauth' | 'apikey';
+
+  abstract getOAuthUrl(tenantId: string): string;
+  abstract exchangeCode(tenantId: string, code: string): Promise<void>;
+  abstract refreshToken(tenantId: string): Promise<void>;
+  abstract syncCatalogFromPOS(tenantId: string): Promise<number>;
+  abstract pushCatalogToPOS(tenantId: string): Promise<number>;
+  abstract createOrder(
+    tenantId: string,
+    items: PosOrderItem[],
+    metadata: { locationId: string; idempotencyKey: string },
+  ): Promise<PosOrderResult>;
+  abstract verifyWebhook(
+    body: string,
+    signature: string,
+    context: Record<string, string>,
+  ): boolean;
+
+  protected async loadTokens(tenantId: string): Promise<PosTokenData | null> {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: {
+        posAccessToken: true,
+        posRefreshToken: true,
+        posTokenExpiresAt: true,
+        posLocationId: true,
+        posMerchantId: true,
+        posRaw: true,
+      },
+    });
+
+    if (!tenant?.posAccessToken) return null;
+
+    return {
+      accessToken: decrypt(tenant.posAccessToken),
+      refreshToken: tenant.posRefreshToken ? decrypt(tenant.posRefreshToken) : null,
+      expiresAt: tenant.posTokenExpiresAt,
+      locationId: tenant.posLocationId,
+      merchantId: tenant.posMerchantId,
+      raw: (tenant.posRaw as Record<string, unknown>) ?? {},
+    };
+  }
+
+  protected async saveTokens(tenantId: string, data: PosTokenData): Promise<void> {
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        posProvider: this.provider as PosProviderType,
+        posAccessToken: encrypt(data.accessToken),
+        posRefreshToken: data.refreshToken ? encrypt(data.refreshToken) : null,
+        posTokenExpiresAt: data.expiresAt,
+        posLocationId: data.locationId,
+        posMerchantId: data.merchantId,
+        posRaw: (data.raw ?? {}) as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  protected async clearTokens(tenantId: string): Promise<void> {
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        posProvider: null,
+        posAccessToken: null,
+        posRefreshToken: null,
+        posTokenExpiresAt: null,
+        posLocationId: null,
+        posMerchantId: null,
+        posRaw: Prisma.DbNull,
+      },
+    });
+  }
+
+  async disconnect(tenantId: string): Promise<void> {
+    await this.clearTokens(tenantId);
+    try {
+      await prisma.tenantConfig.update({
+        where: { tenantId },
+        data: { posSyncEnabled: false, posAutoSync: false },
+      });
+    } catch {
+      // Config may not exist yet
+    }
+    logger.info('POS disconnected', { tenantId, provider: this.provider });
+  }
+
+  protected get prisma() {
+    return prisma;
+  }
+}

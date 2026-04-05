@@ -1,0 +1,59 @@
+import { NextRequest } from 'next/server';
+import twilio from 'twilio';
+import { prisma } from '@/lib/server/db';
+import { sendSms } from '@/lib/server/services/twilioService';
+import { decryptNullable } from '@/lib/server/encryption';
+import { logger } from '@/lib/server/logger';
+import { TwilioCallStatusSchema } from '@ringback/shared-types';
+
+export async function POST(request: NextRequest) {
+  // Parse URL-encoded Twilio body
+  const text = await request.text();
+  const params = new URLSearchParams(text);
+  const body: Record<string, string> = {};
+  params.forEach((v, k) => { body[k] = v; });
+
+  const parseResult = TwilioCallStatusSchema.safeParse(body);
+  if (!parseResult.success) return new Response('Invalid payload', { status: 400 });
+
+  const { CallSid, From, To, CallStatus } = parseResult.data;
+
+  // Resolve tenant by To number
+  const tenant = await prisma.tenant.findUnique({
+    where: { twilioPhoneNumber: To },
+    include: { config: true },
+  });
+
+  if (!tenant || !tenant.isActive) return new Response('OK', { status: 200 });
+
+  // Verify Twilio signature
+  const authToken = decryptNullable(tenant.twilioAuthToken);
+  if (authToken) {
+    const sig = request.headers.get('x-twilio-signature') ?? '';
+    const url = `${process.env.FRONTEND_URL ?? ''}/api/webhooks/twilio/call-status`;
+    const isValid = twilio.validateRequest(authToken, sig, url, body);
+    if (!isValid) {
+      logger.warn('Invalid Twilio signature', { tenantId: tenant.id });
+      return new Response('Invalid signature', { status: 403 });
+    }
+  }
+
+  if (!['no-answer', 'busy', 'failed', 'canceled'].includes(CallStatus)) {
+    return new Response('OK', { status: 200 });
+  }
+
+  if (!tenant.config) return new Response('OK', { status: 200 });
+
+  try {
+    const missedCall = await prisma.missedCall.create({
+      data: { tenantId: tenant.id, callerPhone: From, twilioCallSid: CallSid, occurredAt: new Date(), smsSent: false },
+    });
+    await sendSms(tenant.id, From, tenant.config.greeting);
+    await prisma.missedCall.update({ where: { id: missedCall.id }, data: { smsSent: true } });
+    logger.info('Missed call handled', { tenantId: tenant.id, callSid: CallSid });
+  } catch (err) {
+    logger.error('call-status webhook error', { err, tenantId: tenant.id });
+  }
+
+  return new Response('OK', { status: 200 });
+}
