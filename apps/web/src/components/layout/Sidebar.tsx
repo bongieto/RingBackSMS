@@ -6,6 +6,8 @@ import {
   LayoutDashboard,
   MessageSquare,
   ShoppingBag,
+  Calendar,
+  Users,
   BarChart3,
   Settings,
   UtensilsCrossed,
@@ -19,7 +21,9 @@ import { UserButton, OrganizationSwitcher } from '@clerk/nextjs';
 const navItems = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
   { href: '/dashboard/conversations', label: 'Conversations', icon: MessageSquare },
+  { href: '/dashboard/contacts', label: 'Contacts', icon: Users },
   { href: '/dashboard/orders', label: 'Orders', icon: ShoppingBag },
+  { href: '/dashboard/meetings', label: 'Meetings', icon: Calendar },
   { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/dashboard/menu', label: 'Menu', icon: UtensilsCrossed },
   { href: '/dashboard/flows', label: 'Flows', icon: Zap },

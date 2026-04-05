@@ -1,13 +1,16 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Phone, User } from 'lucide-react';
+import { ArrowLeft, Phone, User, Send } from 'lucide-react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { conversationApi } from '@/lib/api';
 import { formatDate, maskPhone } from '@/lib/utils';
 import { cn } from '@/lib/utils';
@@ -20,12 +23,53 @@ interface Message {
 
 export default function ConversationDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const queryClient = useQueryClient();
+  const [replyText, setReplyText] = useState('');
 
   const { data: conversation, isLoading } = useQuery({
     queryKey: ['conversation', id],
     queryFn: () => conversationApi.get(id),
     enabled: !!id,
   });
+
+  const replyMutation = useMutation({
+    mutationFn: (message: string) => conversationApi.reply(id, message),
+    onMutate: async (message) => {
+      await queryClient.cancelQueries({ queryKey: ['conversation', id] });
+      const previous = queryClient.getQueryData(['conversation', id]);
+
+      queryClient.setQueryData(['conversation', id], (old: Record<string, unknown> | undefined) => {
+        if (!old) return old;
+        const msgs = Array.isArray(old.messages) ? old.messages : [];
+        return {
+          ...old,
+          messages: [
+            ...msgs,
+            { role: 'assistant', content: message, timestamp: new Date().toISOString() },
+          ],
+        };
+      });
+
+      return { previous };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversation', id] });
+      setReplyText('');
+      toast.success('Reply sent!');
+    },
+    onError: (_err, _msg, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['conversation', id], context.previous);
+      }
+      toast.error('Failed to send reply');
+    },
+  });
+
+  const handleSendReply = () => {
+    const trimmed = replyText.trim();
+    if (!trimmed) return;
+    replyMutation.mutate(trimmed);
+  };
 
   if (isLoading) {
     return (
@@ -113,6 +157,29 @@ export default function ConversationDetailPage() {
                 </div>
               ))
             )}
+          </div>
+
+          {/* Reply input */}
+          <div className="flex gap-2 mt-4 pt-4 border-t">
+            <Input
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              placeholder="Type a reply..."
+              disabled={replyMutation.isPending}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendReply();
+                }
+              }}
+            />
+            <Button
+              onClick={handleSendReply}
+              disabled={!replyText.trim() || replyMutation.isPending}
+              size="icon"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
           </div>
         </CardContent>
       </Card>

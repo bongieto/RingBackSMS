@@ -12,6 +12,10 @@ import analyticsRoutes from './routes/analytics';
 import billingRoutes from './routes/billing';
 import integrationRoutes from './routes/integrations';
 import adminRoutes from './routes/admin';
+import meetingRoutes from './routes/meetings';
+import orderRoutes from './routes/orders';
+import contactRoutes from './routes/contacts';
+import phoneRoutes from './routes/phone';
 import { logger } from './utils/logger';
 
 const app: Application = express();
@@ -57,6 +61,10 @@ app.use('/analytics', analyticsRoutes);
 app.use('/billing', billingRoutes);
 app.use('/integrations', integrationRoutes);
 app.use('/admin', adminRoutes);
+app.use('/meetings', meetingRoutes);
+app.use('/orders', orderRoutes);
+app.use('/contacts', contactRoutes);
+app.use('/phone', phoneRoutes);
 
 // ── 404 handler ───────────────────────────────────────────────────────────────
 app.use((_req, res) => {

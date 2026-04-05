@@ -8,6 +8,7 @@ import { sendNotification } from './notificationService';
 import { sendSms } from './twilioService';
 import { incrementSmsUsage } from '../middleware/usageMeter';
 import { logger } from '../utils/logger';
+import { isWithinBusinessHours, getBusinessHoursDisplay } from '../utils/businessHours';
 import { SideEffect } from '@ringback/shared-types';
 
 const prisma = new PrismaClient();
@@ -69,6 +70,14 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     })),
   };
 
+  // Check after-hours
+  const withinBusinessHours = isWithinBusinessHours({
+    businessHoursStart: tenant.config.businessHoursStart,
+    businessHoursEnd: tenant.config.businessHoursEnd,
+    businessDays: tenant.config.businessDays as number[],
+    timezone: tenant.config.timezone,
+  });
+
   // Get current caller state
   const currentState = await getCallerState(tenantId, callerPhone);
 
@@ -80,6 +89,18 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     currentState,
     anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
   });
+
+  // Prepend after-hours notice if outside business hours
+  if (!withinBusinessHours) {
+    const hoursDisplay = getBusinessHoursDisplay({
+      businessHoursStart: tenant.config.businessHoursStart,
+      businessHoursEnd: tenant.config.businessHoursEnd,
+      businessDays: tenant.config.businessDays as number[],
+      timezone: tenant.config.timezone,
+    });
+    const afterHoursNotice = `Thanks for reaching out! We're currently closed. Our hours are ${hoursDisplay}. We'll get back to you when we open. In the meantime, feel free to text us your question!`;
+    result.smsReply = `${afterHoursNotice}\n\n${result.smsReply}`;
+  }
 
   // Save next state
   await setCallerState({ ...result.nextState, dedupKey: messageSid });
@@ -148,6 +169,36 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     flowType: result.flowType,
     sideEffects: result.sideEffects.length,
   });
+
+  // Upsert contact record for CRM
+  try {
+    const orderEffects = result.sideEffects.filter((e) => e.type === 'SAVE_ORDER');
+    const orderIncrement = orderEffects.length;
+    const spentIncrement = orderEffects.reduce(
+      (sum, e) => sum + Math.round((e.payload.total ?? 0) * 100),
+      0
+    );
+
+    await prisma.contact.upsert({
+      where: { tenantId_phone: { tenantId, phone: callerPhone } },
+      create: {
+        tenantId,
+        phone: callerPhone,
+        lastContactAt: new Date(),
+        totalOrders: orderIncrement,
+        totalSpent: spentIncrement,
+      },
+      update: {
+        lastContactAt: new Date(),
+        ...(orderIncrement > 0 && {
+          totalOrders: { increment: orderIncrement },
+          totalSpent: { increment: spentIncrement },
+        }),
+      },
+    });
+  } catch (err) {
+    logger.error('Failed to upsert contact', { tenantId, callerPhone, error: err });
+  }
 }
 
 async function processSideEffect(

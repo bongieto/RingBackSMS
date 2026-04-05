@@ -1,7 +1,10 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { z } from 'zod';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { requireAuth } from '../middleware/authMiddleware';
-import { sendSuccess, sendPaginated } from '../utils/response';
+import { sendSuccess, sendError, sendPaginated } from '../utils/response';
+import { sendSms } from '../services/twilioService';
+import { logger } from '../utils/logger';
 
 const router: Router = Router();
 const prisma = new PrismaClient();
@@ -46,6 +49,47 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
   }
 
   sendSuccess(res, conversation);
+});
+
+// POST /conversations/:id/reply
+router.post('/:id/reply', requireAuth, async (req: Request, res: Response) => {
+  const ReplySchema = z.object({
+    message: z.string().min(1),
+  });
+
+  const body = ReplySchema.parse(req.body);
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: req.params.id },
+  });
+
+  if (!conversation) {
+    sendError(res, 'Conversation not found', 404);
+    return;
+  }
+
+  // Send SMS via Twilio
+  await sendSms(conversation.tenantId, conversation.callerPhone, body.message);
+
+  // Append the message to the conversation
+  const existingMessages = Array.isArray(conversation.messages) ? conversation.messages : [];
+  const newMessage = {
+    role: 'assistant',
+    content: body.message,
+    timestamp: new Date().toISOString(),
+  };
+
+  const updated = await prisma.conversation.update({
+    where: { id: req.params.id },
+    data: {
+      messages: [...existingMessages, newMessage] as unknown as Prisma.InputJsonValue,
+      updatedAt: new Date(),
+    },
+    include: { orders: true, meetings: true },
+  });
+
+  logger.info('Manual reply sent', { conversationId: req.params.id, tenantId: conversation.tenantId });
+  sendSuccess(res, updated);
 });
 
 export default router;

@@ -141,7 +141,7 @@ const faqJsonLd = {
       name: 'How much does RingBackSMS cost?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'RingBackSMS offers a free Starter plan with up to 50 SMS per month. Paid plans start at $29/month for the Growth plan (500 SMS), $79/month for Scale (2,000 SMS), and custom Enterprise pricing for unlimited usage.',
+        text: 'RingBackSMS offers a free Starter plan with up to 25 SMS per month. Paid plans start at $39/month for the Growth plan (500 SMS), $99/month for Scale (2,500 SMS), and $199/month for Enterprise with unlimited usage.',
       },
     },
     {
@@ -289,8 +289,8 @@ const PRICING = [
     name: 'Starter',
     price: 'Free',
     period: 'forever',
-    description: 'Perfect for testing the waters',
-    sms: '50 SMS/month',
+    description: 'Try it risk-free',
+    sms: '25 SMS/month',
     features: [
       '1 phone number',
       'AI auto-responses',
@@ -303,7 +303,7 @@ const PRICING = [
   },
   {
     name: 'Growth',
-    price: '$29',
+    price: '$39',
     period: '/month',
     description: 'For growing businesses ready to capture every lead',
     sms: '500 SMS/month',
@@ -320,10 +320,10 @@ const PRICING = [
   },
   {
     name: 'Scale',
-    price: '$79',
+    price: '$99',
     period: '/month',
     description: 'For busy businesses that need full automation',
-    sms: '2,000 SMS/month',
+    sms: '2,500 SMS/month',
     features: [
       'Everything in Growth',
       'Multiple phone numbers',
@@ -337,8 +337,8 @@ const PRICING = [
   },
   {
     name: 'Enterprise',
-    price: 'Custom',
-    period: '',
+    price: '$199',
+    period: '/month',
     description: 'For multi-location businesses and franchises',
     sms: 'Unlimited SMS',
     features: [
@@ -420,7 +420,7 @@ const FAQ = [
   {
     question: 'What happens if I go over my SMS limit?',
     answer:
-      'We\'ll never cut off your customers. If you exceed your plan\'s SMS limit, additional messages are billed at $0.03/SMS — well below industry average. You\'ll get a notification when you\'re approaching your limit so there are no surprises.',
+      'We\'ll never cut off your customers. If you exceed your plan\'s SMS limit, additional messages are billed at $0.05/SMS — well below industry average. You\'ll get a notification when you\'re approaching your limit so there are no surprises.',
   },
 ];
 

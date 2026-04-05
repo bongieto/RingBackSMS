@@ -72,6 +72,26 @@ router.post('/:id/menu', requireOrgAuth, async (req: Request, res: Response) => 
   sendCreated(res, item);
 });
 
+// DELETE /tenants/:id/menu/:itemId
+router.delete('/:id/menu/:itemId', requireOrgAuth, async (req: Request, res: Response) => {
+  const item = await prisma.menuItem.findUnique({
+    where: { id: req.params.itemId },
+  });
+
+  if (!item) {
+    sendError(res, 'Menu item not found', 404);
+    return;
+  }
+
+  if (item.tenantId !== req.params.id) {
+    sendError(res, 'Menu item does not belong to this tenant', 403);
+    return;
+  }
+
+  await prisma.menuItem.delete({ where: { id: req.params.itemId } });
+  sendSuccess(res, { deleted: true });
+});
+
 // GET /tenants/:id/flows
 router.get('/:id/flows', requireAuth, async (req: Request, res: Response) => {
   const flows = await prisma.flow.findMany({

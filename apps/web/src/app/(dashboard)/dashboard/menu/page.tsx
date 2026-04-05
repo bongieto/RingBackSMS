@@ -53,6 +53,21 @@ export default function MenuPage() {
     enabled: !!tenantId,
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (itemId: string) => tenantApi.deleteMenuItem(tenantId!, itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['menu', tenantId] });
+      toast.success('Item deleted!');
+    },
+    onError: () => toast.error('Failed to delete item'),
+  });
+
+  const handleDelete = (item: MenuItem) => {
+    if (window.confirm(`Are you sure you want to delete "${item.name}"?`)) {
+      deleteMutation.mutate(item.id);
+    }
+  };
+
   const saveMutation = useMutation({
     mutationFn: (data: MenuItemFormData) =>
       tenantApi.upsertMenuItem(tenantId!, {
@@ -159,6 +174,9 @@ export default function MenuPage() {
                         setShowForm(true);
                       }}>
                         <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(item)} disabled={deleteMutation.isPending}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     </div>
                   </CardContent>
