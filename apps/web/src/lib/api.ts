@@ -95,6 +95,18 @@ export const contactApi = {
     api.patch(`/contacts/${id}`, data).then((r) => r.data.data),
   delete: (id: string) =>
     api.delete(`/contacts/${id}`).then((r) => r.data),
+  getActivity: (id: string) =>
+    api.get(`/contacts/${id}/activity`).then((r) => r.data.data),
+  getNotes: (id: string) =>
+    api.get(`/contacts/${id}/notes`).then((r) => r.data.data),
+  addNote: (id: string, body: string) =>
+    api.post(`/contacts/${id}/notes`, { body }).then((r) => r.data.data),
+  deleteNote: (id: string, noteId: string) =>
+    api.delete(`/contacts/${id}/notes/${noteId}`).then((r) => r.data),
+  sendSms: (id: string, message: string) =>
+    api.post(`/contacts/${id}/sms`, { message }).then((r) => r.data.data),
+  export: (tenantId: string) =>
+    api.get('/contacts/export', { params: { tenantId }, responseType: 'blob' as const }).then((r) => r.data),
 };
 
 export const squareApi = {

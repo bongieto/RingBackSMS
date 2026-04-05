@@ -1,32 +1,27 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/nextjs';
+import { toast } from 'sonner';
+import Link from 'next/link';
 import {
-  Users,
-  Plus,
-  Search,
-  ChevronLeft,
-  ChevronRight,
-  X,
-  Loader2,
-  Mail,
-  Phone,
-  StickyNote,
-  ShoppingBag,
-  DollarSign,
-  Clock,
-  MessageSquare,
+  Users, Phone, Mail, Tag, X, Plus, ChevronLeft, ChevronRight,
+  MessageSquare, ShoppingBag, Calendar, Trash2, Send, Download,
+  Clock, User, Star, UserX, UserCheck, FileText, Activity,
 } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { contactApi } from '@/lib/api';
-import { cn, formatCurrency, formatDate, formatRelativeTime, maskPhone } from '@/lib/utils';
+import { cn, formatCurrency, maskPhone, formatRelativeTime } from '@/lib/utils';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type ContactStatus = 'LEAD' | 'CUSTOMER' | 'VIP' | 'INACTIVE';
 
 interface Contact {
   id: string;
@@ -35,6 +30,7 @@ interface Contact {
   name: string | null;
   email: string | null;
   notes: string | null;
+  status: ContactStatus;
   tags: string[];
   totalOrders: number;
   totalSpent: number;
@@ -45,35 +41,43 @@ interface Contact {
   orderCount?: number;
 }
 
-interface PaginatedResponse {
-  success: boolean;
-  data: Contact[];
-  pagination: {
-    total: number;
-    page: number;
-    pageSize: number;
-    totalPages: number;
-  };
+interface ContactNote {
+  id: string;
+  contactId: string;
+  tenantId: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-const TAG_COLORS = [
-  'bg-blue-100 text-blue-700',
-  'bg-green-100 text-green-700',
-  'bg-purple-100 text-purple-700',
-  'bg-orange-100 text-orange-700',
-  'bg-pink-100 text-pink-700',
-  'bg-teal-100 text-teal-700',
-  'bg-red-100 text-red-700',
-  'bg-yellow-100 text-yellow-700',
-];
+type ActivityItem =
+  | { type: 'conversation'; id: string; summary: string; occurredAt: string }
+  | { type: 'order'; id: string; orderNumber: string; total: number; status: string; occurredAt: string }
+  | { type: 'meeting'; id: string; scheduledAt: string | null; status: string; occurredAt: string };
 
-function getTagColor(tag: string): string {
-  let hash = 0;
-  for (let i = 0; i < tag.length; i++) {
-    hash = tag.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const STATUS_CONFIG: Record<ContactStatus, { label: string; color: string; icon: React.ElementType }> = {
+  LEAD:     { label: 'Lead',     color: 'bg-blue-100 text-blue-700 border-blue-200',       icon: User },
+  CUSTOMER: { label: 'Customer', color: 'bg-green-100 text-green-700 border-green-200',    icon: UserCheck },
+  VIP:      { label: 'VIP',      color: 'bg-yellow-100 text-yellow-800 border-yellow-200', icon: Star },
+  INACTIVE: { label: 'Inactive', color: 'bg-gray-100 text-gray-500 border-gray-200',       icon: UserX },
+};
+
+const ALL_STATUSES: ContactStatus[] = ['LEAD', 'CUSTOMER', 'VIP', 'INACTIVE'];
+
+// ── Helper ────────────────────────────────────────────────────────────────────
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ContactsPage() {
   const { organization } = useOrganization();
@@ -82,567 +86,677 @@ export default function ContactsPage() {
 
   const [search, setSearch] = useState('');
   const [tagFilter, setTagFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [showSmsModal, setShowSmsModal] = useState(false);
 
-  const pageSize = 20;
-
-  const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  }, []);
-
-  // Fetch contacts list
-  const { data, isLoading } = useQuery<PaginatedResponse>({
-    queryKey: ['contacts', tenantId, search, tagFilter, page],
-    queryFn: () =>
-      contactApi.list(tenantId!, {
-        search: search || undefined,
-        tag: tagFilter || undefined,
-        page,
-        pageSize,
-      }),
+  const { data, isLoading } = useQuery({
+    queryKey: ['contacts', tenantId, search, tagFilter, statusFilter, page],
+    queryFn: () => contactApi.list(tenantId!, {
+      search: search || undefined,
+      tag: tagFilter || undefined,
+      status: statusFilter || undefined,
+      page,
+      pageSize: 20,
+    }),
     enabled: !!tenantId,
   });
 
-  // Fetch selected contact detail
+  const contacts: Contact[] = data?.data ?? [];
+  const total: number = data?.pagination?.total ?? 0;
+  const totalPages: number = data?.pagination?.totalPages ?? 1;
+
   const { data: selectedContact } = useQuery<Contact>({
     queryKey: ['contact', selectedId],
     queryFn: () => contactApi.get(selectedId!),
     enabled: !!selectedId,
   });
 
-  // Collect all unique tags for filter dropdown
-  const allTags = Array.from(
-    new Set((data?.data ?? []).flatMap((c) => c.tags))
-  ).sort();
-
-  // Mutations
-  const createMutation = useMutation({
-    mutationFn: (newContact: Record<string, unknown>) => contactApi.create(newContact),
+  const saveMutation = useMutation({
+    mutationFn: ({ id, ...updates }: Partial<Contact> & { id: string }) =>
+      contactApi.update(id, updates),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['contacts'] });
-      setShowCreateForm(false);
-      showToast('Contact created');
-    },
-    onError: () => showToast('Failed to create contact', 'error'),
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
-      contactApi.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      queryClient.invalidateQueries({ queryKey: ['contacts', tenantId] });
       queryClient.invalidateQueries({ queryKey: ['contact', selectedId] });
-      showToast('Contact saved');
+      toast.success('Contact saved');
     },
-    onError: () => showToast('Failed to save contact', 'error'),
+    onError: () => toast.error('Failed to save contact'),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => contactApi.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      queryClient.invalidateQueries({ queryKey: ['contacts', tenantId] });
       setSelectedId(null);
-      showToast('Contact deleted');
+      toast.success('Contact deleted');
     },
-    onError: () => showToast('Failed to delete contact', 'error'),
+    onError: () => toast.error('Failed to delete contact'),
   });
 
-  const contacts = data?.data ?? [];
-  const pagination = data?.pagination;
+  const sendSmsMutation = useMutation({
+    mutationFn: ({ id, message }: { id: string; message: string }) =>
+      contactApi.sendSms(id, message),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contact', selectedId] });
+      toast.success('SMS sent');
+      setShowSmsModal(false);
+    },
+    onError: () => toast.error('Failed to send SMS'),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: Record<string, unknown>) => contactApi.create(data),
+    onSuccess: (newContact) => {
+      queryClient.invalidateQueries({ queryKey: ['contacts', tenantId] });
+      setShowCreateForm(false);
+      setSelectedId(newContact.id);
+      toast.success('Contact created');
+    },
+    onError: () => toast.error('Failed to create contact'),
+  });
+
+  async function handleExport() {
+    if (!tenantId) return;
+    try {
+      const blob = await contactApi.export(tenantId);
+      downloadBlob(blob, 'contacts.csv');
+    } catch {
+      toast.error('Export failed');
+    }
+  }
+
+  // Get all unique tags from loaded contacts
+  const allTags = [...new Set(contacts.flatMap((c) => c.tags))];
 
   return (
     <div>
       <Header
         title="Contacts"
-        description="Manage your customer contacts"
+        description={`${total} contacts in your CRM`}
         action={
-          <Button onClick={() => setShowCreateForm(true)} size="sm">
-            <Plus className="h-4 w-4 mr-1" />
-            Add Contact
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handleExport}>
+              <Download className="h-4 w-4 mr-1" /> Export CSV
+            </Button>
+            <Button size="sm" onClick={() => setShowCreateForm(true)}>
+              <Plus className="h-4 w-4 mr-1" /> Add Contact
+            </Button>
+          </div>
         }
       />
 
-      {/* Toast notification */}
-      {toast && (
-        <div
-          className={cn(
-            'fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-sm font-medium transition-all',
-            toast.type === 'success'
-              ? 'bg-green-600 text-white'
-              : 'bg-red-600 text-white'
-          )}
-        >
-          {toast.message}
-        </div>
-      )}
+      <div className="flex gap-6">
+        {/* Left: List */}
+        <div className="flex-1 min-w-0">
+          {/* Filters */}
+          <div className="flex gap-3 mb-4 flex-wrap">
+            <Input
+              placeholder="Search name or phone..."
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+              className="w-64"
+            />
+            <select
+              value={statusFilter}
+              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="">All Statuses</option>
+              {ALL_STATUSES.map((s) => (
+                <option key={s} value={s}>{STATUS_CONFIG[s].label}</option>
+              ))}
+            </select>
+            <select
+              value={tagFilter}
+              onChange={(e) => { setTagFilter(e.target.value); setPage(1); }}
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="">All Tags</option>
+              {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
 
-      {/* Search and filters */}
-      <div className="flex items-center gap-3 mb-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search by name or phone..."
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(1);
-            }}
-            className="pl-9"
-          />
-        </div>
-        {allTags.length > 0 && (
-          <select
-            value={tagFilter}
-            onChange={(e) => {
-              setTagFilter(e.target.value);
-              setPage(1);
-            }}
-            className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-          >
-            <option value="">All tags</option>
-            {allTags.map((tag) => (
-              <option key={tag} value={tag}>
-                {tag}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
-
-      <div className="flex gap-4">
-        {/* Contacts table */}
-        <Card className={cn('flex-1', selectedId && 'max-w-[60%]')}>
-          <CardContent className="p-0">
+          {/* Table */}
+          <Card>
             {isLoading ? (
-              <div className="p-12 text-center">
-                <Loader2 className="h-8 w-8 mx-auto mb-3 animate-spin text-muted-foreground" />
-                <p className="text-muted-foreground text-sm">Loading contacts...</p>
-              </div>
+              <div className="p-12 text-center text-muted-foreground">Loading contacts...</div>
             ) : contacts.length === 0 ? (
               <div className="p-12 text-center">
-                <Users className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-30" />
-                <p className="text-muted-foreground font-medium">No contacts yet</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Contacts are created automatically when customers text you, or add them manually.
-                </p>
+                <Users className="h-12 w-12 mx-auto text-muted-foreground opacity-30 mb-3" />
+                <p className="text-muted-foreground">No contacts found</p>
               </div>
             ) : (
-              <>
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full">
                   <thead>
-                    <tr className="border-b bg-muted/50">
-                      <th className="text-left px-4 py-3 font-medium text-muted-foreground">Name</th>
-                      <th className="text-left px-4 py-3 font-medium text-muted-foreground">Phone</th>
-                      <th className="text-left px-4 py-3 font-medium text-muted-foreground">Email</th>
-                      <th className="text-left px-4 py-3 font-medium text-muted-foreground">Tags</th>
-                      <th className="text-right px-4 py-3 font-medium text-muted-foreground">Orders</th>
-                      <th className="text-right px-4 py-3 font-medium text-muted-foreground">Spent</th>
-                      <th className="text-right px-4 py-3 font-medium text-muted-foreground">Last Contact</th>
+                    <tr className="border-b text-left text-xs text-muted-foreground">
+                      <th className="px-4 py-3 font-medium">Contact</th>
+                      <th className="px-4 py-3 font-medium">Status</th>
+                      <th className="px-4 py-3 font-medium">Tags</th>
+                      <th className="px-4 py-3 font-medium text-right">Spent</th>
+                      <th className="px-4 py-3 font-medium">Last Contact</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {contacts.map((contact) => (
-                      <tr
-                        key={contact.id}
-                        onClick={() => setSelectedId(contact.id)}
-                        className={cn(
-                          'border-b cursor-pointer hover:bg-muted/30 transition-colors',
-                          selectedId === contact.id && 'bg-blue-50'
-                        )}
-                      >
-                        <td className="px-4 py-3 font-medium">
-                          {contact.name || maskPhone(contact.phone)}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">
-                          {maskPhone(contact.phone)}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">
-                          {contact.email || '-'}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-1">
-                            {contact.tags.map((tag) => (
-                              <span
-                                key={tag}
-                                className={cn(
-                                  'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
-                                  getTagColor(tag)
-                                )}
-                              >
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right">{contact.totalOrders}</td>
-                        <td className="px-4 py-3 text-right">{formatCurrency(contact.totalSpent)}</td>
-                        <td className="px-4 py-3 text-right text-muted-foreground">
-                          {contact.lastContactAt ? formatRelativeTime(contact.lastContactAt) : '-'}
-                        </td>
-                      </tr>
-                    ))}
+                    {contacts.map((c) => {
+                      const statusCfg = STATUS_CONFIG[c.status] ?? STATUS_CONFIG.LEAD;
+                      return (
+                        <tr
+                          key={c.id}
+                          onClick={() => setSelectedId(c.id === selectedId ? null : c.id)}
+                          className={cn(
+                            'border-b last:border-0 cursor-pointer text-sm transition-colors',
+                            c.id === selectedId ? 'bg-blue-50' : 'hover:bg-muted/50'
+                          )}
+                        >
+                          <td className="px-4 py-3">
+                            <div className="font-medium">{c.name || 'Unknown'}</div>
+                            <div className="text-xs text-muted-foreground font-mono">{maskPhone(c.phone)}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={cn('text-xs font-medium px-2 py-0.5 rounded-full border', statusCfg.color)}>
+                              {statusCfg.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-1 flex-wrap">
+                              {c.tags.slice(0, 2).map((t) => (
+                                <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>
+                              ))}
+                              {c.tags.length > 2 && <Badge variant="outline" className="text-xs">+{c.tags.length - 2}</Badge>}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-right font-mono text-sm">
+                            {formatCurrency(c.totalSpent)}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-muted-foreground">
+                            {c.lastContactAt ? formatRelativeTime(c.lastContactAt) : 'Never'}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
-
-                {/* Pagination */}
-                {pagination && pagination.totalPages > 1 && (
-                  <div className="flex items-center justify-between px-4 py-3 border-t">
-                    <p className="text-sm text-muted-foreground">
-                      Showing {(pagination.page - 1) * pagination.pageSize + 1}-
-                      {Math.min(pagination.page * pagination.pageSize, pagination.total)} of{' '}
-                      {pagination.total}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={page <= 1}
-                        onClick={() => setPage((p) => p - 1)}
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </Button>
-                      <span className="text-sm text-muted-foreground">
-                        Page {pagination.page} of {pagination.totalPages}
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={page >= pagination.totalPages}
-                        onClick={() => setPage((p) => p + 1)}
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </>
+              </div>
             )}
-          </CardContent>
-        </Card>
 
-        {/* Detail panel */}
-        {selectedId && selectedContact && (
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between p-4 border-t text-sm text-muted-foreground">
+                <span>Page {page} of {totalPages} ({total} total)</span>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => p - 1)} disabled={page <= 1}>
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page >= totalPages}>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </Card>
+        </div>
+
+        {/* Right: Detail panel */}
+        {selectedContact && (
           <ContactDetailPanel
             contact={selectedContact}
-            onClose={() => setSelectedId(null)}
-            onSave={(data) => updateMutation.mutate({ id: selectedContact.id, data })}
+            onSave={(updates) => saveMutation.mutate({ id: selectedContact.id, ...updates })}
             onDelete={() => {
-              if (confirm('Are you sure you want to delete this contact?')) {
+              if (confirm(`Delete ${selectedContact.name || selectedContact.phone}? This cannot be undone.`)) {
                 deleteMutation.mutate(selectedContact.id);
               }
             }}
-            isSaving={updateMutation.isPending}
+            onSendSms={() => setShowSmsModal(true)}
+            isSaving={saveMutation.isPending}
           />
         )}
       </div>
 
-      {/* Create contact modal */}
-      {showCreateForm && tenantId && (
+      {/* Create modal */}
+      {showCreateForm && (
         <CreateContactModal
-          tenantId={tenantId}
+          tenantId={tenantId!}
           onClose={() => setShowCreateForm(false)}
           onCreate={(data) => createMutation.mutate(data)}
-          isCreating={createMutation.isPending}
+          isPending={createMutation.isPending}
+        />
+      )}
+
+      {/* SMS modal */}
+      {showSmsModal && selectedContact && (
+        <SendSmsModal
+          contact={selectedContact}
+          onClose={() => setShowSmsModal(false)}
+          onSend={(message) => sendSmsMutation.mutate({ id: selectedContact.id, message })}
+          isSending={sendSmsMutation.isPending}
         />
       )}
     </div>
   );
 }
 
-// ── Detail Panel ─────────────────────────────────────────────────────────────
+// ── ContactDetailPanel ────────────────────────────────────────────────────────
 
-function ContactDetailPanel({
-  contact,
-  onClose,
-  onSave,
-  onDelete,
-  isSaving,
-}: {
+function ContactDetailPanel({ contact, onSave, onDelete, onSendSms, isSaving }: {
   contact: Contact;
-  onClose: () => void;
-  onSave: (data: Record<string, unknown>) => void;
+  onSave: (updates: Partial<Contact>) => void;
   onDelete: () => void;
+  onSendSms: () => void;
   isSaving: boolean;
 }) {
+  const [activeTab, setActiveTab] = useState<'details' | 'notes' | 'activity'>('details');
   const [name, setName] = useState(contact.name ?? '');
   const [email, setEmail] = useState(contact.email ?? '');
-  const [notes, setNotes] = useState(contact.notes ?? '');
+  const [status, setStatus] = useState<ContactStatus>(contact.status);
   const [tags, setTags] = useState<string[]>(contact.tags);
   const [newTag, setNewTag] = useState('');
 
-  // Sync state when contact changes
-  const [prevId, setPrevId] = useState(contact.id);
-  if (contact.id !== prevId) {
-    setPrevId(contact.id);
+  useEffect(() => {
     setName(contact.name ?? '');
     setEmail(contact.email ?? '');
-    setNotes(contact.notes ?? '');
+    setStatus(contact.status);
     setTags(contact.tags);
-    setNewTag('');
-  }
+  }, [contact.id, contact.name, contact.email, contact.status, contact.tags]);
 
-  const handleSave = () => {
-    onSave({ name: name || null, email: email || null, notes: notes || null, tags });
-  };
-
-  const addTag = () => {
-    const trimmed = newTag.trim();
-    if (trimmed && !tags.includes(trimmed)) {
-      setTags([...tags, trimmed]);
-      setNewTag('');
-    }
-  };
-
-  const removeTag = (tag: string) => {
-    setTags(tags.filter((t) => t !== tag));
-  };
+  const tabClass = (t: string) => cn(
+    'px-4 py-2 text-sm font-medium border-b-2 transition-colors',
+    activeTab === t
+      ? 'border-primary text-primary'
+      : 'border-transparent text-muted-foreground hover:text-foreground'
+  );
 
   return (
-    <Card className="w-[40%] min-w-[320px]">
-      <CardContent className="p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold">Contact Details</h3>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-
-        {/* Activity summary */}
-        <div className="grid grid-cols-3 gap-3 mb-5">
-          <div className="text-center p-3 bg-muted/50 rounded-lg">
-            <ShoppingBag className="h-4 w-4 mx-auto mb-1 text-muted-foreground" />
-            <p className="text-lg font-semibold">{contact.totalOrders}</p>
-            <p className="text-xs text-muted-foreground">Orders</p>
-          </div>
-          <div className="text-center p-3 bg-muted/50 rounded-lg">
-            <DollarSign className="h-4 w-4 mx-auto mb-1 text-muted-foreground" />
-            <p className="text-lg font-semibold">{formatCurrency(contact.totalSpent)}</p>
-            <p className="text-xs text-muted-foreground">Spent</p>
-          </div>
-          <div className="text-center p-3 bg-muted/50 rounded-lg">
-            <Clock className="h-4 w-4 mx-auto mb-1 text-muted-foreground" />
-            <p className="text-sm font-semibold">
-              {contact.lastContactAt ? formatRelativeTime(contact.lastContactAt) : 'N/A'}
-            </p>
-            <p className="text-xs text-muted-foreground">Last Contact</p>
-          </div>
-        </div>
-
-        {/* Phone (read-only) */}
-        <div className="mb-4">
-          <Label className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
-            <Phone className="h-3 w-3" /> Phone
-          </Label>
-          <p className="text-sm font-medium">{contact.phone}</p>
-        </div>
-
-        {/* Editable fields */}
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="detail-name" className="text-xs text-muted-foreground mb-1 block">
-              Name
-            </Label>
-            <Input
-              id="detail-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Contact name"
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="detail-email" className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
-              <Mail className="h-3 w-3" /> Email
-            </Label>
-            <Input
-              id="detail-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="email@example.com"
-            />
-          </div>
-
-          <div>
-            <Label htmlFor="detail-notes" className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
-              <StickyNote className="h-3 w-3" /> Notes
-            </Label>
-            <textarea
-              id="detail-notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Add notes..."
-              rows={3}
-              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            />
-          </div>
-
-          {/* Tags */}
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1 block">Tags</Label>
-            <div className="flex flex-wrap gap-1 mb-2">
-              {tags.map((tag) => (
-                <span
-                  key={tag}
-                  className={cn(
-                    'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium',
-                    getTagColor(tag)
-                  )}
-                >
-                  {tag}
-                  <button
-                    onClick={() => removeTag(tag)}
-                    className="hover:opacity-70"
-                    type="button"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              ))}
+    <div className="w-80 shrink-0">
+      <Card className="sticky top-4">
+        <CardHeader className="pb-2">
+          <div className="flex items-start justify-between">
+            <div>
+              <CardTitle className="text-base">{contact.name || 'Unknown Contact'}</CardTitle>
+              <p className="text-xs text-muted-foreground font-mono mt-0.5">{maskPhone(contact.phone)}</p>
             </div>
-            <div className="flex gap-2">
-              <Input
-                value={newTag}
-                onChange={(e) => setNewTag(e.target.value)}
-                placeholder="Add tag..."
-                className="flex-1"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    addTag();
-                  }
-                }}
-              />
-              <Button variant="outline" size="sm" onClick={addTag} type="button">
-                Add
-              </Button>
-            </div>
+            <span className={cn('text-xs font-medium px-2 py-0.5 rounded-full border', STATUS_CONFIG[contact.status].color)}>
+              {STATUS_CONFIG[contact.status].label}
+            </span>
           </div>
-        </div>
+          {/* Tabs */}
+          <div className="flex mt-3 border-b -mx-6 px-2">
+            {(['details', 'notes', 'activity'] as const).map((t) => (
+              <button key={t} onClick={() => setActiveTab(t)} className={tabClass(t)}>
+                {t.charAt(0).toUpperCase() + t.slice(1)}
+              </button>
+            ))}
+          </div>
+        </CardHeader>
 
-        {/* Conversations link */}
-        {contact.conversationCount !== undefined && contact.conversationCount > 0 && (
-          <a
-            href={`/dashboard/conversations?phone=${encodeURIComponent(contact.phone)}`}
-            className="flex items-center gap-2 mt-4 text-sm text-blue-600 hover:underline"
-          >
-            <MessageSquare className="h-4 w-4" />
-            View {contact.conversationCount} conversation{contact.conversationCount !== 1 ? 's' : ''}
-          </a>
-        )}
-
-        {/* Actions */}
-        <div className="flex items-center gap-2 mt-6 pt-4 border-t">
-          <Button onClick={handleSave} disabled={isSaving} size="sm">
-            {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-            Save
-          </Button>
-          <Button variant="destructive" size="sm" onClick={onDelete}>
-            Delete
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+        <CardContent className="space-y-4 pt-2">
+          {activeTab === 'details' && (
+            <DetailsTab
+              name={name} setName={setName}
+              email={email} setEmail={setEmail}
+              status={status} setStatus={setStatus}
+              tags={tags} setTags={setTags}
+              newTag={newTag} setNewTag={setNewTag}
+              contact={contact}
+              onSave={() => onSave({ name: name || null, email: email || null, status, tags })}
+              onDelete={onDelete}
+              onSendSms={onSendSms}
+              isSaving={isSaving}
+            />
+          )}
+          {activeTab === 'notes' && <NotesTab contactId={contact.id} tenantId={contact.tenantId} />}
+          {activeTab === 'activity' && <ActivityTab contactId={contact.id} />}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
-// ── Create Modal ─────────────────────────────────────────────────────────────
+// ── Details Tab ───────────────────────────────────────────────────────────────
 
-function CreateContactModal({
-  tenantId,
-  onClose,
-  onCreate,
-  isCreating,
-}: {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function DetailsTab({ name, setName, email, setEmail, status, setStatus, tags, setTags, newTag, setNewTag, contact, onSave, onDelete, onSendSms, isSaving }: any) {
+  return (
+    <>
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-muted/50 rounded-lg p-2 text-center">
+          <div className="text-lg font-bold">{contact.totalOrders}</div>
+          <div className="text-xs text-muted-foreground">Orders</div>
+        </div>
+        <div className="bg-muted/50 rounded-lg p-2 text-center">
+          <div className="text-lg font-bold">{formatCurrency(contact.totalSpent)}</div>
+          <div className="text-xs text-muted-foreground">Spent</div>
+        </div>
+        <div className="bg-muted/50 rounded-lg p-2 text-center">
+          <div className="text-lg font-bold">{contact.conversationCount ?? 0}</div>
+          <div className="text-xs text-muted-foreground">Convos</div>
+        </div>
+      </div>
+
+      {/* Name */}
+      <div className="space-y-1.5">
+        <Label className="text-xs">Name</Label>
+        <Input value={name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} placeholder="Full name" />
+      </div>
+
+      {/* Email */}
+      <div className="space-y-1.5">
+        <Label className="text-xs">Email</Label>
+        <Input type="email" value={email} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)} placeholder="email@example.com" />
+      </div>
+
+      {/* Status */}
+      <div className="space-y-1.5">
+        <Label className="text-xs">Status</Label>
+        <select
+          value={status}
+          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setStatus(e.target.value as ContactStatus)}
+          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+        >
+          {Object.entries(STATUS_CONFIG).map(([val, cfg]) => (
+            <option key={val} value={val}>{(cfg as { label: string }).label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Tags */}
+      <div className="space-y-1.5">
+        <Label className="text-xs">Tags</Label>
+        <div className="flex flex-wrap gap-1 mb-2">
+          {tags.map((t: string) => (
+            <Badge key={t} variant="secondary" className="gap-1 text-xs">
+              {t}
+              <button onClick={() => setTags(tags.filter((x: string) => x !== t))}>
+                <X className="h-2.5 w-2.5" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <Input
+            value={newTag}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewTag(e.target.value)}
+            placeholder="Add tag"
+            className="h-8 text-xs"
+            onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+              if (e.key === 'Enter' && newTag.trim()) {
+                setTags([...tags, newTag.trim()]);
+                setNewTag('');
+              }
+            }}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 px-2"
+            onClick={() => {
+              if (newTag.trim()) { setTags([...tags, newTag.trim()]); setNewTag(''); }
+            }}
+          >
+            <Plus className="h-3 w-3" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Conversations link */}
+      <Link href={`/dashboard/conversations?phone=${contact.phone}`} className="text-xs text-primary hover:underline flex items-center gap-1">
+        <MessageSquare className="h-3 w-3" /> View conversations
+      </Link>
+
+      {/* Actions */}
+      <div className="flex gap-2 pt-2 border-t">
+        <Button size="sm" onClick={onSave} disabled={isSaving} className="flex-1">
+          {isSaving ? 'Saving...' : 'Save'}
+        </Button>
+        <Button size="sm" variant="outline" onClick={onSendSms}>
+          <Send className="h-3.5 w-3.5" />
+        </Button>
+        <Button size="sm" variant="destructive" onClick={onDelete}>
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </>
+  );
+}
+
+// ── Notes Tab ─────────────────────────────────────────────────────────────────
+
+function NotesTab({ contactId, tenantId }: { contactId: string; tenantId: string }) {
+  const queryClient = useQueryClient();
+  const [newNote, setNewNote] = useState('');
+
+  const { data: notes = [] } = useQuery<ContactNote[]>({
+    queryKey: ['contact-notes', contactId],
+    queryFn: () => contactApi.getNotes(contactId),
+    enabled: !!contactId,
+  });
+
+  const addMutation = useMutation({
+    mutationFn: (body: string) => contactApi.addNote(contactId, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contact-notes', contactId] });
+      setNewNote('');
+      toast.success('Note added');
+    },
+    onError: () => toast.error('Failed to add note'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (noteId: string) => contactApi.deleteNote(contactId, noteId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contact-notes', contactId] });
+    },
+    onError: () => toast.error('Failed to delete note'),
+  });
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <textarea
+          value={newNote}
+          onChange={(e) => setNewNote(e.target.value)}
+          placeholder="Add a note..."
+          className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[80px] resize-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+        <Button
+          size="sm"
+          className="w-full"
+          onClick={() => { if (newNote.trim()) addMutation.mutate(newNote.trim()); }}
+          disabled={!newNote.trim() || addMutation.isPending}
+        >
+          <Plus className="h-3.5 w-3.5 mr-1" />
+          {addMutation.isPending ? 'Adding...' : 'Add Note'}
+        </Button>
+      </div>
+
+      {notes.length === 0 ? (
+        <div className="text-center py-6">
+          <FileText className="h-8 w-8 mx-auto text-muted-foreground opacity-30 mb-2" />
+          <p className="text-xs text-muted-foreground">No notes yet — add one above</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {notes.map((note) => (
+            <div key={note.id} className="bg-muted/50 rounded-lg p-3 relative group">
+              <p className="text-sm whitespace-pre-wrap pr-6">{note.body}</p>
+              <p className="text-xs text-muted-foreground mt-1">{formatRelativeTime(note.createdAt)}</p>
+              <button
+                onClick={() => deleteMutation.mutate(note.id)}
+                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Activity Tab ──────────────────────────────────────────────────────────────
+
+function ActivityTab({ contactId }: { contactId: string }) {
+  const { data } = useQuery<{ activities: ActivityItem[] }>({
+    queryKey: ['contact-activity', contactId],
+    queryFn: () => contactApi.getActivity(contactId),
+    enabled: !!contactId,
+  });
+
+  const activities = data?.activities ?? [];
+
+  if (activities.length === 0) {
+    return (
+      <div className="text-center py-6">
+        <Activity className="h-8 w-8 mx-auto text-muted-foreground opacity-30 mb-2" />
+        <p className="text-xs text-muted-foreground">No activity yet</p>
+      </div>
+    );
+  }
+
+  const getIcon = (type: string) => {
+    if (type === 'conversation') return <MessageSquare className="h-3.5 w-3.5 text-blue-500" />;
+    if (type === 'order') return <ShoppingBag className="h-3.5 w-3.5 text-green-500" />;
+    return <Calendar className="h-3.5 w-3.5 text-purple-500" />;
+  };
+
+  const getDescription = (item: ActivityItem) => {
+    if (item.type === 'conversation') return item.summary;
+    if (item.type === 'order') return `Order #${item.orderNumber} — ${formatCurrency(item.total * 100)} (${item.status.toLowerCase()})`;
+    return `Meeting ${item.status.toLowerCase()}${item.scheduledAt ? ` on ${new Date(item.scheduledAt).toLocaleDateString()}` : ''}`;
+  };
+
+  return (
+    <div className="space-y-2">
+      {activities.map((item, i) => (
+        <div key={`${item.type}-${item.id}-${i}`} className="flex gap-2.5 items-start">
+          <div className="mt-0.5 h-6 w-6 rounded-full bg-muted flex items-center justify-center shrink-0">
+            {getIcon(item.type)}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-foreground line-clamp-2">{getDescription(item)}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{formatRelativeTime(item.occurredAt)}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── SendSmsModal ──────────────────────────────────────────────────────────────
+
+function SendSmsModal({ contact, onClose, onSend, isSending }: {
+  contact: Contact;
+  onClose: () => void;
+  onSend: (message: string) => void;
+  isSending: boolean;
+}) {
+  const [message, setMessage] = useState('');
+  const MAX = 160;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Send SMS</CardTitle>
+            <Button variant="ghost" size="icon" onClick={onClose}><X className="h-4 w-4" /></Button>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            To: <span className="font-mono">{maskPhone(contact.phone)}</span>
+            {contact.name && ` (${contact.name})`}
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Message</Label>
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value.slice(0, 1600))}
+              placeholder="Type your message..."
+              className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[120px] resize-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <div className={cn('text-xs text-right', message.length > MAX ? 'text-orange-500' : 'text-muted-foreground')}>
+              {message.length} / {MAX} chars{message.length > MAX && ' (will split into multiple SMS)'}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              className="flex-1"
+              onClick={() => onSend(message)}
+              disabled={!message.trim() || isSending}
+            >
+              <Send className="h-4 w-4 mr-2" />
+              {isSending ? 'Sending...' : 'Send SMS'}
+            </Button>
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ── CreateContactModal ────────────────────────────────────────────────────────
+
+function CreateContactModal({ tenantId, onClose, onCreate, isPending }: {
   tenantId: string;
   onClose: () => void;
   onCreate: (data: Record<string, unknown>) => void;
-  isCreating: boolean;
+  isPending: boolean;
 }) {
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [notes, setNotes] = useState('');
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!phone.trim()) return;
-    onCreate({
-      tenantId,
-      phone: phone.trim(),
-      name: name || undefined,
-      email: email || undefined,
-      notes: notes || undefined,
-    });
-  };
+  const [status, setStatus] = useState<ContactStatus>('LEAD');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <Card className="w-full max-w-md">
-        <CardContent className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold">Add Contact</h3>
-            <Button variant="ghost" size="sm" onClick={onClose}>
-              <X className="h-4 w-4" />
-            </Button>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Add Contact</CardTitle>
+            <Button variant="ghost" size="icon" onClick={onClose}><X className="h-4 w-4" /></Button>
           </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <Label htmlFor="create-phone">Phone *</Label>
-              <Input
-                id="create-phone"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+1234567890"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="create-name">Name</Label>
-              <Input
-                id="create-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Contact name"
-              />
-            </div>
-            <div>
-              <Label htmlFor="create-email">Email</Label>
-              <Input
-                id="create-email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="email@example.com"
-              />
-            </div>
-            <div>
-              <Label htmlFor="create-notes">Notes</Label>
-              <textarea
-                id="create-notes"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Add notes..."
-                rows={3}
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isCreating || !phone.trim()}>
-                {isCreating ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-                Create
-              </Button>
-            </div>
-          </form>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Phone <span className="text-destructive">*</span></Label>
+            <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+12175551234" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Email</Label>
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@example.com" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Status</Label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as ContactStatus)}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              {Object.entries(STATUS_CONFIG).map(([val, cfg]) => (
+                <option key={val} value={val}>{(cfg as { label: string }).label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button
+              className="flex-1"
+              onClick={() => onCreate({ tenantId, phone, name: name || undefined, email: email || undefined, status })}
+              disabled={!phone.trim() || isPending}
+            >
+              {isPending ? 'Creating...' : 'Create Contact'}
+            </Button>
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+          </div>
         </CardContent>
       </Card>
     </div>

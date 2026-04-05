@@ -7,6 +7,7 @@ import {
   OrderStatus,
   MeetingStatus,
   UsageType,
+  ContactStatus,
 } from './enums';
 
 // ── Tenant ────────────────────────────────────────────────────────────────────
@@ -202,3 +203,45 @@ export const UsageLogSchema = z.object({
 });
 
 export type UsageLog = z.infer<typeof UsageLogSchema>;
+
+// ── Contact ───────────────────────────────────────────────────────────────────
+
+export const ContactSchema = z.object({
+  id: z.string(),
+  tenantId: z.string(),
+  phone: z.string(),
+  name: z.string().nullable(),
+  email: z.string().nullable(),
+  notes: z.string().nullable(),
+  status: z.nativeEnum(ContactStatus),
+  tags: z.array(z.string()),
+  totalOrders: z.number().int(),
+  totalSpent: z.number().int(),
+  lastContactAt: z.date().nullable(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+  conversationCount: z.number().int().optional(),
+  orderCount: z.number().int().optional(),
+});
+
+export type Contact = z.infer<typeof ContactSchema>;
+
+// ── ContactNote ───────────────────────────────────────────────────────────────
+
+export const ContactNoteSchema = z.object({
+  id: z.string(),
+  contactId: z.string(),
+  tenantId: z.string(),
+  body: z.string(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type ContactNote = z.infer<typeof ContactNoteSchema>;
+
+// ── Activity Timeline ─────────────────────────────────────────────────────────
+
+export type ActivityItem =
+  | { type: 'conversation'; id: string; summary: string; occurredAt: string }
+  | { type: 'order'; id: string; orderNumber: string; total: number; status: string; occurredAt: string }
+  | { type: 'meeting'; id: string; scheduledAt: string | null; status: string; occurredAt: string };

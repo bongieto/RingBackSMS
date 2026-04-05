@@ -49,3 +49,10 @@ export enum UsageType {
   SQUARE_ORDER = 'SQUARE_ORDER',
   POS_ORDER = 'POS_ORDER',
 }
+
+export enum ContactStatus {
+  LEAD = 'LEAD',
+  CUSTOMER = 'CUSTOMER',
+  VIP = 'VIP',
+  INACTIVE = 'INACTIVE',
+}

@@ -160,7 +160,7 @@ const faqJsonLd = {
 const STATS = [
   { value: '62%', label: 'of calls to small businesses go unanswered' },
   { value: '85%', label: 'of callers won\'t call back if you miss them' },
-  { value: '$1.2M', label: 'average revenue lost per year from missed calls' },
+  { value: '4 POS', label: 'integrations — Square, Clover, Toast & Shopify' },
   { value: '<3s', label: 'RingBackSMS average response time' },
 ];
 
@@ -227,15 +227,15 @@ const FEATURES = [
   },
   {
     icon: Store,
-    title: 'Square POS Integration',
+    title: 'POS Integrations',
     description:
-      'Sync your menu from Square, push orders to your POS, track inventory in real-time. No double data entry, everything stays in sync.',
+      'Connect Square, Clover, Toast, or Shopify. Sync your menu, take SMS orders, and push them straight to your kitchen POS.',
   },
   {
     icon: DollarSign,
-    title: 'Revenue Recovery',
+    title: 'Built-in CRM',
     description:
-      'The average business recovers $400–$2,000/month in revenue from previously lost missed calls. RingBackSMS pays for itself on day one.',
+      'Full CRM with contact timeline, notes, status tracking (Lead → VIP), and one-click SMS outreach. Know every customer by name.',
   },
 ];
 
@@ -244,7 +244,7 @@ const INDUSTRIES = [
     icon: UtensilsCrossed,
     name: 'Restaurants & Food Trucks',
     pain: 'Busy dinner rush, can\'t answer the phone',
-    solution: 'AI takes orders via text, syncs to Square POS',
+    solution: 'AI takes orders via text — works with Square, Clover & Toast POS, menus sync automatically',
     stat: '35% more takeout orders',
   },
   {
@@ -421,6 +421,11 @@ const FAQ = [
     question: 'What happens if I go over my SMS limit?',
     answer:
       'We\'ll never cut off your customers. If you exceed your plan\'s SMS limit, additional messages are billed at $0.05/SMS — well below industry average. You\'ll get a notification when you\'re approaching your limit so there are no surprises.',
+  },
+  {
+    question: 'Do you integrate with my POS system?',
+    answer:
+      'Yes — RingBackSMS connects with Square, Clover, Toast, and Shopify out of the box. Once connected, your menu is automatically synced so customers can browse and order via SMS. Orders are pushed directly to your POS in real time, so your kitchen gets them instantly with no manual entry required.',
   },
 ];
 
