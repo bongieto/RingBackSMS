@@ -1,0 +1,50 @@
+export enum BusinessType {
+  RESTAURANT = 'RESTAURANT',
+  SERVICE = 'SERVICE',
+  CONSULTANT = 'CONSULTANT',
+  MEDICAL = 'MEDICAL',
+  RETAIL = 'RETAIL',
+  OTHER = 'OTHER',
+}
+
+export enum Plan {
+  STARTER = 'STARTER',
+  GROWTH = 'GROWTH',
+  SCALE = 'SCALE',
+  ENTERPRISE = 'ENTERPRISE',
+}
+
+export enum FlowType {
+  ORDER = 'ORDER',
+  MEETING = 'MEETING',
+  CUSTOM = 'CUSTOM',
+  FALLBACK = 'FALLBACK',
+}
+
+export enum Direction {
+  INBOUND = 'INBOUND',
+  OUTBOUND = 'OUTBOUND',
+}
+
+export enum OrderStatus {
+  PENDING = 'PENDING',
+  CONFIRMED = 'CONFIRMED',
+  PREPARING = 'PREPARING',
+  READY = 'READY',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum MeetingStatus {
+  PENDING = 'PENDING',
+  CONFIRMED = 'CONFIRMED',
+  CANCELLED = 'CANCELLED',
+  COMPLETED = 'COMPLETED',
+}
+
+export enum UsageType {
+  SMS_SENT = 'SMS_SENT',
+  AI_CALL = 'AI_CALL',
+  CALL_WEBHOOK = 'CALL_WEBHOOK',
+  SQUARE_ORDER = 'SQUARE_ORDER',
+}

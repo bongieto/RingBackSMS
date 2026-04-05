@@ -1,0 +1,237 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum BusinessType {
+  RESTAURANT
+  SERVICE
+  CONSULTANT
+  MEDICAL
+  RETAIL
+  OTHER
+}
+
+enum Plan {
+  STARTER
+  GROWTH
+  SCALE
+  ENTERPRISE
+}
+
+enum FlowType {
+  ORDER
+  MEETING
+  CUSTOM
+  FALLBACK
+}
+
+enum Direction {
+  INBOUND
+  OUTBOUND
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+enum MeetingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum UsageType {
+  SMS_SENT
+  AI_CALL
+  CALL_WEBHOOK
+  SQUARE_ORDER
+}
+
+model Tenant {
+  id                    String       @id @default(uuid())
+  name                  String
+  businessType          BusinessType
+  plan                  Plan         @default(STARTER)
+  twilioSubAccountSid   String?      @unique
+  twilioAuthToken       String?      // AES-256-GCM encrypted
+  twilioPhoneNumber     String?      @unique
+  stripeCustomerId      String?      @unique
+  stripeSubscriptionId  String?      @unique
+  clerkOrgId            String?      @unique
+  squareAccessToken     String?      // AES-256-GCM encrypted
+  squareRefreshToken    String?      // AES-256-GCM encrypted
+  squareLocationId      String?
+  squareMerchantId      String?
+  squareTokenExpiresAt  DateTime?
+  isActive              Boolean      @default(true)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  config        TenantConfig?
+  flows         Flow[]
+  missedCalls   MissedCall[]
+  conversations Conversation[]
+  orders        Order[]
+  meetings      Meeting[]
+  menuItems     MenuItem[]
+  usageLogs     UsageLog[]
+
+  @@index([twilioPhoneNumber])
+  @@index([clerkOrgId])
+}
+
+model TenantConfig {
+  id                  String   @id @default(uuid())
+  tenantId            String   @unique
+  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  greeting            String   @db.Text
+  timezone            String   @default("America/Chicago")
+  businessHoursStart  String   @default("11:00")
+  businessHoursEnd    String   @default("20:00")
+  businessDays        Int[]
+  aiPersonality       String?  @db.Text
+  calcomLink          String?
+  slackWebhook        String?
+  ownerEmail          String?
+  ownerPhone          String?
+  squareSyncEnabled   Boolean  @default(false)
+  squareAutoSync      Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model Flow {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type      FlowType
+  isEnabled Boolean  @default(true)
+  config    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, type])
+  @@index([tenantId, isEnabled])
+}
+
+model MissedCall {
+  id             String   @id @default(uuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  callerPhone    String
+  twilioCallSid  String   @unique
+  occurredAt     DateTime
+  smsSent        Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  conversations Conversation[]
+
+  @@index([tenantId, callerPhone])
+  @@index([tenantId, occurredAt])
+}
+
+model Conversation {
+  id           String    @id @default(uuid())
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  callerPhone  String
+  missedCallId String?
+  missedCall   MissedCall? @relation(fields: [missedCallId], references: [id])
+  messages     Json      @default("[]")
+  flowType     FlowType?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  orders   Order[]
+  meetings Meeting[]
+
+  @@index([tenantId, callerPhone])
+  @@index([tenantId, isActive])
+}
+
+model Order {
+  id             String      @id @default(uuid())
+  tenantId       String
+  tenant         Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  callerPhone    String
+  orderNumber    String      @unique
+  status         OrderStatus @default(PENDING)
+  items          Json
+  total          Decimal     @db.Decimal(10, 2)
+  pickupTime     String?
+  notes          String?     @db.Text
+  squareOrderId  String?
+  squarePaymentId String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, callerPhone])
+}
+
+model Meeting {
+  id               String        @id @default(uuid())
+  tenantId         String
+  tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversationId   String
+  conversation     Conversation  @relation(fields: [conversationId], references: [id])
+  callerPhone      String
+  calcomBookingId  String?
+  calcomBookingUid String?
+  scheduledAt      DateTime?
+  status           MeetingStatus @default(PENDING)
+  notes            String?       @db.Text
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, callerPhone])
+}
+
+model MenuItem {
+  id               String   @id @default(uuid())
+  tenantId         String
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name             String
+  description      String?  @db.Text
+  price            Decimal  @db.Decimal(10, 2)
+  category         String?
+  isAvailable      Boolean  @default(true)
+  squareCatalogId  String?
+  squareVariationId String?
+  lastSyncedAt     DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([tenantId, isAvailable])
+  @@index([tenantId, category])
+}
+
+model UsageLog {
+  id        String    @id @default(uuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type      UsageType
+  metadata  Json?
+  billedAt  DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([tenantId, type])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, type, createdAt])
+}
