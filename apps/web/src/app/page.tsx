@@ -90,6 +90,10 @@ const jsonLd = {
   description:
     'AI-powered SMS auto-response platform that texts back missed callers instantly. Built for restaurants, salons, clinics, and service businesses.',
   url: 'https://ring-back-sms.vercel.app',
+  author: {
+    '@type': 'Organization',
+    name: 'Agape Technology Solutions',
+  },
   offers: {
     '@type': 'AggregateOffer',
     lowPrice: '0',
@@ -893,9 +897,12 @@ export default function HomePage() {
                     RingBack<span className="text-blue-400">SMS</span>
                   </span>
                 </div>
-                <p className="text-sm leading-relaxed">
+                <p className="text-sm leading-relaxed mb-3">
                   AI-powered SMS auto-response for missed calls. Built for restaurants, salons, clinics, and
                   every business that&apos;s too busy to answer the phone.
+                </p>
+                <p className="text-xs text-slate-500">
+                  A product of <span className="text-slate-300 font-semibold">Agape Technology Solutions</span>
                 </p>
               </div>
               {/* Product */}
@@ -932,7 +939,7 @@ export default function HomePage() {
               </div>
             </div>
             <div className="border-t border-slate-800 pt-8 flex flex-col sm:flex-row justify-between items-center gap-4 text-sm">
-              <p>&copy; 2026 RingBackSMS. All rights reserved.</p>
+              <p>&copy; 2026 RingBackSMS. All rights reserved. A product of <span className="text-slate-300 font-medium">Agape Technology Solutions</span>.</p>
               <p>
                 Made with <span className="text-red-400">&#9829;</span> for small business owners who are too busy to answer the phone.
               </p>

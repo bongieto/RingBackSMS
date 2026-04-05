@@ -88,6 +88,9 @@ export function Sidebar() {
           }}
           showName
         />
+        <p className="text-[10px] text-slate-600 mt-3 text-center">
+          by Agape Technology Solutions
+        </p>
       </div>
     </aside>
   );
