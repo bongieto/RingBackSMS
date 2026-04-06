@@ -26,7 +26,11 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
   // ── GREETING → MENU_DISPLAY ──────────────────────────────────────────────
   if (step === 'GREETING' || !currentState || currentState.currentFlow !== FlowType.ORDER) {
     const menuText = menuItems
-      .map((item, i) => `${i + 1}. ${item.name} - $${item.price.toFixed(2)}`)
+      .map((item, i) => {
+        let line = `${i + 1}. ${item.name} - $${item.price.toFixed(2)}`;
+        if (item.duration) line += ` (${item.duration} min)`;
+        return line;
+      })
       .join('\n');
 
     const menuDisplay =
@@ -88,9 +92,32 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
     };
   }
 
-  // ── ORDER_CONFIRM → PICKUP_TIME ──────────────────────────────────────────
+  // ── ORDER_CONFIRM → PICKUP_TIME or SERVICE_BOOKING ───────────────────────
   if (step === 'ORDER_CONFIRM') {
     if (upperMsg === 'YES' || upperMsg === 'Y' || upperMsg === 'CONFIRM') {
+      // Check if any selected items require booking
+      const draftItems = currentState.orderDraft?.items ?? [];
+      const hasBookingItems = draftItems.some((draftItem) => {
+        const menuItem = menuItems.find((m) => m.id === draftItem.menuItemId);
+        return menuItem?.requiresBooking;
+      });
+
+      if (hasBookingItems) {
+        const nextState: CallerState = {
+          ...currentState,
+          flowStep: 'SERVICE_BOOKING',
+          lastMessageAt: Date.now(),
+        };
+
+        return {
+          nextState,
+          smsReply:
+            'Great choice! This service requires an appointment. Please reply with your preferred date and time (e.g., "Tuesday at 2pm").',
+          sideEffects: [],
+          flowType: FlowType.ORDER,
+        };
+      }
+
       const nextState: CallerState = {
         ...currentState,
         flowStep: 'PICKUP_TIME',
@@ -114,7 +141,11 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       };
 
       const menuText = menuItems
-        .map((item, i) => `${i + 1}. ${item.name} - $${item.price.toFixed(2)}`)
+        .map((item, i) => {
+          let line = `${i + 1}. ${item.name} - $${item.price.toFixed(2)}`;
+          if (item.duration) line += ` (${item.duration} min)`;
+          return line;
+        })
         .join('\n');
 
       return {
@@ -185,6 +216,51 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
           payload: {
             subject: `New Order from ${input.callerPhone}`,
             message: `New order received!\n${orderDraft.items.map((i) => `${i.quantity}x ${i.name}`).join('\n')}\nTotal: $${total.toFixed(2)}\nPickup: ${pickupTime}`,
+            channel: 'sms',
+          },
+        },
+      ],
+      flowType: FlowType.ORDER,
+    };
+  }
+
+  // ── SERVICE_BOOKING → ORDER_COMPLETE ─────────────────────────────────────
+  if (step === 'SERVICE_BOOKING') {
+    const orderDraft = currentState.orderDraft;
+    if (!orderDraft || orderDraft.items.length === 0) {
+      const nextState: CallerState = { ...buildInitialState(input), flowStep: 'MENU_DISPLAY' };
+      return { nextState, smsReply: "Something went wrong. Let's start over. " + buildMenuText(menuItems), sideEffects: [], flowType: FlowType.ORDER };
+    }
+
+    const total = orderDraft.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const requestedTime = inboundMessage.trim();
+    const serviceNames = orderDraft.items.map((i) => i.name).join(', ');
+
+    const nextState: CallerState = {
+      ...currentState,
+      flowStep: 'ORDER_COMPLETE',
+      orderDraft: { ...orderDraft, pickupTime: requestedTime },
+      lastMessageAt: Date.now(),
+    };
+
+    return {
+      nextState,
+      smsReply: `Your appointment for ${serviceNames} has been requested for ${requestedTime}. Total: $${total.toFixed(2)}. We'll confirm your booking shortly!`,
+      sideEffects: [
+        {
+          type: 'SAVE_ORDER',
+          payload: {
+            items: orderDraft.items.map((item) => ({ menuItemId: item.menuItemId, name: item.name, quantity: item.quantity, price: item.price })),
+            pickupTime: requestedTime,
+            notes: `Service booking: ${serviceNames}`,
+            total,
+          },
+        },
+        {
+          type: 'NOTIFY_OWNER',
+          payload: {
+            subject: `Service Booking from ${input.callerPhone}`,
+            message: `New booking request!\n${orderDraft.items.map((i) => `${i.quantity}x ${i.name}`).join('\n')}\nTotal: $${total.toFixed(2)}\nRequested: ${requestedTime}`,
             channel: 'sms',
           },
         },
@@ -284,9 +360,13 @@ function parseOrderItems(
 }
 
 function buildMenuText(
-  menuItems: Array<{ name: string; price: number; isAvailable: boolean }>
+  menuItems: Array<{ name: string; price: number; isAvailable: boolean; duration?: number | null }>
 ): string {
   const available = menuItems.filter((m) => m.isAvailable);
   if (available.length === 0) return 'Our menu is being updated.';
-  return available.map((item, i) => `${i + 1}. ${item.name} - $${item.price.toFixed(2)}`).join('\n');
+  return available.map((item, i) => {
+    let line = `${i + 1}. ${item.name} - $${item.price.toFixed(2)}`;
+    if (item.duration) line += ` (${item.duration} min)`;
+    return line;
+  }).join('\n');
 }

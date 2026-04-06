@@ -24,6 +24,8 @@ const ItemSchema = z.object({
   price: z.number().nonnegative(),
   category: z.string().optional(),
   isAvailable: z.boolean().optional(),
+  duration: z.number().int().positive().nullable().optional(),
+  requiresBooking: z.boolean().optional(),
 });
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {

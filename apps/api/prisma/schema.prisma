@@ -256,8 +256,10 @@ model MenuItem {
   description      String?  @db.Text
   price            Decimal  @db.Decimal(10, 2)
   category         String?
-  isAvailable      Boolean  @default(true)
-  squareCatalogId  String?
+  isAvailable       Boolean  @default(true)
+  duration          Int?
+  requiresBooking   Boolean  @default(false)
+  squareCatalogId   String?
   squareVariationId String?
   lastSyncedAt     DateTime?
   posCatalogId        String?

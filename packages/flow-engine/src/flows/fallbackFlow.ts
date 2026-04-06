@@ -35,11 +35,25 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
     ? `\nBusiness address: ${tenantContext.config.businessAddress}`
     : '';
 
+  let catalogContext = '';
+  if (tenantContext.menuItems.length > 0) {
+    const itemLines = tenantContext.menuItems
+      .filter((m) => m.isAvailable)
+      .map((item) => {
+        let line = `- ${item.name}: $${item.price.toFixed(2)}`;
+        if (item.duration) line += ` (${item.duration} min)`;
+        if (item.requiresBooking) line += ' [booking required]';
+        return line;
+      });
+    catalogContext = `\nAvailable products/services:\n${itemLines.join('\n')}`;
+  }
+
   const systemPrompt = `You are a helpful SMS assistant for ${tenantContext.tenantName}.
 Be ${personality}. Keep responses under 160 characters when possible (SMS limit).
-${capabilities}${businessAddress}${websiteContext}
+${capabilities}${businessAddress}${websiteContext}${catalogContext}
 If asked about ordering food, direct them to reply ORDER.
 If asked about scheduling, direct them to reply MEETING.
+When asked about services or products, reference the available list above.
 Never share internal business details. Be warm and helpful.`;
 
   const previousMessages: OpenAI.ChatCompletionMessageParam[] = [];

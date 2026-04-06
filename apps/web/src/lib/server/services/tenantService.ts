@@ -167,6 +167,8 @@ export async function upsertMenuItem(
     price: number;
     category?: string;
     isAvailable?: boolean;
+    duration?: number | null;
+    requiresBooking?: boolean;
   }
 ) {
   if (item.id) {
@@ -178,6 +180,8 @@ export async function upsertMenuItem(
         price: item.price,
         category: item.category,
         isAvailable: item.isAvailable ?? true,
+        duration: item.duration ?? null,
+        requiresBooking: item.requiresBooking ?? false,
       },
     });
   }
@@ -190,6 +194,8 @@ export async function upsertMenuItem(
       price: item.price,
       category: item.category,
       isAvailable: item.isAvailable ?? true,
+      duration: item.duration ?? null,
+      requiresBooking: item.requiresBooking ?? false,
     },
   });
 }

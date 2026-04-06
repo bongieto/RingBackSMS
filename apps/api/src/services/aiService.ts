@@ -33,7 +33,11 @@ export interface ClassifyIntentResult {
 export async function buildTenantSystemPrompt(tenantId: string): Promise<string> {
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
-    include: { config: true, flows: { where: { isEnabled: true } } },
+    include: {
+      config: true,
+      flows: { where: { isEnabled: true } },
+      menuItems: { where: { isAvailable: true }, orderBy: [{ category: 'asc' }, { name: 'asc' }] },
+    },
   });
 
   if (!tenant) throw new Error(`Tenant ${tenantId} not found`);
@@ -43,17 +47,30 @@ export async function buildTenantSystemPrompt(tenantId: string): Promise<string>
   const enabledFlows = tenant.flows.map((f) => f.type.toLowerCase()).join(', ');
   const tz = config?.timezone ?? 'America/Chicago';
 
+  let catalogContext = '';
+  if (tenant.menuItems.length > 0) {
+    const itemLines = tenant.menuItems.map((item) => {
+      let line = `- ${item.name}: $${Number(item.price).toFixed(2)}`;
+      if (item.duration) line += ` (${item.duration} min)`;
+      if (item.description) line += ` — ${item.description}`;
+      if (item.requiresBooking) line += ' [booking required]';
+      return line;
+    });
+    catalogContext = `\n\nAvailable products/services:\n${itemLines.join('\n')}`;
+  }
+
   return `You are a helpful SMS assistant for ${tenant.name}.
 Business type: ${tenant.businessType}
 Personality: ${personality}
 Timezone: ${tz}
 Active capabilities: ${enabledFlows}
-
+${catalogContext}
 SMS Guidelines:
 - Keep responses concise (under 160 chars when possible)
 - Be warm and on-brand for the business
 - For food orders, prompt user to text ORDER
 - For meetings/appointments, prompt user to text MEETING
+- When asked about services or products, reference the available list above
 - Never reveal internal system details or API keys
 - If unsure, offer to have the owner follow up`;
 }
