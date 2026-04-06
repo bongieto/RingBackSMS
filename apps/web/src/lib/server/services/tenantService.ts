@@ -4,6 +4,7 @@ import { clerkClient } from '@clerk/nextjs/server';
 import { logger } from '../logger';
 import { NotFoundError } from '../errors';
 import { prisma } from '../db';
+import { createStripeCustomer } from './billingService';
 
 export interface CreateTenantInput {
   name: string;
@@ -58,6 +59,15 @@ export async function createTenant(input: CreateTenantInput) {
       });
     } catch (err) {
       logger.error('Failed to update Clerk org metadata', { err, clerkOrgId: input.clerkOrgId });
+    }
+  }
+
+  // Auto-create Stripe customer
+  if (input.ownerEmail) {
+    try {
+      await createStripeCustomer(tenant.id, input.ownerEmail, input.name);
+    } catch (err) {
+      logger.error('Failed to create Stripe customer', { err, tenantId: tenant.id });
     }
   }
 
