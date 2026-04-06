@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult } from './base';
+import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult, getAppBaseUrl } from './base';
 import { logger } from '../../logger';
 
 const SHOPIFY_API_VERSION = '2024-01';
@@ -45,7 +45,7 @@ export class ShopifyAdapter extends BasePosAdapter {
       client_id: process.env.SHOPIFY_CLIENT_ID ?? '',
       scope: getScopes(),
       state: actualTenantId,
-      redirect_uri: `${process.env.BASE_URL}/integrations/shopify/callback`,
+      redirect_uri: `${getAppBaseUrl()}/api/integrations/shopify/callback`,
     });
 
     return `https://${shopDomain}.myshopify.com/admin/oauth/authorize?${params.toString()}`;

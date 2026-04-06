@@ -3,6 +3,14 @@ import { encrypt, decrypt, encryptNullable, decryptNullable } from '../../encryp
 import { logger } from '../../logger';
 import { prisma } from '../../db';
 
+/** Returns the public-facing base URL for OAuth callbacks */
+export function getAppBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
+  if (process.env.FRONTEND_URL) return process.env.FRONTEND_URL;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return process.env.BASE_URL ?? 'http://localhost:3000';
+}
+
 export interface PosTokenData {
   accessToken: string;
   refreshToken: string | null;

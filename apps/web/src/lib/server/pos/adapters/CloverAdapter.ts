@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult } from './base';
+import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult, getAppBaseUrl } from './base';
 import { logger } from '../../logger';
 
 function getCloverBaseUrl(): string {
@@ -31,7 +31,7 @@ export class CloverAdapter extends BasePosAdapter {
     const params = new URLSearchParams({
       client_id: process.env.CLOVER_APP_ID ?? '',
       state: tenantId,
-      redirect_uri: `${process.env.BASE_URL}/integrations/clover/callback`,
+      redirect_uri: `${getAppBaseUrl()}/api/integrations/clover/callback`,
     });
 
     return `${baseUrl}/oauth/authorize?${params.toString()}`;

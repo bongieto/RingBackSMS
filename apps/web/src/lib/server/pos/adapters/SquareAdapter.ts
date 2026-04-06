@@ -1,6 +1,6 @@
 import { Client, Environment } from 'square';
 import axios from 'axios';
-import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult } from './base';
+import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult, getAppBaseUrl } from './base';
 import { encrypt } from '../../encryption';
 import { logger } from '../../logger';
 
@@ -36,7 +36,7 @@ export class SquareAdapter extends BasePosAdapter {
       scope:
         'MERCHANT_PROFILE_READ ITEMS_READ ITEMS_WRITE ORDERS_WRITE PAYMENTS_WRITE',
       state: tenantId,
-      redirect_uri: `${process.env.BASE_URL}/integrations/square/callback`,
+      redirect_uri: `${getAppBaseUrl()}/api/integrations/square/callback`,
     });
 
     return `${baseUrl}/oauth2/authorize?${params.toString()}`;
@@ -52,7 +52,7 @@ export class SquareAdapter extends BasePosAdapter {
         client_secret: process.env.SQUARE_APPLICATION_SECRET,
         code,
         grant_type: 'authorization_code',
-        redirect_uri: `${process.env.BASE_URL}/integrations/square/callback`,
+        redirect_uri: `${getAppBaseUrl()}/api/integrations/square/callback`,
       },
       { headers: { 'Content-Type': 'application/json' } },
     );
