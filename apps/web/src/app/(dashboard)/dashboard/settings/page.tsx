@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/nextjs';
 import { toast } from 'sonner';
 import Link from 'next/link';
-import { Phone, Sparkles, Globe, MapPin, CheckCircle, X, Copy, CalendarOff, Plus, CreditCard } from 'lucide-react';
+import { Phone, Sparkles, Globe, MapPin, CheckCircle, X, Copy, CalendarOff, Plus, CreditCard, Send } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { tenantApi, phoneApi } from '@/lib/api';
+import { tenantApi, phoneApi, notificationApi } from '@/lib/api';
 
 interface DayScheduleEntry {
   open: string;
@@ -146,6 +146,15 @@ export default function SettingsPage() {
       toast.success('Greeting generated! Review and save when ready.');
     },
     onError: () => toast.error('Failed to generate greeting'),
+  });
+
+  const testNotificationMutation = useMutation({
+    mutationFn: (channel: 'email' | 'sms' | 'slack') =>
+      notificationApi.test(tenantId!, channel),
+    onSuccess: (_, channel) => {
+      toast.success(`Test ${channel} notification sent! Check your ${channel === 'email' ? 'inbox' : channel === 'sms' ? 'phone' : 'Slack channel'}.`);
+    },
+    onError: (_, channel) => toast.error(`Failed to send test ${channel} notification`),
   });
 
   const saveMutation = useMutation({
@@ -464,17 +473,60 @@ export default function SettingsPage() {
             </div>
             <div className="space-y-1.5">
               <Label>Slack Webhook URL</Label>
-              <Input {...field('slackWebhook')} placeholder="https://hooks.slack.com/services/..." />
+              <div className="flex gap-2">
+                <Input {...field('slackWebhook')} placeholder="https://hooks.slack.com/services/..." className="flex-1" />
+                {form.slackWebhook && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => testNotificationMutation.mutate('slack')}
+                    disabled={testNotificationMutation.isPending}
+                  >
+                    <Send className="h-3.5 w-3.5 mr-1" />
+                    Test
+                  </Button>
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">Receive notifications in your Slack channel</p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label>Owner Email</Label>
-                <Input type="email" {...field('ownerEmail')} placeholder="you@example.com" />
+                <div className="flex gap-2">
+                  <Input type="email" {...field('ownerEmail')} placeholder="you@example.com" className="flex-1" />
+                  {form.ownerEmail && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => testNotificationMutation.mutate('email')}
+                      disabled={testNotificationMutation.isPending}
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
               </div>
               <div className="space-y-1.5">
                 <Label>Owner Phone (for SMS alerts)</Label>
-                <Input {...field('ownerPhone')} placeholder="+12175551234" />
+                <div className="flex gap-2">
+                  <Input {...field('ownerPhone')} placeholder="+12175551234" className="flex-1" />
+                  {form.ownerPhone && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => testNotificationMutation.mutate('sms')}
+                      disabled={testNotificationMutation.isPending}
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </CardContent>

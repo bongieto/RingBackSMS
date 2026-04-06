@@ -2,13 +2,13 @@
 
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/nextjs';
-import { CreditCard, Zap, TrendingUp, Building2 } from 'lucide-react';
+import { CreditCard, Zap, TrendingUp, Building2, MessageSquare, Bot, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { billingApi, tenantApi } from '@/lib/api';
+import { billingApi, tenantApi, analyticsApi } from '@/lib/api';
 import { PLAN_LIMITS, Plan } from '@ringback/shared-types';
 
 const PLAN_PRICES: Record<string, string> = {
@@ -36,6 +36,17 @@ export default function BillingPage() {
   });
 
   const currentPlan: Plan = (tenant?.plan as Plan) ?? Plan.STARTER;
+  const limits = PLAN_LIMITS[currentPlan];
+
+  const { data: analytics } = useQuery({
+    queryKey: ['analytics', tenantId, 30],
+    queryFn: () => analyticsApi.get(tenantId!, 30),
+    enabled: !!tenantId,
+  });
+
+  const smsUsed = (analytics?.monthUsage?.SMS_SENT as number) ?? 0;
+  const aiUsed = (analytics?.monthUsage?.AI_CALL as number) ?? 0;
+  const contactCount = (analytics?.contactCount as number) ?? 0;
 
   const checkoutMutation = useMutation({
     mutationFn: (plan: string) =>
@@ -89,6 +100,36 @@ export default function BillingPage() {
         </CardContent>
       </Card>
 
+      {/* Current Month Usage */}
+      <Card className="mb-8">
+        <CardHeader>
+          <CardTitle className="text-base">This Month&apos;s Usage</CardTitle>
+          <CardDescription>Your usage resets at the start of each billing cycle</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <UsageMeter
+              icon={MessageSquare}
+              label="SMS Sent"
+              used={smsUsed}
+              limit={limits.smsPerMonth}
+            />
+            <UsageMeter
+              icon={Bot}
+              label="AI Calls"
+              used={aiUsed}
+              limit={limits.aiCallsPerMonth}
+            />
+            <UsageMeter
+              icon={Users}
+              label="Contacts"
+              used={contactCount}
+              limit={null}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Plan Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {(Object.values(Plan) as Plan[]).map(plan => {
@@ -135,6 +176,39 @@ export default function BillingPage() {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function UsageMeter({ icon: Icon, label, used, limit }: {
+  icon: React.ElementType;
+  label: string;
+  used: number;
+  limit: number | null;
+}) {
+  const percentage = limit ? Math.min((used / limit) * 100, 100) : 0;
+  const isWarning = limit ? percentage >= 80 : false;
+  const isOver = limit ? percentage >= 100 : false;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Icon className="h-4 w-4 text-muted-foreground" />
+          {label}
+        </div>
+        <span className={`text-sm font-mono ${isOver ? 'text-red-600' : isWarning ? 'text-orange-500' : 'text-muted-foreground'}`}>
+          {used.toLocaleString()}{limit ? ` / ${limit.toLocaleString()}` : ''}
+        </span>
+      </div>
+      {limit && (
+        <div className="h-2 bg-muted rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all ${isOver ? 'bg-red-500' : isWarning ? 'bg-orange-400' : 'bg-blue-500'}`}
+            style={{ width: `${percentage}%` }}
+          />
+        </div>
+      )}
     </div>
   );
 }

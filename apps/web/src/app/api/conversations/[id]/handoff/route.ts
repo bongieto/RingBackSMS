@@ -1,22 +1,22 @@
 import { NextRequest } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
+import { sendNotification } from '@/lib/server/services/notificationService';
 
 const HandoffSchema = z.object({
   status: z.enum(['AI', 'HUMAN']),
 });
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const { userId } = await auth();
-  if (!userId) return apiError('Unauthorized', 401);
-
   try {
     const body = HandoffSchema.parse(await req.json());
     const conversation = await prisma.conversation.findUnique({ where: { id: params.id } });
     if (!conversation) return apiError('Not found', 404);
+    const authResult = await verifyTenantAccess(conversation.tenantId);
+    if (isNextResponse(authResult)) return authResult;
 
     const updated = await prisma.conversation.update({
       where: { id: params.id },
@@ -31,12 +31,30 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     logger.info('Handoff status changed', {
       conversationId: params.id,
       status: body.status,
-      userId,
+      userId: authResult.userId,
     });
+
+    // Notify owner when conversation is escalated to human
+    if (body.status === 'HUMAN') {
+      sendNotification({
+        tenantId: conversation.tenantId,
+        subject: 'Conversation escalated to human',
+        message: `A conversation with ${conversation.callerPhone} has been escalated and needs your attention. View it in your dashboard.`,
+        channel: 'email',
+      }).catch((err) => logger.error('Failed to send handoff notification', { err }));
+
+      // Also notify via Slack if configured
+      sendNotification({
+        tenantId: conversation.tenantId,
+        subject: 'Conversation escalated to human',
+        message: `A conversation with ${conversation.callerPhone} needs human attention.`,
+        channel: 'slack',
+      }).catch((err) => logger.error('Failed to send Slack handoff notification', { err }));
+    }
 
     return apiSuccess(updated);
   } catch (err: any) {
     if (err instanceof z.ZodError) return apiError('Invalid status. Must be AI or HUMAN', 400);
-    return apiError(err.message, 500);
+    return apiError('Internal server error', 500);
   }
 }

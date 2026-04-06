@@ -3,13 +3,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/nextjs';
 import { useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { Button } from '@/components/ui/button';
 import { analyticsApi } from '@/lib/api';
-import { Phone, MessageSquare, ShoppingBag, Calendar } from 'lucide-react';
+import { Phone, MessageSquare, ShoppingBag, Calendar, DollarSign } from 'lucide-react';
 
 const PERIODS = [
   { label: '7 days', value: 7 },
@@ -33,6 +33,12 @@ export default function AnalyticsPage() {
     count: count as number,
   }));
 
+  const dailyTrend: Array<{ date: string; conversations: number }> = analytics?.dailyTrend ?? [];
+
+  const formatRevenue = (cents: number) => {
+    return `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+  };
+
   return (
     <div>
       <Header
@@ -54,12 +60,39 @@ export default function AnalyticsPage() {
         }
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         <StatCard title="Missed Calls" value={analytics?.missedCalls ?? 0} icon={Phone} iconColor="text-blue-500" />
         <StatCard title="Conversations" value={analytics?.conversations ?? 0} icon={MessageSquare} iconColor="text-purple-500" />
         <StatCard title="Orders" value={analytics?.orders ?? 0} icon={ShoppingBag} iconColor="text-green-500" />
         <StatCard title="Meetings" value={analytics?.meetings ?? 0} icon={Calendar} iconColor="text-orange-500" />
+        <StatCard title="Revenue" value={formatRevenue(analytics?.revenue ?? 0)} icon={DollarSign} iconColor="text-emerald-500" />
       </div>
+
+      {/* Daily Trend Chart */}
+      {dailyTrend.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Daily Conversations</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={250}>
+              <LineChart data={dailyTrend}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="date"
+                  tickFormatter={(d) => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  fontSize={12}
+                />
+                <YAxis allowDecimals={false} />
+                <Tooltip
+                  labelFormatter={(d) => new Date(String(d) + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                />
+                <Line type="monotone" dataKey="conversations" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
 
       {usageChartData.length > 0 && (
         <Card>

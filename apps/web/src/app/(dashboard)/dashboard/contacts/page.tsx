@@ -91,6 +91,9 @@ export default function ContactsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showSmsModal, setShowSmsModal] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkTag, setBulkTag] = useState('');
+  const [bulkStatus, setBulkStatus] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['contacts', tenantId, search, tagFilter, statusFilter, page],
@@ -145,6 +148,36 @@ export default function ContactsPage() {
     },
     onError: () => toast.error('Failed to send SMS'),
   });
+
+  const bulkMutation = useMutation({
+    mutationFn: ({ action, value }: { action: 'tag' | 'status' | 'delete'; value?: string }) =>
+      contactApi.bulk(tenantId!, Array.from(selectedIds), action, value),
+    onSuccess: (data, { action }) => {
+      queryClient.invalidateQueries({ queryKey: ['contacts', tenantId] });
+      setSelectedIds(new Set());
+      setBulkTag('');
+      setBulkStatus('');
+      const count = data?.affected ?? 0;
+      toast.success(`${action === 'delete' ? 'Deleted' : 'Updated'} ${count} contact${count !== 1 ? 's' : ''}`);
+    },
+    onError: () => toast.error('Bulk action failed'),
+  });
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === contacts.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(contacts.map((c) => c.id)));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => contactApi.create(data),
@@ -218,6 +251,69 @@ export default function ContactsPage() {
             </select>
           </div>
 
+          {/* Bulk Actions Bar */}
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-3 mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <span className="text-sm font-medium text-blue-800">{selectedIds.size} selected</span>
+              <div className="flex gap-2 ml-auto">
+                <div className="flex gap-1.5">
+                  <Input
+                    value={bulkTag}
+                    onChange={(e) => setBulkTag(e.target.value)}
+                    placeholder="Tag name"
+                    className="h-8 w-32 text-xs"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    onClick={() => { if (bulkTag.trim()) bulkMutation.mutate({ action: 'tag', value: bulkTag.trim() }); }}
+                    disabled={!bulkTag.trim() || bulkMutation.isPending}
+                  >
+                    <Tag className="h-3 w-3 mr-1" /> Tag
+                  </Button>
+                </div>
+                <select
+                  value={bulkStatus}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setBulkStatus(e.target.value);
+                      bulkMutation.mutate({ action: 'status', value: e.target.value });
+                    }
+                  }}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                  disabled={bulkMutation.isPending}
+                >
+                  <option value="">Set Status...</option>
+                  {ALL_STATUSES.map((s) => (
+                    <option key={s} value={s}>{STATUS_CONFIG[s].label}</option>
+                  ))}
+                </select>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="h-8 text-xs"
+                  onClick={() => {
+                    if (confirm(`Delete ${selectedIds.size} contacts? This cannot be undone.`)) {
+                      bulkMutation.mutate({ action: 'delete' });
+                    }
+                  }}
+                  disabled={bulkMutation.isPending}
+                >
+                  <Trash2 className="h-3 w-3 mr-1" /> Delete
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 text-xs"
+                  onClick={() => setSelectedIds(new Set())}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Table */}
           <Card>
             {isLoading ? (
@@ -232,6 +328,14 @@ export default function ContactsPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b text-left text-xs text-muted-foreground">
+                      <th className="px-4 py-3 w-8">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.size === contacts.length && contacts.length > 0}
+                          onChange={toggleSelectAll}
+                          className="rounded border-gray-300"
+                        />
+                      </th>
                       <th className="px-4 py-3 font-medium">Contact</th>
                       <th className="px-4 py-3 font-medium">Status</th>
                       <th className="px-4 py-3 font-medium">Tags</th>
@@ -248,9 +352,17 @@ export default function ContactsPage() {
                           onClick={() => setSelectedId(c.id === selectedId ? null : c.id)}
                           className={cn(
                             'border-b last:border-0 cursor-pointer text-sm transition-colors',
-                            c.id === selectedId ? 'bg-blue-50' : 'hover:bg-muted/50'
+                            c.id === selectedId ? 'bg-blue-50' : selectedIds.has(c.id) ? 'bg-blue-50/50' : 'hover:bg-muted/50'
                           )}
                         >
+                          <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(c.id)}
+                              onChange={() => toggleSelect(c.id)}
+                              className="rounded border-gray-300"
+                            />
+                          </td>
                           <td className="px-4 py-3">
                             <div className="font-medium">{c.name || 'Unknown'}</div>
                             <div className="text-xs text-muted-foreground font-mono">{maskPhone(c.phone)}</div>
