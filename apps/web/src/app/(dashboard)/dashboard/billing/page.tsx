@@ -14,14 +14,14 @@ import { PLAN_LIMITS, Plan } from '@ringback/shared-types';
 
 const PLAN_PRICES: Record<string, { monthly: string; annual: string }> = {
   STARTER: { monthly: 'Free', annual: 'Free' },
-  GROWTH: { monthly: '$49/mo', annual: '$539/yr' },
-  SCALE: { monthly: '$99/mo', annual: '$1,089/yr' },
+  GROWTH: { monthly: '$49/mo', annual: '$490/yr' },
+  SCALE: { monthly: '$99/mo', annual: '$990/yr' },
   ENTERPRISE: { monthly: 'Custom', annual: 'Custom' },
 };
 
 const ANNUAL_SAVINGS: Record<string, string> = {
-  GROWTH: '$49',
-  SCALE: '$99',
+  GROWTH: '$98',
+  SCALE: '$198',
 };
 
 const PLAN_ICONS: Record<string, React.ElementType> = {
@@ -156,7 +156,7 @@ export default function BillingPage() {
         <span className={`text-sm font-medium ${billingInterval === 'annual' ? 'text-foreground' : 'text-muted-foreground'}`}>
           Annual
         </span>
-        <Badge variant="secondary" className="bg-green-100 text-green-700 text-xs">1 month free</Badge>
+        <Badge variant="secondary" className="bg-green-100 text-green-700 text-xs">2 months free</Badge>
       </div>
 
       {/* Plan Cards */}

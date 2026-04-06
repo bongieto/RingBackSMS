@@ -42,7 +42,7 @@ export function PricingSection({ plans }: { plans: PricingPlan[] }) {
           Annual
         </span>
         <span className="ml-1 px-2.5 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
-          1 month free
+          2 months free
         </span>
       </div>
 

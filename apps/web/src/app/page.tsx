@@ -309,10 +309,10 @@ const PRICING = [
   {
     name: 'Growth',
     monthlyPrice: '$49',
-    annualPrice: '$539',
+    annualPrice: '$490',
     monthlyPeriod: '/month',
     annualPeriod: '/year',
-    annualSavings: 'Save $49',
+    annualSavings: 'Save $98',
     description: 'For growing businesses ready to capture every lead',
     sms: '500 SMS/month',
     features: [
@@ -329,10 +329,10 @@ const PRICING = [
   {
     name: 'Scale',
     monthlyPrice: '$99',
-    annualPrice: '$1,089',
+    annualPrice: '$990',
     monthlyPeriod: '/month',
     annualPeriod: '/year',
-    annualSavings: 'Save $99',
+    annualSavings: 'Save $198',
     description: 'For busy businesses that need full automation',
     sms: '2,500 SMS/month',
     features: [
