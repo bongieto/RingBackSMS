@@ -1,7 +1,14 @@
+interface DaySchedule {
+  open: string;
+  close: string;
+}
+
 export interface BusinessHoursConfig {
   businessHoursStart?: string;
   businessHoursEnd?: string;
   businessDays?: number[];
+  businessSchedule?: Record<string, DaySchedule> | null;
+  closedDates?: string[];
   timezone?: string;
 }
 
@@ -12,12 +19,7 @@ export interface BusinessHoursConfig {
  * Returns `true` (open) when no hours are configured.
  */
 export function isWithinBusinessHours(config: BusinessHoursConfig): boolean {
-  const { businessHoursStart, businessHoursEnd, businessDays, timezone } = config;
-
-  // If no hours configured, treat as always open
-  if (!businessHoursStart || !businessHoursEnd) {
-    return true;
-  }
+  const { businessHoursStart, businessHoursEnd, businessDays, businessSchedule, closedDates, timezone } = config;
 
   const tz = timezone ?? 'America/Chicago';
   const now = new Date();
@@ -29,39 +31,54 @@ export function isWithinBusinessHours(config: BusinessHoursConfig): boolean {
     minute: 'numeric',
     hour12: false,
     weekday: 'short',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
   });
 
   const parts = formatter.formatToParts(now);
   const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
   const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
   const weekdayStr = parts.find((p) => p.type === 'weekday')?.value ?? '';
+  const year = parts.find((p) => p.type === 'year')?.value ?? '';
+  const month = parts.find((p) => p.type === 'month')?.value ?? '';
+  const day = parts.find((p) => p.type === 'day')?.value ?? '';
+
+  // Check closed dates first
+  if (closedDates && closedDates.length > 0) {
+    const todayStr = `${year}-${month}-${day}`;
+    if (closedDates.includes(todayStr)) {
+      return false;
+    }
+  }
 
   // Map weekday string to JS day number (0=Sun ... 6=Sat)
   const weekdayMap: Record<string, number> = {
-    Sun: 0,
-    Mon: 1,
-    Tue: 2,
-    Wed: 3,
-    Thu: 4,
-    Fri: 5,
-    Sat: 6,
+    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
   };
   const dayOfWeek = weekdayMap[weekdayStr] ?? 0;
+
+  // If per-day schedule exists, use it (overrides flat fields)
+  if (businessSchedule && Object.keys(businessSchedule).length > 0) {
+    const dayKey = String(dayOfWeek);
+    const dayConfig = businessSchedule[dayKey];
+    if (!dayConfig) {
+      return false; // day not in schedule = closed
+    }
+    return isTimeInRange(hour, minute, dayConfig.open, dayConfig.close);
+  }
+
+  // Fallback to flat fields (backward compat)
+  if (!businessHoursStart || !businessHoursEnd) {
+    return true; // no hours configured = always open
+  }
 
   // Check business days (if configured)
   if (businessDays && businessDays.length > 0 && !businessDays.includes(dayOfWeek)) {
     return false;
   }
 
-  // Parse start/end times
-  const [startH, startM] = businessHoursStart.split(':').map(Number);
-  const [endH, endM] = businessHoursEnd.split(':').map(Number);
-
-  const currentMinutes = hour * 60 + minute;
-  const startMinutes = startH * 60 + startM;
-  const endMinutes = endH * 60 + endM;
-
-  return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+  return isTimeInRange(hour, minute, businessHoursStart, businessHoursEnd);
 }
 
 /**
@@ -69,8 +86,28 @@ export function isWithinBusinessHours(config: BusinessHoursConfig): boolean {
  * Example: "Mon-Fri 9:00 AM - 5:00 PM"
  */
 export function getBusinessHoursDisplay(config: BusinessHoursConfig): string {
-  const { businessHoursStart, businessHoursEnd, businessDays } = config;
+  const { businessHoursStart, businessHoursEnd, businessDays, businessSchedule } = config;
 
+  // Per-day schedule display
+  if (businessSchedule && Object.keys(businessSchedule).length > 0) {
+    // Group days with the same hours
+    const hourGroups: Record<string, number[]> = {};
+    for (const [dayKey, sched] of Object.entries(businessSchedule)) {
+      const key = `${sched.open}-${sched.close}`;
+      if (!hourGroups[key]) hourGroups[key] = [];
+      hourGroups[key].push(Number(dayKey));
+    }
+
+    const parts: string[] = [];
+    for (const [hoursKey, days] of Object.entries(hourGroups)) {
+      const [open, close] = hoursKey.split('-');
+      const daysLabel = formatDaysLabel(days);
+      parts.push(`${daysLabel} ${formatTime(open)} - ${formatTime(close)}`);
+    }
+    return parts.join(', ');
+  }
+
+  // Flat fields fallback
   if (!businessHoursStart || !businessHoursEnd) {
     return 'Always open';
   }
@@ -82,7 +119,18 @@ export function getBusinessHoursDisplay(config: BusinessHoursConfig): string {
   return `${daysLabel} ${startLabel} - ${endLabel}`;
 }
 
-// ── Internal helpers ─────────────────────────────────────────────────────────
+// ── Internal helpers ───────────────────────────────────────��─────────────────
+
+function isTimeInRange(hour: number, minute: number, start: string, end: string): boolean {
+  const [startH, startM] = start.split(':').map(Number);
+  const [endH, endM] = end.split(':').map(Number);
+
+  const currentMinutes = hour * 60 + minute;
+  const startMinutes = startH * 60 + startM;
+  const endMinutes = endH * 60 + endM;
+
+  return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+}
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 

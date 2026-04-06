@@ -44,6 +44,17 @@ export type Tenant = z.infer<typeof TenantSchema>;
 
 // ── TenantConfig ──────────────────────────────────────────────────────────────
 
+export const DayScheduleSchema = z.object({
+  open: z.string(),
+  close: z.string(),
+});
+
+export type DaySchedule = z.infer<typeof DayScheduleSchema>;
+
+export const BusinessScheduleSchema = z.record(z.string(), DayScheduleSchema);
+
+export type BusinessSchedule = z.infer<typeof BusinessScheduleSchema>;
+
 export const TenantConfigSchema = z.object({
   id: z.string().uuid(),
   tenantId: z.string().uuid(),
@@ -52,6 +63,8 @@ export const TenantConfigSchema = z.object({
   businessHoursStart: z.string().default('11:00'),
   businessHoursEnd: z.string().default('20:00'),
   businessDays: z.array(z.number().min(0).max(6)), // 0=Sun, 6=Sat
+  businessSchedule: BusinessScheduleSchema.nullable().optional(),
+  closedDates: z.array(z.string()).default([]),
   aiPersonality: z.string().nullable(),
   calcomLink: z.string().nullable(),
   slackWebhook: z.string().nullable(),

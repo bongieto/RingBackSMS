@@ -131,6 +131,8 @@ model TenantConfig {
   businessHoursStart  String   @default("11:00")
   businessHoursEnd    String   @default("20:00")
   businessDays        Int[]
+  businessSchedule    Json?              // per-day hours: { "0": { "open": "11:00", "close": "19:30" }, ... }
+  closedDates         String[]  @default([])  // ISO date strings: ["2026-12-25"]
   aiPersonality       String?  @db.Text
   calcomLink          String?
   slackWebhook        String?

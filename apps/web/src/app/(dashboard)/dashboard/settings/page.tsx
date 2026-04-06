@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/nextjs';
 import { toast } from 'sonner';
 import Link from 'next/link';
-import { Phone, Sparkles, Globe, MapPin } from 'lucide-react';
+import { Phone, Sparkles, Globe, MapPin, CheckCircle, X, Copy, CalendarOff, Plus } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,13 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { tenantApi, phoneApi } from '@/lib/api';
 
+interface DayScheduleEntry {
+  open: string;
+  close: string;
+}
+
+type BusinessSchedule = Record<string, DayScheduleEntry>;
+
 interface TenantConfig {
   id: string;
   greeting: string;
@@ -21,6 +28,8 @@ interface TenantConfig {
   businessHoursStart: string;
   businessHoursEnd: string;
   businessDays: number[];
+  businessSchedule: BusinessSchedule | null;
+  closedDates: string[];
   aiPersonality: string | null;
   calcomLink: string | null;
   slackWebhook: string | null;
@@ -39,6 +48,37 @@ const TIMEZONES = [
   'Pacific/Honolulu',
 ];
 
+const DAYS = [
+  { label: 'Sunday', short: 'Sun', value: 0 },
+  { label: 'Monday', short: 'Mon', value: 1 },
+  { label: 'Tuesday', short: 'Tue', value: 2 },
+  { label: 'Wednesday', short: 'Wed', value: 3 },
+  { label: 'Thursday', short: 'Thu', value: 4 },
+  { label: 'Friday', short: 'Fri', value: 5 },
+  { label: 'Saturday', short: 'Sat', value: 6 },
+];
+
+function deriveScheduleFromFlat(
+  businessDays: number[],
+  start: string,
+  end: string
+): BusinessSchedule {
+  const schedule: BusinessSchedule = {};
+  for (const day of businessDays) {
+    schedule[String(day)] = { open: start, close: end };
+  }
+  return schedule;
+}
+
+function deriveFlatFromSchedule(schedule: BusinessSchedule) {
+  const days = Object.keys(schedule).map(Number);
+  // Pick the most common open/close times for backward compat
+  const times = Object.values(schedule);
+  const start = times.length > 0 ? times[0].open : '11:00';
+  const end = times.length > 0 ? times[0].close : '20:00';
+  return { businessDays: days, businessHoursStart: start, businessHoursEnd: end };
+}
+
 export default function SettingsPage() {
   const { organization } = useOrganization();
   const tenantId = organization?.publicMetadata?.tenantId as string | undefined;
@@ -55,9 +95,8 @@ export default function SettingsPage() {
   const [form, setForm] = useState({
     greeting: '',
     timezone: 'America/Chicago',
-    businessHoursStart: '11:00',
-    businessHoursEnd: '20:00',
-    businessDays: [1, 2, 3, 4, 5] as number[],
+    businessSchedule: deriveScheduleFromFlat([1, 2, 3, 4, 5], '11:00', '20:00'),
+    closedDates: [] as string[],
     aiPersonality: '',
     calcomLink: '',
     slackWebhook: '',
@@ -67,14 +106,24 @@ export default function SettingsPage() {
     websiteUrl: '',
   });
 
+  const [newClosedDate, setNewClosedDate] = useState('');
+  const [showSaved, setShowSaved] = useState(false);
+
   useEffect(() => {
     if (config) {
+      const schedule = config.businessSchedule
+        ? (config.businessSchedule as BusinessSchedule)
+        : deriveScheduleFromFlat(
+            config.businessDays ?? [1, 2, 3, 4, 5],
+            config.businessHoursStart ?? '11:00',
+            config.businessHoursEnd ?? '20:00'
+          );
+
       setForm({
         greeting: config.greeting ?? '',
         timezone: config.timezone ?? 'America/Chicago',
-        businessHoursStart: config.businessHoursStart ?? '11:00',
-        businessHoursEnd: config.businessHoursEnd ?? '20:00',
-        businessDays: config.businessDays ?? [1, 2, 3, 4, 5],
+        businessSchedule: schedule,
+        closedDates: config.closedDates ?? [],
         aiPersonality: config.aiPersonality ?? '',
         calcomLink: config.calcomLink ?? '',
         slackWebhook: config.slackWebhook ?? '',
@@ -96,22 +145,41 @@ export default function SettingsPage() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: () => tenantApi.updateConfig(tenantId!, {
-      ...form,
-      aiPersonality: form.aiPersonality || undefined,
-      calcomLink: form.calcomLink || undefined,
-      slackWebhook: form.slackWebhook || undefined,
-      ownerEmail: form.ownerEmail || undefined,
-      ownerPhone: form.ownerPhone || undefined,
-      businessAddress: form.businessAddress || undefined,
-      websiteUrl: form.websiteUrl || undefined,
-    }),
+    mutationFn: () => {
+      const flat = deriveFlatFromSchedule(form.businessSchedule);
+      return tenantApi.updateConfig(tenantId!, {
+        greeting: form.greeting,
+        timezone: form.timezone,
+        businessSchedule: form.businessSchedule,
+        closedDates: form.closedDates,
+        // Backward compat flat fields
+        businessHoursStart: flat.businessHoursStart,
+        businessHoursEnd: flat.businessHoursEnd,
+        businessDays: flat.businessDays,
+        aiPersonality: form.aiPersonality || undefined,
+        calcomLink: form.calcomLink || undefined,
+        slackWebhook: form.slackWebhook || undefined,
+        ownerEmail: form.ownerEmail || undefined,
+        ownerPhone: form.ownerPhone || undefined,
+        businessAddress: form.businessAddress || undefined,
+        websiteUrl: form.websiteUrl || undefined,
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tenant', tenantId] });
+      setShowSaved(true);
       toast.success('Settings saved!');
     },
     onError: () => toast.error('Failed to save settings'),
   });
+
+  // Auto-dismiss save banner
+  useEffect(() => {
+    if (showSaved) {
+      const timer = setTimeout(() => setShowSaved(false), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [showSaved]);
 
   const field = (key: keyof typeof form) => ({
     value: form[key] as string,
@@ -119,11 +187,77 @@ export default function SettingsPage() {
       setForm(f => ({ ...f, [key]: e.target.value })),
   });
 
+  const toggleDay = (dayValue: number) => {
+    setForm(f => {
+      const schedule = { ...f.businessSchedule };
+      const key = String(dayValue);
+      if (schedule[key]) {
+        delete schedule[key];
+      } else {
+        schedule[key] = { open: '11:00', close: '20:00' };
+      }
+      return { ...f, businessSchedule: schedule };
+    });
+  };
+
+  const updateDayTime = (dayValue: number, field: 'open' | 'close', value: string) => {
+    setForm(f => {
+      const schedule = { ...f.businessSchedule };
+      const key = String(dayValue);
+      if (schedule[key]) {
+        schedule[key] = { ...schedule[key], [field]: value };
+      }
+      return { ...f, businessSchedule: schedule };
+    });
+  };
+
+  const copyToAllDays = () => {
+    setForm(f => {
+      const entries = Object.entries(f.businessSchedule);
+      if (entries.length === 0) return f;
+      const firstEntry = entries[0][1];
+      const schedule: BusinessSchedule = {};
+      for (const key of Object.keys(f.businessSchedule)) {
+        schedule[key] = { ...firstEntry };
+      }
+      return { ...f, businessSchedule: schedule };
+    });
+  };
+
+  const addClosedDate = () => {
+    if (!newClosedDate) return;
+    setForm(f => ({
+      ...f,
+      closedDates: f.closedDates.includes(newClosedDate)
+        ? f.closedDates
+        : [...f.closedDates, newClosedDate].sort(),
+    }));
+    setNewClosedDate('');
+  };
+
+  const removeClosedDate = (date: string) => {
+    setForm(f => ({
+      ...f,
+      closedDates: f.closedDates.filter(d => d !== date),
+    }));
+  };
+
   return (
     <div>
       <Header title="Settings" description="Configure your RingBack account" />
 
       <div className="space-y-6 max-w-2xl">
+        {/* Save Confirmation Banner */}
+        {showSaved && (
+          <div className="rounded-md border border-green-200 bg-green-50 p-4 text-green-800 flex items-center gap-2">
+            <CheckCircle className="h-5 w-5 flex-shrink-0" />
+            <span className="font-medium">Settings saved successfully!</span>
+            <button onClick={() => setShowSaved(false)} className="ml-auto">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
         {/* Phone Number */}
         <PhoneNumberCard tenantId={tenantId} />
 
@@ -188,8 +322,22 @@ export default function SettingsPage() {
         {/* Business Hours */}
         <Card>
           <CardHeader>
-            <CardTitle>Business Hours</CardTitle>
-            <CardDescription>When your business is open</CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Business Hours</CardTitle>
+                <CardDescription>Set hours for each day your business is open</CardDescription>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={copyToAllDays}
+                disabled={Object.keys(form.businessSchedule).length === 0}
+              >
+                <Copy className="h-3.5 w-3.5 mr-1.5" />
+                Copy to All
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-1.5">
@@ -203,54 +351,93 @@ export default function SettingsPage() {
                 ))}
               </select>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label>Opens</Label>
-                <Input type="time" {...field('businessHoursStart')} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Closes</Label>
-                <Input type="time" {...field('businessHoursEnd')} />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Business Days</Label>
-              <div className="flex gap-2">
-                {[
-                  { label: 'Sun', value: 0 },
-                  { label: 'Mon', value: 1 },
-                  { label: 'Tue', value: 2 },
-                  { label: 'Wed', value: 3 },
-                  { label: 'Thu', value: 4 },
-                  { label: 'Fri', value: 5 },
-                  { label: 'Sat', value: 6 },
-                ].map((day) => {
-                  const isActive = form.businessDays.includes(day.value);
-                  return (
+
+            <div className="space-y-2">
+              {DAYS.map((day) => {
+                const key = String(day.value);
+                const isEnabled = !!form.businessSchedule[key];
+                const schedule = form.businessSchedule[key];
+
+                return (
+                  <div key={day.value} className="flex items-center gap-3">
                     <button
-                      key={day.value}
                       type="button"
-                      onClick={() =>
-                        setForm((f) => ({
-                          ...f,
-                          businessDays: isActive
-                            ? f.businessDays.filter((d) => d !== day.value)
-                            : [...f.businessDays, day.value],
-                        }))
-                      }
-                      className={`flex h-10 w-10 items-center justify-center rounded-full border text-sm font-medium transition-colors ${
-                        isActive
+                      onClick={() => toggleDay(day.value)}
+                      className={`w-24 text-left text-sm font-medium py-2 px-3 rounded-md border transition-colors ${
+                        isEnabled
                           ? 'bg-primary text-primary-foreground border-primary'
-                          : 'bg-background text-muted-foreground border-input hover:bg-accent'
+                          : 'bg-muted text-muted-foreground border-input line-through'
                       }`}
                     >
-                      {day.label.charAt(0)}
+                      {day.short}
                     </button>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-muted-foreground">Select the days your business is open</p>
+                    {isEnabled ? (
+                      <>
+                        <Input
+                          type="time"
+                          value={schedule.open}
+                          onChange={(e) => updateDayTime(day.value, 'open', e.target.value)}
+                          className="w-32"
+                        />
+                        <span className="text-muted-foreground text-sm">to</span>
+                        <Input
+                          type="time"
+                          value={schedule.close}
+                          onChange={(e) => updateDayTime(day.value, 'close', e.target.value)}
+                          className="w-32"
+                        />
+                      </>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">Closed</span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
+            <p className="text-xs text-muted-foreground">Click a day name to toggle open/closed</p>
+          </CardContent>
+        </Card>
+
+        {/* Holiday / Closed Dates */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CalendarOff className="h-5 w-5" />
+              Holiday / Closed Dates
+            </CardTitle>
+            <CardDescription>Specific dates your business will be closed</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-2">
+              <Input
+                type="date"
+                value={newClosedDate}
+                onChange={(e) => setNewClosedDate(e.target.value)}
+                className="w-48"
+              />
+              <Button type="button" variant="outline" size="sm" onClick={addClosedDate} disabled={!newClosedDate}>
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                Add
+              </Button>
+            </div>
+            {form.closedDates.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {form.closedDates.map((date) => (
+                  <Badge key={date} variant="secondary" className="flex items-center gap-1 px-3 py-1">
+                    {new Date(date + 'T12:00:00').toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
+                    <button type="button" onClick={() => removeClosedDate(date)} className="ml-1 hover:text-destructive">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No closed dates set</p>
+            )}
           </CardContent>
         </Card>
 
