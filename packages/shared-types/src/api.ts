@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BusinessType, Plan, FlowType } from './enums';
+import { BusinessScheduleSchema } from './models';
 
 // ── Request schemas ───────────────────────────────────────────────────────────
 
@@ -21,6 +22,8 @@ export const UpdateTenantConfigRequestSchema = z.object({
   businessHoursStart: z.string().optional(),
   businessHoursEnd: z.string().optional(),
   businessDays: z.array(z.number().min(0).max(6)).optional(),
+  businessSchedule: BusinessScheduleSchema.nullable().optional(),
+  closedDates: z.array(z.string()).optional(),
   aiPersonality: z.string().optional(),
   calcomLink: z.string().url().optional(),
   slackWebhook: z.string().url().optional(),

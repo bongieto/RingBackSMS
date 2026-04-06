@@ -85,6 +85,8 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     config: {
       ...tenant.config,
       businessDays: tenant.config.businessDays as number[],
+      businessSchedule: tenant.config.businessSchedule as Record<string, { open: string; close: string }> | null | undefined,
+      closedDates: tenant.config.closedDates as string[],
     },
     flows: tenant.flows.map((f) => ({
       id: f.id,
@@ -109,6 +111,8 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     businessHoursStart: tenant.config.businessHoursStart,
     businessHoursEnd: tenant.config.businessHoursEnd,
     businessDays: tenant.config.businessDays as number[],
+    businessSchedule: tenant.config.businessSchedule as Record<string, { open: string; close: string }> | null,
+    closedDates: tenant.config.closedDates as string[],
     timezone: tenant.config.timezone,
   });
 
@@ -127,6 +131,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       businessHoursStart: tenant.config.businessHoursStart,
       businessHoursEnd: tenant.config.businessHoursEnd,
       businessDays: tenant.config.businessDays as number[],
+      businessSchedule: tenant.config.businessSchedule as Record<string, { open: string; close: string }> | null,
       timezone: tenant.config.timezone,
     });
     const afterHoursNotice = `Thanks for reaching out! We're currently closed. Our hours are ${hoursDisplay}. We'll get back to you when we open. In the meantime, feel free to text us your question!`;

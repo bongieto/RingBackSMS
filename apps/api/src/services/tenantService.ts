@@ -88,18 +88,23 @@ export async function updateTenantConfig(
     businessHoursStart: string;
     businessHoursEnd: string;
     businessDays: number[];
+    businessSchedule: Record<string, { open: string; close: string }> | null;
+    closedDates: string[];
     aiPersonality: string;
     calcomLink: string;
     slackWebhook: string;
     ownerEmail: string;
     ownerPhone: string;
+    businessAddress: string;
+    websiteUrl: string;
     squareSyncEnabled: boolean;
     squareAutoSync: boolean;
   }>
 ) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return prisma.tenantConfig.update({
     where: { tenantId },
-    data: updates,
+    data: updates as any,
   });
 }
 
