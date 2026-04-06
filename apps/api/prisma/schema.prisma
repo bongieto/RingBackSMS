@@ -136,6 +136,9 @@ model TenantConfig {
   slackWebhook        String?
   ownerEmail          String?
   ownerPhone          String?
+  businessAddress     String?
+  websiteUrl          String?
+  websiteContext      String?  @db.Text  // AI-extracted business context from website
   squareSyncEnabled   Boolean  @default(false)
   squareAutoSync      Boolean  @default(false)
   posSyncEnabled      Boolean  @default(false)
@@ -302,7 +305,7 @@ model PosSyncLog {
   id             String          @id @default(uuid())
   tenantId       String
   tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  provider       PosProviderType
+  provider       String
   direction      String          // "pull" or "push"
   totalItems     Int             @default(0)
   newItems       Int             @default(0)

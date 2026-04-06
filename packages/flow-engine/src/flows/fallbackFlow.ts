@@ -18,9 +18,17 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
       ? `You can help customers with: ${enabledFlows.map((f) => f.toLowerCase()).join(', ')}.`
       : '';
 
+  const websiteContext = tenantContext.config.websiteContext
+    ? `\nBusiness context from their website: ${tenantContext.config.websiteContext.substring(0, 1500)}`
+    : '';
+
+  const businessAddress = tenantContext.config.businessAddress
+    ? `\nBusiness address: ${tenantContext.config.businessAddress}`
+    : '';
+
   const systemPrompt = `You are a helpful SMS assistant for ${tenantContext.tenantName}.
 Be ${personality}. Keep responses under 160 characters when possible (SMS limit).
-${capabilities}
+${capabilities}${businessAddress}${websiteContext}
 If asked about ordering food, direct them to reply ORDER.
 If asked about scheduling, direct them to reply MEETING.
 Never share internal business details. Be warm and helpful.`;
