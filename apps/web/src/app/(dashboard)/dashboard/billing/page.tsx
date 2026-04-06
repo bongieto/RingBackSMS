@@ -14,7 +14,7 @@ import { PLAN_LIMITS, Plan } from '@ringback/shared-types';
 const PLAN_PRICES: Record<string, string> = {
   STARTER: 'Free',
   GROWTH: '$49/mo',
-  SCALE: '$149/mo',
+  SCALE: '$99/mo',
   ENTERPRISE: 'Custom',
 };
 
