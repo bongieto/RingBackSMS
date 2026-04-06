@@ -56,6 +56,8 @@ export const conversationApi = {
   get: (id: string) => api.get(`/conversations/${id}`).then((r) => r.data.data),
   reply: (id: string, message: string) =>
     api.post(`/conversations/${id}/reply`, { message }).then((r) => r.data.data),
+  setHandoff: (id: string, status: 'AI' | 'HUMAN') =>
+    api.post(`/conversations/${id}/handoff`, { status }).then((r) => r.data.data),
 };
 
 export const analyticsApi = {

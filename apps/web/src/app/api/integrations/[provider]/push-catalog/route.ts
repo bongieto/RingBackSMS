@@ -8,6 +8,7 @@ import { apiSuccess, apiError } from '@/lib/server/response';
 export async function POST(request: NextRequest, { params }: { params: { provider: string } }) {
   const { userId, orgId } = await auth();
   if (!userId || !orgId) return apiError('Unauthorized', 401);
+
   const tenantId = new URL(request.url).searchParams.get('tenantId') ?? '';
 
   const log = await prisma.posSyncLog.create({

@@ -2,6 +2,36 @@ import Anthropic from '@anthropic-ai/sdk';
 import { TenantContext } from './types';
 import { FlowType } from '@ringback/shared-types';
 
+const ESCALATION_KEYWORDS = [
+  'talk to a human',
+  'talk to a person',
+  'talk to someone',
+  'speak to a human',
+  'speak to a person',
+  'speak to someone',
+  'real person',
+  'real human',
+  'live agent',
+  'live person',
+  'representative',
+  'operator',
+  'agent',
+  'stop bot',
+  'stop ai',
+  'human please',
+  'get me a human',
+  'i need a human',
+  'i want a human',
+  'let me talk to',
+  'customer service',
+  'manager',
+];
+
+export function detectEscalationIntent(message: string): boolean {
+  const lower = message.toLowerCase().trim();
+  return ESCALATION_KEYWORDS.some((keyword) => lower.includes(keyword));
+}
+
 export interface IntentResult {
   intent: FlowType | 'UNCLEAR';
   confidence: number;

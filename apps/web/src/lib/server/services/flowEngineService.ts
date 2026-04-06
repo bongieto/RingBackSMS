@@ -1,4 +1,4 @@
-import { runFlowEngine, TenantContext } from '@ringback/flow-engine';
+import { runFlowEngine, TenantContext, detectEscalationIntent } from '@ringback/flow-engine';
 import { FlowType, SideEffect } from '@ringback/shared-types';
 import { getCallerState, setCallerState, isDuplicate } from './stateService';
 import { createOrder } from './orderService';
@@ -25,6 +25,43 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
   if (duplicate) {
     logger.warn('Duplicate message received, skipping', { tenantId, messageSid });
     return;
+  }
+
+  // Check if conversation is in HUMAN handoff mode
+  const currentState = await getCallerState(tenantId, callerPhone);
+  const existingConversationId = currentState?.conversationId ?? null;
+
+  if (existingConversationId) {
+    const existingConv = await prisma.conversation.findUnique({
+      where: { id: existingConversationId },
+      select: { handoffStatus: true, tenantId: true, messages: true },
+    });
+
+    if (existingConv?.handoffStatus === 'HUMAN') {
+      // Save message but skip AI — human is handling this conversation
+      const messages = Array.isArray(existingConv.messages) ? existingConv.messages : [];
+      await prisma.conversation.update({
+        where: { id: existingConversationId },
+        data: {
+          messages: [
+            ...messages,
+            { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },
+          ],
+          updatedAt: new Date(),
+        },
+      });
+
+      // Notify owner about new message during handoff
+      await sendNotification({
+        tenantId,
+        subject: 'New message during human handoff',
+        message: `Customer ${callerPhone} sent a message while in human handoff mode: "${inboundMessage.substring(0, 100)}"`,
+        channel: 'email',
+      }).catch((err) => logger.warn('Failed to send handoff notification', { error: err }));
+
+      logger.info('Message received during human handoff, skipping AI', { tenantId, callerPhone });
+      return;
+    }
   }
 
   // Load tenant context
@@ -75,9 +112,6 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     timezone: tenant.config.timezone,
   });
 
-  // Get current caller state
-  const currentState = await getCallerState(tenantId, callerPhone);
-
   // Run flow engine
   const result = await runFlowEngine({
     tenantContext,
@@ -99,22 +133,32 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     result.smsReply = `${afterHoursNotice}\n\n${result.smsReply}`;
   }
 
+  // Check for escalation intent
+  const isEscalation = detectEscalationIntent(inboundMessage);
+  if (isEscalation) {
+    result.smsReply = "I'm connecting you with a team member who can help. Someone will follow up with you shortly!";
+    logger.info('Escalation detected, handing off to human', { tenantId, callerPhone });
+  }
+
   // Save next state
   await setCallerState({ ...result.nextState, dedupKey: messageSid });
 
   // Upsert conversation
-  let conversationId: string | null = currentState?.conversationId ?? null;
+  let conversationId: string | null = existingConversationId;
+  const newMessages = [
+    { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },
+    { role: 'assistant', content: result.smsReply, timestamp: new Date(), sender: 'bot' },
+  ];
+
   if (!conversationId) {
     const conversation = await prisma.conversation.create({
       data: {
         tenantId,
         callerPhone,
         flowType: result.flowType,
-        messages: [
-          { role: 'user', content: inboundMessage, timestamp: new Date() },
-          { role: 'assistant', content: result.smsReply, timestamp: new Date() },
-        ],
+        messages: newMessages,
         isActive: true,
+        ...(isEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
       },
     });
     conversationId = conversation.id;
@@ -132,15 +176,22 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     await prisma.conversation.update({
       where: { id: conversationId },
       data: {
-        messages: [
-          ...messages,
-          { role: 'user', content: inboundMessage, timestamp: new Date() },
-          { role: 'assistant', content: result.smsReply, timestamp: new Date() },
-        ],
+        messages: [...messages, ...newMessages],
         flowType: result.flowType,
         updatedAt: new Date(),
+        ...(isEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
       },
     });
+  }
+
+  // Notify owner if escalation
+  if (isEscalation) {
+    await sendNotification({
+      tenantId,
+      subject: 'Customer requested human assistance',
+      message: `Customer ${callerPhone} requested to speak with a human. Please check the conversation in your dashboard.`,
+      channel: 'email',
+    }).catch((err) => logger.warn('Failed to send escalation notification', { error: err }));
   }
 
   // Process side effects

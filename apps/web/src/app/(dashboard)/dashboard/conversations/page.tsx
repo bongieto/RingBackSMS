@@ -70,7 +70,7 @@ export default function ConversationsPage() {
             </div>
           ) : (
             <div className="divide-y">
-              {filtered.map((conv: { id: string; callerPhone: string; flowType: string | null; isActive: boolean; messages: unknown[]; updatedAt: string }) => {
+              {filtered.map((conv: { id: string; callerPhone: string; flowType: string | null; isActive: boolean; messages: unknown[]; updatedAt: string; handoffStatus?: string }) => {
                 const messages = Array.isArray(conv.messages) ? conv.messages : [];
                 const lastMsg = messages[messages.length - 1] as { content?: string } | undefined;
                 return (
@@ -88,6 +88,11 @@ export default function ConversationsPage() {
                         {conv.flowType && (
                           <Badge variant={FLOW_COLORS[conv.flowType] ?? 'outline'} className="text-xs">
                             {conv.flowType}
+                          </Badge>
+                        )}
+                        {conv.handoffStatus === 'HUMAN' && (
+                          <Badge variant="destructive" className="text-xs">
+                            Human
                           </Badge>
                         )}
                         {conv.isActive && (

@@ -40,6 +40,13 @@ export interface PosOrderResult {
   raw: Record<string, unknown>;
 }
 
+export interface SyncResult {
+  total: number;
+  created: number;
+  updated: number;
+  removed: number;
+}
+
 export abstract class BasePosAdapter {
   abstract readonly provider: string;
   abstract readonly displayName: string;
