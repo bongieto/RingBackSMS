@@ -2,6 +2,7 @@ import { PrismaClient, BusinessType, Plan } from '@prisma/client';
 import { FlowType } from '@ringback/shared-types';
 import { logger } from '../utils/logger';
 import { NotFoundError } from '../utils/errors';
+import { createStripeCustomer } from './billingService';
 
 const prisma = new PrismaClient();
 
@@ -48,6 +49,15 @@ export async function createTenant(input: CreateTenantInput) {
       isEnabled: true,
     },
   });
+
+  // Auto-create Stripe customer
+  if (input.ownerEmail) {
+    try {
+      await createStripeCustomer(tenant.id, input.ownerEmail, input.name);
+    } catch (err) {
+      logger.error('Failed to create Stripe customer', { err, tenantId: tenant.id });
+    }
+  }
 
   logger.info('Tenant created', { tenantId: tenant.id, name: tenant.name });
   return tenant;
