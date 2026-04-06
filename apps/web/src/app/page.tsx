@@ -98,7 +98,7 @@ const jsonLd = {
   offers: {
     '@type': 'AggregateOffer',
     lowPrice: '0',
-    highPrice: '199',
+    highPrice: '149',
     priceCurrency: 'USD',
     offerCount: '4',
   },
@@ -142,7 +142,7 @@ const faqJsonLd = {
       name: 'How much does RingBackSMS cost?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'RingBackSMS offers a free Starter plan with up to 25 SMS per month. Paid plans start at $39/month for the Growth plan (500 SMS), $99/month for Scale (2,500 SMS), and $199/month for Enterprise with unlimited usage.',
+        text: 'RingBackSMS offers a free Starter plan with up to 25 SMS per month. Paid plans start at $49/month for the Growth plan (500 SMS) and $149/month for Scale (2,500 SMS). Enterprise pricing is custom.',
       },
     },
     {
@@ -304,7 +304,7 @@ const PRICING = [
   },
   {
     name: 'Growth',
-    price: '$39',
+    price: '$49',
     period: '/month',
     description: 'For growing businesses ready to capture every lead',
     sms: '500 SMS/month',
@@ -321,7 +321,7 @@ const PRICING = [
   },
   {
     name: 'Scale',
-    price: '$99',
+    price: '$149',
     period: '/month',
     description: 'For busy businesses that need full automation',
     sms: '2,500 SMS/month',
@@ -338,8 +338,8 @@ const PRICING = [
   },
   {
     name: 'Enterprise',
-    price: '$199',
-    period: '/month',
+    price: 'Custom',
+    period: '',
     description: 'For multi-location businesses and franchises',
     sms: 'Unlimited SMS',
     features: [
