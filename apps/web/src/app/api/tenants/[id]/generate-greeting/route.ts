@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
@@ -35,8 +35,8 @@ async function fetchWebsiteContext(url: string): Promise<string | null> {
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const { userId } = await auth();
-  if (!userId) return apiError('Unauthorized', 401);
+  const authResult = await verifyTenantAccess(params.id);
+  if (isNextResponse(authResult)) return authResult;
 
   try {
     const tenant = await prisma.tenant.findUnique({

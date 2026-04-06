@@ -1,5 +1,7 @@
 import { NextRequest } from 'next/server';
+import twilio from 'twilio';
 import { prisma } from '@/lib/server/db';
+import { decryptNullable } from '@/lib/server/encryption';
 import { logger } from '@/lib/server/logger';
 
 export async function POST(request: NextRequest) {
@@ -15,6 +17,35 @@ export async function POST(request: NextRequest) {
 
   if (!callSid || !recordingUrl) {
     return new Response('Missing required fields', { status: 400 });
+  }
+
+  // Resolve tenant via the missed call record to validate the signature
+  const missedCall = await prisma.missedCall.findUnique({
+    where: { twilioCallSid: callSid },
+    select: { tenantId: true },
+  });
+
+  if (!missedCall) {
+    logger.warn('Recording callback for unknown CallSid', { callSid });
+    return new Response('Unknown call', { status: 404 });
+  }
+
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: missedCall.tenantId },
+    select: { twilioAuthToken: true },
+  });
+
+  const authToken = tenant ? decryptNullable(tenant.twilioAuthToken) : null;
+  if (!authToken) {
+    logger.error('Missing Twilio auth token for recording callback', { callSid, tenantId: missedCall.tenantId });
+    return new Response('Configuration error', { status: 500 });
+  }
+
+  const sig = request.headers.get('x-twilio-signature') ?? '';
+  const url = `${process.env.FRONTEND_URL ?? ''}/api/webhooks/twilio/recording-callback`;
+  if (!twilio.validateRequest(authToken, sig, url, body)) {
+    logger.warn('Invalid Twilio signature on recording callback', { callSid });
+    return new Response('Invalid signature', { status: 403 });
   }
 
   // Only process completed recordings

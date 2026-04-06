@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { createStripeCustomer } from '@/lib/server/services/billingService';
 import { z } from 'zod';
 import { apiCreated, apiError } from '@/lib/server/response';
@@ -11,13 +11,13 @@ const CustomerSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth();
-  if (!userId) return apiError('Unauthorized', 401);
   try {
     const body = CustomerSchema.parse(await req.json());
+    const authResult = await verifyTenantAccess(body.tenantId);
+    if (isNextResponse(authResult)) return authResult;
     const customerId = await createStripeCustomer(body.tenantId, body.email, body.name);
     return apiCreated({ customerId });
   } catch (err: any) {
-    return apiError(err.message ?? 'Internal server error', 500);
+    return apiError('Internal server error', 500);
   }
 }

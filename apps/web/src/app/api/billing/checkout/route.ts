@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { createCheckoutSession } from '@/lib/server/services/billingService';
 import { Plan } from '@ringback/shared-types';
 import { z } from 'zod';
@@ -13,13 +13,13 @@ const CheckoutSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth();
-  if (!userId) return apiError('Unauthorized', 401);
   try {
     const body = CheckoutSchema.parse(await req.json());
+    const authResult = await verifyTenantAccess(body.tenantId);
+    if (isNextResponse(authResult)) return authResult;
     const url = await createCheckoutSession(body.tenantId, body.plan, body.successUrl, body.cancelUrl);
     return apiSuccess({ url });
   } catch (err: any) {
-    return apiError(err.message ?? 'Internal server error', 500);
+    return apiError('Internal server error', 500);
   }
 }

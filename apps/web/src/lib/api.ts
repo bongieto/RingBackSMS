@@ -122,6 +122,8 @@ export const contactApi = {
     api.post(`/contacts/${id}/sms`, { message }).then((r) => r.data.data),
   export: (tenantId: string) =>
     api.get('/contacts/export', { params: { tenantId }, responseType: 'blob' as const }).then((r) => r.data),
+  bulk: (tenantId: string, contactIds: string[], action: 'tag' | 'status' | 'delete', value?: string) =>
+    webApi.post('/contacts/bulk', { tenantId, contactIds, action, value }).then((r) => r.data.data),
 };
 
 export const squareApi = {
@@ -133,6 +135,16 @@ export const squareApi = {
     api.post('/integrations/square/sync-catalog', null, { params: { tenantId } }).then((r) => r.data.data),
   pushCatalog: (tenantId: string) =>
     api.post('/integrations/square/push-catalog', null, { params: { tenantId } }).then((r) => r.data.data),
+};
+
+export const searchApi = {
+  search: (tenantId: string, q: string) =>
+    webApi.get('/search', { params: { tenantId, q } }).then((r) => r.data.data),
+};
+
+export const notificationApi = {
+  test: (tenantId: string, channel: 'email' | 'sms' | 'slack') =>
+    webApi.post('/notifications/test', { tenantId, channel }).then((r) => r.data.data),
 };
 
 export const posApi = {

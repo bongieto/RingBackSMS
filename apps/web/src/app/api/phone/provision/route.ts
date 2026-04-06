@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import {
   provisionSubAccount,
@@ -14,15 +14,15 @@ import { logger } from '@/lib/server/logger';
 export const maxDuration = 30;
 
 const ProvisionSchema = z.object({
-  phoneNumber: z.string().min(1),
+  phoneNumber: z.string().regex(/^\+[1-9]\d{1,14}$/, 'Phone must be in E.164 format'),
   tenantId: z.string().uuid(),
 });
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth();
-  if (!userId) return apiError('Unauthorized', 401);
   try {
     const { phoneNumber, tenantId } = ProvisionSchema.parse(await req.json());
+    const authResult = await verifyTenantAccess(tenantId);
+    if (isNextResponse(authResult)) return authResult;
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
@@ -70,6 +70,6 @@ export async function POST(req: NextRequest) {
 
     return apiSuccess({ phoneNumber: provisionedNumber, subAccountSid });
   } catch (err: any) {
-    return apiError(err.message ?? 'Internal server error', 500);
+    return apiError('Internal server error', 500);
   }
 }

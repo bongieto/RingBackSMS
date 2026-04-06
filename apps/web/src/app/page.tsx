@@ -133,7 +133,7 @@ const faqJsonLd = {
       name: 'Can RingBackSMS take orders via text?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'Yes! RingBackSMS includes a full SMS ordering flow. Customers can browse your menu, select items, confirm their order, and choose a pickup time — all through text messages. Orders sync to your Square POS automatically.',
+        text: 'Yes! RingBackSMS includes a full SMS ordering flow. Customers can browse your menu, select items, confirm their order, and choose a pickup time — all through text messages. Customers can pay via a secure Stripe payment link sent by SMS. Orders sync to your POS automatically.',
       },
     },
     {
@@ -395,7 +395,7 @@ const FAQ = [
   {
     question: 'Can the AI really take food orders via text?',
     answer:
-      'Yes! You upload your menu (or sync it from Square POS), and the AI guides customers through ordering — showing the menu, letting them pick items, confirming the order, and choosing a pickup time. Orders appear in your dashboard and can sync directly to your Square POS.',
+      'Yes! You upload your menu (or sync it from Square POS), and the AI guides customers through ordering — showing the menu, letting them pick items, confirming the order, and choosing a pickup time. Customers can pay via a secure Stripe payment link sent by SMS. Orders appear in your dashboard and can sync directly to your POS.',
   },
   {
     question: 'What if the AI can\'t answer a question?',
@@ -423,6 +423,11 @@ const FAQ = [
       'We\'ll never cut off your customers. If you exceed your plan\'s SMS limit, additional messages are billed at $0.05/SMS — well below industry average. You\'ll get a notification when you\'re approaching your limit so there are no surprises.',
   },
   {
+    question: 'Can customers pay via text?',
+    answer:
+      'Yes. After confirming an order, customers receive a secure Stripe Checkout link via SMS. You can require payment upfront (the order is only placed after payment) or send the link as a follow-up after the order is placed. Payment links expire after 30 minutes.',
+  },
+  {
     question: 'Do you integrate with my POS system?',
     answer:
       'Yes — RingBackSMS connects with Square, Clover, Toast, and Shopify out of the box. Once connected, your menu is automatically synced so customers can browse and order via SMS. Orders are pushed directly to your POS in real time, so your kitchen gets them instantly with no manual entry required.',
@@ -438,7 +443,9 @@ const SMS_DEMO = [
   { from: 'customer', text: '2 pepperoni and a caesar salad' },
   { from: 'business', text: 'Got it! Your order:\n\n2x Pepperoni Pizza — $28\n1x Caesar Salad — $8\n\nTotal: $36\n\nWhen would you like to pick up?' },
   { from: 'customer', text: '6:30pm' },
-  { from: 'business', text: 'Perfect! Order confirmed!\n\nOrder #ORD-2847\nPickup: 6:30 PM\nTotal: $36\n\nSee you soon!' },
+  { from: 'business', text: 'Your total is $36. You\'ll receive a payment link — your order will be confirmed once payment is received.' },
+  { from: 'business', text: 'Pay securely here: pay.ringbacksms.com/checkout/...' },
+  { from: 'business', text: 'Payment received! Order #ORD-2847 confirmed. Pickup: 6:30 PM. See you soon!' },
 ];
 
 /* ─── Page Component ────────────────────────────────────────────────── */

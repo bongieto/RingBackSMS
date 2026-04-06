@@ -1,14 +1,13 @@
 import { NextRequest } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { apiSuccess, apiError } from '@/lib/server/response';
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const { userId } = await auth();
-  if (!userId) return apiError('Unauthorized', 401);
-
   const contact = await prisma.contact.findUnique({ where: { id: params.id } });
   if (!contact) return apiError('Contact not found', 404);
+  const authResult = await verifyTenantAccess(contact.tenantId);
+  if (isNextResponse(authResult)) return authResult;
 
   const [conversations, orders, meetings] = await Promise.all([
     prisma.conversation.findMany({

@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { ContactStatus, Prisma } from '@prisma/client';
 import { z } from 'zod';
@@ -8,7 +8,7 @@ import { logger } from '@/lib/server/logger';
 
 const CreateSchema = z.object({
   tenantId: z.string().min(1),
-  phone: z.string().min(1),
+  phone: z.string().regex(/^\+[1-9]\d{1,14}$/, 'Phone must be in E.164 format'),
   name: z.string().optional(),
   email: z.string().email().optional().or(z.literal('')),
   notes: z.string().optional(),
@@ -17,11 +17,11 @@ const CreateSchema = z.object({
 });
 
 export async function GET(request: NextRequest) {
-  const { userId } = await auth();
-  if (!userId) return apiError('Unauthorized', 401);
   const { searchParams } = new URL(request.url);
   const tenantId = searchParams.get('tenantId');
   if (!tenantId) return apiError('tenantId is required', 400);
+  const authResult = await verifyTenantAccess(tenantId);
+  if (isNextResponse(authResult)) return authResult;
 
   const search = searchParams.get('search') ?? undefined;
   const tag = searchParams.get('tag') ?? undefined;
@@ -55,10 +55,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth();
-  if (!userId) return apiError('Unauthorized', 401);
   try {
     const body = CreateSchema.parse(await req.json());
+    const authResult = await verifyTenantAccess(body.tenantId);
+    if (isNextResponse(authResult)) return authResult;
 
     const contact = await prisma.contact.create({
       data: {
@@ -75,6 +75,6 @@ export async function POST(req: NextRequest) {
     logger.info('Contact created', { contactId: contact.id, tenantId: body.tenantId });
     return apiCreated(contact);
   } catch (err: any) {
-    return apiError(err.message ?? 'Internal server error', 500);
+    return apiError('Internal server error', 500);
   }
 }

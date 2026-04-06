@@ -267,12 +267,24 @@ export default function HelpPage() {
               <li>They reply with their selection (e.g., &quot;1x2, 3x1&quot; for 2 of item 1 and 1 of item 3, or just item names)</li>
               <li>They see an order summary with total and reply <strong>YES</strong> to confirm</li>
               <li>They provide a pickup time</li>
+              <li>If <strong>Require Upfront Payment</strong> is enabled, the customer receives a Stripe payment link via SMS. The order is only confirmed after payment is completed. If disabled, the order is placed immediately.</li>
               <li>You receive a notification with the order details</li>
             </ol>
           </SubSection>
 
+          <SubSection title="Payments">
+            <p className="text-gray-700 mb-3">RingBackSMS integrates with <strong>Stripe</strong> to collect payments during the SMS ordering flow.</p>
+            <ul className="list-disc pl-6 text-gray-700 space-y-2">
+              <li><strong>Payment links:</strong> After a customer confirms their order, they receive a secure Stripe Checkout link via SMS. They can pay on their phone in seconds.</li>
+              <li><strong>Require Upfront Payment:</strong> Toggle this ON in <strong>Settings &rarr; Payments</strong> to require payment before the order is placed. The order is only created in your system after the customer completes payment.</li>
+              <li><strong>Pay After Order:</strong> When upfront payment is OFF, the order is placed immediately and the payment link is sent as a follow-up. Useful for businesses that want to confirm the order first.</li>
+              <li><strong>Expiration:</strong> Payment links expire after 30 minutes. If the link expires, the customer is notified via SMS and can text to start a new order.</li>
+              <li><strong>Cancellation:</strong> While waiting for payment (upfront mode), customers can text <strong>CANCEL</strong> to abort and return to the menu.</li>
+            </ul>
+          </SubSection>
+
           <SubSection title="Managing orders">
-            <p className="text-gray-700">Go to <strong>Orders</strong> to see all incoming orders. Each order moves through these statuses:</p>
+            <p className="text-gray-700">Go to <strong>Orders</strong> to see all incoming orders. Each order shows its payment status (<strong>Unpaid</strong>, <strong>Pending</strong>, <strong>Paid</strong>, or <strong>Expired</strong>) alongside its fulfillment status:</p>
             <p className="text-sm text-gray-600 mt-2"><strong>Pending</strong> &rarr; <strong>Confirmed</strong> &rarr; <strong>Preparing</strong> &rarr; <strong>Ready</strong> &rarr; <strong>Completed</strong></p>
             <p className="text-sm text-gray-600 mt-1">You can advance the status or cancel at any stage. Orders auto-refresh every 30 seconds.</p>
           </SubSection>
@@ -431,6 +443,14 @@ export default function HelpPage() {
             <p className="text-gray-700">Set your timezone and business hours for each day of the week. You can also add closed dates for holidays. The AI is aware of your hours and can tell callers when you&apos;re open.</p>
           </SubSection>
 
+          <SubSection title="Payments">
+            <ul className="list-disc pl-6 text-gray-700 space-y-2">
+              <li><strong>Require Upfront Payment:</strong> When toggled ON, customers must pay via Stripe before their order is confirmed. The order is only created after payment succeeds.</li>
+              <li><strong>Pay After Order:</strong> When toggled OFF (default), orders are placed immediately and a payment link is sent as a follow-up.</li>
+            </ul>
+            <p className="text-sm text-gray-600 mt-2">Configure this in <strong>Settings &rarr; Payments</strong>.</p>
+          </SubSection>
+
           <SubSection title="Phone number">
             <p className="text-gray-700">Go to <strong>Settings &rarr; Phone</strong> to provision a phone number or view your current number. This is the number callers are forwarded to and the number SMS messages come from.</p>
           </SubSection>
@@ -485,7 +505,15 @@ export default function HelpPage() {
           </FAQ>
 
           <FAQ question="How does SMS ordering work?">
-            <p>Customers text ORDER and see your numbered menu. They reply with item numbers and quantities (e.g., &quot;1x2, 3x1&quot;), confirm with YES, and provide a pickup time. You get notified instantly. If you have a POS system connected, orders can be pushed there automatically.</p>
+            <p>Customers text ORDER and see your numbered menu. They reply with item numbers and quantities (e.g., &quot;1x2, 3x1&quot;), confirm with YES, and provide a pickup time. If upfront payment is required, they receive a Stripe payment link and the order is confirmed once payment is complete. You get notified instantly. If you have a POS system connected, orders can be pushed there automatically.</p>
+          </FAQ>
+
+          <FAQ question="Can customers pay via text?">
+            <p>Yes. After confirming an order, customers receive a secure Stripe Checkout link via SMS. They can pay directly on their phone. You can choose whether payment is required upfront (before the order is placed) or sent as a follow-up after the order is confirmed. Configure this in <strong>Settings &rarr; Payments</strong>.</p>
+          </FAQ>
+
+          <FAQ question="What happens if a payment link expires?">
+            <p>Payment links expire after 30 minutes. If a customer doesn&apos;t complete payment in time, they receive an SMS letting them know the link expired. They can text back to start a new order. If upfront payment was required, no order is created until they pay.</p>
           </FAQ>
 
           <FAQ question="Can I import my menu from Square or another POS?">

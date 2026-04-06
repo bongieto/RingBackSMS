@@ -1,12 +1,12 @@
 import { NextRequest } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { getTenantById } from '@/lib/server/services/tenantService';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { AppError } from '@/lib/server/errors';
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const { userId } = await auth();
-  if (!userId) return apiError('Unauthorized', 401);
+  const authResult = await verifyTenantAccess(params.id);
+  if (isNextResponse(authResult)) return authResult;
   try {
     const tenant = await getTenantById(params.id);
     return apiSuccess(tenant);

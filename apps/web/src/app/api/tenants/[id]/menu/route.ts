@@ -1,13 +1,13 @@
 import { NextRequest } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { getTenantMenuItems, upsertMenuItem } from '@/lib/server/services/tenantService';
 import { z } from 'zod';
 import { apiSuccess, apiCreated, apiError } from '@/lib/server/response';
 import { AppError } from '@/lib/server/errors';
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const { userId } = await auth();
-  if (!userId) return apiError('Unauthorized', 401);
+  const authResult = await verifyTenantAccess(params.id);
+  if (isNextResponse(authResult)) return authResult;
   try {
     const items = await getTenantMenuItems(params.id);
     return apiSuccess(items);
@@ -29,8 +29,8 @@ const ItemSchema = z.object({
 });
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const { userId, orgId } = await auth();
-  if (!userId || !orgId) return apiError('Unauthorized', 401);
+  const authResult = await verifyTenantAccess(params.id);
+  if (isNextResponse(authResult)) return authResult;
   try {
     const body = ItemSchema.parse(await req.json());
     const item = await upsertMenuItem(params.id, body);

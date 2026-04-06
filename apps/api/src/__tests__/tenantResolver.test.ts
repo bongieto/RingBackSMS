@@ -96,11 +96,28 @@ describe('tenantResolver middleware', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('calls next() and sets tenantId for valid active tenant (no auth token)', async () => {
+  it('returns 500 when tenant has no auth token (fail-closed)', async () => {
     __mockFindUnique.mockResolvedValue({
       id: 'tenant-abc',
       isActive: true,
       twilioAuthToken: null,
+      twilioSubAccountSid: 'AC123',
+    });
+
+    const req = makeReq();
+    const res = makeRes();
+
+    await tenantResolver(req as Request, res as Response, next);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('calls next() and sets tenantId for valid tenant with valid signature', async () => {
+    __mockFindUnique.mockResolvedValue({
+      id: 'tenant-abc',
+      isActive: true,
+      twilioAuthToken: 'encrypted-token',
       twilioSubAccountSid: 'AC123',
     });
 
