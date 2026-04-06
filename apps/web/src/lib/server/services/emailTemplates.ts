@@ -63,8 +63,12 @@ export function welcomeEmail(businessName: string, plan: Plan): { subject: strin
 
       ${stepList([
         {
-          title: 'Set up your phone number',
-          description: 'Go to Settings &rarr; Phone to provision a Twilio number. Every missed call to this number triggers an automatic SMS reply.',
+          title: 'Set up your RingbackSMS phone number',
+          description: 'Go to Settings &rarr; Phone to provision your dedicated RingbackSMS number. This is the number that will catch missed calls and auto-reply via SMS.',
+        },
+        {
+          title: 'Forward your business phone to RingbackSMS',
+          description: 'Set up call forwarding on your existing business phone so unanswered calls go to your RingbackSMS number. On most phones: dial <strong>*67*[your RingbackSMS number]#</strong> or set "Forward when unanswered" in your phone settings. This way customers keep calling your normal number &mdash; RingbackSMS picks up when you can\'t.',
         },
         {
           title: 'Customize your greeting',
