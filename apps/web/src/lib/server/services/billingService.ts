@@ -11,12 +11,27 @@ const PLAN_PRICE_IDS: Record<Plan, string | undefined> = {
   [Plan.ENTERPRISE]: process.env.STRIPE_ENTERPRISE_PRICE_ID,
 };
 
-function getStripe(): Stripe {
-  return new Stripe(process.env.STRIPE_SECRET_KEY ?? '', {
-    apiVersion: '2023-10-16',
-    maxNetworkRetries: 1,
-    timeout: 20000,
+function getStripeKey(): string {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error('STRIPE_SECRET_KEY not set');
+  return key;
+}
+
+/** Make a POST request to the Stripe API using fetch (works reliably in Vercel serverless) */
+async function stripePost(path: string, body: Record<string, string>): Promise<any> {
+  const res = await fetch(`https://api.stripe.com/v1${path}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${getStripeKey()}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams(body).toString(),
   });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error?.message ?? `Stripe API error: ${res.status}`);
+  }
+  return data;
 }
 
 export async function createStripeCustomer(
@@ -24,12 +39,10 @@ export async function createStripeCustomer(
   email: string,
   name: string
 ): Promise<string> {
-  const stripe = getStripe();
-
-  const customer = await stripe.customers.create({
+  const customer = await stripePost('/customers', {
     email,
     name,
-    metadata: { tenantId },
+    'metadata[tenantId]': tenantId,
   });
 
   await prisma.tenant.update({
@@ -46,8 +59,6 @@ export async function createCheckoutSession(
   successUrl: string,
   cancelUrl: string
 ): Promise<string> {
-  const stripe = getStripe();
-
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
     select: { stripeCustomerId: true },
@@ -56,7 +67,6 @@ export async function createCheckoutSession(
   let customerId = tenant?.stripeCustomerId;
 
   if (!customerId) {
-    // Auto-create Stripe customer if missing
     const config = await prisma.tenantConfig.findUnique({ where: { tenantId }, select: { ownerEmail: true } });
     const tenantRecord = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
     if (!config?.ownerEmail) {
@@ -71,24 +81,25 @@ export async function createCheckoutSession(
     throw new Error(`No Stripe price configured for plan ${plan}`);
   }
 
-  const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
-    { price: priceId, quantity: 1 },
-  ];
-
-  // Add SMS price if configured
-  if (process.env.STRIPE_SMS_METERED_PRICE_ID) {
-    lineItems.push({ price: process.env.STRIPE_SMS_METERED_PRICE_ID, quantity: 1 });
-  }
-
-  const session = await stripe.checkout.sessions.create({
+  const body: Record<string, string> = {
     customer: customerId,
     mode: 'subscription',
-    line_items: lineItems,
+    'line_items[0][price]': priceId,
+    'line_items[0][quantity]': '1',
     success_url: successUrl,
     cancel_url: cancelUrl,
-    metadata: { tenantId, plan },
-  });
+    'metadata[tenantId]': tenantId,
+    'metadata[plan]': plan,
+  };
 
+  // Add SMS price if configured
+  const smsPriceId = process.env.STRIPE_SMS_METERED_PRICE_ID;
+  if (smsPriceId) {
+    body['line_items[1][price]'] = smsPriceId;
+    body['line_items[1][quantity]'] = '1';
+  }
+
+  const session = await stripePost('/checkout/sessions', body);
   return session.url ?? '';
 }
 
@@ -96,8 +107,6 @@ export async function createBillingPortalSession(
   tenantId: string,
   returnUrl: string
 ): Promise<string> {
-  const stripe = getStripe();
-
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
     select: { stripeCustomerId: true },
@@ -115,7 +124,7 @@ export async function createBillingPortalSession(
     logger.info('Auto-created Stripe customer for portal', { tenantId, customerId });
   }
 
-  const session = await stripe.billingPortal.sessions.create({
+  const session = await stripePost('/billing_portal/sessions', {
     customer: customerId,
     return_url: returnUrl,
   });
@@ -155,14 +164,12 @@ export async function handleSubscriptionUpdated(
 
   logger.info('Subscription updated', { tenantId, plan, status: subscription.status });
 
-  // Send welcome email on first successful subscription
   if (isNewSubscription && (subscription.status === 'active' || subscription.status === 'trialing')) {
     sendWelcomeEmail(tenantId, plan).catch((err) =>
       logger.error('Failed to send welcome email', { err, tenantId })
     );
   }
 
-  // Send payment failed email
   if (subscription.status === 'past_due' || subscription.status === 'unpaid') {
     sendPaymentFailedEmail(tenantId).catch((err) =>
       logger.error('Failed to send payment failed email', { err, tenantId })
@@ -195,7 +202,7 @@ export function constructStripeEvent(
   payload: Buffer,
   signature: string
 ): Stripe.Event {
-  const stripe = getStripe();
+  const stripe = new Stripe(getStripeKey(), { apiVersion: '2023-10-16' });
   return stripe.webhooks.constructEvent(
     payload,
     signature,
