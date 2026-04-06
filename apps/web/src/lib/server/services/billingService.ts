@@ -2,6 +2,7 @@ import Stripe from 'stripe';
 import { Plan } from '@ringback/shared-types';
 import { logger } from '../logger';
 import { prisma } from '../db';
+import { sendWelcomeEmail, sendSubscriptionCancelledEmail, sendPaymentFailedEmail } from './emailService';
 
 const PLAN_PRICE_IDS: Record<Plan, string | undefined> = {
   [Plan.STARTER]: process.env.STRIPE_STARTER_PRICE_ID,
@@ -123,6 +124,12 @@ export async function handleSubscriptionUpdated(
 
   const plan = planEntry ? (planEntry[0] as Plan) : Plan.STARTER;
 
+  const previousTenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { stripeSubscriptionId: true },
+  });
+  const isNewSubscription = !previousTenant?.stripeSubscriptionId;
+
   await prisma.tenant.update({
     where: { id: tenantId },
     data: {
@@ -133,6 +140,20 @@ export async function handleSubscriptionUpdated(
   });
 
   logger.info('Subscription updated', { tenantId, plan, status: subscription.status });
+
+  // Send welcome email on first successful subscription
+  if (isNewSubscription && (subscription.status === 'active' || subscription.status === 'trialing')) {
+    sendWelcomeEmail(tenantId, plan).catch((err) =>
+      logger.error('Failed to send welcome email', { err, tenantId })
+    );
+  }
+
+  // Send payment failed email
+  if (subscription.status === 'past_due' || subscription.status === 'unpaid') {
+    sendPaymentFailedEmail(tenantId).catch((err) =>
+      logger.error('Failed to send payment failed email', { err, tenantId })
+    );
+  }
 }
 
 export async function handleSubscriptionDeleted(
@@ -150,6 +171,10 @@ export async function handleSubscriptionDeleted(
   });
 
   logger.info('Subscription cancelled', { tenantId });
+
+  sendSubscriptionCancelledEmail(tenantId).catch((err) =>
+    logger.error('Failed to send cancellation email', { err, tenantId })
+  );
 }
 
 export function constructStripeEvent(
