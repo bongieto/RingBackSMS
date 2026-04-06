@@ -57,8 +57,16 @@ export async function createCheckoutSession(
     select: { stripeCustomerId: true },
   });
 
-  if (!tenant?.stripeCustomerId) {
-    throw new Error('Tenant has no Stripe customer ID');
+  let customerId = tenant?.stripeCustomerId;
+
+  if (!customerId) {
+    const config = await prisma.tenantConfig.findUnique({ where: { tenantId }, select: { ownerEmail: true } });
+    const tenantRecord = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
+    if (!config?.ownerEmail) {
+      throw new Error('Owner email required to create billing account');
+    }
+    customerId = await createStripeCustomer(tenantId, config.ownerEmail, tenantRecord?.name ?? '');
+    logger.info('Auto-created Stripe customer for checkout', { tenantId, customerId });
   }
 
   const priceId = PLAN_PRICE_IDS[plan];
@@ -76,7 +84,7 @@ export async function createCheckoutSession(
   }
 
   const session = await stripe.checkout.sessions.create({
-    customer: tenant.stripeCustomerId,
+    customer: customerId,
     mode: 'subscription',
     line_items: lineItems,
     success_url: successUrl,
