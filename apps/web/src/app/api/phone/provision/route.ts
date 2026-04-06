@@ -10,6 +10,9 @@ import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
 
+// Provisioning creates a sub-account + buys a number — can take a while
+export const maxDuration = 30;
+
 const ProvisionSchema = z.object({
   phoneNumber: z.string().min(1),
   tenantId: z.string().uuid(),

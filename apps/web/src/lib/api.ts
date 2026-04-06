@@ -81,11 +81,11 @@ export const phoneApi = {
     searchedAreaCode: string;
     message?: string;
   }> =>
-    api.post('/phone/search', { tenantId, areaCode }).then((r) => r.data.data),
+    webApi.post('/phone/search', { tenantId, areaCode }).then((r) => r.data.data),
   provision: (tenantId: string, phoneNumber: string) =>
-    api.post('/phone/provision', { tenantId, phoneNumber }).then((r) => r.data.data),
+    webApi.post('/phone/provision', { tenantId, phoneNumber }).then((r) => r.data.data),
   getStatus: (tenantId: string) =>
-    api.get('/phone/status', { params: { tenantId } }).then((r) => r.data.data),
+    webApi.get('/phone/status', { params: { tenantId } }).then((r) => r.data.data),
 };
 
 export const meetingApi = {
