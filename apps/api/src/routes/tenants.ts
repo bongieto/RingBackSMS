@@ -95,11 +95,28 @@ router.delete('/:id/menu/:itemId', requireOrgAuth, async (req: Request, res: Res
 });
 
 // GET /tenants/:id/flows
+const ALL_FLOW_TYPES = ['ORDER', 'MEETING', 'FALLBACK', 'CUSTOM'] as const;
 router.get('/:id/flows', requireAuth, async (req: Request, res: Response) => {
-  const flows = await prisma.flow.findMany({
-    where: { tenantId: req.params.id },
+  const tenantId = req.params.id;
+  let flows = await prisma.flow.findMany({
+    where: { tenantId },
     orderBy: { type: 'asc' },
   });
+
+  // Auto-create any missing flow types for existing tenants
+  const existingTypes = new Set(flows.map((f) => f.type));
+  const missingTypes = ALL_FLOW_TYPES.filter((t) => !existingTypes.has(t));
+  if (missingTypes.length > 0) {
+    await prisma.flow.createMany({
+      data: missingTypes.map((type) => ({
+        tenantId,
+        type: type as any,
+        isEnabled: false,
+      })),
+    });
+    flows = await prisma.flow.findMany({ where: { tenantId }, orderBy: { type: 'asc' } });
+  }
+
   sendSuccess(res, flows);
 });
 
