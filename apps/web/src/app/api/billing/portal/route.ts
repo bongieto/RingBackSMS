@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { createBillingPortalSession } from '@/lib/server/services/billingService';
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
@@ -10,13 +10,13 @@ const PortalSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth();
-  if (!userId) return apiError('Unauthorized', 401);
   try {
     const body = PortalSchema.parse(await req.json());
+    const authResult = await verifyTenantAccess(body.tenantId);
+    if (isNextResponse(authResult)) return authResult;
     const url = await createBillingPortalSession(body.tenantId, body.returnUrl);
     return apiSuccess({ url });
   } catch (err: any) {
-    return apiError(err.message ?? 'Internal server error', 500);
+    return apiError('Internal server error', 500);
   }
 }

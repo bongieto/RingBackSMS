@@ -1,14 +1,14 @@
 import { NextRequest } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
 
 export async function GET(request: NextRequest) {
-  const { userId } = await auth();
-  if (!userId) return apiError('Unauthorized', 401);
   try {
     const tenantId = z.string().uuid().parse(new URL(request.url).searchParams.get('tenantId'));
+    const authResult = await verifyTenantAccess(tenantId);
+    if (isNextResponse(authResult)) return authResult;
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
@@ -26,6 +26,6 @@ export async function GET(request: NextRequest) {
       subAccountSid: tenant.twilioSubAccountSid,
     });
   } catch (err: any) {
-    return apiError(err.message ?? 'Internal server error', 500);
+    return apiError('Internal server error', 500);
   }
 }

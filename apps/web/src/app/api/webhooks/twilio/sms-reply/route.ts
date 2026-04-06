@@ -29,14 +29,16 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // Verify signature
+  // Verify signature — fail-closed if token is missing
   const authToken = decryptNullable(tenant.twilioAuthToken);
-  if (authToken) {
-    const sig = request.headers.get('x-twilio-signature') ?? '';
-    const url = `${process.env.FRONTEND_URL ?? ''}/api/webhooks/twilio/sms-reply`;
-    if (!twilio.validateRequest(authToken, sig, url, body)) {
-      return new Response('Invalid signature', { status: 403 });
-    }
+  if (!authToken) {
+    logger.error('Missing Twilio auth token, cannot validate signature', { tenantId: tenant.id });
+    return new Response('Configuration error', { status: 500 });
+  }
+  const sig = request.headers.get('x-twilio-signature') ?? '';
+  const url = `${process.env.FRONTEND_URL ?? ''}/api/webhooks/twilio/sms-reply`;
+  if (!twilio.validateRequest(authToken, sig, url, body)) {
+    return new Response('Invalid signature', { status: 403 });
   }
 
   // Respond immediately to Twilio to avoid timeout

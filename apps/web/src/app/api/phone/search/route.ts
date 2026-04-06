@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { searchAvailableNumbers, searchNearbyNumbers } from '@/lib/server/services/twilioService';
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
@@ -23,10 +23,10 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 }
 
 export async function POST(req: NextRequest) {
-  const { userId } = await auth();
-  if (!userId) return apiError('Unauthorized', 401);
   try {
-    const { areaCode } = SearchSchema.parse(await req.json());
+    const { areaCode, tenantId } = SearchSchema.parse(await req.json());
+    const authResult = await verifyTenantAccess(tenantId);
+    if (isNextResponse(authResult)) return authResult;
 
     // Try exact area code first (10s timeout)
     let numbers: Array<{ phoneNumber: string; friendlyName: string }> = [];
@@ -61,6 +61,6 @@ export async function POST(req: NextRequest) {
         : `No numbers available in or near area code ${areaCode}. Try a different area code.`,
     });
   } catch (err: any) {
-    return apiError(err.message ?? 'Internal server error', 500);
+    return apiError('Internal server error', 500);
   }
 }

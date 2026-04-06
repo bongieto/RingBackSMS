@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { MeetingStatus } from '@prisma/client';
 import { z } from 'zod';
@@ -37,24 +37,24 @@ async function validateBusinessHours(tenantId: string, scheduledAt: string): Pro
 }
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const { userId } = await auth();
-  if (!userId) return apiError('Unauthorized', 401);
   const meeting = await prisma.meeting.findUnique({
     where: { id: params.id },
     include: { conversation: true },
   });
   if (!meeting) return apiError('Meeting not found', 404);
+  const authResult = await verifyTenantAccess(meeting.tenantId);
+  if (isNextResponse(authResult)) return authResult;
   return apiSuccess(meeting);
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const { userId, orgId } = await auth();
-  if (!userId || !orgId) return apiError('Unauthorized', 401);
   try {
     const body = UpdateMeetingSchema.parse(await req.json());
 
     const existing = await prisma.meeting.findUnique({ where: { id: params.id } });
     if (!existing) return apiError('Meeting not found', 404);
+    const authResult = await verifyTenantAccess(existing.tenantId);
+    if (isNextResponse(authResult)) return authResult;
 
     if (body.scheduledAt) {
       await validateBusinessHours(existing.tenantId, body.scheduledAt);
@@ -77,10 +77,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const { userId, orgId } = await auth();
-  if (!userId || !orgId) return apiError('Unauthorized', 401);
   const existing = await prisma.meeting.findUnique({ where: { id: params.id } });
   if (!existing) return apiError('Meeting not found', 404);
+  const authResult = await verifyTenantAccess(existing.tenantId);
+  if (isNextResponse(authResult)) return authResult;
   const meeting = await prisma.meeting.update({
     where: { id: params.id },
     data: { status: 'CANCELLED' },

@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
@@ -11,8 +11,8 @@ const FlowUpdateSchema = z.object({
 });
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string; flowId: string } }) {
-  const { userId, orgId } = await auth();
-  if (!userId || !orgId) return apiError('Unauthorized', 401);
+  const authResult = await verifyTenantAccess(params.id);
+  if (isNextResponse(authResult)) return authResult;
   try {
     const body = FlowUpdateSchema.parse(await req.json());
     const flow = await prisma.flow.update({
@@ -24,6 +24,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     });
     return apiSuccess(flow);
   } catch (err: any) {
-    return apiError(err.message ?? 'Internal server error', 500);
+    return apiError('Internal server error', 500);
   }
 }

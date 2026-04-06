@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { MeetingStatus } from '@prisma/client';
 import { z } from 'zod';
@@ -39,10 +39,12 @@ async function validateBusinessHours(tenantId: string, scheduledAt: string): Pro
 }
 
 export async function GET(request: NextRequest) {
-  const { userId } = await auth();
-  if (!userId) return apiError('Unauthorized', 401);
   const { searchParams } = new URL(request.url);
   const tenantId = searchParams.get('tenantId') ?? '';
+  if (!tenantId) return apiError('tenantId is required', 400);
+  const authResult = await verifyTenantAccess(tenantId);
+  if (isNextResponse(authResult)) return authResult;
+
   const status = searchParams.get('status') as MeetingStatus | undefined ?? undefined;
   const from = searchParams.get('from') ?? undefined;
   const to = searchParams.get('to') ?? undefined;
@@ -77,10 +79,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { userId, orgId } = await auth();
-  if (!userId || !orgId) return apiError('Unauthorized', 401);
   try {
     const body = CreateMeetingSchema.parse(await req.json());
+    const authResult = await verifyTenantAccess(body.tenantId);
+    if (isNextResponse(authResult)) return authResult;
 
     if (body.scheduledAt) {
       await validateBusinessHours(body.tenantId, body.scheduledAt);

@@ -49,24 +49,28 @@ export async function tenantResolver(
       return;
     }
 
-    // Validate Twilio signature using per-tenant auth token
+    // Validate Twilio signature — fail-closed if token is missing
     const authToken = decryptNullable(tenant.twilioAuthToken);
-    if (authToken) {
-      const twilioSignature = req.headers['x-twilio-signature'] as string | undefined;
-      const url = `${process.env.BASE_URL}${req.originalUrl}`;
+    if (!authToken) {
+      logger.error('Missing Twilio auth token, cannot validate signature', { toNumber, tenantId: tenant.id });
+      res.status(500).send('Configuration error');
+      return;
+    }
 
-      const isValid = twilio.validateRequest(
-        authToken,
-        twilioSignature ?? '',
-        url,
-        req.body as Record<string, string>
-      );
+    const twilioSignature = req.headers['x-twilio-signature'] as string | undefined;
+    const url = `${process.env.BASE_URL}${req.originalUrl}`;
 
-      if (!isValid) {
-        logger.warn('Invalid Twilio signature', { toNumber, tenantId: tenant.id });
-        res.status(403).send('Invalid signature');
-        return;
-      }
+    const isValid = twilio.validateRequest(
+      authToken,
+      twilioSignature ?? '',
+      url,
+      req.body as Record<string, string>
+    );
+
+    if (!isValid) {
+      logger.warn('Invalid Twilio signature', { toNumber, tenantId: tenant.id });
+      res.status(403).send('Invalid signature');
+      return;
     }
 
     req.tenantId = tenant.id;

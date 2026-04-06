@@ -36,15 +36,17 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // Verify Twilio signature
+  // Verify Twilio signature — fail-closed if token is missing
   const authToken = decryptNullable(tenant.twilioAuthToken);
-  if (authToken) {
-    const sig = request.headers.get('x-twilio-signature') ?? '';
-    const url = `${process.env.FRONTEND_URL ?? ''}/api/webhooks/twilio/voice`;
-    if (!twilio.validateRequest(authToken, sig, url, body)) {
-      logger.warn('Invalid Twilio signature on voice webhook', { tenantId: tenant.id });
-      return new Response('Invalid signature', { status: 403 });
-    }
+  if (!authToken) {
+    logger.error('Missing Twilio auth token, cannot validate signature', { tenantId: tenant.id });
+    return new Response('Configuration error', { status: 500 });
+  }
+  const sig = request.headers.get('x-twilio-signature') ?? '';
+  const url = `${process.env.FRONTEND_URL ?? ''}/api/webhooks/twilio/voice`;
+  if (!twilio.validateRequest(authToken, sig, url, body)) {
+    logger.warn('Invalid Twilio signature on voice webhook', { tenantId: tenant.id });
+    return new Response('Invalid signature', { status: 403 });
   }
 
   const businessName = tenant.name;
