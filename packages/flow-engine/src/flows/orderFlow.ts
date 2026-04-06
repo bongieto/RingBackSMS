@@ -186,6 +186,44 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
 
     const finalDraft = { ...orderDraft, pickupTime };
 
+    const orderItems = orderDraft.items.map((item) => ({
+      menuItemId: item.menuItemId,
+      name: item.name,
+      quantity: item.quantity,
+      price: item.price,
+    }));
+
+    if (tenantContext.config.requirePayment) {
+      // Payment-first: don't save order yet, wait for payment
+      const nextState: CallerState = {
+        ...currentState,
+        flowStep: 'AWAITING_PAYMENT',
+        orderDraft: finalDraft,
+        lastMessageAt: Date.now(),
+      };
+
+      return {
+        nextState,
+        smsReply: `Your total is $${total.toFixed(2)}. You'll receive a payment link shortly — your order will be confirmed once payment is received.`,
+        sideEffects: [
+          {
+            type: 'CREATE_PAYMENT_LINK',
+            payload: { items: orderItems, total, pickupTime, notes: null },
+          },
+          {
+            type: 'NOTIFY_OWNER',
+            payload: {
+              subject: `Pending Order from ${input.callerPhone}`,
+              message: `New order pending payment!\n${orderDraft.items.map((i) => `${i.quantity}x ${i.name}`).join('\n')}\nTotal: $${total.toFixed(2)}\nPickup: ${pickupTime}`,
+              channel: 'sms',
+            },
+          },
+        ],
+        flowType: FlowType.ORDER,
+      };
+    }
+
+    // No payment required: save order immediately
     const nextState: CallerState = {
       ...currentState,
       flowStep: 'ORDER_COMPLETE',
@@ -193,54 +231,23 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       lastMessageAt: Date.now(),
     };
 
-    const paymentNote = tenantContext.config.requirePayment
-      ? " You'll receive a payment link shortly."
-      : '';
-
-    const sideEffects: SideEffect[] = [
-      {
-        type: 'SAVE_ORDER',
-        payload: {
-          items: orderDraft.items.map((item) => ({
-            menuItemId: item.menuItemId,
-            name: item.name,
-            quantity: item.quantity,
-            price: item.price,
-          })),
-          pickupTime,
-          notes: null,
-          total,
-        },
-      },
-      {
-        type: 'NOTIFY_OWNER',
-        payload: {
-          subject: `New Order from ${input.callerPhone}`,
-          message: `New order received!\n${orderDraft.items.map((i) => `${i.quantity}x ${i.name}`).join('\n')}\nTotal: $${total.toFixed(2)}\nPickup: ${pickupTime}`,
-          channel: 'sms',
-        },
-      },
-    ];
-
-    if (tenantContext.config.requirePayment) {
-      sideEffects.push({
-        type: 'CREATE_PAYMENT_LINK',
-        payload: {
-          items: orderDraft.items.map((item) => ({
-            menuItemId: item.menuItemId,
-            name: item.name,
-            quantity: item.quantity,
-            price: item.price,
-          })),
-          total,
-        },
-      });
-    }
-
     return {
       nextState,
-      smsReply: `Your order has been placed! Pickup time: ${pickupTime}. Total: $${total.toFixed(2)}. We'll have it ready for you!${paymentNote} 🎉`,
-      sideEffects,
+      smsReply: `Your order has been placed! Pickup time: ${pickupTime}. Total: $${total.toFixed(2)}. We'll have it ready for you! 🎉`,
+      sideEffects: [
+        {
+          type: 'SAVE_ORDER',
+          payload: { items: orderItems, pickupTime, notes: null, total },
+        },
+        {
+          type: 'NOTIFY_OWNER',
+          payload: {
+            subject: `New Order from ${input.callerPhone}`,
+            message: `New order received!\n${orderDraft.items.map((i) => `${i.quantity}x ${i.name}`).join('\n')}\nTotal: $${total.toFixed(2)}\nPickup: ${pickupTime}`,
+            channel: 'sms',
+          },
+        },
+      ],
       flowType: FlowType.ORDER,
     };
   }
@@ -256,7 +263,40 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
     const total = orderDraft.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
     const requestedTime = inboundMessage.trim();
     const serviceNames = orderDraft.items.map((i) => i.name).join(', ');
+    const serviceItems = orderDraft.items.map((item) => ({ menuItemId: item.menuItemId, name: item.name, quantity: item.quantity, price: item.price }));
+    const serviceNotes = `Service booking: ${serviceNames}`;
 
+    if (tenantContext.config.requirePayment) {
+      // Payment-first: don't save order yet
+      const nextState: CallerState = {
+        ...currentState,
+        flowStep: 'AWAITING_PAYMENT',
+        orderDraft: { ...orderDraft, pickupTime: requestedTime },
+        lastMessageAt: Date.now(),
+      };
+
+      return {
+        nextState,
+        smsReply: `Your total for ${serviceNames} is $${total.toFixed(2)}. You'll receive a payment link shortly — your booking will be confirmed once payment is received.`,
+        sideEffects: [
+          {
+            type: 'CREATE_PAYMENT_LINK',
+            payload: { items: serviceItems, total, pickupTime: requestedTime, notes: serviceNotes },
+          },
+          {
+            type: 'NOTIFY_OWNER',
+            payload: {
+              subject: `Pending Booking from ${input.callerPhone}`,
+              message: `New booking pending payment!\n${orderDraft.items.map((i) => `${i.quantity}x ${i.name}`).join('\n')}\nTotal: $${total.toFixed(2)}\nRequested: ${requestedTime}`,
+              channel: 'sms',
+            },
+          },
+        ],
+        flowType: FlowType.ORDER,
+      };
+    }
+
+    // No payment required: save order immediately
     const nextState: CallerState = {
       ...currentState,
       flowStep: 'ORDER_COMPLETE',
@@ -264,49 +304,44 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       lastMessageAt: Date.now(),
     };
 
-    const paymentNote = tenantContext.config.requirePayment
-      ? " You'll receive a payment link shortly."
-      : '';
+    return {
+      nextState,
+      smsReply: `Your appointment for ${serviceNames} has been requested for ${requestedTime}. Total: $${total.toFixed(2)}. We'll confirm your booking shortly!`,
+      sideEffects: [
+        { type: 'SAVE_ORDER', payload: { items: serviceItems, pickupTime: requestedTime, notes: serviceNotes, total } },
+        {
+          type: 'NOTIFY_OWNER',
+          payload: {
+            subject: `Service Booking from ${input.callerPhone}`,
+            message: `New booking request!\n${orderDraft.items.map((i) => `${i.quantity}x ${i.name}`).join('\n')}\nTotal: $${total.toFixed(2)}\nRequested: ${requestedTime}`,
+            channel: 'sms',
+          },
+        },
+      ],
+      flowType: FlowType.ORDER,
+    };
+  }
 
-    const sideEffects: SideEffect[] = [
-      {
-        type: 'SAVE_ORDER',
-        payload: {
-          items: orderDraft.items.map((item) => ({ menuItemId: item.menuItemId, name: item.name, quantity: item.quantity, price: item.price })),
-          pickupTime: requestedTime,
-          notes: `Service booking: ${serviceNames}`,
-          total,
-        },
-      },
-      {
-        type: 'NOTIFY_OWNER',
-        payload: {
-          subject: `Service Booking from ${input.callerPhone}`,
-          message: `New booking request!\n${orderDraft.items.map((i) => `${i.quantity}x ${i.name}`).join('\n')}\nTotal: $${total.toFixed(2)}\nRequested: ${requestedTime}`,
-          channel: 'sms',
-        },
-      },
-    ];
-
-    if (tenantContext.config.requirePayment) {
-      sideEffects.push({
-        type: 'CREATE_PAYMENT_LINK',
-        payload: {
-          items: orderDraft.items.map((item) => ({
-            menuItemId: item.menuItemId,
-            name: item.name,
-            quantity: item.quantity,
-            price: item.price,
-          })),
-          total,
-        },
-      });
+  // ── AWAITING_PAYMENT (customer texted while waiting for payment) ──────────
+  if (step === 'AWAITING_PAYMENT') {
+    if (upperMsg === 'CANCEL' || upperMsg === 'NO') {
+      const nextState: CallerState = {
+        ...buildInitialState(input),
+        flowStep: 'MENU_DISPLAY',
+        orderDraft: null,
+      };
+      return {
+        nextState,
+        smsReply: `Order cancelled. Here's our menu again:\n${buildMenuText(menuItems)}`,
+        sideEffects: [],
+        flowType: FlowType.ORDER,
+      };
     }
 
     return {
-      nextState,
-      smsReply: `Your appointment for ${serviceNames} has been requested for ${requestedTime}. Total: $${total.toFixed(2)}. We'll confirm your booking shortly!${paymentNote}`,
-      sideEffects,
+      nextState: { ...currentState, lastMessageAt: Date.now() },
+      smsReply: 'Your payment link has been sent. Complete payment to confirm your order. Text CANCEL to start over.',
+      sideEffects: [],
       flowType: FlowType.ORDER,
     };
   }
