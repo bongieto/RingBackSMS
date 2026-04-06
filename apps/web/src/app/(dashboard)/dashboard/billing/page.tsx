@@ -29,7 +29,7 @@ export default function BillingPage() {
   const { organization } = useOrganization();
   const tenantId = organization?.publicMetadata?.tenantId as string | undefined;
 
-  const { data: tenant } = useQuery({
+  const { data: tenant, isLoading: tenantLoading } = useQuery({
     queryKey: ['tenant', tenantId],
     queryFn: () => tenantApi.getMe(),
     enabled: !!tenantId,
@@ -131,6 +131,16 @@ export default function BillingPage() {
       </Card>
 
       {/* Plan Cards */}
+      {tenantLoading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i} className="animate-pulse">
+              <CardHeader className="pb-3"><div className="h-20 bg-muted rounded" /></CardHeader>
+              <CardContent><div className="h-24 bg-muted rounded" /></CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {(Object.values(Plan) as Plan[]).map(plan => {
           const limits = PLAN_LIMITS[plan];
@@ -176,6 +186,7 @@ export default function BillingPage() {
           );
         })}
       </div>
+      )}
     </div>
   );
 }
