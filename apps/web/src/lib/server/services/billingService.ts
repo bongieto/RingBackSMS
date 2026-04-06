@@ -17,6 +17,8 @@ function getStripe(): Stripe {
   if (!stripeInstance) {
     stripeInstance = new Stripe(process.env.STRIPE_SECRET_KEY ?? '', {
       apiVersion: '2023-10-16',
+      maxNetworkRetries: 2,
+      timeout: 15000,
     });
   }
   return stripeInstance;
@@ -78,9 +80,9 @@ export async function createCheckoutSession(
     { price: priceId, quantity: 1 },
   ];
 
-  // Add SMS metered price if configured
+  // Add SMS price if configured
   if (process.env.STRIPE_SMS_METERED_PRICE_ID) {
-    lineItems.push({ price: process.env.STRIPE_SMS_METERED_PRICE_ID });
+    lineItems.push({ price: process.env.STRIPE_SMS_METERED_PRICE_ID, quantity: 1 });
   }
 
   const session = await stripe.checkout.sessions.create({
