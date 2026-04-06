@@ -5,10 +5,12 @@ import { prisma } from '../../db';
 
 /** Returns the public-facing base URL for OAuth callbacks */
 export function getAppBaseUrl(): string {
-  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
-  if (process.env.FRONTEND_URL) return process.env.FRONTEND_URL;
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return process.env.BASE_URL ?? 'http://localhost:3000';
+  const url = process.env.NEXT_PUBLIC_APP_URL
+    || process.env.FRONTEND_URL
+    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+    || process.env.BASE_URL
+    || 'http://localhost:3000';
+  return url.trim().replace(/\/+$/, '');
 }
 
 export interface PosTokenData {
