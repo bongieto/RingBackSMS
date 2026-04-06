@@ -59,7 +59,7 @@ export default function BillingPage() {
     onSuccess: (data) => {
       if (data?.url) window.location.href = data.url;
     },
-    onError: () => toast.error('Failed to start checkout'),
+    onError: (err: any) => toast.error(err?.response?.data?.error ?? 'Failed to start checkout'),
   });
 
   const portalMutation = useMutation({
@@ -68,7 +68,7 @@ export default function BillingPage() {
     onSuccess: (data) => {
       if (data?.url) window.location.href = data.url;
     },
-    onError: () => toast.error('Failed to open billing portal'),
+    onError: (err: any) => toast.error(err?.response?.data?.error ?? 'Failed to open billing portal'),
   });
 
   return (
