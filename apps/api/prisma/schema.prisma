@@ -330,20 +330,3 @@ model ContactNote {
   @@index([tenantId, contactId])
 }
 
-model PosSyncLog {
-  id          String   @id @default(cuid())
-  tenantId    String
-  provider    String
-  direction   String   // 'pull' or 'push'
-  status      String   @default("running") // 'running' | 'success' | 'error'
-  itemsSynced Int      @default(0)
-  created     Int      @default(0)
-  updated     Int      @default(0)
-  removed     Int      @default(0)
-  error       String?  @db.Text
-  startedAt   DateTime @default(now())
-  finishedAt  DateTime?
-
-  @@index([tenantId])
-  @@index([tenantId, startedAt])
-}
