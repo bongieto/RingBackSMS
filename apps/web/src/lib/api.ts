@@ -28,7 +28,7 @@ export default api;
 // ── API helpers ───────────────────────────────────────────────────────────────
 
 export const tenantApi = {
-  getMe: () => api.get('/tenants/me').then((r) => r.data.data),
+  getMe: () => webApi.get('/tenants/me').then((r) => r.data.data),
   updateConfig: (id: string, data: Record<string, unknown>) =>
     api.patch(`/tenants/${id}/config`, data).then((r) => r.data.data),
   getMenu: (id: string) => api.get(`/tenants/${id}/menu`).then((r) => r.data.data),

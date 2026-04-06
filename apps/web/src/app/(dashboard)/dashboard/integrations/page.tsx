@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useOrganization } from '@clerk/nextjs';
 import { useSearchParams } from 'next/navigation';
+import { useTenantId } from '@/components/providers/TenantProvider';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
@@ -53,8 +53,7 @@ const PROVIDER_ICONS: Record<string, React.ReactNode> = {
 };
 
 export default function IntegrationsPage() {
-  const { organization } = useOrganization();
-  const tenantId = organization?.publicMetadata?.tenantId as string | undefined;
+  const { tenantId, isLoading: tenantLoading } = useTenantId();
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const [showPostConnect, setShowPostConnect] = useState(false);
@@ -100,7 +99,7 @@ export default function IntegrationsPage() {
   const menuItemCount = tenant?.menuItems?.length ?? 0;
   const orderFlowEnabled = tenant?.flows?.some((f: { type: string; isEnabled: boolean }) => f.type === 'ORDER' && f.isEnabled) ?? false;
 
-  if (isLoading) {
+  if (isLoading || tenantLoading) {
     return (
       <div>
         <Header title="Integrations" description="Connect your POS system to sync menus and manage orders" />
@@ -137,10 +136,10 @@ export default function IntegrationsPage() {
         </Card>
 
         {/* Debug / Error states */}
-        {!tenantId && (
+        {!tenantId && !tenantLoading && (
           <Card className="border-amber-200 bg-amber-50">
             <CardContent className="pt-4 pb-4">
-              <p className="text-sm text-amber-800">Loading organization data...</p>
+              <p className="text-sm text-amber-800">No tenant found for this organization. Please complete onboarding first.</p>
             </CardContent>
           </Card>
         )}
