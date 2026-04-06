@@ -505,7 +505,7 @@ export default function HomePage() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid lg:grid-cols-2 gap-12 items-center">
               {/* Left: Copy */}
-              <div className="space-y-8">
+              <div className="space-y-6 sm:space-y-8 text-center lg:text-left">
                 <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-100 rounded-full text-xs font-semibold text-blue-700">
                   <Zap className="h-3.5 w-3.5" />
                   Responding to missed calls in under 3 seconds
@@ -517,12 +517,12 @@ export default function HomePage() {
                   </span>{' '}
                   again
                 </h1>
-                <p className="text-lg sm:text-xl text-slate-600 leading-relaxed max-w-xl">
+                <p className="text-lg sm:text-xl text-slate-600 leading-relaxed max-w-xl mx-auto lg:mx-0">
                   RingBackSMS instantly texts back every missed call with an AI assistant that takes orders,
                   books appointments, and answers questions — so you never lose another sale while you&apos;re
                   busy running your business.
                 </p>
-                <div className="flex flex-col sm:flex-row gap-4">
+                <div className="flex flex-col sm:flex-row gap-4 sm:justify-center lg:justify-start">
                   <SignedOut>
                     <Link
                       href="/sign-up"
@@ -548,7 +548,7 @@ export default function HomePage() {
                     </Link>
                   </SignedIn>
                 </div>
-                <div className="flex items-center gap-6 text-sm text-slate-500">
+                <div className="flex flex-wrap items-center justify-center lg:justify-start gap-x-6 gap-y-2 text-sm text-slate-500">
                   <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-green-500" /> No credit card required</span>
                   <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-green-500" /> 2-minute setup</span>
                   <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-green-500" /> Cancel anytime</span>
