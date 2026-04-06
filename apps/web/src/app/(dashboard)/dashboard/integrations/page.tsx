@@ -17,7 +17,7 @@ import { formatRelativeTime } from '@/lib/utils';
 import {
   CheckCircle, XCircle, RefreshCw, ArrowUpDown, Link2, Unlink,
   ShoppingBag, Store, UtensilsCrossed, Lock, ArrowRight, Settings2,
-  Download, Upload, Clock, AlertTriangle, ChevronRight, Zap,
+  Download, Upload, Clock, AlertTriangle, ChevronRight, Zap, ArrowLeft,
 } from 'lucide-react';
 
 interface ProviderStatus {
@@ -52,6 +52,13 @@ const PROVIDER_ICONS: Record<string, React.ReactNode> = {
   shopify: <div className="h-10 w-10 rounded-lg bg-[#96bf48] flex items-center justify-center text-white font-bold text-lg">S</div>,
 };
 
+const PROVIDER_DESCRIPTIONS: Record<string, string> = {
+  square: 'Best for restaurants, retail, and service businesses',
+  clover: 'Popular with restaurants and small businesses',
+  toast: 'Built specifically for restaurants',
+  shopify: 'For e-commerce and online stores',
+};
+
 export default function IntegrationsPage() {
   const { tenantId, isLoading: tenantLoading } = useTenantId();
   const queryClient = useQueryClient();
@@ -59,6 +66,7 @@ export default function IntegrationsPage() {
   const [showPostConnect, setShowPostConnect] = useState(false);
   const [postConnectStep, setPostConnectStep] = useState(0);
   const [connectedProvider, setConnectedProvider] = useState<string | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
 
   // Show toast and post-connect flow on OAuth redirect
   useEffect(() => {
@@ -95,7 +103,7 @@ export default function IntegrationsPage() {
   });
 
   const syncLogs: SyncLog[] = syncHistoryData?.logs ?? [];
-  const hasConnectedProvider = providers?.some((p: ProviderStatus) => p.connected);
+  const activeProvider = providers?.find((p: ProviderStatus) => p.connected);
   const menuItemCount = tenant?.menuItems?.length ?? 0;
   const orderFlowEnabled = tenant?.flows?.some((f: { type: string; isEnabled: boolean }) => f.type === 'ORDER' && f.isEnabled) ?? false;
 
@@ -104,7 +112,7 @@ export default function IntegrationsPage() {
       <div>
         <Header title="Integrations" description="Connect your POS system to sync menus and manage orders" />
         <div className="space-y-4 max-w-3xl">
-          {[1, 2, 3, 4].map((i) => (
+          {[1, 2, 3].map((i) => (
             <Card key={i} className="animate-pulse">
               <CardHeader><div className="h-10 w-full bg-muted rounded" /></CardHeader>
             </Card>
@@ -114,28 +122,16 @@ export default function IntegrationsPage() {
     );
   }
 
+  // Determine which view to show
+  const viewProvider = activeProvider
+    ?? (selectedProvider ? providers?.find((p: ProviderStatus) => p.provider === selectedProvider) : null);
+
   return (
     <div>
       <Header title="Integrations" description="Connect your POS system to sync menus and manage orders" />
 
       <div className="space-y-6 max-w-3xl">
-        {/* Info banner */}
-        <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/20">
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-start gap-3">
-              <Store className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
-              <div>
-                <p className="text-sm font-medium text-blue-900 dark:text-blue-100">Connect your POS system</p>
-                <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
-                  Link your point-of-sale provider to automatically sync your menu catalog and enable order placement through SMS conversations.
-                  Only one POS provider can be active at a time.
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Debug / Error states */}
+        {/* Error states */}
         {!tenantId && !tenantLoading && (
           <Card className="border-amber-200 bg-amber-50">
             <CardContent className="pt-4 pb-4">
@@ -149,13 +145,6 @@ export default function IntegrationsPage() {
               <p className="text-sm text-red-800">
                 Failed to load providers: {(providersError as any)?.message || 'Unknown error'}
               </p>
-            </CardContent>
-          </Card>
-        )}
-        {tenantId && !isLoading && !providersError && (!providers || providers.length === 0) && (
-          <Card className="border-amber-200 bg-amber-50">
-            <CardContent className="pt-4 pb-4">
-              <p className="text-sm text-amber-800">No POS providers found. This may indicate a configuration issue.</p>
             </CardContent>
           </Card>
         )}
@@ -175,18 +164,59 @@ export default function IntegrationsPage() {
           />
         )}
 
-        {/* Provider cards */}
-        {providers?.map((p: ProviderStatus) => (
-          <PosProviderCard
-            key={p.provider}
-            provider={p}
-            tenantId={tenantId!}
-            queryClient={queryClient}
-          />
-        ))}
+        {/* Main content: either POS selector or active provider details */}
+        {viewProvider ? (
+          <>
+            {/* Back button when browsing (not connected) */}
+            {!activeProvider && selectedProvider && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedProvider(null)}
+                className="mb-2"
+              >
+                <ArrowLeft className="h-4 w-4 mr-1.5" />
+                Back to POS selection
+              </Button>
+            )}
+
+            <PosProviderCard
+              provider={viewProvider}
+              tenantId={tenantId!}
+              queryClient={queryClient}
+            />
+          </>
+        ) : (
+          /* POS Selector — no provider connected or selected */
+          <>
+            <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/20">
+              <CardContent className="pt-4 pb-4">
+                <div className="flex items-start gap-3">
+                  <Store className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-blue-900 dark:text-blue-100">Select your POS system</p>
+                    <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                      Choose your point-of-sale provider to sync your menu catalog and enable order placement through SMS.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {providers?.map((p: ProviderStatus) => (
+                <PosSelectorCard
+                  key={p.provider}
+                  provider={p}
+                  onSelect={() => setSelectedProvider(p.provider)}
+                />
+              ))}
+            </div>
+          </>
+        )}
 
         {/* Setup checklist — shown when a provider is connected */}
-        {hasConnectedProvider && (
+        {activeProvider && (
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
@@ -201,7 +231,6 @@ export default function IntegrationsPage() {
                 <ChecklistItem
                   done={menuItemCount > 0}
                   label={menuItemCount > 0 ? `Menu Synced (${menuItemCount} items)` : 'Sync your menu from POS'}
-                  href={menuItemCount > 0 ? undefined : undefined}
                   hint="Use the Pull from POS button above"
                 />
                 <ChecklistItem
@@ -215,7 +244,7 @@ export default function IntegrationsPage() {
         )}
 
         {/* Sync History */}
-        {hasConnectedProvider && (
+        {activeProvider && (
           <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
@@ -261,6 +290,52 @@ export default function IntegrationsPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// ── POS Selector Card ─────────────────────────────────────────────────────────
+
+function PosSelectorCard({ provider, onSelect }: {
+  provider: ProviderStatus;
+  onSelect: () => void;
+}) {
+  if (provider.planGated) {
+    return (
+      <Card className="opacity-50 cursor-not-allowed">
+        <CardContent className="pt-5 pb-5">
+          <div className="flex items-center gap-3 mb-3">
+            {PROVIDER_ICONS[provider.provider]}
+            <div>
+              <h3 className="font-semibold text-sm">{provider.displayName}</h3>
+              <p className="text-xs text-muted-foreground">{PROVIDER_DESCRIPTIONS[provider.provider]}</p>
+            </div>
+          </div>
+          <Badge variant="outline" className="gap-1 text-xs">
+            <Lock className="h-3 w-3" /> Upgrade Required
+          </Badge>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card
+      className="cursor-pointer transition-all hover:border-blue-300 hover:shadow-md"
+      onClick={onSelect}
+    >
+      <CardContent className="pt-5 pb-5">
+        <div className="flex items-center gap-3 mb-2">
+          {PROVIDER_ICONS[provider.provider]}
+          <div>
+            <h3 className="font-semibold text-sm">{provider.displayName}</h3>
+            <p className="text-xs text-muted-foreground">{PROVIDER_DESCRIPTIONS[provider.provider]}</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-end text-xs text-blue-600 font-medium mt-3">
+          Select <ChevronRight className="h-3 w-3 ml-0.5" />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -479,9 +554,7 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
               <CardDescription>
                 {provider.connected
                   ? `Connected · Merchant: ${provider.merchantId}`
-                  : provider.authType === 'oauth'
-                    ? 'Click connect to authorize via OAuth'
-                    : 'Enter your API credentials to connect'
+                  : PROVIDER_DESCRIPTIONS[provider.provider]
                 }
               </CardDescription>
             </div>
@@ -493,13 +566,11 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
                 {tokenHealth === 'expired' ? 'Token Expired' : 'Expiring Soon'}
               </Badge>
             )}
-            <Badge variant={provider.connected ? 'success' : 'secondary'}>
-              {provider.connected ? (
-                <><CheckCircle className="h-3 w-3 mr-1" /> Connected</>
-              ) : (
-                <><XCircle className="h-3 w-3 mr-1" /> Not connected</>
-              )}
-            </Badge>
+            {provider.connected && (
+              <Badge variant="success">
+                <CheckCircle className="h-3 w-3 mr-1" /> Connected
+              </Badge>
+            )}
           </div>
         </div>
       </CardHeader>
