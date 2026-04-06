@@ -5,7 +5,20 @@ import { sendSms } from '@/lib/server/services/twilioService';
 import { decryptNullable } from '@/lib/server/encryption';
 import { logger } from '@/lib/server/logger';
 
-const VoiceResponse = twilio.twiml.VoiceResponse;
+/** Build TwiML XML string without the Twilio SDK VoiceResponse class (avoids serverless bundling issues) */
+function buildVoiceTwiml(businessName: string, recordingCallbackUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="1"/>
+  <Say voice="Polly.Joanna" language="en-US">Hi, thanks for calling ${escapeXml(businessName)}. We can help you faster by text — you'll receive a message in just a moment. If you'd prefer a callback, leave a message after the beep.</Say>
+  <Record maxLength="60" finishOnKey="#" playBeep="true" recordingStatusCallback="${escapeXml(recordingCallbackUrl)}" recordingStatusCallbackMethod="POST" transcribe="false"/>
+  <Say voice="Polly.Joanna" language="en-US">Thank you for calling. Check your texts for a message from us. Goodbye!</Say>
+</Response>`;
+}
+
+function escapeXml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
 
 export async function POST(request: NextRequest) {
   const text = await request.text();
@@ -28,10 +41,8 @@ export async function POST(request: NextRequest) {
   });
 
   if (!tenant || !tenant.isActive) {
-    const twiml = new VoiceResponse();
-    twiml.say('This number is not currently in service. Goodbye.');
-    twiml.hangup();
-    return new Response(twiml.toString(), {
+    const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Say>This number is not currently in service. Goodbye.</Say><Hangup/></Response>`;
+    return new Response(twiml, {
       headers: { 'Content-Type': 'text/xml' },
     });
   }
@@ -83,35 +94,11 @@ export async function POST(request: NextRequest) {
   }
 
   // Build TwiML response: short greeting + optional voicemail
-  const twiml = new VoiceResponse();
-
-  // Brief pause to feel natural
-  twiml.pause({ length: 1 });
-
-  twiml.say(
-    { voice: 'Polly.Joanna', language: 'en-US' },
-    `Hi, thanks for calling ${businessName}. We can help you faster by text — you'll receive a message in just a moment. If you'd prefer a callback, leave a message after the beep.`
-  );
-
-  // Record voicemail (max 60 seconds)
-  twiml.record({
-    maxLength: 60,
-    finishOnKey: '#',
-    playBeep: true,
-    recordingStatusCallback: `${baseUrl}/api/webhooks/twilio/recording-callback`,
-    recordingStatusCallbackMethod: 'POST',
-    transcribe: false,
-  });
-
-  // If they don't leave a message, say goodbye
-  twiml.say(
-    { voice: 'Polly.Joanna', language: 'en-US' },
-    'Thank you for calling. Check your texts for a message from us. Goodbye!'
-  );
+  const twiml = buildVoiceTwiml(businessName, `${baseUrl}/api/webhooks/twilio/recording-callback`);
 
   logger.info('Voice webhook responded with TwiML', { tenantId: tenant.id, callSid });
 
-  return new Response(twiml.toString(), {
+  return new Response(twiml, {
     headers: { 'Content-Type': 'text/xml' },
   });
 }
