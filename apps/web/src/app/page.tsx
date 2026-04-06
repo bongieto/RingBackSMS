@@ -937,8 +937,8 @@ export default function HomePage() {
                 <h4 className="text-white font-semibold mb-4">Company</h4>
                 <ul className="space-y-2 text-sm">
                   <li><a href="mailto:support@ringbacksms.com" className="hover:text-white transition-colors">Contact Support</a></li>
-                  <li><span className="hover:text-white transition-colors cursor-default">Privacy Policy</span></li>
-                  <li><span className="hover:text-white transition-colors cursor-default">Terms of Service</span></li>
+                  <li><Link href="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link></li>
+                  <li><Link href="/terms" className="hover:text-white transition-colors">Terms of Service</Link></li>
                   <li><span className="hover:text-white transition-colors cursor-default">HIPAA Compliance</span></li>
                 </ul>
               </div>
