@@ -364,10 +364,6 @@ async function processSideEffect(
 
     case 'CREATE_PAYMENT_LINK': {
       try {
-        if (!context.orderId) {
-          logger.error('CREATE_PAYMENT_LINK: no orderId in context — SAVE_ORDER must run first', { tenantId });
-          break;
-        }
         const { sessionId, url } = await createOrderPaymentSession({
           tenantId,
           orderId: context.orderId,
@@ -375,19 +371,39 @@ async function processSideEffect(
           items: effect.payload.items,
           total: effect.payload.total,
           callerPhone,
+          pickupTime: effect.payload.pickupTime,
+          notes: effect.payload.notes,
         });
-        // Update order with payment info
-        await prisma.order.update({
-          where: { id: context.orderId },
-          data: {
-            stripePaymentId: sessionId,
-            stripePaymentUrl: url,
-            paymentStatus: 'PENDING',
-          },
-        });
+
+        if (context.orderId) {
+          // Order already exists (pay-after-order flow) — update it
+          await prisma.order.update({
+            where: { id: context.orderId },
+            data: {
+              stripePaymentId: sessionId,
+              stripePaymentUrl: url,
+              paymentStatus: 'PENDING',
+            },
+          });
+        } else {
+          // Payment-first flow — store pending payment in Redis
+          const currentState = await getCallerState(tenantId, callerPhone);
+          if (currentState) {
+            await setCallerState({
+              ...currentState,
+              paymentPending: {
+                pickupTime: effect.payload.pickupTime ?? '',
+                notes: effect.payload.notes ?? null,
+                stripeSessionId: sessionId,
+                createdAt: Date.now(),
+              },
+            });
+          }
+        }
+
         // Send payment link as follow-up SMS
         await sendSms(tenantId, callerPhone, `Pay securely here: ${url}`);
-        logger.info('Payment link sent', { tenantId, orderId: context.orderId, sessionId });
+        logger.info('Payment link sent', { tenantId, orderId: context.orderId ?? 'pending', sessionId });
       } catch (err) {
         logger.error('CREATE_PAYMENT_LINK failed', { tenantId, error: err });
       }

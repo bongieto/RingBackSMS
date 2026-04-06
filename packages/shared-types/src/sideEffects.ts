@@ -62,6 +62,8 @@ export interface CreatePaymentLinkSideEffect {
   payload: {
     items: OrderItem[];
     total: number;
+    pickupTime: string | null;
+    notes: string | null;
   };
 }
 

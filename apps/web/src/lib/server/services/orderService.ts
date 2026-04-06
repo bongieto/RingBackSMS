@@ -22,6 +22,9 @@ export interface CreateOrderInput {
   total: number;
   pickupTime: string | null;
   notes: string | null;
+  stripePaymentId?: string;
+  stripePaymentUrl?: string;
+  paymentStatus?: string;
 }
 
 export async function createOrder(input: CreateOrderInput) {
@@ -36,6 +39,9 @@ export async function createOrder(input: CreateOrderInput) {
       total: input.total,
       pickupTime: input.pickupTime,
       notes: input.notes,
+      ...(input.stripePaymentId && { stripePaymentId: input.stripePaymentId }),
+      ...(input.stripePaymentUrl && { stripePaymentUrl: input.stripePaymentUrl }),
+      ...(input.paymentStatus && { paymentStatus: input.paymentStatus }),
     },
   });
 
