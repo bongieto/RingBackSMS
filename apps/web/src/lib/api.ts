@@ -69,9 +69,9 @@ export const analyticsApi = {
 
 export const billingApi = {
   createCheckout: (tenantId: string, plan: string, successUrl: string, cancelUrl: string) =>
-    api.post('/billing/checkout', { tenantId, plan, successUrl, cancelUrl }).then((r) => r.data.data),
+    webApi.post('/billing/checkout', { tenantId, plan, successUrl, cancelUrl }).then((r) => r.data.data),
   createPortal: (tenantId: string, returnUrl: string) =>
-    api.post('/billing/portal', { tenantId, returnUrl }).then((r) => r.data.data),
+    webApi.post('/billing/portal', { tenantId, returnUrl }).then((r) => r.data.data),
 };
 
 export const phoneApi = {
