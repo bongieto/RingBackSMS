@@ -373,11 +373,11 @@ export default function SettingsPage() {
                 const schedule = form.businessSchedule[key];
 
                 return (
-                  <div key={day.value} className="flex items-center gap-3">
+                  <div key={day.value} className="flex flex-wrap items-center gap-2 sm:gap-3">
                     <button
                       type="button"
                       onClick={() => toggleDay(day.value)}
-                      className={`w-24 text-left text-sm font-medium py-2 px-3 rounded-md border transition-colors ${
+                      className={`w-20 sm:w-24 text-left text-sm font-medium py-2 px-3 rounded-md border transition-colors ${
                         isEnabled
                           ? 'bg-primary text-primary-foreground border-primary'
                           : 'bg-muted text-muted-foreground border-input line-through'
@@ -391,14 +391,14 @@ export default function SettingsPage() {
                           type="time"
                           value={schedule.open}
                           onChange={(e) => updateDayTime(day.value, 'open', e.target.value)}
-                          className="w-32"
+                          className="w-28 sm:w-32"
                         />
                         <span className="text-muted-foreground text-sm">to</span>
                         <Input
                           type="time"
                           value={schedule.close}
                           onChange={(e) => updateDayTime(day.value, 'close', e.target.value)}
-                          className="w-32"
+                          className="w-28 sm:w-32"
                         />
                       </>
                     ) : (

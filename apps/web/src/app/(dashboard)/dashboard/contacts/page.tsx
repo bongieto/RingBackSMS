@@ -220,7 +220,7 @@ export default function ContactsPage() {
         }
       />
 
-      <div className="flex gap-6">
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6">
         {/* Left: List */}
         <div className="flex-1 min-w-0">
           {/* Filters */}
@@ -229,7 +229,7 @@ export default function ContactsPage() {
               placeholder="Search name or phone..."
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              className="w-64"
+              className="w-full sm:w-64"
             />
             <select
               value={statusFilter}
@@ -481,7 +481,7 @@ function ContactDetailPanel({ contact, onSave, onDelete, onSendSms, isSaving }: 
   );
 
   return (
-    <div className="w-80 shrink-0">
+    <div className="w-full lg:w-80 shrink-0">
       <Card className="sticky top-4">
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between">

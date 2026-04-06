@@ -24,6 +24,7 @@ import {
   MessageCircle,
   TrendingUp,
 } from 'lucide-react';
+import { MobileNav } from '@/components/landing/MobileNav';
 
 /* ─── SEO Metadata ────────────────────────────────────────────────────────── */
 
@@ -481,7 +482,7 @@ export default function HomePage() {
                 </Link>
                 <Link
                   href="/sign-up"
-                  className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                  className="hidden sm:inline-flex px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
                 >
                   Start Free
                 </Link>
@@ -489,11 +490,12 @@ export default function HomePage() {
               <SignedIn>
                 <Link
                   href="/dashboard"
-                  className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                  className="hidden sm:inline-flex px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
                 >
                   Dashboard
                 </Link>
               </SignedIn>
+              <MobileNav />
             </div>
           </div>
         </nav>
