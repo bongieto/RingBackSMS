@@ -164,14 +164,17 @@ model Flow {
 }
 
 model MissedCall {
-  id             String   @id @default(uuid())
-  tenantId       String
-  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  callerPhone    String
-  twilioCallSid  String   @unique
-  occurredAt     DateTime
-  smsSent        Boolean  @default(false)
-  createdAt      DateTime @default(now())
+  id                  String    @id @default(uuid())
+  tenantId            String
+  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  callerPhone         String
+  twilioCallSid       String    @unique
+  occurredAt          DateTime
+  smsSent             Boolean   @default(false)
+  voicemailUrl        String?
+  voicemailDuration   Int?
+  voicemailReceivedAt DateTime?
+  createdAt           DateTime  @default(now())
 
   conversations Conversation[]
 

@@ -38,19 +38,35 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  if (!['no-answer', 'busy', 'failed', 'canceled'].includes(CallStatus)) {
+  // The voice webhook now handles missed call creation and SMS sending.
+  // This status callback serves as a fallback — if the voice webhook didn't
+  // fire (e.g., call went straight to no-answer before Twilio hit voiceUrl),
+  // we still create the record and send the SMS.
+  if (!['no-answer', 'busy', 'failed', 'canceled', 'completed'].includes(CallStatus)) {
     return new Response('OK', { status: 200 });
   }
 
   if (!tenant.config) return new Response('OK', { status: 200 });
 
   try {
+    // Check if voice webhook already handled this call
+    const existing = await prisma.missedCall.findUnique({
+      where: { twilioCallSid: CallSid },
+    });
+
+    if (existing) {
+      // Already handled by voice webhook — nothing to do
+      logger.debug('Call already tracked by voice webhook', { callSid: CallSid });
+      return new Response('OK', { status: 200 });
+    }
+
+    // Fallback: voice webhook didn't fire, handle here
     const missedCall = await prisma.missedCall.create({
       data: { tenantId: tenant.id, callerPhone: From, twilioCallSid: CallSid, occurredAt: new Date(), smsSent: false },
     });
     await sendSms(tenant.id, From, tenant.config.greeting);
     await prisma.missedCall.update({ where: { id: missedCall.id }, data: { smsSent: true } });
-    logger.info('Missed call handled', { tenantId: tenant.id, callSid: CallSid });
+    logger.info('Missed call handled via status callback fallback', { tenantId: tenant.id, callSid: CallSid });
   } catch (err) {
     logger.error('call-status webhook error', { err, tenantId: tenant.id });
   }
