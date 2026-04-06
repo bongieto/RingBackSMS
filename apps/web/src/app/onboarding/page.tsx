@@ -225,7 +225,8 @@ export default function OnboardingPage() {
               </div>
               <div className="bg-muted/50 rounded-lg p-4 text-left space-y-2 text-sm">
                 <p className="font-medium">Next steps:</p>
-                <p>📱 Go to <strong>Settings</strong> to configure your Twilio phone number</p>
+                <p>📱 Go to <strong>Settings &rarr; Phone</strong> to provision your RingbackSMS number</p>
+                <p>📞 <strong>Forward your business phone</strong> so unanswered calls go to your RingbackSMS number (dial <strong>*67*[RingbackSMS number]#</strong> or set &quot;Forward when unanswered&quot; in your phone settings)</p>
                 <p>🍜 Add your <strong>Menu items</strong> so customers can order via SMS</p>
                 <p>⚡ Enable <strong>Flows</strong> to activate ORDER and MEETING automation</p>
                 <p>🟦 Connect <strong>Square</strong> to sync your POS catalog</p>
