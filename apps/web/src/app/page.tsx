@@ -318,7 +318,7 @@ const PRICING = [
     features: [
       'Everything in Starter',
       'Order & Meeting flows',
-      'Square POS integration',
+      'POS integration',
       'SMS + Email notifications',
       'Custom AI personality',
       'Priority support',
