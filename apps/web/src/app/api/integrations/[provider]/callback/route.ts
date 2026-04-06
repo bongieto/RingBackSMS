@@ -11,14 +11,14 @@ export async function GET(request: NextRequest, { params }: { params: { provider
   const { provider } = params;
 
   if (error || !code || !tenantId) {
-    return NextResponse.redirect(`${dashboardUrl}/dashboard/settings/integrations?pos_error=access_denied&provider=${provider}`);
+    return NextResponse.redirect(`${dashboardUrl}/dashboard/integrations?pos_error=access_denied&provider=${provider}`);
   }
   try {
     const adapter = posRegistry.get(provider);
     await adapter.exchangeCode(tenantId, code);
-    return NextResponse.redirect(`${dashboardUrl}/dashboard/settings/integrations?pos_connected=true&provider=${provider}`);
+    return NextResponse.redirect(`${dashboardUrl}/dashboard/integrations?pos_connected=true&provider=${provider}`);
   } catch (err) {
     logger.error('POS OAuth callback error', { err, provider, tenantId });
-    return NextResponse.redirect(`${dashboardUrl}/dashboard/settings/integrations?pos_error=oauth_failed&provider=${provider}`);
+    return NextResponse.redirect(`${dashboardUrl}/dashboard/integrations?pos_error=oauth_failed&provider=${provider}`);
   }
 }

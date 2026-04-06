@@ -12,6 +12,14 @@ export interface PosTokenData {
   raw?: Record<string, unknown>;
 }
 
+export interface SyncResult {
+  total: number;
+  newItems: number;
+  updated: number;
+  unchanged: number;
+  errors: number;
+}
+
 export interface PosOrderItem {
   externalVariationId: string;
   quantity: number;
@@ -30,7 +38,7 @@ export abstract class BasePosAdapter {
   abstract getOAuthUrl(tenantId: string): string;
   abstract exchangeCode(tenantId: string, code: string): Promise<void>;
   abstract refreshToken(tenantId: string): Promise<void>;
-  abstract syncCatalogFromPOS(tenantId: string): Promise<number>;
+  abstract syncCatalogFromPOS(tenantId: string): Promise<SyncResult>;
   abstract pushCatalogToPOS(tenantId: string): Promise<number>;
   abstract createOrder(
     tenantId: string,
