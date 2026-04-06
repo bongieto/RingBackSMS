@@ -1,6 +1,5 @@
 import { NextRequest } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
-import { PosProviderType } from '@prisma/client';
 import { prisma } from '@/lib/server/db';
 import { posRegistry } from '@/lib/server/pos/registry';
 import { apiSuccess, apiError } from '@/lib/server/response';
@@ -12,7 +11,7 @@ export async function POST(request: NextRequest, { params }: { params: { provide
   const tenantId = new URL(request.url).searchParams.get('tenantId') ?? '';
 
   const log = await prisma.posSyncLog.create({
-    data: { tenantId, provider: params.provider as PosProviderType, direction: 'push', totalItems: 0 },
+    data: { tenantId, provider: params.provider, direction: 'push', totalItems: 0 },
   });
 
   try {
