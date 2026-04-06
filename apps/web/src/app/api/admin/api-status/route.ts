@@ -50,7 +50,7 @@ export async function GET(_request: NextRequest) {
   const twilioSid = process.env.TWILIO_MASTER_ACCOUNT_SID;
   const twilioToken = process.env.TWILIO_MASTER_AUTH_TOKEN;
   const stripeKey = process.env.STRIPE_SECRET_KEY;
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const minimaxKey = process.env.MINIMAX_API_KEY;
   const resendKey = process.env.RESEND_API_KEY;
 
   const [
@@ -62,7 +62,7 @@ export async function GET(_request: NextRequest) {
     toastCount,
     shopifyCount,
     twilioResult,
-    anthropicResult,
+    minimaxResult,
     stripeResult,
     resendResult,
   ] = await Promise.all([
@@ -90,10 +90,10 @@ export async function GET(_request: NextRequest) {
           { headers: { Authorization: 'Basic ' + Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64') } },
         )
       : Promise.resolve(null),
-    // Anthropic
-    anthropicKey
-      ? fetchCheck('https://api.anthropic.com/v1/models', {
-          headers: { 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
+    // MiniMax AI
+    minimaxKey
+      ? fetchCheck('https://api.minimax.io/v1/models', {
+          headers: { Authorization: `Bearer ${minimaxKey}` },
         })
       : Promise.resolve(null),
     // Stripe — plain REST, no SDK import
@@ -127,11 +127,11 @@ export async function GET(_request: NextRequest) {
       tenantsConnected: twilioCount,
     },
     {
-      name: 'Anthropic (Claude AI)',
-      configured: !!anthropicKey,
-      status: anthropicResult ? (anthropicResult.ok ? 'ok' : 'error') : 'unconfigured',
-      latencyMs: anthropicResult?.latencyMs,
-      error: anthropicResult?.error,
+      name: 'MiniMax AI',
+      configured: !!minimaxKey,
+      status: minimaxResult ? (minimaxResult.ok ? 'ok' : 'error') : 'unconfigured',
+      latencyMs: minimaxResult?.latencyMs,
+      error: minimaxResult?.error,
     },
     {
       name: 'Stripe',

@@ -1,6 +1,12 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { TenantContext } from './types';
 import { FlowType } from '@ringback/shared-types';
+
+const AI_MODEL = 'MiniMax-M2.7';
+
+function stripThinkTags(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+}
 
 const ESCALATION_KEYWORDS = [
   'talk to a human',
@@ -73,8 +79,11 @@ export async function detectIntent(
     }
   }
 
-  // Use Claude for ambiguous messages
-  const client = new Anthropic({ apiKey });
+  // Use MiniMax for ambiguous messages
+  const client = new OpenAI({
+    baseURL: 'https://api.minimax.io/v1',
+    apiKey,
+  });
 
   const flowDescriptions: Record<FlowType, string> = {
     [FlowType.ORDER]: 'placing a food or product order',
@@ -98,13 +107,13 @@ Classify the customer's intent. Respond with JSON only:
 {"intent": "<FLOW_TYPE or UNCLEAR>", "confidence": <0.0-1.0>}`;
 
   try {
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const response = await client.chat.completions.create({
+      model: AI_MODEL,
       max_tokens: 100,
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    const text = stripThinkTags(response.choices[0]?.message?.content ?? '');
     const parsed = JSON.parse(text.trim()) as { intent: string; confidence: number };
 
     const intent =

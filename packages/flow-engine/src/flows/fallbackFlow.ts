@@ -1,12 +1,21 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { FlowInput, FlowOutput } from '../types';
 import { FlowType } from '@ringback/shared-types';
 import { CallerState } from '@ringback/shared-types';
 
-export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput> {
-  const { tenantContext, inboundMessage, currentState, anthropicApiKey } = input;
+const AI_MODEL = 'MiniMax-M2.7';
 
-  const client = new Anthropic({ apiKey: anthropicApiKey });
+function stripThinkTags(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+}
+
+export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput> {
+  const { tenantContext, inboundMessage, currentState, aiApiKey } = input;
+
+  const client = new OpenAI({
+    baseURL: 'https://api.minimax.io/v1',
+    apiKey: aiApiKey,
+  });
 
   const personality = tenantContext.config.aiPersonality ?? 'helpful, friendly, and professional';
   const enabledFlows = tenantContext.flows
@@ -33,25 +42,21 @@ If asked about ordering food, direct them to reply ORDER.
 If asked about scheduling, direct them to reply MEETING.
 Never share internal business details. Be warm and helpful.`;
 
-  const previousMessages = currentState
-    ? []
-    : [];
+  const previousMessages: OpenAI.ChatCompletionMessageParam[] = [];
 
   try {
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const response = await client.chat.completions.create({
+      model: AI_MODEL,
       max_tokens: 200,
-      system: systemPrompt,
       messages: [
+        { role: 'system', content: systemPrompt },
         ...previousMessages,
         { role: 'user', content: inboundMessage },
       ],
     });
 
-    const replyText =
-      response.content[0].type === 'text'
-        ? response.content[0].text
-        : "Thanks for reaching out! How can I help you today?";
+    const replyText = stripThinkTags(response.choices[0]?.message?.content ?? '')
+      || "Thanks for reaching out! How can I help you today?";
 
     const nextState: CallerState = {
       tenantId: tenantContext.tenantId,

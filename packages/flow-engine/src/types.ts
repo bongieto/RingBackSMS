@@ -14,7 +14,7 @@ export interface FlowInput {
   callerPhone: string;
   inboundMessage: string;
   currentState: CallerState | null;
-  anthropicApiKey: string;
+  aiApiKey: string;
 }
 
 export interface FlowOutput {

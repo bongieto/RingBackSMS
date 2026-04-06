@@ -15,8 +15,8 @@ const EnvSchema = z.object({
   TWILIO_MASTER_ACCOUNT_SID: z.string().min(1),
   TWILIO_MASTER_AUTH_TOKEN: z.string().min(1),
 
-  // Anthropic
-  ANTHROPIC_API_KEY: z.string().min(1),
+  // MiniMax AI
+  MINIMAX_API_KEY: z.string().min(1),
 
   // Clerk
   CLERK_SECRET_KEY: z.string().min(1),

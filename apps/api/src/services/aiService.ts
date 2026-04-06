@@ -1,17 +1,24 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 
 const prisma = new PrismaClient();
-let anthropicClient: Anthropic | null = null;
+let aiClient: OpenAI | null = null;
 
-function getClient(): Anthropic {
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
+const AI_MODEL = 'MiniMax-M2.7';
+
+function stripThinkTags(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+}
+
+function getClient(): OpenAI {
+  if (!aiClient) {
+    aiClient = new OpenAI({
+      baseURL: 'https://api.minimax.io/v1',
+      apiKey: process.env.MINIMAX_API_KEY,
     });
   }
-  return anthropicClient;
+  return aiClient;
 }
 
 export interface ClassifyIntentResult {
@@ -62,7 +69,8 @@ export async function generateReply(
   const client = getClient();
   const systemPrompt = await buildTenantSystemPrompt(tenantId);
 
-  const messages: Anthropic.MessageParam[] = [
+  const messages: OpenAI.ChatCompletionMessageParam[] = [
+    { role: 'system', content: systemPrompt },
     ...conversationHistory.map((m) => ({
       role: m.role as 'user' | 'assistant',
       content: m.content,
@@ -71,15 +79,14 @@ export async function generateReply(
   ];
 
   try {
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const response = await client.chat.completions.create({
+      model: AI_MODEL,
       max_tokens: 300,
-      system: systemPrompt,
       messages,
     });
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
-    logger.debug('AI reply generated', { tenantId, inputTokens: response.usage.input_tokens });
+    const text = stripThinkTags(response.choices[0]?.message?.content ?? '');
+    logger.debug('AI reply generated', { tenantId, tokens: response.usage?.total_tokens });
     return text;
   } catch (error) {
     logger.error('AI reply generation failed', { error, tenantId });
@@ -104,13 +111,13 @@ Message: "${message}"
 Respond with JSON only: {"intent": "<INTENT>", "confidence": <0.0-1.0>, "reasoning": "<brief reason>"}`;
 
   try {
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const response = await client.chat.completions.create({
+      model: AI_MODEL,
       max_tokens: 150,
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    const text = stripThinkTags(response.choices[0]?.message?.content ?? '');
     const parsed = JSON.parse(text.trim()) as ClassifyIntentResult;
     return parsed;
   } catch {
