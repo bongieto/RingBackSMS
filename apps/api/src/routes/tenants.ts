@@ -65,6 +65,8 @@ router.post('/:id/menu', requireOrgAuth, async (req: Request, res: Response) => 
     price: z.number().nonnegative(),
     category: z.string().optional(),
     isAvailable: z.boolean().optional(),
+    duration: z.number().int().positive().nullable().optional(),
+    requiresBooking: z.boolean().optional(),
   });
 
   const body = ItemSchema.parse(req.body);

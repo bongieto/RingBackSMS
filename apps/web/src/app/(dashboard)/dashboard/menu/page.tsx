@@ -21,6 +21,8 @@ interface MenuItem {
   price: number;
   category: string | null;
   isAvailable: boolean;
+  duration: number | null;
+  requiresBooking: boolean;
 }
 
 interface MenuItemFormData {
@@ -30,6 +32,8 @@ interface MenuItemFormData {
   price: string;
   category: string;
   isAvailable: boolean;
+  duration: string;
+  requiresBooking: boolean;
 }
 
 const defaultForm: MenuItemFormData = {
@@ -38,6 +42,8 @@ const defaultForm: MenuItemFormData = {
   price: '',
   category: '',
   isAvailable: true,
+  duration: '',
+  requiresBooking: false,
 };
 
 export default function MenuPage() {
@@ -73,6 +79,7 @@ export default function MenuPage() {
       tenantApi.upsertMenuItem(tenantId!, {
         ...data,
         price: parseFloat(data.price),
+        duration: data.duration ? parseInt(data.duration, 10) : null,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['menu', tenantId] });
@@ -124,9 +131,17 @@ export default function MenuPage() {
                 <Label>Description</Label>
                 <Input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Crispy Filipino spring rolls..." />
               </div>
+              <div className="space-y-1.5">
+                <Label>Duration (minutes)</Label>
+                <Input type="number" min="1" value={form.duration} onChange={e => setForm(f => ({ ...f, duration: e.target.value }))} placeholder="30" />
+              </div>
               <div className="flex items-center gap-3">
                 <Switch checked={form.isAvailable} onCheckedChange={v => setForm(f => ({ ...f, isAvailable: v }))} />
                 <Label>Available</Label>
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch checked={form.requiresBooking} onCheckedChange={v => setForm(f => ({ ...f, requiresBooking: v }))} />
+                <Label>Requires Booking</Label>
               </div>
             </div>
             <div className="flex gap-3 mt-4">
@@ -163,6 +178,8 @@ export default function MenuPage() {
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{item.name}</span>
+                        {item.duration && <Badge variant="outline">{item.duration} min</Badge>}
+                        {item.requiresBooking && <Badge variant="outline" className="border-blue-300 text-blue-700">Booking Required</Badge>}
                         {!item.isAvailable && <Badge variant="secondary">Unavailable</Badge>}
                       </div>
                       {item.description && <p className="text-sm text-muted-foreground mt-0.5">{item.description}</p>}
@@ -170,7 +187,7 @@ export default function MenuPage() {
                     <div className="flex items-center gap-4">
                       <span className="font-semibold">${Number(item.price).toFixed(2)}</span>
                       <Button variant="ghost" size="icon" onClick={() => {
-                        setForm({ id: item.id, name: item.name, description: item.description ?? '', price: String(item.price), category: item.category ?? '', isAvailable: item.isAvailable });
+                        setForm({ id: item.id, name: item.name, description: item.description ?? '', price: String(item.price), category: item.category ?? '', isAvailable: item.isAvailable, duration: item.duration ? String(item.duration) : '', requiresBooking: item.requiresBooking });
                         setShowForm(true);
                       }}>
                         <Pencil className="h-4 w-4" />
