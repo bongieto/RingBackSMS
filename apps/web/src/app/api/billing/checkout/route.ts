@@ -15,13 +15,19 @@ const CheckoutSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
+    const stripeKey = process.env.STRIPE_SECRET_KEY;
+    if (!stripeKey) {
+      logger.error('STRIPE_SECRET_KEY is not set');
+      return apiError('Stripe is not configured. Please contact support.', 500);
+    }
+
     const body = CheckoutSchema.parse(await req.json());
     const authResult = await verifyTenantAccess(body.tenantId);
     if (isNextResponse(authResult)) return authResult;
     const url = await createCheckoutSession(body.tenantId, body.plan, body.successUrl, body.cancelUrl);
     return apiSuccess({ url });
   } catch (err: any) {
-    logger.error('Checkout error', { error: err.message, stack: err.stack });
+    logger.error('Checkout error', { error: err.message, stack: err.stack, type: err.type, code: err.code });
     if (err.message === 'Owner email required to create billing account') {
       return apiError('Please add an owner email in Settings before upgrading', 400);
     }

@@ -11,17 +11,12 @@ const PLAN_PRICE_IDS: Record<Plan, string | undefined> = {
   [Plan.ENTERPRISE]: process.env.STRIPE_ENTERPRISE_PRICE_ID,
 };
 
-let stripeInstance: Stripe | null = null;
-
 function getStripe(): Stripe {
-  if (!stripeInstance) {
-    stripeInstance = new Stripe(process.env.STRIPE_SECRET_KEY ?? '', {
-      apiVersion: '2023-10-16',
-      maxNetworkRetries: 2,
-      timeout: 15000,
-    });
-  }
-  return stripeInstance;
+  return new Stripe(process.env.STRIPE_SECRET_KEY ?? '', {
+    apiVersion: '2023-10-16',
+    maxNetworkRetries: 1,
+    timeout: 20000,
+  });
 }
 
 export async function createStripeCustomer(
