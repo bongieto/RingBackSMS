@@ -277,9 +277,6 @@ importers:
       '@ringback/shared-types':
         specifier: workspace:*
         version: link:../shared-types
-      openai:
-        specifier: ^6.33.0
-        version: 6.33.0(zod@3.25.76)
       zod:
         specifier: ^3.22.4
         version: 3.25.76
@@ -293,6 +290,9 @@ importers:
       jest:
         specifier: ^29.7.0
         version: 29.7.0(@types/node@20.19.39)(ts-node@10.9.2(@types/node@20.19.39)(typescript@5.9.3))
+      openai:
+        specifier: ^6.33.0
+        version: 6.33.0(zod@3.25.76)
       rimraf:
         specifier: ^5.0.5
         version: 5.0.10
