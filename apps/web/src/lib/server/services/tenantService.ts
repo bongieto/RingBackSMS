@@ -1,5 +1,6 @@
 import { BusinessType, Plan } from '@prisma/client';
 import { FlowType } from '@ringback/shared-types';
+import { clerkClient } from '@clerk/nextjs/server';
 import { logger } from '../logger';
 import { NotFoundError } from '../errors';
 import { prisma } from '../db';
@@ -47,6 +48,18 @@ export async function createTenant(input: CreateTenantInput) {
       isEnabled: true,
     },
   });
+
+  // Set tenantId in Clerk organization metadata
+  if (input.clerkOrgId) {
+    try {
+      const clerk = await clerkClient();
+      await clerk.organizations.updateOrganizationMetadata(input.clerkOrgId, {
+        publicMetadata: { tenantId: tenant.id },
+      });
+    } catch (err) {
+      logger.error('Failed to update Clerk org metadata', { err, clerkOrgId: input.clerkOrgId });
+    }
+  }
 
   logger.info('Tenant created', { tenantId: tenant.id, name: tenant.name });
   return tenant;

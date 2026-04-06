@@ -1,5 +1,6 @@
 import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
+import { AuthTokenProvider } from '@/components/providers/AuthTokenProvider';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,6 +39,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           </a>
         </div>
       </aside>
+      <AuthTokenProvider />
       <main className="flex-1 ml-56 p-8 min-h-screen">
         {children}
       </main>

@@ -2,7 +2,9 @@ import { NextRequest } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/server/db';
 import { apiSuccess, apiError } from '@/lib/server/response';
-import { logger } from '@/lib/server/logger';
+
+// Extend timeout to 30s for this route (Vercel Pro supports up to 300s)
+export const maxDuration = 30;
 
 function isSuperAdmin(userId: string | null): boolean {
   const adminId = process.env.SUPER_ADMIN_USER_ID?.trim();
@@ -12,22 +14,31 @@ function isSuperAdmin(userId: string | null): boolean {
 interface ApiCheckResult {
   name: string;
   configured: boolean;
-  status: 'ok' | 'error' | 'unconfigured' | 'checking';
+  status: 'ok' | 'error' | 'unconfigured';
   latencyMs?: number;
   error?: string;
   tenantsConnected?: number;
 }
 
-async function checkWithTimeout<T>(fn: () => Promise<T>, timeoutMs = 5000): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
+async function fetchCheck(
+  url: string,
+  init: RequestInit,
+  timeoutMs = 5000,
+): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
   const start = Date.now();
   try {
-    await Promise.race([
-      fn(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeoutMs)),
-    ]);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return { ok: true, latencyMs: Date.now() - start };
   } catch (err: any) {
-    return { ok: false, latencyMs: Date.now() - start, error: err.message };
+    return {
+      ok: false,
+      latencyMs: Date.now() - start,
+      error: err.name === 'AbortError' ? 'Timeout' : err.message,
+    };
   }
 }
 
@@ -35,133 +46,148 @@ export async function GET(_request: NextRequest) {
   const { userId } = await auth();
   if (!isSuperAdmin(userId)) return apiError('Forbidden', 403);
 
-  const results: ApiCheckResult[] = [];
+  // Run ALL checks in parallel — use plain fetch instead of heavy SDKs
+  const twilioSid = process.env.TWILIO_MASTER_ACCOUNT_SID;
+  const twilioToken = process.env.TWILIO_MASTER_AUTH_TOKEN;
+  const stripeKey = process.env.STRIPE_SECRET_KEY;
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const resendKey = process.env.RESEND_API_KEY;
 
-  // 1. Database (Prisma/Supabase)
-  {
-    const check = await checkWithTimeout(() => prisma.$queryRaw`SELECT 1`);
-    results.push({
+  const [
+    dbResult,
+    twilioCount,
+    stripeCount,
+    squareCount,
+    cloverCount,
+    toastCount,
+    shopifyCount,
+    twilioResult,
+    anthropicResult,
+    stripeResult,
+    resendResult,
+  ] = await Promise.all([
+    // DB ping
+    (async () => {
+      const start = Date.now();
+      try {
+        await prisma.$queryRaw`SELECT 1`;
+        return { ok: true, latencyMs: Date.now() - start };
+      } catch (e: any) {
+        return { ok: false, latencyMs: Date.now() - start, error: e.message };
+      }
+    })(),
+    // Tenant counts
+    prisma.tenant.count({ where: { twilioSubAccountSid: { not: null } } }),
+    prisma.tenant.count({ where: { stripeCustomerId: { not: null } } }),
+    prisma.tenant.count({ where: { posProvider: 'square' } }),
+    prisma.tenant.count({ where: { posProvider: 'clover' } }),
+    prisma.tenant.count({ where: { posProvider: 'toast' } }),
+    prisma.tenant.count({ where: { posProvider: 'shopify' } }),
+    // Twilio — plain REST, no SDK import
+    twilioSid && twilioToken
+      ? fetchCheck(
+          `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}.json`,
+          { headers: { Authorization: 'Basic ' + Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64') } },
+        )
+      : Promise.resolve(null),
+    // Anthropic
+    anthropicKey
+      ? fetchCheck('https://api.anthropic.com/v1/models', {
+          headers: { 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
+        })
+      : Promise.resolve(null),
+    // Stripe — plain REST, no SDK import
+    stripeKey
+      ? fetchCheck('https://api.stripe.com/v1/balance', {
+          headers: { Authorization: `Bearer ${stripeKey}` },
+        })
+      : Promise.resolve(null),
+    // Resend
+    resendKey
+      ? fetchCheck('https://api.resend.com/domains', {
+          headers: { Authorization: `Bearer ${resendKey}` },
+        })
+      : Promise.resolve(null),
+  ]);
+
+  const results: ApiCheckResult[] = [
+    {
       name: 'Database (Supabase)',
       configured: true,
-      status: check.ok ? 'ok' : 'error',
-      latencyMs: check.latencyMs,
-      error: check.error,
-    });
-  }
-
-  // 2. Twilio
-  {
-    const configured = !!(process.env.TWILIO_MASTER_ACCOUNT_SID && process.env.TWILIO_MASTER_AUTH_TOKEN);
-    let status: ApiCheckResult['status'] = configured ? 'ok' : 'unconfigured';
-    let latencyMs: number | undefined;
-    let error: string | undefined;
-    if (configured) {
-      const check = await checkWithTimeout(async () => {
-        const twilio = await import('twilio');
-        const client = twilio.default(process.env.TWILIO_MASTER_ACCOUNT_SID, process.env.TWILIO_MASTER_AUTH_TOKEN);
-        await client.api.accounts(process.env.TWILIO_MASTER_ACCOUNT_SID!).fetch();
-      });
-      status = check.ok ? 'ok' : 'error';
-      latencyMs = check.latencyMs;
-      error = check.error;
-    }
-    const tenantsConnected = await prisma.tenant.count({ where: { twilioSubAccountSid: { not: null } } });
-    results.push({ name: 'Twilio', configured, status, latencyMs, error, tenantsConnected });
-  }
-
-  // 3. Anthropic (Claude AI)
-  {
-    const configured = !!process.env.ANTHROPIC_API_KEY;
-    let status: ApiCheckResult['status'] = configured ? 'ok' : 'unconfigured';
-    let latencyMs: number | undefined;
-    let error: string | undefined;
-    if (configured) {
-      const check = await checkWithTimeout(async () => {
-        const res = await fetch('https://api.anthropic.com/v1/models', {
-          headers: { 'x-api-key': process.env.ANTHROPIC_API_KEY!, 'anthropic-version': '2023-06-01' },
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      });
-      status = check.ok ? 'ok' : 'error';
-      latencyMs = check.latencyMs;
-      error = check.error;
-    }
-    results.push({ name: 'Anthropic (Claude AI)', configured, status, latencyMs, error });
-  }
-
-  // 4. Stripe
-  {
-    const configured = !!(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_WEBHOOK_SECRET);
-    let status: ApiCheckResult['status'] = configured ? 'ok' : 'unconfigured';
-    let latencyMs: number | undefined;
-    let error: string | undefined;
-    if (configured) {
-      const check = await checkWithTimeout(async () => {
-        const Stripe = (await import('stripe')).default;
-        const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2023-10-16' });
-        await stripe.balance.retrieve();
-      });
-      status = check.ok ? 'ok' : 'error';
-      latencyMs = check.latencyMs;
-      error = check.error;
-    }
-    const tenantsConnected = await prisma.tenant.count({ where: { stripeCustomerId: { not: null } } });
-    results.push({ name: 'Stripe', configured, status, latencyMs, error, tenantsConnected });
-  }
-
-  // 5. Square POS
-  {
-    const configured = !!(process.env.SQUARE_APPLICATION_ID && process.env.SQUARE_APPLICATION_SECRET);
-    const tenantsConnected = await prisma.tenant.count({ where: { posProvider: 'square' } });
-    results.push({ name: 'Square POS', configured, status: configured ? 'ok' : 'unconfigured', tenantsConnected });
-  }
-
-  // 6. Clover POS
-  {
-    const configured = !!(process.env.CLOVER_APP_ID && process.env.CLOVER_APP_SECRET);
-    const tenantsConnected = await prisma.tenant.count({ where: { posProvider: 'clover' } });
-    results.push({ name: 'Clover POS', configured, status: configured ? 'ok' : 'unconfigured', tenantsConnected });
-  }
-
-  // 7. Toast POS
-  {
-    const configured = !!process.env.TOAST_WEBHOOK_SECRET;
-    const tenantsConnected = await prisma.tenant.count({ where: { posProvider: 'toast' } });
-    results.push({ name: 'Toast POS', configured, status: configured ? 'ok' : 'unconfigured', tenantsConnected });
-  }
-
-  // 8. Shopify POS
-  {
-    const configured = !!(process.env.SHOPIFY_CLIENT_ID && process.env.SHOPIFY_CLIENT_SECRET);
-    const tenantsConnected = await prisma.tenant.count({ where: { posProvider: 'shopify' } });
-    results.push({ name: 'Shopify', configured, status: configured ? 'ok' : 'unconfigured', tenantsConnected });
-  }
-
-  // 9. Resend (email)
-  {
-    const configured = !!process.env.RESEND_API_KEY;
-    let status: ApiCheckResult['status'] = configured ? 'ok' : 'unconfigured';
-    let latencyMs: number | undefined;
-    let error: string | undefined;
-    if (configured) {
-      const check = await checkWithTimeout(async () => {
-        const res = await fetch('https://api.resend.com/domains', {
-          headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` },
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      });
-      status = check.ok ? 'ok' : 'error';
-      latencyMs = check.latencyMs;
-      error = check.error;
-    }
-    results.push({ name: 'Resend (Email)', configured, status, latencyMs, error });
-  }
-
-  // 10. Clerk Auth
-  {
-    const configured = !!(process.env.CLERK_SECRET_KEY && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
-    results.push({ name: 'Clerk (Auth)', configured, status: configured ? 'ok' : 'unconfigured' });
-  }
+      status: dbResult.ok ? 'ok' : 'error',
+      latencyMs: dbResult.latencyMs,
+      error: dbResult.error,
+    },
+    {
+      name: 'Twilio',
+      configured: !!(twilioSid && twilioToken),
+      status: twilioResult ? (twilioResult.ok ? 'ok' : 'error') : 'unconfigured',
+      latencyMs: twilioResult?.latencyMs,
+      error: twilioResult?.error,
+      tenantsConnected: twilioCount,
+    },
+    {
+      name: 'Anthropic (Claude AI)',
+      configured: !!anthropicKey,
+      status: anthropicResult ? (anthropicResult.ok ? 'ok' : 'error') : 'unconfigured',
+      latencyMs: anthropicResult?.latencyMs,
+      error: anthropicResult?.error,
+    },
+    {
+      name: 'Stripe',
+      configured: !!(stripeKey && process.env.STRIPE_WEBHOOK_SECRET),
+      status: stripeResult ? (stripeResult.ok ? 'ok' : 'error') : 'unconfigured',
+      latencyMs: stripeResult?.latencyMs,
+      error: stripeResult?.error,
+      tenantsConnected: stripeCount,
+    },
+    {
+      name: 'Resend (Email)',
+      configured: !!resendKey,
+      status: resendResult ? (resendResult.ok ? 'ok' : 'error') : 'unconfigured',
+      latencyMs: resendResult?.latencyMs,
+      error: resendResult?.error,
+    },
+    {
+      name: 'Clerk (Auth)',
+      configured: !!(process.env.CLERK_SECRET_KEY && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY),
+      status:
+        process.env.CLERK_SECRET_KEY && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+          ? 'ok'
+          : 'unconfigured',
+    },
+    {
+      name: 'Square POS',
+      configured: !!(process.env.SQUARE_APPLICATION_ID && process.env.SQUARE_APPLICATION_SECRET),
+      status:
+        process.env.SQUARE_APPLICATION_ID && process.env.SQUARE_APPLICATION_SECRET
+          ? 'ok'
+          : 'unconfigured',
+      tenantsConnected: squareCount,
+    },
+    {
+      name: 'Clover POS',
+      configured: !!(process.env.CLOVER_APP_ID && process.env.CLOVER_APP_SECRET),
+      status:
+        process.env.CLOVER_APP_ID && process.env.CLOVER_APP_SECRET ? 'ok' : 'unconfigured',
+      tenantsConnected: cloverCount,
+    },
+    {
+      name: 'Toast POS',
+      configured: !!process.env.TOAST_WEBHOOK_SECRET,
+      status: process.env.TOAST_WEBHOOK_SECRET ? 'ok' : 'unconfigured',
+      tenantsConnected: toastCount,
+    },
+    {
+      name: 'Shopify',
+      configured: !!(process.env.SHOPIFY_CLIENT_ID && process.env.SHOPIFY_CLIENT_SECRET),
+      status:
+        process.env.SHOPIFY_CLIENT_ID && process.env.SHOPIFY_CLIENT_SECRET
+          ? 'ok'
+          : 'unconfigured',
+      tenantsConnected: shopifyCount,
+    },
+  ];
 
   const checkedAt = new Date().toISOString();
   const allOk = results.every((r) => r.status === 'ok' || r.status === 'unconfigured');

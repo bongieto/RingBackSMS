@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult } from './base';
+import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult, getAppBaseUrl } from './base';
 import { logger } from '../../logger';
 
 const SHOPIFY_API_VERSION = '2024-01';
@@ -45,7 +45,7 @@ export class ShopifyAdapter extends BasePosAdapter {
       client_id: process.env.SHOPIFY_CLIENT_ID ?? '',
       scope: getScopes(),
       state: actualTenantId,
-      redirect_uri: `${process.env.BASE_URL}/integrations/shopify/callback`,
+      redirect_uri: `${getAppBaseUrl()}/api/integrations/shopify/callback`,
     });
 
     return `https://${shopDomain}.myshopify.com/admin/oauth/authorize?${params.toString()}`;
@@ -110,73 +110,43 @@ export class ShopifyAdapter extends BasePosAdapter {
 
     const response = await axios.get(
       `https://${shopDomain}.myshopify.com/admin/api/${SHOPIFY_API_VERSION}/products.json`,
-      {
-        headers: {
-          'X-Shopify-Access-Token': tokens.accessToken,
-          Accept: 'application/json',
-        },
-      },
+      { headers: { 'X-Shopify-Access-Token': tokens.accessToken, Accept: 'application/json' } },
     );
 
-    const products = (response.data as { products: Array<Record<string, unknown>> })
-      .products ?? [];
-
-    let created = 0;
-    let updated = 0;
+    const products = (response.data as { products: Array<Record<string, unknown>> }).products ?? [];
+    const result: SyncResult = { total: 0, newItems: 0, updated: 0, unchanged: 0, errors: 0 };
 
     for (const product of products) {
-      const productId = String(product.id);
-      const title = (product.title as string) ?? 'Unnamed Item';
-      const bodyHtml = product.body_html as string | null;
+      try {
+        const productId = String(product.id);
+        const title = (product.title as string) ?? 'Unnamed Item';
+        const bodyHtml = product.body_html as string | null;
+        const variants = (product.variants as Array<Record<string, unknown>>) ?? [];
+        const firstVariant = variants[0];
+        const price = firstVariant ? parseFloat(String(firstVariant.price ?? '0')) : 0;
+        const variantId = firstVariant ? String(firstVariant.id) : null;
 
-      const variants = (product.variants as Array<Record<string, unknown>>) ?? [];
-      const firstVariant = variants[0];
-      const price = firstVariant
-        ? parseFloat(String(firstVariant.price ?? '0'))
-        : 0;
-      const variantId = firstVariant ? String(firstVariant.id) : null;
+        const existing = await this.prisma.menuItem.findFirst({ where: { tenantId, posCatalogId: productId } });
+        const description = bodyHtml ? bodyHtml.replace(/<[^>]*>/g, '').substring(0, 500) : null;
+        const itemData = { name: title, description, price, posCatalogId: productId, posVariationId: variantId, lastSyncedAt: new Date() };
 
-      const existing = await this.prisma.menuItem.findFirst({
-        where: { tenantId, posCatalogId: productId },
-      });
-
-      const itemData = {
-        name: title,
-        description: bodyHtml
-          ? bodyHtml.replace(/<[^>]*>/g, '').substring(0, 500)
-          : null,
-        price,
-        posCatalogId: productId,
-        posVariationId: variantId,
-        lastSyncedAt: new Date(),
-      };
-
-      if (existing) {
-        await this.prisma.menuItem.update({
-          where: { id: existing.id },
-          data: itemData,
-        });
-        updated++;
-      } else {
-        await this.prisma.menuItem.create({
-          data: {
-            tenantId,
-            isAvailable: true,
-            ...itemData,
-          },
-        });
-        created++;
+        if (existing) {
+          const changed = existing.name !== title || existing.description !== description || Number(existing.price) !== price;
+          await this.prisma.menuItem.update({ where: { id: existing.id }, data: itemData });
+          if (changed) result.updated++; else result.unchanged++;
+        } else {
+          await this.prisma.menuItem.create({ data: { tenantId, isAvailable: true, ...itemData } });
+          result.newItems++;
+        }
+        result.total++;
+      } catch (err) {
+        result.errors++;
+        logger.warn('Failed to sync product from Shopify', { tenantId, error: (err as Error).message });
       }
     }
 
-    const total = created + updated;
-    logger.info('Catalog synced from Shopify', {
-      tenantId,
-      created,
-      updated,
-      total,
-    });
-    return { total, created, updated, removed: 0 };
+    logger.info('Catalog synced from Shopify', { tenantId, result });
+    return result;
   }
 
   async pushCatalogToPOS(tenantId: string): Promise<number> {

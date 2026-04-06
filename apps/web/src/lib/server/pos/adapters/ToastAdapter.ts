@@ -125,84 +125,50 @@ export class ToastAdapter extends BasePosAdapter {
     if (!restaurantGuid) throw new Error('No Toast restaurant GUID configured');
 
     const response = await axios.get(`${TOAST_API_BASE}/menus/v2/menus`, {
-      headers: {
-        Authorization: `Bearer ${tokens.accessToken}`,
-        'Toast-Restaurant-External-ID': restaurantGuid,
-        Accept: 'application/json',
-      },
+      headers: { Authorization: `Bearer ${tokens.accessToken}`, 'Toast-Restaurant-External-ID': restaurantGuid, Accept: 'application/json' },
     });
 
-    const menus = response.data as Array<{
-      menus?: Array<{
-        groups?: Array<{
-          items?: Array<Record<string, unknown>>;
-        }>;
-      }>;
-    }>;
+    const menus = response.data as Array<{ menus?: Array<{ groups?: Array<{ items?: Array<Record<string, unknown>> }> }> }>;
+    const result: SyncResult = { total: 0, newItems: 0, updated: 0, unchanged: 0, errors: 0 };
 
-    let created = 0;
-    let updated = 0;
-
-    // Toast menus are nested: menus -> groups -> items
     for (const menuWrapper of menus) {
       const menuList = menuWrapper.menus ?? [menuWrapper];
       for (const menu of menuList) {
-        const groups = (menu as Record<string, unknown>).groups as
-          | Array<{ items?: Array<Record<string, unknown>> }>
-          | undefined;
+        const groups = (menu as Record<string, unknown>).groups as Array<{ items?: Array<Record<string, unknown>> }> | undefined;
         if (!groups) continue;
 
         for (const group of groups) {
-          const items = group.items ?? [];
-          for (const item of items) {
+          for (const item of (group.items ?? [])) {
             const toastItemGuid = item.guid as string;
             if (!toastItemGuid) continue;
 
-            const name = (item.name as string) ?? 'Unnamed Item';
-            const price =
-              typeof item.price === 'number' ? item.price : 0;
-            const description =
-              typeof item.description === 'string'
-                ? item.description
-                : null;
+            try {
+              const name = (item.name as string) ?? 'Unnamed Item';
+              const price = typeof item.price === 'number' ? item.price : 0;
+              const description = typeof item.description === 'string' ? item.description : null;
+              const existing = await this.prisma.menuItem.findFirst({ where: { tenantId, posCatalogId: toastItemGuid } });
+              const itemData = { name, description, price, posCatalogId: toastItemGuid, posVariationId: null, lastSyncedAt: new Date() };
 
-            const existing = await this.prisma.menuItem.findFirst({
-              where: { tenantId, posCatalogId: toastItemGuid },
-            });
-
-            const itemData = {
-              name,
-              description,
-              price,
-              posCatalogId: toastItemGuid,
-              posVariationId: null,
-              lastSyncedAt: new Date(),
-            };
-
-            if (existing) {
-              await this.prisma.menuItem.update({
-                where: { id: existing.id },
-                data: itemData,
-              });
-              updated++;
-            } else {
-              await this.prisma.menuItem.create({
-                data: {
-                  tenantId,
-                  isAvailable: true,
-                  ...itemData,
-                },
-              });
-              created++;
+              if (existing) {
+                const changed = existing.name !== name || existing.description !== description || Number(existing.price) !== price;
+                await this.prisma.menuItem.update({ where: { id: existing.id }, data: itemData });
+                if (changed) result.updated++; else result.unchanged++;
+              } else {
+                await this.prisma.menuItem.create({ data: { tenantId, isAvailable: true, ...itemData } });
+                result.newItems++;
+              }
+              result.total++;
+            } catch (err) {
+              result.errors++;
+              logger.warn('Failed to sync item from Toast', { tenantId, itemGuid: toastItemGuid, error: (err as Error).message });
             }
           }
         }
       }
     }
 
-    const total = created + updated;
-    logger.info('Catalog synced from Toast', { tenantId, created, updated, total });
-    return { total, created, updated, removed: 0 };
+    logger.info('Catalog synced from Toast', { tenantId, result });
+    return result;
   }
 
   async pushCatalogToPOS(tenantId: string): Promise<number> {

@@ -5,6 +5,12 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+/** Axios instance for Next.js API routes (same origin) */
+const webApi = axios.create({
+  baseURL: '/api',
+  headers: { 'Content-Type': 'application/json' },
+});
+
 /**
  * Attach a Clerk session token to outgoing requests.
  * Called from a React component or hook via setAuthToken().
@@ -22,7 +28,7 @@ export default api;
 // ── API helpers ───────────────────────────────────────────────────────────────
 
 export const tenantApi = {
-  getMe: () => api.get('/tenants/me').then((r) => r.data.data),
+  getMe: () => webApi.get('/tenants/me').then((r) => r.data.data),
   updateConfig: (id: string, data: Record<string, unknown>) =>
     api.patch(`/tenants/${id}/config`, data).then((r) => r.data.data),
   getMenu: (id: string) => api.get(`/tenants/${id}/menu`).then((r) => r.data.data),
@@ -124,19 +130,21 @@ export const squareApi = {
 
 export const posApi = {
   listProviders: (tenantId: string) =>
-    api.get('/integrations/providers', { params: { tenantId } }).then((r) => r.data.data),
+    webApi.get('/integrations/providers', { params: { tenantId } }).then((r) => r.data.data),
   getConnectUrl: (tenantId: string, provider: string) =>
-    api.get(`/integrations/${provider}/connect`, { params: { tenantId } }).then((r) => r.data.data),
+    webApi.get(`/integrations/${provider}/connect`, { params: { tenantId } }).then((r) => r.data.data),
   configure: (tenantId: string, provider: string, credentials: Record<string, string>) =>
-    api.post(`/integrations/${provider}/configure`, { credentials, tenantId }).then((r) => r.data.data),
+    webApi.post(`/integrations/${provider}/configure`, { credentials, tenantId }).then((r) => r.data.data),
   disconnect: (tenantId: string, provider: string) =>
-    api.delete(`/integrations/${provider}/disconnect`, { params: { tenantId } }).then((r) => r.data.data),
+    webApi.delete(`/integrations/${provider}/disconnect`, { params: { tenantId } }).then((r) => r.data.data),
   syncCatalog: (tenantId: string, provider: string) =>
-    api.post(`/integrations/${provider}/sync-catalog`, null, { params: { tenantId } }).then((r) => r.data.data),
+    webApi.post(`/integrations/${provider}/sync-catalog`, null, { params: { tenantId } }).then((r) => r.data.data),
   pushCatalog: (tenantId: string, provider: string) =>
-    api.post(`/integrations/${provider}/push-catalog`, null, { params: { tenantId } }).then((r) => r.data.data),
+    webApi.post(`/integrations/${provider}/push-catalog`, null, { params: { tenantId } }).then((r) => r.data.data),
   refreshToken: (tenantId: string, provider: string) =>
-    api.post(`/integrations/${provider}/refresh`, null, { params: { tenantId } }).then((r) => r.data.data),
+    webApi.post(`/integrations/${provider}/refresh`, null, { params: { tenantId } }).then((r) => r.data.data),
   getStatus: (tenantId: string, provider: string) =>
-    api.get(`/integrations/${provider}/status`, { params: { tenantId } }).then((r) => r.data.data),
+    webApi.get(`/integrations/${provider}/status`, { params: { tenantId } }).then((r) => r.data.data),
+  getSyncHistory: (tenantId: string) =>
+    webApi.get('/integrations/sync-history', { params: { tenantId } }).then((r) => r.data.data),
 };

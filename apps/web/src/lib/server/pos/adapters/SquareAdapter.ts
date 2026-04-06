@@ -1,6 +1,6 @@
 import { Client, Environment } from 'square';
 import axios from 'axios';
-import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult } from './base';
+import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult, getAppBaseUrl } from './base';
 import { encrypt } from '../../encryption';
 import { logger } from '../../logger';
 
@@ -36,7 +36,7 @@ export class SquareAdapter extends BasePosAdapter {
       scope:
         'MERCHANT_PROFILE_READ ITEMS_READ ITEMS_WRITE ORDERS_WRITE PAYMENTS_WRITE',
       state: tenantId,
-      redirect_uri: `${process.env.BASE_URL}/integrations/square/callback`,
+      redirect_uri: `${getAppBaseUrl()}/api/integrations/square/callback`,
     });
 
     return `${baseUrl}/oauth2/authorize?${params.toString()}`;
@@ -52,7 +52,7 @@ export class SquareAdapter extends BasePosAdapter {
         client_secret: process.env.SQUARE_APPLICATION_SECRET,
         code,
         grant_type: 'authorization_code',
-        redirect_uri: `${process.env.BASE_URL}/integrations/square/callback`,
+        redirect_uri: `${getAppBaseUrl()}/api/integrations/square/callback`,
       },
       { headers: { 'Content-Type': 'application/json' } },
     );
@@ -145,53 +145,48 @@ export class SquareAdapter extends BasePosAdapter {
     const response = await client.catalogApi.listCatalog(undefined, 'ITEM');
     const items = response.result.objects ?? [];
 
-    let created = 0;
-    let updated = 0;
+    const result: SyncResult = { total: 0, newItems: 0, updated: 0, unchanged: 0, errors: 0 };
 
     for (const item of items) {
       if (!item.itemData) continue;
 
-      const variation = item.itemData.variations?.[0];
-      const priceMoney = variation?.itemVariationData?.priceMoney;
-      const price = priceMoney ? Number(priceMoney.amount ?? 0) / 100 : 0;
+      try {
+        const variation = item.itemData.variations?.[0];
+        const priceMoney = variation?.itemVariationData?.priceMoney;
+        const price = priceMoney ? Number(priceMoney.amount ?? 0) / 100 : 0;
 
-      const existing = await this.prisma.menuItem.findFirst({
-        where: { tenantId, posCatalogId: item.id },
-      });
-
-      const itemData = {
-        name: item.itemData.name ?? 'Unnamed Item',
-        description: item.itemData.description ?? null,
-        price,
-        posCatalogId: item.id,
-        posVariationId: variation?.id ?? null,
-        // Backward compatibility
-        squareCatalogId: item.id,
-        squareVariationId: variation?.id ?? null,
-        lastSyncedAt: new Date(),
-      };
-
-      if (existing) {
-        await this.prisma.menuItem.update({
-          where: { id: existing.id },
-          data: itemData,
+        const existing = await this.prisma.menuItem.findFirst({
+          where: { tenantId, posCatalogId: item.id },
         });
-        updated++;
-      } else {
-        await this.prisma.menuItem.create({
-          data: {
-            tenantId,
-            isAvailable: true,
-            ...itemData,
-          },
-        });
-        created++;
+
+        const itemData = {
+          name: item.itemData.name ?? 'Unnamed Item',
+          description: item.itemData.description ?? null,
+          price,
+          posCatalogId: item.id,
+          posVariationId: variation?.id ?? null,
+          squareCatalogId: item.id,
+          squareVariationId: variation?.id ?? null,
+          lastSyncedAt: new Date(),
+        };
+
+        if (existing) {
+          const changed = existing.name !== itemData.name || existing.description !== itemData.description || Number(existing.price) !== itemData.price;
+          await this.prisma.menuItem.update({ where: { id: existing.id }, data: itemData });
+          if (changed) result.updated++; else result.unchanged++;
+        } else {
+          await this.prisma.menuItem.create({ data: { tenantId, isAvailable: true, ...itemData } });
+          result.newItems++;
+        }
+        result.total++;
+      } catch (err) {
+        result.errors++;
+        logger.warn('Failed to sync item from Square', { tenantId, itemId: item.id, error: (err as Error).message });
       }
     }
 
-    const total = created + updated;
-    logger.info('Catalog synced from Square', { tenantId, created, updated, total });
-    return { total, created, updated, removed: 0 };
+    logger.info('Catalog synced from Square', { tenantId, result });
+    return result;
   }
 
   async pushCatalogToPOS(tenantId: string): Promise<number> {

@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   if (!userId) return apiError('Unauthorized', 401);
 
   const tenantId = new URL(request.url).searchParams.get('tenantId');
-  if (!tenantId) return apiError('tenantId is required', 400);
+  if (!tenantId) return apiError('tenantId required', 400);
 
   const logs = await prisma.posSyncLog.findMany({
     where: { tenantId },
@@ -16,5 +16,5 @@ export async function GET(request: NextRequest) {
     take: 20,
   });
 
-  return apiSuccess(logs);
+  return apiSuccess({ logs });
 }

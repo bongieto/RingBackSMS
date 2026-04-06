@@ -52,9 +52,7 @@ export async function handlePosWebhookEvent(
         logger.info('Webhook-triggered catalog sync completed', {
           provider,
           tenantId,
-          total: result.total,
-          created: result.created,
-          updated: result.updated,
+          syncResult: result,
         });
       } catch (err) {
         logger.error('Webhook-triggered catalog sync failed', {

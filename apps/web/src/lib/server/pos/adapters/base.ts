@@ -3,6 +3,16 @@ import { encrypt, decrypt, encryptNullable, decryptNullable } from '../../encryp
 import { logger } from '../../logger';
 import { prisma } from '../../db';
 
+/** Returns the public-facing base URL for OAuth callbacks */
+export function getAppBaseUrl(): string {
+  const url = process.env.NEXT_PUBLIC_APP_URL
+    || process.env.FRONTEND_URL
+    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+    || process.env.BASE_URL
+    || 'http://localhost:3000';
+  return url.trim().replace(/\/+$/, '');
+}
+
 export interface PosTokenData {
   accessToken: string;
   refreshToken: string | null;
@@ -10,6 +20,14 @@ export interface PosTokenData {
   locationId: string | null;
   merchantId: string | null;
   raw?: Record<string, unknown>;
+}
+
+export interface SyncResult {
+  total: number;
+  newItems: number;
+  updated: number;
+  unchanged: number;
+  errors: number;
 }
 
 export interface PosOrderItem {

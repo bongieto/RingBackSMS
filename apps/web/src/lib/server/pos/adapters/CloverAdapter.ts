@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult } from './base';
+import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult, getAppBaseUrl } from './base';
 import { logger } from '../../logger';
 
 function getCloverBaseUrl(): string {
@@ -31,7 +31,7 @@ export class CloverAdapter extends BasePosAdapter {
     const params = new URLSearchParams({
       client_id: process.env.CLOVER_APP_ID ?? '',
       state: tenantId,
-      redirect_uri: `${process.env.BASE_URL}/integrations/clover/callback`,
+      redirect_uri: `${getAppBaseUrl()}/api/integrations/clover/callback`,
     });
 
     return `${baseUrl}/oauth/authorize?${params.toString()}`;
@@ -85,61 +85,39 @@ export class CloverAdapter extends BasePosAdapter {
 
     const response = await axios.get(
       `${apiBase}/v3/merchants/${tokens.merchantId}/items`,
-      {
-        headers: {
-          Authorization: `Bearer ${tokens.accessToken}`,
-          Accept: 'application/json',
-        },
-      },
+      { headers: { Authorization: `Bearer ${tokens.accessToken}`, Accept: 'application/json' } },
     );
 
-    const items = (response.data as { elements?: Array<Record<string, unknown>> })
-      .elements ?? [];
-
-    let created = 0;
-    let updated = 0;
+    const items = (response.data as { elements?: Array<Record<string, unknown>> }).elements ?? [];
+    const result: SyncResult = { total: 0, newItems: 0, updated: 0, unchanged: 0, errors: 0 };
 
     for (const item of items) {
-      const cloverItemId = item.id as string;
-      const name = (item.name as string) ?? 'Unnamed Item';
-      const price = typeof item.price === 'number' ? item.price / 100 : 0;
-      const description =
-        typeof item.alternateName === 'string' ? item.alternateName : null;
+      try {
+        const cloverItemId = item.id as string;
+        const name = (item.name as string) ?? 'Unnamed Item';
+        const price = typeof item.price === 'number' ? item.price / 100 : 0;
+        const description = typeof item.alternateName === 'string' ? item.alternateName : null;
 
-      const existing = await this.prisma.menuItem.findFirst({
-        where: { tenantId, posCatalogId: cloverItemId },
-      });
+        const existing = await this.prisma.menuItem.findFirst({ where: { tenantId, posCatalogId: cloverItemId } });
+        const itemData = { name, description, price, posCatalogId: cloverItemId, posVariationId: null, lastSyncedAt: new Date() };
 
-      const itemData = {
-        name,
-        description,
-        price,
-        posCatalogId: cloverItemId,
-        posVariationId: null, // Clover doesn't have variations in the same way
-        lastSyncedAt: new Date(),
-      };
-
-      if (existing) {
-        await this.prisma.menuItem.update({
-          where: { id: existing.id },
-          data: itemData,
-        });
-        updated++;
-      } else {
-        await this.prisma.menuItem.create({
-          data: {
-            tenantId,
-            isAvailable: true,
-            ...itemData,
-          },
-        });
-        created++;
+        if (existing) {
+          const changed = existing.name !== name || existing.description !== description || Number(existing.price) !== price;
+          await this.prisma.menuItem.update({ where: { id: existing.id }, data: itemData });
+          if (changed) result.updated++; else result.unchanged++;
+        } else {
+          await this.prisma.menuItem.create({ data: { tenantId, isAvailable: true, ...itemData } });
+          result.newItems++;
+        }
+        result.total++;
+      } catch (err) {
+        result.errors++;
+        logger.warn('Failed to sync item from Clover', { tenantId, error: (err as Error).message });
       }
     }
 
-    const total = created + updated;
-    logger.info('Catalog synced from Clover', { tenantId, created, updated, total });
-    return { total, created, updated, removed: 0 };
+    logger.info('Catalog synced from Clover', { tenantId, result });
+    return result;
   }
 
   async pushCatalogToPOS(tenantId: string): Promise<number> {
