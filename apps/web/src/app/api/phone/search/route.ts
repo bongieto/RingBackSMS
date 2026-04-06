@@ -4,10 +4,23 @@ import { searchAvailableNumbers, searchNearbyNumbers } from '@/lib/server/servic
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
 
+// Allow up to 30s for Twilio API calls (exact + nearby fallback)
+export const maxDuration = 30;
+
 const SearchSchema = z.object({
   areaCode: z.string().length(3).regex(/^\d{3}$/),
   tenantId: z.string().uuid(),
 });
+
+/** Wraps a promise with a timeout — rejects if it takes too long */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+}
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth();
@@ -15,8 +28,13 @@ export async function POST(req: NextRequest) {
   try {
     const { areaCode } = SearchSchema.parse(await req.json());
 
-    // Try exact area code first
-    const numbers = await searchAvailableNumbers(areaCode);
+    // Try exact area code first (10s timeout)
+    let numbers: Array<{ phoneNumber: string; friendlyName: string }> = [];
+    try {
+      numbers = await withTimeout(searchAvailableNumbers(areaCode), 10_000, 'Exact area code search');
+    } catch {
+      // Timeout on exact search — fall through to nearby
+    }
 
     if (numbers.length > 0) {
       return apiSuccess({
@@ -26,8 +44,13 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // No exact matches — search nearby area codes
-    const nearbyNumbers = await searchNearbyNumbers(areaCode);
+    // No exact matches — search nearby area codes (15s timeout)
+    let nearbyNumbers: Array<{ phoneNumber: string; friendlyName: string }> = [];
+    try {
+      nearbyNumbers = await withTimeout(searchNearbyNumbers(areaCode), 15_000, 'Nearby number search');
+    } catch {
+      // Timeout on nearby search — return empty with message
+    }
 
     return apiSuccess({
       numbers: nearbyNumbers,
