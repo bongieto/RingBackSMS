@@ -4,6 +4,7 @@ import { createCheckoutSession } from '@/lib/server/services/billingService';
 import { Plan } from '@ringback/shared-types';
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
+import { logger } from '@/lib/server/logger';
 
 const CheckoutSchema = z.object({
   tenantId: z.string().min(1),
@@ -20,9 +21,13 @@ export async function POST(req: NextRequest) {
     const url = await createCheckoutSession(body.tenantId, body.plan, body.successUrl, body.cancelUrl);
     return apiSuccess({ url });
   } catch (err: any) {
+    logger.error('Checkout error', { error: err.message, stack: err.stack });
     if (err.message === 'Owner email required to create billing account') {
       return apiError('Please add an owner email in Settings before upgrading', 400);
     }
-    return apiError('Internal server error', 500);
+    if (err.message?.startsWith('No Stripe price configured')) {
+      return apiError('This plan is not yet available for purchase. Please contact support.', 400);
+    }
+    return apiError(err.message ?? 'Internal server error', 500);
   }
 }
