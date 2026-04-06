@@ -195,7 +195,7 @@ export default function BillingPage() {
                 <div className="text-muted-foreground">
                   <div>{limits.smsPerMonth.toLocaleString()} SMS/mo</div>
                   <div>{limits.aiCallsPerMonth.toLocaleString()} AI calls/mo</div>
-                  <div>{limits.squareIntegration ? '✓ Square' : '✗ Square'}</div>
+                  <div>{limits.squareIntegration ? '✓ POS Integration' : '✗ POS Integration'}</div>
                   <div>{limits.calcomIntegration ? '✓ Cal.com' : '✗ Cal.com'}</div>
                 </div>
                 {!isCurrent && plan !== Plan.ENTERPRISE && (
