@@ -137,6 +137,13 @@ export const squareApi = {
     api.post('/integrations/square/push-catalog', null, { params: { tenantId } }).then((r) => r.data.data),
 };
 
+export const voicemailApi = {
+  list: (tenantId: string, params?: Record<string, unknown>) =>
+    webApi.get('/voicemails', { params: { tenantId, ...params } }).then((r) => r.data),
+  audioUrl: (id: string, tenantId: string) =>
+    `/api/voicemails/${id}/audio?tenantId=${tenantId}`,
+};
+
 export const searchApi = {
   search: (tenantId: string, q: string) =>
     webApi.get('/search', { params: { tenantId, q } }).then((r) => r.data.data),

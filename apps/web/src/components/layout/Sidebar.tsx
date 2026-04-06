@@ -17,6 +17,7 @@ import {
   Plug2,
   Briefcase,
   HelpCircle,
+  Voicemail,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { UserButton, OrganizationSwitcher } from '@clerk/nextjs';
@@ -24,6 +25,7 @@ import { UserButton, OrganizationSwitcher } from '@clerk/nextjs';
 const navItems = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
   { href: '/dashboard/conversations', label: 'Conversations', icon: MessageSquare },
+  { href: '/dashboard/voicemails', label: 'Voicemails', icon: Voicemail },
   { href: '/dashboard/contacts', label: 'Contacts', icon: Users },
   { href: '/dashboard/orders', label: 'Orders', icon: ShoppingBag },
   { href: '/dashboard/meetings', label: 'Meetings', icon: Calendar },
