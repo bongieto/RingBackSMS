@@ -33,6 +33,7 @@ export const UpdateTenantConfigRequestSchema = z.object({
   websiteUrl: z.string().url().optional(),
   squareSyncEnabled: z.boolean().optional(),
   squareAutoSync: z.boolean().optional(),
+  requirePayment: z.boolean().optional(),
 });
 
 export type UpdateTenantConfigRequest = z.infer<typeof UpdateTenantConfigRequestSchema>;

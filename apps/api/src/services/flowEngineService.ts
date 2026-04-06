@@ -6,6 +6,7 @@ import { createOrder } from './orderService';
 import { createMeeting } from './schedulingService';
 import { sendNotification } from './notificationService';
 import { sendSms } from './twilioService';
+import { createOrderPaymentSession } from './paymentService';
 import { incrementSmsUsage } from '../middleware/usageMeter';
 import { logger } from '../utils/logger';
 import { isWithinBusinessHours, getBusinessHoursDisplay } from '../utils/businessHours';
@@ -200,9 +201,10 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     }).catch((err) => logger.warn('Failed to send escalation notification', { error: err }));
   }
 
-  // Process side effects
+  // Process side effects (context passes data between effects, e.g. orderId from SAVE_ORDER to CREATE_PAYMENT_LINK)
+  const sideEffectContext: Record<string, any> = {};
   for (const effect of result.sideEffects) {
-    await processSideEffect(effect, tenantId, conversationId as string, callerPhone);
+    await processSideEffect(effect, tenantId, conversationId as string, callerPhone, sideEffectContext);
   }
 
   // Send SMS reply
@@ -259,11 +261,12 @@ async function processSideEffect(
   effect: SideEffect,
   tenantId: string,
   conversationId: string,
-  callerPhone: string
+  callerPhone: string,
+  context: Record<string, any> = {}
 ): Promise<void> {
   switch (effect.type) {
-    case 'SAVE_ORDER':
-      await createOrder({
+    case 'SAVE_ORDER': {
+      const order = await createOrder({
         tenantId,
         conversationId,
         callerPhone,
@@ -272,7 +275,10 @@ async function processSideEffect(
         pickupTime: effect.payload.pickupTime,
         notes: effect.payload.notes,
       });
+      context.orderId = order.id;
+      context.orderNumber = order.orderNumber;
       break;
+    }
 
     case 'BOOK_MEETING':
       await createMeeting({
@@ -352,6 +358,38 @@ async function processSideEffect(
         logger.info('POS order created', { tenantId, provider: tenant.posProvider, externalOrderId: result.externalOrderId });
       } catch (err) {
         logger.error('CREATE_POS_ORDER failed', { tenantId, error: err });
+      }
+      break;
+    }
+
+    case 'CREATE_PAYMENT_LINK': {
+      try {
+        if (!context.orderId) {
+          logger.error('CREATE_PAYMENT_LINK: no orderId in context — SAVE_ORDER must run first', { tenantId });
+          break;
+        }
+        const { sessionId, url } = await createOrderPaymentSession({
+          tenantId,
+          orderId: context.orderId,
+          orderNumber: context.orderNumber,
+          items: effect.payload.items,
+          total: effect.payload.total,
+          callerPhone,
+        });
+        // Update order with payment info
+        await prisma.order.update({
+          where: { id: context.orderId },
+          data: {
+            stripePaymentId: sessionId,
+            stripePaymentUrl: url,
+            paymentStatus: 'PENDING',
+          },
+        });
+        // Send payment link as follow-up SMS
+        await sendSms(tenantId, callerPhone, `Pay securely here: ${url}`);
+        logger.info('Payment link sent', { tenantId, orderId: context.orderId, sessionId });
+      } catch (err) {
+        logger.error('CREATE_PAYMENT_LINK failed', { tenantId, error: err });
       }
       break;
     }

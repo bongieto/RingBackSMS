@@ -5,13 +5,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/nextjs';
 import { toast } from 'sonner';
 import Link from 'next/link';
-import { Phone, Sparkles, Globe, MapPin, CheckCircle, X, Copy, CalendarOff, Plus } from 'lucide-react';
+import { Phone, Sparkles, Globe, MapPin, CheckCircle, X, Copy, CalendarOff, Plus, CreditCard } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { tenantApi, phoneApi } from '@/lib/api';
 
 interface DayScheduleEntry {
@@ -37,6 +38,7 @@ interface TenantConfig {
   ownerPhone: string | null;
   businessAddress: string | null;
   websiteUrl: string | null;
+  requirePayment?: boolean;
 }
 
 const TIMEZONES = [
@@ -104,6 +106,7 @@ export default function SettingsPage() {
     ownerPhone: '',
     businessAddress: '',
     websiteUrl: '',
+    requirePayment: false,
   });
 
   const [newClosedDate, setNewClosedDate] = useState('');
@@ -131,6 +134,7 @@ export default function SettingsPage() {
         ownerPhone: config.ownerPhone ?? '',
         businessAddress: config.businessAddress ?? '',
         websiteUrl: config.websiteUrl ?? '',
+        requirePayment: config.requirePayment ?? false,
       });
     }
   }, [config]);
@@ -163,6 +167,7 @@ export default function SettingsPage() {
         ownerPhone: form.ownerPhone || undefined,
         businessAddress: form.businessAddress || undefined,
         websiteUrl: form.websiteUrl || undefined,
+        requirePayment: form.requirePayment,
       });
     },
     onSuccess: () => {
@@ -471,6 +476,29 @@ export default function SettingsPage() {
                 <Label>Owner Phone (for SMS alerts)</Label>
                 <Input {...field('ownerPhone')} placeholder="+12175551234" />
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Payments */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5" />
+              Payments
+            </CardTitle>
+            <CardDescription>Collect payment from customers during SMS ordering</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label>Require upfront payment for orders</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">Customers will receive a Stripe payment link after placing an order via SMS</p>
+              </div>
+              <Switch
+                checked={form.requirePayment}
+                onCheckedChange={(v) => setForm(f => ({ ...f, requirePayment: v }))}
+              />
             </div>
           </CardContent>
         </Card>

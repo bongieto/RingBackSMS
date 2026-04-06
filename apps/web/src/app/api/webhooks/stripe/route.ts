@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { constructStripeEvent, handleSubscriptionUpdated, handleSubscriptionDeleted } from '@/lib/server/services/billingService';
 import { sendPaymentFailedEmail } from '@/lib/server/services/emailService';
+import { sendSms } from '@/lib/server/services/twilioService';
 import { logger } from '@/lib/server/logger';
 import { prisma } from '@/lib/server/db';
 import Stripe from 'stripe';
@@ -39,6 +40,46 @@ export async function POST(request: NextRequest) {
         }
         break;
       }
+      case 'checkout.session.completed': {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const orderId = session.metadata?.orderId;
+        const tenantId = session.metadata?.tenantId;
+        const callerPhone = session.metadata?.callerPhone;
+        if (orderId && tenantId) {
+          await prisma.order.update({
+            where: { id: orderId },
+            data: {
+              paymentStatus: 'PAID',
+              stripePaymentId: typeof session.payment_intent === 'string'
+                ? session.payment_intent
+                : session.payment_intent?.id ?? session.id,
+            },
+          });
+          logger.info('Order payment completed', { orderId, tenantId });
+          // Send confirmation SMS to customer
+          if (callerPhone) {
+            const order = await prisma.order.findUnique({ where: { id: orderId }, select: { orderNumber: true } });
+            sendSms(tenantId, callerPhone, `Payment received for order #${order?.orderNumber ?? ''}. Thank you!`).catch((err) =>
+              logger.error('Failed to send payment confirmation SMS', { err, orderId })
+            );
+          }
+        }
+        break;
+      }
+
+      case 'checkout.session.expired': {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const orderId = session.metadata?.orderId;
+        if (orderId) {
+          await prisma.order.update({
+            where: { id: orderId },
+            data: { paymentStatus: 'EXPIRED' },
+          });
+          logger.info('Checkout session expired', { orderId });
+        }
+        break;
+      }
+
       default:
         logger.debug('Unhandled Stripe event', { type: event.type });
     }

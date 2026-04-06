@@ -7,7 +7,8 @@ export type SideEffectType =
   | 'BOOK_MEETING'
   | 'NOTIFY_OWNER'
   | 'CREATE_SQUARE_ORDER'
-  | 'CREATE_POS_ORDER';
+  | 'CREATE_POS_ORDER'
+  | 'CREATE_PAYMENT_LINK';
 
 export interface SaveOrderSideEffect {
   type: 'SAVE_ORDER';
@@ -56,9 +57,18 @@ export interface CreatePosOrderSideEffect {
   };
 }
 
+export interface CreatePaymentLinkSideEffect {
+  type: 'CREATE_PAYMENT_LINK';
+  payload: {
+    items: OrderItem[];
+    total: number;
+  };
+}
+
 export type SideEffect =
   | SaveOrderSideEffect
   | BookMeetingSideEffect
   | NotifyOwnerSideEffect
   | CreateSquareOrderSideEffect
-  | CreatePosOrderSideEffect;
+  | CreatePosOrderSideEffect
+  | CreatePaymentLinkSideEffect;
