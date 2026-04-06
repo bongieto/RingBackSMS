@@ -77,6 +77,7 @@ router.post('/:id/reply', requireAuth, async (req: Request, res: Response) => {
     role: 'assistant',
     content: body.message,
     timestamp: new Date().toISOString(),
+    sender: 'human',
   };
 
   const updated = await prisma.conversation.update({
@@ -89,6 +90,37 @@ router.post('/:id/reply', requireAuth, async (req: Request, res: Response) => {
   });
 
   logger.info('Manual reply sent', { conversationId: req.params.id, tenantId: conversation.tenantId });
+  sendSuccess(res, updated);
+});
+
+// POST /conversations/:id/handoff
+router.post('/:id/handoff', requireAuth, async (req: Request, res: Response) => {
+  const HandoffSchema = z.object({
+    status: z.enum(['AI', 'HUMAN']),
+  });
+
+  const body = HandoffSchema.parse(req.body);
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: req.params.id },
+  });
+
+  if (!conversation) {
+    sendError(res, 'Conversation not found', 404);
+    return;
+  }
+
+  const updated = await prisma.conversation.update({
+    where: { id: req.params.id },
+    data: {
+      handoffStatus: body.status,
+      handoffAt: body.status === 'HUMAN' ? new Date() : null,
+      updatedAt: new Date(),
+    },
+    include: { orders: true, meetings: true },
+  });
+
+  logger.info('Handoff status changed', { conversationId: req.params.id, status: body.status });
   sendSuccess(res, updated);
 });
 

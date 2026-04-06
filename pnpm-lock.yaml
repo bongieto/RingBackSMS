@@ -129,9 +129,18 @@ importers:
 
   apps/web:
     dependencies:
+      '@anthropic-ai/sdk':
+        specifier: ^0.36.3
+        version: 0.36.3
+      '@axiomhq/winston':
+        specifier: ^1.0.0
+        version: 1.6.0
       '@clerk/nextjs':
         specifier: ^6.12.0
         version: 6.39.1(next@14.2.35(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@prisma/client':
+        specifier: ^5.8.1
+        version: 5.22.0(prisma@5.22.0)
       '@radix-ui/react-avatar':
         specifier: ^1.1.2
         version: 1.1.11(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -165,6 +174,9 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: ^1.1.6
         version: 1.2.8(@types/react-dom@18.3.7(@types/react@18.3.28))(@types/react@18.3.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@ringback/flow-engine':
+        specifier: workspace:*
+        version: link:../../packages/flow-engine
       '@ringback/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
@@ -183,6 +195,9 @@ importers:
       date-fns:
         specifier: ^4.1.0
         version: 4.1.0
+      ioredis:
+        specifier: ^5.3.2
+        version: 5.10.1
       lucide-react:
         specifier: ^0.474.0
         version: 0.474.0(react@18.3.1)
@@ -198,19 +213,37 @@ importers:
       recharts:
         specifier: ^2.15.0
         version: 2.15.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      resend:
+        specifier: ^3.2.0
+        version: 3.5.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       sonner:
         specifier: ^2.0.1
         version: 2.0.7(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      square:
+        specifier: ^33.0.0
+        version: 33.1.0
+      stripe:
+        specifier: ^14.16.0
+        version: 14.25.0
       tailwind-merge:
         specifier: ^3.0.2
         version: 3.5.0
       tailwindcss-animate:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@3.4.19)
+      twilio:
+        specifier: ^5.0.0
+        version: 5.13.1
+      winston:
+        specifier: ^3.11.0
+        version: 3.19.0
       zod:
         specifier: ^3.22.4
         version: 3.25.76
     devDependencies:
+      '@types/ioredis':
+        specifier: ^5.0.0
+        version: 5.0.0
       '@types/node':
         specifier: ^20.11.0
         version: 20.19.39
@@ -226,6 +259,9 @@ importers:
       postcss:
         specifier: ^8.5.1
         version: 8.5.8
+      prisma:
+        specifier: ^5.8.1
+        version: 5.22.0
       rimraf:
         specifier: ^5.0.5
         version: 5.0.10
@@ -1346,6 +1382,10 @@ packages:
 
   '@types/http-errors@2.0.5':
     resolution: {integrity: sha512-r8Tayk8HJnX0FztbZN7oVqGccWgw98T/0neJphO91KkmOzug1KkofZURD4UaD5uH8AqcFLfdPErnBod0u71/qg==}
+
+  '@types/ioredis@5.0.0':
+    resolution: {integrity: sha512-zJbJ3FVE17CNl5KXzdeSPtdltc4tMT3TzC6fxQS0sQngkbFZ6h+0uTafsRqu+eSLIugf6Yb0Ea0SUuRr42Nk9g==}
+    deprecated: This is a stub types definition. ioredis provides its own type definitions, so you do not need this installed.
 
   '@types/istanbul-lib-coverage@2.0.6':
     resolution: {integrity: sha512-2QF/t/auWm0lsy8XtKVPG19v3sSOQlJe/YHZgfjb/KBBHOGSV+J2q/S671rcq9uTBrLAXmZpqJiaQbMT+zNU1w==}
@@ -4889,6 +4929,12 @@ snapshots:
       '@types/node': 20.19.39
 
   '@types/http-errors@2.0.5': {}
+
+  '@types/ioredis@5.0.0':
+    dependencies:
+      ioredis: 5.10.1
+    transitivePeerDependencies:
+      - supports-color
 
   '@types/istanbul-lib-coverage@2.0.6': {}
 

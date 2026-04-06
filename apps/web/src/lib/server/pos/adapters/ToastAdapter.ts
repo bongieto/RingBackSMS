@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult } from './base';
+import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult } from './base';
 import { logger } from '../../logger';
 
 const TOAST_API_BASE = 'https://ws-api.toasttab.com';
@@ -117,7 +117,7 @@ export class ToastAdapter extends BasePosAdapter {
     logger.info('Toast token refreshed', { tenantId });
   }
 
-  async syncCatalogFromPOS(tenantId: string): Promise<number> {
+  async syncCatalogFromPOS(tenantId: string): Promise<SyncResult> {
     const tokens = await this.loadTokens(tenantId);
     if (!tokens) throw new Error('Tenant not connected to Toast');
 
@@ -140,7 +140,8 @@ export class ToastAdapter extends BasePosAdapter {
       }>;
     }>;
 
-    let syncedCount = 0;
+    let created = 0;
+    let updated = 0;
 
     // Toast menus are nested: menus -> groups -> items
     for (const menuWrapper of menus) {
@@ -183,6 +184,7 @@ export class ToastAdapter extends BasePosAdapter {
                 where: { id: existing.id },
                 data: itemData,
               });
+              updated++;
             } else {
               await this.prisma.menuItem.create({
                 data: {
@@ -191,16 +193,16 @@ export class ToastAdapter extends BasePosAdapter {
                   ...itemData,
                 },
               });
+              created++;
             }
-
-            syncedCount++;
           }
         }
       }
     }
 
-    logger.info('Catalog synced from Toast', { tenantId, count: syncedCount });
-    return syncedCount;
+    const total = created + updated;
+    logger.info('Catalog synced from Toast', { tenantId, created, updated, total });
+    return { total, created, updated, removed: 0 };
   }
 
   async pushCatalogToPOS(tenantId: string): Promise<number> {

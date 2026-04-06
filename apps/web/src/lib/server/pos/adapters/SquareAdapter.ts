@@ -1,6 +1,6 @@
 import { Client, Environment } from 'square';
 import axios from 'axios';
-import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult } from './base';
+import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult } from './base';
 import { encrypt } from '../../encryption';
 import { logger } from '../../logger';
 
@@ -137,7 +137,7 @@ export class SquareAdapter extends BasePosAdapter {
     });
   }
 
-  async syncCatalogFromPOS(tenantId: string): Promise<number> {
+  async syncCatalogFromPOS(tenantId: string): Promise<SyncResult> {
     const tokens = await this.loadTokens(tenantId);
     if (!tokens) throw new Error('Tenant not connected to Square');
 
@@ -145,7 +145,8 @@ export class SquareAdapter extends BasePosAdapter {
     const response = await client.catalogApi.listCatalog(undefined, 'ITEM');
     const items = response.result.objects ?? [];
 
-    let syncedCount = 0;
+    let created = 0;
+    let updated = 0;
 
     for (const item of items) {
       if (!item.itemData) continue;
@@ -175,6 +176,7 @@ export class SquareAdapter extends BasePosAdapter {
           where: { id: existing.id },
           data: itemData,
         });
+        updated++;
       } else {
         await this.prisma.menuItem.create({
           data: {
@@ -183,13 +185,13 @@ export class SquareAdapter extends BasePosAdapter {
             ...itemData,
           },
         });
+        created++;
       }
-
-      syncedCount++;
     }
 
-    logger.info('Catalog synced from Square', { tenantId, count: syncedCount });
-    return syncedCount;
+    const total = created + updated;
+    logger.info('Catalog synced from Square', { tenantId, created, updated, total });
+    return { total, created, updated, removed: 0 };
   }
 
   async pushCatalogToPOS(tenantId: string): Promise<number> {

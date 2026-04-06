@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult } from './base';
+import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult } from './base';
 import { logger } from '../../logger';
 
 function getCloverBaseUrl(): string {
@@ -76,7 +76,7 @@ export class CloverAdapter extends BasePosAdapter {
     logger.info('Clover tokens do not expire; refresh is a no-op');
   }
 
-  async syncCatalogFromPOS(tenantId: string): Promise<number> {
+  async syncCatalogFromPOS(tenantId: string): Promise<SyncResult> {
     const tokens = await this.loadTokens(tenantId);
     if (!tokens) throw new Error('Tenant not connected to Clover');
     if (!tokens.merchantId) throw new Error('No Clover merchant ID configured');
@@ -96,7 +96,8 @@ export class CloverAdapter extends BasePosAdapter {
     const items = (response.data as { elements?: Array<Record<string, unknown>> })
       .elements ?? [];
 
-    let syncedCount = 0;
+    let created = 0;
+    let updated = 0;
 
     for (const item of items) {
       const cloverItemId = item.id as string;
@@ -123,6 +124,7 @@ export class CloverAdapter extends BasePosAdapter {
           where: { id: existing.id },
           data: itemData,
         });
+        updated++;
       } else {
         await this.prisma.menuItem.create({
           data: {
@@ -131,13 +133,13 @@ export class CloverAdapter extends BasePosAdapter {
             ...itemData,
           },
         });
+        created++;
       }
-
-      syncedCount++;
     }
 
-    logger.info('Catalog synced from Clover', { tenantId, count: syncedCount });
-    return syncedCount;
+    const total = created + updated;
+    logger.info('Catalog synced from Clover', { tenantId, created, updated, total });
+    return { total, created, updated, removed: 0 };
   }
 
   async pushCatalogToPOS(tenantId: string): Promise<number> {

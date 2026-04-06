@@ -22,6 +22,13 @@ export interface PosOrderResult {
   raw: Record<string, unknown>;
 }
 
+export interface SyncResult {
+  total: number;
+  created: number;
+  updated: number;
+  removed: number;
+}
+
 export abstract class BasePosAdapter {
   abstract readonly provider: string;
   abstract readonly displayName: string;
@@ -30,7 +37,7 @@ export abstract class BasePosAdapter {
   abstract getOAuthUrl(tenantId: string): string;
   abstract exchangeCode(tenantId: string, code: string): Promise<void>;
   abstract refreshToken(tenantId: string): Promise<void>;
-  abstract syncCatalogFromPOS(tenantId: string): Promise<number>;
+  abstract syncCatalogFromPOS(tenantId: string): Promise<SyncResult>;
   abstract pushCatalogToPOS(tenantId: string): Promise<number>;
   abstract createOrder(
     tenantId: string,

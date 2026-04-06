@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Phone, User, Send } from 'lucide-react';
+import { ArrowLeft, Phone, User, Send, Bot, UserCheck } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
@@ -19,6 +19,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  sender?: 'bot' | 'human' | 'customer';
 }
 
 export default function ConversationDetailPage() {
@@ -45,7 +46,7 @@ export default function ConversationDetailPage() {
           ...old,
           messages: [
             ...msgs,
-            { role: 'assistant', content: message, timestamp: new Date().toISOString() },
+            { role: 'assistant', content: message, timestamp: new Date().toISOString(), sender: 'human' },
           ],
         };
       });
@@ -62,6 +63,19 @@ export default function ConversationDetailPage() {
         queryClient.setQueryData(['conversation', id], context.previous);
       }
       toast.error('Failed to send reply');
+    },
+  });
+
+  const handoffMutation = useMutation({
+    mutationFn: (status: 'AI' | 'HUMAN') => conversationApi.setHandoff(id, status),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['conversation', id], data);
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      const newStatus = data?.handoffStatus ?? 'AI';
+      toast.success(newStatus === 'HUMAN' ? 'You took over the conversation' : 'AI is back in control');
+    },
+    onError: () => {
+      toast.error('Failed to change handoff status');
     },
   });
 
@@ -88,6 +102,7 @@ export default function ConversationDetailPage() {
   }
 
   const messages: Message[] = Array.isArray(conversation.messages) ? conversation.messages : [];
+  const isHumanMode = conversation.handoffStatus === 'HUMAN';
 
   return (
     <div>
@@ -104,17 +119,43 @@ export default function ConversationDetailPage() {
         description={`Started ${formatDate(conversation.createdAt)}`}
       />
 
-      {/* Meta info */}
-      <div className="flex gap-3 mb-6 flex-wrap">
+      {/* Meta info + handoff toggle */}
+      <div className="flex gap-3 mb-6 flex-wrap items-center">
         {conversation.flowType && (
           <Badge>{conversation.flowType}</Badge>
         )}
         <Badge variant={conversation.isActive ? 'success' : 'secondary'}>
           {conversation.isActive ? 'Active' : 'Closed'}
         </Badge>
+        <Badge variant={isHumanMode ? 'destructive' : 'outline'}>
+          {isHumanMode ? 'Human Mode' : 'AI Mode'}
+        </Badge>
         <span className="text-sm text-muted-foreground self-center">
           {messages.length} messages
         </span>
+        <div className="ml-auto">
+          {isHumanMode ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handoffMutation.mutate('AI')}
+              disabled={handoffMutation.isPending}
+            >
+              <Bot className="h-4 w-4 mr-1" />
+              Hand Back to AI
+            </Button>
+          ) : (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => handoffMutation.mutate('HUMAN')}
+              disabled={handoffMutation.isPending}
+            >
+              <UserCheck className="h-4 w-4 mr-1" />
+              Take Over
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Chat */}
@@ -124,38 +165,56 @@ export default function ConversationDetailPage() {
             {messages.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">No messages</p>
             ) : (
-              messages.map((msg, i) => (
-                <div
-                  key={i}
-                  className={cn('flex gap-3', msg.role === 'assistant' ? 'flex-row-reverse' : 'flex-row')}
-                >
-                  <div className={cn(
-                    'h-8 w-8 rounded-full flex items-center justify-center shrink-0 mt-1',
-                    msg.role === 'user' ? 'bg-gray-200' : 'bg-blue-500'
-                  )}>
-                    {msg.role === 'user'
-                      ? <Phone className="h-4 w-4 text-gray-600" />
-                      : <User className="h-4 w-4 text-white" />
-                    }
-                  </div>
-                  <div className={cn(
-                    'max-w-[70%] space-y-1',
-                    msg.role === 'assistant' ? 'items-end flex flex-col' : ''
-                  )}>
+              messages.map((msg, i) => {
+                const isAssistant = msg.role === 'assistant';
+                const senderLabel = msg.sender === 'human' ? 'Staff' : msg.sender === 'bot' ? 'Bot' : null;
+
+                return (
+                  <div
+                    key={i}
+                    className={cn('flex gap-3', isAssistant ? 'flex-row-reverse' : 'flex-row')}
+                  >
                     <div className={cn(
-                      'rounded-2xl px-4 py-2 text-sm',
-                      msg.role === 'user'
-                        ? 'bg-gray-100 text-gray-900 rounded-tl-none'
-                        : 'bg-blue-500 text-white rounded-tr-none'
+                      'h-8 w-8 rounded-full flex items-center justify-center shrink-0 mt-1',
+                      msg.role === 'user' ? 'bg-gray-200' :
+                      msg.sender === 'human' ? 'bg-green-500' : 'bg-blue-500'
                     )}>
-                      {msg.content}
+                      {msg.role === 'user'
+                        ? <Phone className="h-4 w-4 text-gray-600" />
+                        : msg.sender === 'human'
+                          ? <UserCheck className="h-4 w-4 text-white" />
+                          : <Bot className="h-4 w-4 text-white" />
+                      }
                     </div>
-                    <span className="text-xs text-muted-foreground px-1">
-                      {formatDate(msg.timestamp)}
-                    </span>
+                    <div className={cn(
+                      'max-w-[70%] space-y-1',
+                      isAssistant ? 'items-end flex flex-col' : ''
+                    )}>
+                      {senderLabel && (
+                        <span className={cn(
+                          'text-xs font-medium px-1',
+                          msg.sender === 'human' ? 'text-green-600' : 'text-blue-600'
+                        )}>
+                          {senderLabel}
+                        </span>
+                      )}
+                      <div className={cn(
+                        'rounded-2xl px-4 py-2 text-sm',
+                        msg.role === 'user'
+                          ? 'bg-gray-100 text-gray-900 rounded-tl-none'
+                          : msg.sender === 'human'
+                            ? 'bg-green-500 text-white rounded-tr-none'
+                            : 'bg-blue-500 text-white rounded-tr-none'
+                      )}>
+                        {msg.content}
+                      </div>
+                      <span className="text-xs text-muted-foreground px-1">
+                        {formatDate(msg.timestamp)}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 

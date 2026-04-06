@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum BusinessType {
@@ -64,6 +65,11 @@ enum PosProviderType {
   clover
   toast
   shopify
+}
+
+enum HandoffStatus {
+  AI
+  HUMAN
 }
 
 enum ContactStatus {
@@ -168,17 +174,19 @@ model MissedCall {
 }
 
 model Conversation {
-  id           String    @id @default(uuid())
-  tenantId     String
-  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  callerPhone  String
-  missedCallId String?
-  missedCall   MissedCall? @relation(fields: [missedCallId], references: [id])
-  messages     Json      @default("[]")
-  flowType     FlowType?
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id             String         @id @default(uuid())
+  tenantId       String
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  callerPhone    String
+  missedCallId   String?
+  missedCall     MissedCall?    @relation(fields: [missedCallId], references: [id])
+  messages       Json           @default("[]")
+  flowType       FlowType?
+  handoffStatus  HandoffStatus  @default(AI)
+  handoffAt      DateTime?
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   orders   Order[]
   meetings Meeting[]
@@ -300,4 +308,22 @@ model ContactNote {
 
   @@index([contactId])
   @@index([tenantId, contactId])
+}
+
+model PosSyncLog {
+  id          String   @id @default(cuid())
+  tenantId    String
+  provider    String
+  direction   String   // 'pull' or 'push'
+  status      String   @default("running") // 'running' | 'success' | 'error'
+  itemsSynced Int      @default(0)
+  created     Int      @default(0)
+  updated     Int      @default(0)
+  removed     Int      @default(0)
+  error       String?  @db.Text
+  startedAt   DateTime @default(now())
+  finishedAt  DateTime?
+
+  @@index([tenantId])
+  @@index([tenantId, startedAt])
 }

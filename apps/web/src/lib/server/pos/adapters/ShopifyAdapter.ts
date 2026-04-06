@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult } from './base';
+import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult } from './base';
 import { logger } from '../../logger';
 
 const SHOPIFY_API_VERSION = '2024-01';
@@ -101,7 +101,7 @@ export class ShopifyAdapter extends BasePosAdapter {
     logger.info('Shopify offline tokens do not expire; refresh is a no-op');
   }
 
-  async syncCatalogFromPOS(tenantId: string): Promise<number> {
+  async syncCatalogFromPOS(tenantId: string): Promise<SyncResult> {
     const tokens = await this.loadTokens(tenantId);
     if (!tokens) throw new Error('Tenant not connected to Shopify');
 
@@ -121,7 +121,8 @@ export class ShopifyAdapter extends BasePosAdapter {
     const products = (response.data as { products: Array<Record<string, unknown>> })
       .products ?? [];
 
-    let syncedCount = 0;
+    let created = 0;
+    let updated = 0;
 
     for (const product of products) {
       const productId = String(product.id);
@@ -155,6 +156,7 @@ export class ShopifyAdapter extends BasePosAdapter {
           where: { id: existing.id },
           data: itemData,
         });
+        updated++;
       } else {
         await this.prisma.menuItem.create({
           data: {
@@ -163,16 +165,18 @@ export class ShopifyAdapter extends BasePosAdapter {
             ...itemData,
           },
         });
+        created++;
       }
-
-      syncedCount++;
     }
 
+    const total = created + updated;
     logger.info('Catalog synced from Shopify', {
       tenantId,
-      count: syncedCount,
+      created,
+      updated,
+      total,
     });
-    return syncedCount;
+    return { total, created, updated, removed: 0 };
   }
 
   async pushCatalogToPOS(tenantId: string): Promise<number> {
