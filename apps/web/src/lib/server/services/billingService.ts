@@ -5,14 +5,14 @@ import { prisma } from '../db';
 import { sendWelcomeEmail, sendSubscriptionCancelledEmail, sendPaymentFailedEmail } from './emailService';
 
 const PLAN_PRICE_IDS: Record<Plan, string | undefined> = {
-  [Plan.STARTER]: process.env.STRIPE_STARTER_PRICE_ID,
-  [Plan.GROWTH]: process.env.STRIPE_GROWTH_PRICE_ID,
-  [Plan.SCALE]: process.env.STRIPE_SCALE_PRICE_ID,
-  [Plan.ENTERPRISE]: process.env.STRIPE_ENTERPRISE_PRICE_ID,
+  [Plan.STARTER]: process.env.STRIPE_STARTER_PRICE_ID?.trim(),
+  [Plan.GROWTH]: process.env.STRIPE_GROWTH_PRICE_ID?.trim(),
+  [Plan.SCALE]: process.env.STRIPE_SCALE_PRICE_ID?.trim(),
+  [Plan.ENTERPRISE]: process.env.STRIPE_ENTERPRISE_PRICE_ID?.trim(),
 };
 
 function getStripeKey(): string {
-  const key = process.env.STRIPE_SECRET_KEY;
+  const key = process.env.STRIPE_SECRET_KEY?.trim();
   if (!key) throw new Error('STRIPE_SECRET_KEY not set');
   return key;
 }
@@ -93,7 +93,7 @@ export async function createCheckoutSession(
   };
 
   // Add SMS price if configured
-  const smsPriceId = process.env.STRIPE_SMS_METERED_PRICE_ID;
+  const smsPriceId = process.env.STRIPE_SMS_METERED_PRICE_ID?.trim();
   if (smsPriceId) {
     body['line_items[1][price]'] = smsPriceId;
     body['line_items[1][quantity]'] = '1';
