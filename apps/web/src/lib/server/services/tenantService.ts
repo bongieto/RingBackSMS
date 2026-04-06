@@ -154,8 +154,14 @@ export async function listTenants(page = 1, pageSize = 20) {
 
 export async function getTenantMenuItems(tenantId: string) {
   return prisma.menuItem.findMany({
-    where: { tenantId, isAvailable: true },
+    where: { tenantId },
     orderBy: [{ category: 'asc' }, { name: 'asc' }],
+    include: {
+      modifierGroups: {
+        include: { modifiers: { orderBy: { sortOrder: 'asc' } } },
+        orderBy: { sortOrder: 'asc' },
+      },
+    },
   });
 }
 

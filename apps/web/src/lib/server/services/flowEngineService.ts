@@ -71,7 +71,15 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     include: {
       config: true,
       flows: { where: { isEnabled: true } },
-      menuItems: { where: { isAvailable: true } },
+      menuItems: {
+        where: { isAvailable: true },
+        include: {
+          modifierGroups: {
+            include: { modifiers: { orderBy: { sortOrder: 'asc' } } },
+            orderBy: { sortOrder: 'asc' },
+          },
+        },
+      },
     },
   });
 
@@ -104,6 +112,14 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       squareCatalogId: m.squareCatalogId,
       squareVariationId: m.squareVariationId,
       lastSyncedAt: m.lastSyncedAt,
+      modifierGroups: (m.modifierGroups ?? []).map((g) => ({
+        ...g,
+        selectionType: g.selectionType as 'SINGLE' | 'MULTIPLE',
+        modifiers: g.modifiers.map((mod) => ({
+          ...mod,
+          priceAdjust: Number(mod.priceAdjust),
+        })),
+      })),
     })),
   };
 

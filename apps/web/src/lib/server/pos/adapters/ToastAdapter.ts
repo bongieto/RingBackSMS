@@ -167,6 +167,8 @@ export class ToastAdapter extends BasePosAdapter {
       }
     }
 
+    // TODO: Sync modifier groups from Toast — they come nested as optionGroups within menu items
+
     logger.info('Catalog synced from Toast', { tenantId, result });
     return result;
   }

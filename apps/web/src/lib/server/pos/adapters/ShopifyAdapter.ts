@@ -145,6 +145,8 @@ export class ShopifyAdapter extends BasePosAdapter {
       }
     }
 
+    // TODO: Sync product options/variants from Shopify — map product.options to modifier groups
+
     logger.info('Catalog synced from Shopify', { tenantId, result });
     return result;
   }

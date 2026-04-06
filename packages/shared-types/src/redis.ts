@@ -3,6 +3,14 @@ import { FlowType } from './enums';
 
 // ── Caller State (stored in Redis) ────────────────────────────────────────────
 
+export const SelectedModifierSchema = z.object({
+  groupName: z.string(),
+  modifierName: z.string(),
+  priceAdjust: z.number(),
+});
+
+export type SelectedModifier = z.infer<typeof SelectedModifierSchema>;
+
 export const OrderDraftSchema = z.object({
   items: z.array(
     z.object({
@@ -10,6 +18,7 @@ export const OrderDraftSchema = z.object({
       name: z.string(),
       quantity: z.number().int().positive(),
       price: z.number(),
+      selectedModifiers: z.array(SelectedModifierSchema).optional(),
     })
   ),
   pickupTime: z.string().optional(),
@@ -27,6 +36,13 @@ export const PaymentPendingSchema = z.object({
 
 export type PaymentPending = z.infer<typeof PaymentPendingSchema>;
 
+export const PendingCustomizationSchema = z.object({
+  itemIndex: z.number(),
+  groupIndex: z.number(),
+});
+
+export type PendingCustomization = z.infer<typeof PendingCustomizationSchema>;
+
 export const CallerStateSchema = z.object({
   tenantId: z.string().uuid(),
   callerPhone: z.string(),
@@ -35,6 +51,7 @@ export const CallerStateSchema = z.object({
   flowStep: z.string().nullable(),
   orderDraft: OrderDraftSchema.nullable(),
   paymentPending: PaymentPendingSchema.nullable().optional(),
+  pendingCustomization: PendingCustomizationSchema.nullable().optional(),
   lastMessageAt: z.number(), // unix timestamp
   messageCount: z.number().int().default(0),
   dedupKey: z.string().nullable(), // last Twilio MessageSid to prevent duplicates

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/nextjs';
-import { Plus, Pencil, Trash2, UtensilsCrossed } from 'lucide-react';
+import { Plus, Pencil, Trash2, UtensilsCrossed, ChevronDown, ChevronRight, ListFilter } from 'lucide-react';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent } from '@/components/ui/card';
@@ -14,6 +14,25 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { tenantApi } from '@/lib/api';
 
+interface Modifier {
+  id: string;
+  name: string;
+  priceAdjust: number;
+  isDefault: boolean;
+  sortOrder: number;
+}
+
+interface ModifierGroup {
+  id: string;
+  name: string;
+  selectionType: string;
+  required: boolean;
+  minSelections: number;
+  maxSelections: number;
+  sortOrder: number;
+  modifiers: Modifier[];
+}
+
 interface MenuItem {
   id: string;
   name: string;
@@ -22,6 +41,7 @@ interface MenuItem {
   category: string | null;
   isAvailable: boolean;
   requiresBooking?: boolean;
+  modifierGroups?: ModifierGroup[];
 }
 
 interface MenuItemFormData {
@@ -47,6 +67,7 @@ export default function MenuPage() {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<MenuItemFormData>(defaultForm);
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
   const { data: allItems = [], isLoading } = useQuery<MenuItem[]>({
     queryKey: ['menu', tenantId],
@@ -86,6 +107,15 @@ export default function MenuPage() {
     },
     onError: () => toast.error('Failed to save item'),
   });
+
+  const toggleExpanded = (itemId: string) => {
+    setExpandedItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  };
 
   const grouped = menuItems.reduce<Record<string, MenuItem[]>>((acc, item) => {
     const cat = item.category ?? 'Uncategorized';
@@ -161,31 +191,96 @@ export default function MenuPage() {
           <div key={category} className="mb-6">
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">{category}</h3>
             <div className="space-y-2">
-              {items.map(item => (
-                <Card key={item.id}>
-                  <CardContent className="p-4 flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{item.name}</span>
-                        {!item.isAvailable && <Badge variant="secondary">Unavailable</Badge>}
+              {items.map(item => {
+                const hasModifiers = (item.modifierGroups ?? []).length > 0;
+                const isExpanded = expandedItems.has(item.id);
+
+                return (
+                  <Card key={item.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          {hasModifiers && (
+                            <button
+                              onClick={() => toggleExpanded(item.id)}
+                              className="p-0.5 hover:bg-muted rounded transition-colors flex-shrink-0"
+                            >
+                              {isExpanded ? (
+                                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                              )}
+                            </button>
+                          )}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium">{item.name}</span>
+                              {!item.isAvailable && <Badge variant="secondary">Unavailable</Badge>}
+                              {hasModifiers && (
+                                <Badge variant="outline" className="text-xs gap-1">
+                                  <ListFilter className="h-3 w-3" />
+                                  {item.modifierGroups!.length} option{item.modifierGroups!.length !== 1 ? 's' : ''}
+                                </Badge>
+                              )}
+                            </div>
+                            {item.description && <p className="text-sm text-muted-foreground mt-0.5">{item.description}</p>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4 flex-shrink-0">
+                          <span className="font-semibold">${Number(item.price).toFixed(2)}</span>
+                          <Button variant="ghost" size="icon" onClick={() => {
+                            setForm({ id: item.id, name: item.name, description: item.description ?? '', price: String(item.price), category: item.category ?? '', isAvailable: item.isAvailable });
+                            setShowForm(true);
+                          }}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(item)} disabled={deleteMutation.isPending}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
                       </div>
-                      {item.description && <p className="text-sm text-muted-foreground mt-0.5">{item.description}</p>}
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <span className="font-semibold">${Number(item.price).toFixed(2)}</span>
-                      <Button variant="ghost" size="icon" onClick={() => {
-                        setForm({ id: item.id, name: item.name, description: item.description ?? '', price: String(item.price), category: item.category ?? '', isAvailable: item.isAvailable });
-                        setShowForm(true);
-                      }}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(item)} disabled={deleteMutation.isPending}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+
+                      {/* Modifier Groups (expanded) */}
+                      {hasModifiers && isExpanded && (
+                        <div className="mt-3 ml-6 border-l-2 border-muted pl-4 space-y-3">
+                          {item.modifierGroups!.map((group) => (
+                            <div key={group.id}>
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <span className="text-sm font-medium">{group.name}</span>
+                                <Badge variant={group.required ? 'default' : 'secondary'} className="text-xs">
+                                  {group.required ? 'Required' : 'Optional'}
+                                </Badge>
+                                <Badge variant="outline" className="text-xs">
+                                  {group.selectionType === 'MULTIPLE' ? 'Multi-select' : 'Single'}
+                                </Badge>
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {group.modifiers.map((mod) => (
+                                  <span
+                                    key={mod.id}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-muted rounded-md text-xs"
+                                  >
+                                    {mod.name}
+                                    {mod.priceAdjust > 0 && (
+                                      <span className="text-emerald-600 font-medium">+${Number(mod.priceAdjust).toFixed(2)}</span>
+                                    )}
+                                    {mod.isDefault && (
+                                      <span className="text-blue-500 font-medium">(default)</span>
+                                    )}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                          <p className="text-xs text-muted-foreground italic">
+                            Options synced from POS. Edit in your POS system to update.
+                          </p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           </div>
         ))

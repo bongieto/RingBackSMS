@@ -142,8 +142,30 @@ export class SquareAdapter extends BasePosAdapter {
     if (!tokens) throw new Error('Tenant not connected to Square');
 
     const client = buildSquareClient(tokens.accessToken);
-    const response = await client.catalogApi.listCatalog(undefined, 'ITEM');
-    const items = response.result.objects ?? [];
+
+    // Fetch items and modifier lists in parallel
+    const [itemsResponse, modifierListsResponse] = await Promise.all([
+      client.catalogApi.listCatalog(undefined, 'ITEM'),
+      client.catalogApi.listCatalog(undefined, 'MODIFIER_LIST'),
+    ]);
+
+    const items = itemsResponse.result.objects ?? [];
+    const modifierLists = modifierListsResponse.result.objects ?? [];
+
+    // Build a lookup map: modifier list ID → modifier list data
+    const modifierListMap = new Map<string, { name: string; selectionType: string; modifiers: Array<{ id: string; name: string; priceMoney?: { amount?: bigint; currency?: string } }> }>();
+    for (const ml of modifierLists) {
+      if (!ml.modifierListData) continue;
+      modifierListMap.set(ml.id, {
+        name: ml.modifierListData.name ?? 'Options',
+        selectionType: ml.modifierListData.selectionType === 'MULTIPLE' ? 'MULTIPLE' : 'SINGLE',
+        modifiers: (ml.modifierListData.modifiers ?? []).map((mod) => ({
+          id: mod.id,
+          name: mod.modifierData?.name ?? 'Option',
+          priceMoney: mod.modifierData?.priceMoney as { amount?: bigint; currency?: string } | undefined,
+        })),
+      });
+    }
 
     const result: SyncResult = { total: 0, newItems: 0, updated: 0, unchanged: 0, errors: 0 };
 
@@ -170,15 +192,25 @@ export class SquareAdapter extends BasePosAdapter {
           lastSyncedAt: new Date(),
         };
 
+        let menuItemId: string;
+
         if (existing) {
           const changed = existing.name !== itemData.name || existing.description !== itemData.description || Number(existing.price) !== itemData.price;
           await this.prisma.menuItem.update({ where: { id: existing.id }, data: itemData });
           if (changed) result.updated++; else result.unchanged++;
+          menuItemId = existing.id;
         } else {
-          await this.prisma.menuItem.create({ data: { tenantId, isAvailable: true, ...itemData } });
+          const created = await this.prisma.menuItem.create({ data: { tenantId, isAvailable: true, ...itemData } });
           result.newItems++;
+          menuItemId = created.id;
         }
         result.total++;
+
+        // Sync modifier groups for this item
+        const modifierListInfo = (item.itemData as Record<string, unknown>).modifierListInfo as Array<{ modifierListId: string; enabled?: boolean }> | undefined;
+        if (modifierListInfo && modifierListInfo.length > 0) {
+          await this.syncModifierGroups(menuItemId, modifierListInfo, modifierListMap);
+        }
       } catch (err) {
         result.errors++;
         logger.warn('Failed to sync item from Square', { tenantId, itemId: item.id, error: (err as Error).message });
@@ -187,6 +219,114 @@ export class SquareAdapter extends BasePosAdapter {
 
     logger.info('Catalog synced from Square', { tenantId, result });
     return result;
+  }
+
+  private async syncModifierGroups(
+    menuItemId: string,
+    modifierListInfo: Array<{ modifierListId: string; enabled?: boolean }>,
+    modifierListMap: Map<string, { name: string; selectionType: string; modifiers: Array<{ id: string; name: string; priceMoney?: { amount?: bigint; currency?: string } }> }>,
+  ): Promise<void> {
+    // Get existing groups for this item
+    const existingGroups = await this.prisma.menuItemModifierGroup.findMany({
+      where: { menuItemId },
+      include: { modifiers: true },
+    });
+    const existingGroupByPosId = new Map(existingGroups.filter((g) => g.posGroupId).map((g) => [g.posGroupId!, g]));
+
+    const activePosGroupIds = new Set<string>();
+
+    for (let sortOrder = 0; sortOrder < modifierListInfo.length; sortOrder++) {
+      const info = modifierListInfo[sortOrder];
+      if (info.enabled === false) continue;
+
+      const mlData = modifierListMap.get(info.modifierListId);
+      if (!mlData) continue;
+
+      activePosGroupIds.add(info.modifierListId);
+
+      const existingGroup = existingGroupByPosId.get(info.modifierListId);
+
+      if (existingGroup) {
+        // Update existing group
+        await this.prisma.menuItemModifierGroup.update({
+          where: { id: existingGroup.id },
+          data: {
+            name: mlData.name,
+            selectionType: mlData.selectionType,
+            required: mlData.selectionType === 'SINGLE',
+            maxSelections: mlData.selectionType === 'MULTIPLE' ? mlData.modifiers.length : 1,
+            sortOrder,
+          },
+        });
+
+        // Sync modifiers within the group
+        await this.syncModifiers(existingGroup.id, mlData.modifiers);
+      } else {
+        // Create new group with modifiers
+        await this.prisma.menuItemModifierGroup.create({
+          data: {
+            menuItemId,
+            name: mlData.name,
+            selectionType: mlData.selectionType,
+            required: mlData.selectionType === 'SINGLE',
+            minSelections: mlData.selectionType === 'SINGLE' ? 1 : 0,
+            maxSelections: mlData.selectionType === 'MULTIPLE' ? mlData.modifiers.length : 1,
+            posGroupId: info.modifierListId,
+            sortOrder,
+            modifiers: {
+              create: mlData.modifiers.map((mod, idx) => ({
+                name: mod.name,
+                priceAdjust: mod.priceMoney ? Number(mod.priceMoney.amount ?? 0) / 100 : 0,
+                isDefault: idx === 0,
+                posModifierId: mod.id,
+                sortOrder: idx,
+              })),
+            },
+          },
+        });
+      }
+    }
+
+    // Remove orphaned groups (no longer in POS)
+    const orphanedGroups = existingGroups.filter((g) => g.posGroupId && !activePosGroupIds.has(g.posGroupId));
+    if (orphanedGroups.length > 0) {
+      await this.prisma.menuItemModifierGroup.deleteMany({
+        where: { id: { in: orphanedGroups.map((g) => g.id) } },
+      });
+    }
+  }
+
+  private async syncModifiers(
+    groupId: string,
+    posModifiers: Array<{ id: string; name: string; priceMoney?: { amount?: bigint; currency?: string } }>,
+  ): Promise<void> {
+    const existing = await this.prisma.menuItemModifier.findMany({ where: { groupId } });
+    const existingByPosId = new Map(existing.filter((m) => m.posModifierId).map((m) => [m.posModifierId!, m]));
+    const activePosModIds = new Set<string>();
+
+    for (let idx = 0; idx < posModifiers.length; idx++) {
+      const mod = posModifiers[idx];
+      activePosModIds.add(mod.id);
+      const priceAdjust = mod.priceMoney ? Number(mod.priceMoney.amount ?? 0) / 100 : 0;
+
+      const existingMod = existingByPosId.get(mod.id);
+      if (existingMod) {
+        await this.prisma.menuItemModifier.update({
+          where: { id: existingMod.id },
+          data: { name: mod.name, priceAdjust, sortOrder: idx },
+        });
+      } else {
+        await this.prisma.menuItemModifier.create({
+          data: { groupId, name: mod.name, priceAdjust, isDefault: idx === 0, posModifierId: mod.id, sortOrder: idx },
+        });
+      }
+    }
+
+    // Remove orphaned modifiers
+    const orphaned = existing.filter((m) => m.posModifierId && !activePosModIds.has(m.posModifierId));
+    if (orphaned.length > 0) {
+      await this.prisma.menuItemModifier.deleteMany({ where: { id: { in: orphaned.map((m) => m.id) } } });
+    }
   }
 
   async pushCatalogToPOS(tenantId: string): Promise<number> {

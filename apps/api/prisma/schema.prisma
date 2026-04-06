@@ -271,8 +271,44 @@ model MenuItem {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  modifierGroups    MenuItemModifierGroup[]
+
   @@index([tenantId, isAvailable])
   @@index([tenantId, category])
+}
+
+model MenuItemModifierGroup {
+  id             String   @id @default(uuid())
+  menuItemId     String
+  menuItem       MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  name           String
+  selectionType  String   @default("SINGLE")
+  required       Boolean  @default(false)
+  minSelections  Int      @default(0)
+  maxSelections  Int      @default(1)
+  posGroupId     String?
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  modifiers      MenuItemModifier[]
+
+  @@index([menuItemId])
+}
+
+model MenuItemModifier {
+  id            String   @id @default(uuid())
+  groupId       String
+  group         MenuItemModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name          String
+  priceAdjust   Decimal  @default(0) @db.Decimal(10, 2)
+  isDefault     Boolean  @default(false)
+  posModifierId String?
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([groupId])
 }
 
 model UsageLog {
