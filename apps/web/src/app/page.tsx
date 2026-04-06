@@ -24,6 +24,8 @@ import {
   MessageCircle,
   TrendingUp,
 } from 'lucide-react';
+import { MobileNav } from '@/components/landing/MobileNav';
+import { PricingSection } from '@/components/landing/PricingSection';
 
 /* ─── SEO Metadata ────────────────────────────────────────────────────────── */
 
@@ -97,7 +99,7 @@ const jsonLd = {
   offers: {
     '@type': 'AggregateOffer',
     lowPrice: '0',
-    highPrice: '199',
+    highPrice: '149',
     priceCurrency: 'USD',
     offerCount: '4',
   },
@@ -141,7 +143,7 @@ const faqJsonLd = {
       name: 'How much does RingBackSMS cost?',
       acceptedAnswer: {
         '@type': 'Answer',
-        text: 'RingBackSMS offers a free Starter plan with up to 25 SMS per month. Paid plans start at $39/month for the Growth plan (500 SMS), $99/month for Scale (2,500 SMS), and $199/month for Enterprise with unlimited usage.',
+        text: 'RingBackSMS offers a free Starter plan with up to 25 SMS per month. Paid plans start at $49/month for the Growth plan (500 SMS) and $99/month for Scale (2,500 SMS). Enterprise pricing is custom.',
       },
     },
     {
@@ -287,8 +289,11 @@ const INDUSTRIES = [
 const PRICING = [
   {
     name: 'Starter',
-    price: 'Free',
-    period: 'forever',
+    monthlyPrice: 'Free',
+    annualPrice: 'Free',
+    monthlyPeriod: 'forever',
+    annualPeriod: 'forever',
+    annualSavings: '',
     description: 'Try it risk-free',
     sms: '25 SMS/month',
     features: [
@@ -303,8 +308,11 @@ const PRICING = [
   },
   {
     name: 'Growth',
-    price: '$39',
-    period: '/month',
+    monthlyPrice: '$49',
+    annualPrice: '$539',
+    monthlyPeriod: '/month',
+    annualPeriod: '/year',
+    annualSavings: 'Save $49',
     description: 'For growing businesses ready to capture every lead',
     sms: '500 SMS/month',
     features: [
@@ -320,8 +328,11 @@ const PRICING = [
   },
   {
     name: 'Scale',
-    price: '$99',
-    period: '/month',
+    monthlyPrice: '$99',
+    annualPrice: '$1,089',
+    monthlyPeriod: '/month',
+    annualPeriod: '/year',
+    annualSavings: 'Save $99',
     description: 'For busy businesses that need full automation',
     sms: '2,500 SMS/month',
     features: [
@@ -337,8 +348,11 @@ const PRICING = [
   },
   {
     name: 'Enterprise',
-    price: '$199',
-    period: '/month',
+    monthlyPrice: 'Custom',
+    annualPrice: 'Custom',
+    monthlyPeriod: '',
+    annualPeriod: '',
+    annualSavings: '',
     description: 'For multi-location businesses and franchises',
     sms: 'Unlimited SMS',
     features: [
@@ -481,7 +495,7 @@ export default function HomePage() {
                 </Link>
                 <Link
                   href="/sign-up"
-                  className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                  className="hidden sm:inline-flex px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
                 >
                   Start Free
                 </Link>
@@ -489,11 +503,12 @@ export default function HomePage() {
               <SignedIn>
                 <Link
                   href="/dashboard"
-                  className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                  className="hidden sm:inline-flex px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
                 >
                   Dashboard
                 </Link>
               </SignedIn>
+              <MobileNav />
             </div>
           </div>
         </nav>
@@ -503,7 +518,7 @@ export default function HomePage() {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid lg:grid-cols-2 gap-12 items-center">
               {/* Left: Copy */}
-              <div className="space-y-8">
+              <div className="space-y-6 sm:space-y-8 text-center lg:text-left">
                 <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-100 rounded-full text-xs font-semibold text-blue-700">
                   <Zap className="h-3.5 w-3.5" />
                   Responding to missed calls in under 3 seconds
@@ -515,12 +530,12 @@ export default function HomePage() {
                   </span>{' '}
                   again
                 </h1>
-                <p className="text-lg sm:text-xl text-slate-600 leading-relaxed max-w-xl">
+                <p className="text-lg sm:text-xl text-slate-600 leading-relaxed max-w-xl mx-auto lg:mx-0">
                   RingBackSMS instantly texts back every missed call with an AI assistant that takes orders,
                   books appointments, and answers questions — so you never lose another sale while you&apos;re
                   busy running your business.
                 </p>
-                <div className="flex flex-col sm:flex-row gap-4">
+                <div className="flex flex-col sm:flex-row gap-4 sm:justify-center lg:justify-start">
                   <SignedOut>
                     <Link
                       href="/sign-up"
@@ -546,7 +561,7 @@ export default function HomePage() {
                     </Link>
                   </SignedIn>
                 </div>
-                <div className="flex items-center gap-6 text-sm text-slate-500">
+                <div className="flex flex-wrap items-center justify-center lg:justify-start gap-x-6 gap-y-2 text-sm text-slate-500">
                   <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-green-500" /> No credit card required</span>
                   <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-green-500" /> 2-minute setup</span>
                   <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-green-500" /> Cancel anytime</span>
@@ -777,55 +792,7 @@ export default function HomePage() {
                 Start free, upgrade when you&apos;re ready. Every plan pays for itself with the revenue you&apos;ll recover.
               </p>
             </div>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {PRICING.map((plan) => (
-                <div
-                  key={plan.name}
-                  className={`rounded-2xl p-6 border-2 flex flex-col ${
-                    plan.highlighted
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-xl shadow-blue-600/20 scale-[1.02]'
-                      : 'bg-white text-slate-900 border-slate-200'
-                  }`}
-                >
-                  {plan.highlighted && (
-                    <div className="text-xs font-bold uppercase tracking-wider text-blue-200 mb-2">Most Popular</div>
-                  )}
-                  <h3 className="text-lg font-bold">{plan.name}</h3>
-                  <div className="mt-2 mb-1">
-                    <span className="text-4xl font-extrabold">{plan.price}</span>
-                    <span className={`text-sm ${plan.highlighted ? 'text-blue-200' : 'text-slate-500'}`}>
-                      {plan.period}
-                    </span>
-                  </div>
-                  <p className={`text-sm mb-4 ${plan.highlighted ? 'text-blue-200' : 'text-slate-500'}`}>
-                    {plan.description}
-                  </p>
-                  <div className={`text-sm font-semibold mb-4 px-3 py-1.5 rounded-lg inline-block w-fit ${
-                    plan.highlighted ? 'bg-blue-500' : 'bg-blue-50 text-blue-700'
-                  }`}>
-                    {plan.sms}
-                  </div>
-                  <ul className="space-y-2.5 mb-6 flex-1">
-                    {plan.features.map((feature) => (
-                      <li key={feature} className="flex items-start gap-2 text-sm">
-                        <Check className={`h-4 w-4 mt-0.5 shrink-0 ${plan.highlighted ? 'text-blue-200' : 'text-green-500'}`} />
-                        <span className={plan.highlighted ? 'text-blue-100' : 'text-slate-600'}>{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <Link
-                    href="/sign-up"
-                    className={`block text-center py-2.5 rounded-lg font-semibold text-sm transition-colors ${
-                      plan.highlighted
-                        ? 'bg-white text-blue-600 hover:bg-blue-50'
-                        : 'bg-slate-900 text-white hover:bg-slate-800'
-                    }`}
-                  >
-                    {plan.cta}
-                  </Link>
-                </div>
-              ))}
-            </div>
+            <PricingSection plans={PRICING} />
             <p className="text-center text-sm text-slate-500 mt-8">
               All plans include a 14-day free trial. No credit card required to start. Cancel anytime.
             </p>

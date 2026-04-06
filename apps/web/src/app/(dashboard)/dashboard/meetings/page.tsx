@@ -552,7 +552,7 @@ function WeekViewContent({
       </div>
 
       {/* Weekly Grid */}
-      <div className="grid grid-cols-7 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
         {weekDays.map((day) => {
           const key = format(day, 'yyyy-MM-dd');
           const dayMeetings = meetingsByDay.get(key) ?? [];
@@ -629,7 +629,7 @@ function MeetingDetailPanel({
   cancelPending: boolean;
 }) {
   return (
-    <div className="fixed inset-y-0 right-0 w-96 bg-background border-l shadow-xl z-50 overflow-y-auto">
+    <div className="fixed inset-y-0 right-0 w-full sm:w-96 bg-background border-l shadow-xl z-50 overflow-y-auto">
       <div className="p-6">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-lg font-semibold">Meeting Details</h2>

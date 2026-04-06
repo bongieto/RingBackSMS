@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/nextjs';
 import { CreditCard, Zap, TrendingUp, Building2, MessageSquare, Bot, Users } from 'lucide-react';
@@ -11,11 +12,16 @@ import { Badge } from '@/components/ui/badge';
 import { billingApi, tenantApi, analyticsApi } from '@/lib/api';
 import { PLAN_LIMITS, Plan } from '@ringback/shared-types';
 
-const PLAN_PRICES: Record<string, string> = {
-  STARTER: 'Free',
-  GROWTH: '$49/mo',
-  SCALE: '$149/mo',
-  ENTERPRISE: 'Custom',
+const PLAN_PRICES: Record<string, { monthly: string; annual: string }> = {
+  STARTER: { monthly: 'Free', annual: 'Free' },
+  GROWTH: { monthly: '$49/mo', annual: '$539/yr' },
+  SCALE: { monthly: '$99/mo', annual: '$1,089/yr' },
+  ENTERPRISE: { monthly: 'Custom', annual: 'Custom' },
+};
+
+const ANNUAL_SAVINGS: Record<string, string> = {
+  GROWTH: '$49',
+  SCALE: '$99',
 };
 
 const PLAN_ICONS: Record<string, React.ElementType> = {
@@ -28,6 +34,7 @@ const PLAN_ICONS: Record<string, React.ElementType> = {
 export default function BillingPage() {
   const { organization } = useOrganization();
   const tenantId = organization?.publicMetadata?.tenantId as string | undefined;
+  const [billingInterval, setBillingInterval] = useState<'monthly' | 'annual'>('monthly');
 
   const { data: tenant, isLoading: tenantLoading } = useQuery({
     queryKey: ['tenant', tenantId],
@@ -49,12 +56,13 @@ export default function BillingPage() {
   const contactCount = (analytics?.contactCount as number) ?? 0;
 
   const checkoutMutation = useMutation({
-    mutationFn: (plan: string) =>
+    mutationFn: ({ plan, interval }: { plan: string; interval: 'monthly' | 'annual' }) =>
       billingApi.createCheckout(
         tenantId!,
         plan,
         `${window.location.origin}/dashboard/billing?success=true`,
-        `${window.location.origin}/dashboard/billing`
+        `${window.location.origin}/dashboard/billing`,
+        interval
       ),
     onSuccess: (data) => {
       if (data?.url) window.location.href = data.url;
@@ -93,7 +101,7 @@ export default function BillingPage() {
             <p className="text-sm text-muted-foreground">Current Plan</p>
             <div className="flex items-center gap-2 mt-1">
               <h2 className="text-2xl font-bold">{currentPlan}</h2>
-              <Badge>{PLAN_PRICES[currentPlan]}</Badge>
+              <Badge>{PLAN_PRICES[currentPlan].monthly}</Badge>
             </div>
           </div>
           <CreditCard className="h-10 w-10 text-blue-400" />
@@ -130,6 +138,27 @@ export default function BillingPage() {
         </CardContent>
       </Card>
 
+      {/* Billing Interval Toggle */}
+      <div className="flex items-center justify-center gap-3 mb-6">
+        <span className={`text-sm font-medium ${billingInterval === 'monthly' ? 'text-foreground' : 'text-muted-foreground'}`}>
+          Monthly
+        </span>
+        <button
+          onClick={() => setBillingInterval(billingInterval === 'monthly' ? 'annual' : 'monthly')}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+            billingInterval === 'annual' ? 'bg-blue-600' : 'bg-gray-300'
+          }`}
+        >
+          <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${
+            billingInterval === 'annual' ? 'translate-x-6' : 'translate-x-1'
+          }`} />
+        </button>
+        <span className={`text-sm font-medium ${billingInterval === 'annual' ? 'text-foreground' : 'text-muted-foreground'}`}>
+          Annual
+        </span>
+        <Badge variant="secondary" className="bg-green-100 text-green-700 text-xs">1 month free</Badge>
+      </div>
+
       {/* Plan Cards */}
       {tenantLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -156,7 +185,10 @@ export default function BillingPage() {
                 </div>
                 <CardTitle className="text-lg">{plan}</CardTitle>
                 <CardDescription className="text-xl font-bold text-foreground">
-                  {PLAN_PRICES[plan]}
+                  {PLAN_PRICES[plan][billingInterval]}
+                  {billingInterval === 'annual' && ANNUAL_SAVINGS[plan] && (
+                    <span className="text-xs font-medium text-green-600 ml-2">Save {ANNUAL_SAVINGS[plan]}</span>
+                  )}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
@@ -170,7 +202,7 @@ export default function BillingPage() {
                   <Button
                     className="w-full mt-3"
                     size="sm"
-                    onClick={() => checkoutMutation.mutate(plan)}
+                    onClick={() => checkoutMutation.mutate({ plan, interval: billingInterval })}
                     disabled={checkoutMutation.isPending}
                   >
                     {plan === Plan.STARTER ? 'Downgrade' : 'Upgrade'}
