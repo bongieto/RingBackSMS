@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/nextjs';
 import { toast } from 'sonner';
-import { Phone, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Phone, Loader2, CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,11 +12,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { phoneApi } from '@/lib/api';
-
-interface AvailableNumber {
-  phoneNumber: string;
-  friendlyName: string;
-}
 
 interface PhoneStatus {
   hasPhoneNumber: boolean;
@@ -63,6 +58,11 @@ export default function PhoneSetupPage() {
     searchMutation.mutate();
   };
 
+  const handleCancelSearch = () => {
+    searchMutation.reset();
+    setSelectedNumber(null);
+  };
+
   const handleProvision = () => {
     if (!selectedNumber) return;
     provisionMutation.mutate(selectedNumber);
@@ -84,7 +84,7 @@ export default function PhoneSetupPage() {
     return (
       <div>
         <Header title="Phone Number" description="Manage your RingBackSMS phone number" />
-        <div className="max-w-2xl">
+        <div className="max-w-2xl space-y-6">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -143,7 +143,9 @@ export default function PhoneSetupPage() {
   }
 
   // Setup wizard
-  const availableNumbers: AvailableNumber[] = searchMutation.data ?? [];
+  const searchResult = searchMutation.data;
+  const availableNumbers = searchResult?.numbers ?? [];
+  const isAlternative = searchResult?.isAlternative ?? false;
 
   return (
     <div>
@@ -169,19 +171,24 @@ export default function PhoneSetupPage() {
                   maxLength={3}
                 />
               </div>
-              <Button
-                onClick={handleSearch}
-                disabled={areaCode.length !== 3 || searchMutation.isPending}
-              >
-                {searchMutation.isPending ? (
-                  <>
+              {searchMutation.isPending ? (
+                <div className="flex gap-2">
+                  <Button disabled>
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
                     Searching...
-                  </>
-                ) : (
-                  'Search Available Numbers'
-                )}
-              </Button>
+                  </Button>
+                  <Button variant="outline" onClick={handleCancelSearch}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  onClick={handleSearch}
+                  disabled={areaCode.length !== 3}
+                >
+                  Search Available Numbers
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -192,35 +199,72 @@ export default function PhoneSetupPage() {
             <CardHeader>
               <CardTitle>Step 2: Select a Number</CardTitle>
               <CardDescription>
-                {availableNumbers.length > 0
-                  ? `Found ${availableNumbers.length} available numbers`
-                  : 'No numbers found for this area code. Try a different one.'}
+                {availableNumbers.length > 0 && !isAlternative
+                  ? `Found ${availableNumbers.length} available numbers in ${searchResult?.searchedAreaCode}`
+                  : availableNumbers.length === 0
+                    ? `No numbers available in or near area code ${searchResult?.searchedAreaCode}. Try a different area code.`
+                    : `Found ${availableNumbers.length} nearby numbers`}
               </CardDescription>
             </CardHeader>
-            {availableNumbers.length > 0 && (
-              <CardContent className="space-y-2">
-                {availableNumbers.map((num) => (
-                  <button
-                    key={num.phoneNumber}
-                    type="button"
-                    onClick={() => setSelectedNumber(num.phoneNumber)}
-                    className={`w-full flex items-center justify-between rounded-lg border p-4 text-left transition-colors ${
-                      selectedNumber === num.phoneNumber
-                        ? 'border-primary bg-primary/5 ring-2 ring-primary'
-                        : 'border-border hover:bg-muted/50'
-                    }`}
-                  >
-                    <div>
-                      <p className="font-mono text-lg font-semibold">{num.phoneNumber}</p>
-                      <p className="text-sm text-muted-foreground">{num.friendlyName}</p>
-                    </div>
-                    {selectedNumber === num.phoneNumber && (
-                      <CheckCircle2 className="h-5 w-5 text-primary" />
-                    )}
-                  </button>
-                ))}
-              </CardContent>
-            )}
+            <CardContent className="space-y-4">
+              {/* Alternative area code info banner */}
+              {isAlternative && availableNumbers.length > 0 && (
+                <div className="flex items-start gap-2 rounded-md bg-blue-50 border border-blue-200 p-3">
+                  <Info className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
+                  <div className="text-sm text-blue-800">
+                    <p className="font-medium">No numbers available in area code {searchResult?.searchedAreaCode}</p>
+                    <p className="mt-1">Here are nearby numbers from your area. These serve the same geographic region with a different area code.</p>
+                  </div>
+                </div>
+              )}
+
+              {/* No results at all */}
+              {availableNumbers.length === 0 && (
+                <div className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 p-3">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+                  <div className="text-sm text-amber-800">
+                    <p className="font-medium">No numbers found</p>
+                    <p className="mt-1">Try a different area code, or use a nearby major city&apos;s area code.</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Number list */}
+              {availableNumbers.length > 0 && (
+                <div className="space-y-2">
+                  {availableNumbers.map((num) => {
+                    const numAreaCode = num.phoneNumber.slice(2, 5);
+                    return (
+                      <button
+                        key={num.phoneNumber}
+                        type="button"
+                        onClick={() => setSelectedNumber(num.phoneNumber)}
+                        className={`w-full flex items-center justify-between rounded-lg border p-4 text-left transition-colors ${
+                          selectedNumber === num.phoneNumber
+                            ? 'border-primary bg-primary/5 ring-2 ring-primary'
+                            : 'border-border hover:bg-muted/50'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="font-mono text-lg font-semibold">{num.phoneNumber}</p>
+                            {isAlternative && (
+                              <Badge variant="secondary" className="text-xs">
+                                {numAreaCode}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground">{num.friendlyName}</p>
+                        </div>
+                        {selectedNumber === num.phoneNumber && (
+                          <CheckCircle2 className="h-5 w-5 text-primary" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
           </Card>
         )}
 

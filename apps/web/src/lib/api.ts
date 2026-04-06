@@ -75,7 +75,12 @@ export const billingApi = {
 };
 
 export const phoneApi = {
-  search: (tenantId: string, areaCode: string) =>
+  search: (tenantId: string, areaCode: string): Promise<{
+    numbers: Array<{ phoneNumber: string; friendlyName: string }>;
+    isAlternative: boolean;
+    searchedAreaCode: string;
+    message?: string;
+  }> =>
     api.post('/phone/search', { tenantId, areaCode }).then((r) => r.data.data),
   provision: (tenantId: string, phoneNumber: string) =>
     api.post('/phone/provision', { tenantId, phoneNumber }).then((r) => r.data.data),

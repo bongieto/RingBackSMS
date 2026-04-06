@@ -52,6 +52,43 @@ export async function searchAvailableNumbers(
 }
 
 /**
+ * Searches for nearby available numbers when the requested area code is exhausted.
+ * Uses a synthetic number from the area code to find geographically close alternatives.
+ */
+export async function searchNearbyNumbers(
+  areaCode: string,
+  country = 'US'
+): Promise<Array<{ phoneNumber: string; friendlyName: string }>> {
+  const client = getMasterClient();
+  const nearNumber = `+1${areaCode}5550000`;
+
+  // Try 50-mile radius first
+  let numbers = await client.availablePhoneNumbers(country).local.list({
+    nearNumber,
+    distance: 50,
+    smsEnabled: true,
+    voiceEnabled: true,
+    limit: 10,
+  });
+
+  // Widen to 100 miles if nothing found
+  if (numbers.length === 0) {
+    numbers = await client.availablePhoneNumbers(country).local.list({
+      nearNumber,
+      distance: 100,
+      smsEnabled: true,
+      voiceEnabled: true,
+      limit: 10,
+    });
+  }
+
+  return numbers.map((n) => ({
+    phoneNumber: n.phoneNumber,
+    friendlyName: n.friendlyName,
+  }));
+}
+
+/**
  * Provisions a phone number on a tenant sub-account with SMS/voice webhooks.
  */
 export async function provisionPhoneNumber(
