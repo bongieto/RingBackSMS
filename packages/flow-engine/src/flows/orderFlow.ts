@@ -1,6 +1,7 @@
 import { FlowInput, FlowOutput, FlowStep } from '../types';
 import { FlowType, OrderStatus } from '@ringback/shared-types';
 import { CallerState, SideEffect } from '@ringback/shared-types';
+import type { MenuItem, MenuItemModifierGroup } from '@ringback/shared-types';
 
 function buildInitialState(input: FlowInput): CallerState {
   return {
@@ -51,7 +52,7 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
     };
   }
 
-  // ── MENU_DISPLAY → ITEM_SELECTION ────────────────────────────────────────
+  // ── MENU_DISPLAY → ITEM_CUSTOMIZATION or ORDER_CONFIRM ──────────────────
   if (step === 'MENU_DISPLAY') {
     const parsedItems = parseOrderItems(inboundMessage, menuItems);
 
@@ -65,22 +66,135 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       };
     }
 
+    const draftItems = parsedItems.map((item) => ({
+      menuItemId: item.menuItemId,
+      name: item.name,
+      quantity: item.quantity,
+      price: item.price,
+      selectedModifiers: [] as Array<{ groupName: string; modifierName: string; priceAdjust: number }>,
+    }));
+
+    // Check if any items need customization (have required modifier groups)
+    const customization = findNextCustomization(draftItems, menuItems, 0, 0);
+
+    if (customization) {
+      const { itemIndex, groupIndex, group, itemName } = customization;
+      const prompt = buildCustomizationPrompt(itemName, group);
+
+      const nextState: CallerState = {
+        ...currentState,
+        flowStep: 'ITEM_CUSTOMIZATION',
+        orderDraft: { items: draftItems },
+        pendingCustomization: { itemIndex, groupIndex },
+        lastMessageAt: Date.now(),
+      };
+
+      return {
+        nextState,
+        smsReply: prompt,
+        sideEffects: [],
+        flowType: FlowType.ORDER,
+      };
+    }
+
+    // No customization needed — go straight to confirm
     const total = parsedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const orderSummary = parsedItems
-      .map((item) => `${item.quantity}x ${item.name} ($${(item.price * item.quantity).toFixed(2)})`)
-      .join('\n');
+    const orderSummary = buildOrderSummary(draftItems);
 
     const nextState: CallerState = {
       ...currentState,
       flowStep: 'ORDER_CONFIRM',
-      orderDraft: {
-        items: parsedItems.map((item) => ({
-          menuItemId: item.menuItemId,
-          name: item.name,
-          quantity: item.quantity,
-          price: item.price,
-        })),
-      },
+      orderDraft: { items: draftItems },
+      lastMessageAt: Date.now(),
+    };
+
+    return {
+      nextState,
+      smsReply: `Your order:\n${orderSummary}\nTotal: $${total.toFixed(2)}\n\nReply YES to confirm or NO to start over.`,
+      sideEffects: [],
+      flowType: FlowType.ORDER,
+    };
+  }
+
+  // ── ITEM_CUSTOMIZATION → next customization or ORDER_CONFIRM ────────────
+  if (step === 'ITEM_CUSTOMIZATION') {
+    const pending = currentState.pendingCustomization;
+    const orderDraft = currentState.orderDraft;
+
+    if (!pending || !orderDraft) {
+      // Shouldn't happen — fall through to confirm
+      return buildConfirmResponse(currentState, menuItems);
+    }
+
+    const draftItem = orderDraft.items[pending.itemIndex];
+    const menuItem = menuItems.find((m) => m.id === draftItem?.menuItemId);
+    const groups = menuItem?.modifierGroups ?? [];
+    const currentGroup = groups[pending.groupIndex];
+
+    if (!draftItem || !currentGroup) {
+      return buildConfirmResponse(currentState, menuItems);
+    }
+
+    // Parse user selection
+    const selectedModifiers = parseModifierSelection(inboundMessage, currentGroup);
+
+    if (selectedModifiers === null) {
+      // Invalid input — re-ask
+      const prompt = buildCustomizationPrompt(draftItem.name, currentGroup);
+      return {
+        nextState: { ...currentState, lastMessageAt: Date.now() },
+        smsReply: `Sorry, I didn't understand. ${prompt}`,
+        sideEffects: [],
+        flowType: FlowType.ORDER,
+      };
+    }
+
+    // Store selected modifiers
+    const updatedItems = [...orderDraft.items];
+    const updatedItem = { ...updatedItems[pending.itemIndex] };
+    updatedItem.selectedModifiers = [
+      ...(updatedItem.selectedModifiers ?? []),
+      ...selectedModifiers,
+    ];
+    updatedItems[pending.itemIndex] = updatedItem;
+
+    // Find next customization
+    const nextCustomization = findNextCustomization(
+      updatedItems,
+      menuItems,
+      pending.itemIndex,
+      pending.groupIndex + 1,
+    );
+
+    if (nextCustomization) {
+      const { itemIndex, groupIndex, group, itemName } = nextCustomization;
+      const prompt = buildCustomizationPrompt(itemName, group);
+
+      const nextState: CallerState = {
+        ...currentState,
+        flowStep: 'ITEM_CUSTOMIZATION',
+        orderDraft: { ...orderDraft, items: updatedItems },
+        pendingCustomization: { itemIndex, groupIndex },
+        lastMessageAt: Date.now(),
+      };
+
+      return {
+        nextState,
+        smsReply: prompt,
+        sideEffects: [],
+        flowType: FlowType.ORDER,
+      };
+    }
+
+    // All customization done — go to confirm
+    const total = calculateTotal(updatedItems);
+    const orderSummary = buildOrderSummary(updatedItems);
+
+    const nextState: CallerState = {
+      ...currentState,
+      flowStep: 'ORDER_CONFIRM',
+      orderDraft: { ...orderDraft, items: updatedItems },
+      pendingCustomization: null,
       lastMessageAt: Date.now(),
     };
 
@@ -181,7 +295,7 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       };
     }
 
-    const total = orderDraft.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const total = calculateTotal(orderDraft.items);
     const pickupTime = inboundMessage.trim();
 
     const finalDraft = { ...orderDraft, pickupTime };
@@ -191,6 +305,7 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       name: item.name,
       quantity: item.quantity,
       price: item.price,
+      selectedModifiers: item.selectedModifiers,
     }));
 
     if (tenantContext.config.requirePayment) {
@@ -214,7 +329,7 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
             type: 'NOTIFY_OWNER',
             payload: {
               subject: `Pending Order from ${input.callerPhone}`,
-              message: `New order pending payment!\n${orderDraft.items.map((i) => `${i.quantity}x ${i.name}`).join('\n')}\nTotal: $${total.toFixed(2)}\nPickup: ${pickupTime}`,
+              message: `New order pending payment!\n${buildOwnerOrderSummary(orderDraft.items)}\nTotal: $${total.toFixed(2)}\nPickup: ${pickupTime}`,
               channel: 'sms',
             },
           },
@@ -243,7 +358,7 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
           type: 'NOTIFY_OWNER',
           payload: {
             subject: `New Order from ${input.callerPhone}`,
-            message: `New order received!\n${orderDraft.items.map((i) => `${i.quantity}x ${i.name}`).join('\n')}\nTotal: $${total.toFixed(2)}\nPickup: ${pickupTime}`,
+            message: `New order received!\n${buildOwnerOrderSummary(orderDraft.items)}\nTotal: $${total.toFixed(2)}\nPickup: ${pickupTime}`,
             channel: 'sms',
           },
         },
@@ -260,10 +375,10 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       return { nextState, smsReply: "Something went wrong. Let's start over. " + buildMenuText(menuItems), sideEffects: [], flowType: FlowType.ORDER };
     }
 
-    const total = orderDraft.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const total = calculateTotal(orderDraft.items);
     const requestedTime = inboundMessage.trim();
     const serviceNames = orderDraft.items.map((i) => i.name).join(', ');
-    const serviceItems = orderDraft.items.map((item) => ({ menuItemId: item.menuItemId, name: item.name, quantity: item.quantity, price: item.price }));
+    const serviceItems = orderDraft.items.map((item) => ({ menuItemId: item.menuItemId, name: item.name, quantity: item.quantity, price: item.price, selectedModifiers: item.selectedModifiers }));
     const serviceNotes = `Service booking: ${serviceNames}`;
 
     if (tenantContext.config.requirePayment) {
@@ -287,7 +402,7 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
             type: 'NOTIFY_OWNER',
             payload: {
               subject: `Pending Booking from ${input.callerPhone}`,
-              message: `New booking pending payment!\n${orderDraft.items.map((i) => `${i.quantity}x ${i.name}`).join('\n')}\nTotal: $${total.toFixed(2)}\nRequested: ${requestedTime}`,
+              message: `New booking pending payment!\n${buildOwnerOrderSummary(orderDraft.items)}\nTotal: $${total.toFixed(2)}\nRequested: ${requestedTime}`,
               channel: 'sms',
             },
           },
@@ -313,7 +428,7 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
           type: 'NOTIFY_OWNER',
           payload: {
             subject: `Service Booking from ${input.callerPhone}`,
-            message: `New booking request!\n${orderDraft.items.map((i) => `${i.quantity}x ${i.name}`).join('\n')}\nTotal: $${total.toFixed(2)}\nRequested: ${requestedTime}`,
+            message: `New booking request!\n${buildOwnerOrderSummary(orderDraft.items)}\nTotal: $${total.toFixed(2)}\nRequested: ${requestedTime}`,
             channel: 'sms',
           },
         },
@@ -383,12 +498,177 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
   };
 }
 
+// ── Helper types ─────────────────────────────────────────────────────────────
+
 interface ParsedItem {
   menuItemId: string;
   name: string;
   quantity: number;
   price: number;
 }
+
+interface DraftItem {
+  menuItemId: string;
+  name: string;
+  quantity: number;
+  price: number;
+  selectedModifiers?: Array<{ groupName: string; modifierName: string; priceAdjust: number }>;
+}
+
+// ── Customization helpers ────────────────────────────────────────────────────
+
+function findNextCustomization(
+  draftItems: DraftItem[],
+  menuItems: MenuItem[],
+  startItemIndex: number,
+  startGroupIndex: number,
+): { itemIndex: number; groupIndex: number; group: MenuItemModifierGroup; itemName: string } | null {
+  for (let i = startItemIndex; i < draftItems.length; i++) {
+    const draftItem = draftItems[i];
+    const menuItem = menuItems.find((m) => m.id === draftItem.menuItemId);
+    const groups = menuItem?.modifierGroups ?? [];
+
+    const gStart = i === startItemIndex ? startGroupIndex : 0;
+    for (let g = gStart; g < groups.length; g++) {
+      const group = groups[g];
+      // Ask about required groups or groups with modifiers that have price adjustments
+      if (group.required || group.modifiers.some((m) => m.priceAdjust > 0)) {
+        return { itemIndex: i, groupIndex: g, group, itemName: draftItem.name };
+      }
+    }
+  }
+  return null;
+}
+
+function buildCustomizationPrompt(itemName: string, group: MenuItemModifierGroup): string {
+  const isMultiple = group.selectionType === 'MULTIPLE';
+  const modifierLines = group.modifiers.map((mod, idx) => {
+    let line = `${idx + 1}. ${mod.name}`;
+    if (mod.priceAdjust > 0) line += ` (+$${mod.priceAdjust.toFixed(2)})`;
+    return line;
+  }).join('\n');
+
+  if (isMultiple) {
+    const maxNote = group.maxSelections < group.modifiers.length
+      ? ` (pick up to ${group.maxSelections})`
+      : '';
+    return `For your ${itemName} — ${group.name}?${maxNote}\n${modifierLines}\nReply with numbers (e.g., "1,3") or SKIP for none.`;
+  }
+
+  return `For your ${itemName} — ${group.name}?\n${modifierLines}\nReply with a number.`;
+}
+
+function parseModifierSelection(
+  message: string,
+  group: MenuItemModifierGroup,
+): Array<{ groupName: string; modifierName: string; priceAdjust: number }> | null {
+  const trimmed = message.trim().toUpperCase();
+
+  // Allow SKIP for optional groups
+  if (trimmed === 'SKIP' || trimmed === 'NONE') {
+    if (group.required) return null; // Can't skip required
+    return [];
+  }
+
+  // Try to parse numeric selections: "1", "1,3", "1, 2, 3"
+  const parts = message.split(/[,\s]+/).filter(Boolean);
+  const indices: number[] = [];
+
+  for (const part of parts) {
+    const num = parseInt(part.trim(), 10);
+    if (!isNaN(num) && num >= 1 && num <= group.modifiers.length) {
+      indices.push(num - 1);
+    }
+  }
+
+  if (indices.length === 0) {
+    // Try name matching as fallback
+    const lowerMsg = message.toLowerCase();
+    for (let i = 0; i < group.modifiers.length; i++) {
+      if (lowerMsg.includes(group.modifiers[i].name.toLowerCase())) {
+        indices.push(i);
+      }
+    }
+  }
+
+  if (indices.length === 0) return null;
+
+  // For SINGLE selection, take only first
+  const finalIndices = group.selectionType === 'SINGLE' ? [indices[0]] : indices.slice(0, group.maxSelections);
+
+  return finalIndices.map((idx) => ({
+    groupName: group.name,
+    modifierName: group.modifiers[idx].name,
+    priceAdjust: group.modifiers[idx].priceAdjust,
+  }));
+}
+
+// ── Order summary helpers ────────────────────────────────────────────────────
+
+function calculateTotal(items: DraftItem[]): number {
+  return items.reduce((sum, item) => {
+    const modAdjust = (item.selectedModifiers ?? []).reduce((s, m) => s + m.priceAdjust, 0);
+    return sum + (item.price + modAdjust) * item.quantity;
+  }, 0);
+}
+
+function buildOrderSummary(items: DraftItem[]): string {
+  return items.map((item) => {
+    const mods = item.selectedModifiers ?? [];
+    const modAdjust = mods.reduce((s, m) => s + m.priceAdjust, 0);
+    const itemTotal = (item.price + modAdjust) * item.quantity;
+    let line = `${item.quantity}x ${item.name}`;
+    if (mods.length > 0) {
+      line += ` - ${mods.map((m) => m.modifierName).join(', ')}`;
+      if (modAdjust > 0) line += ` (+$${(modAdjust * item.quantity).toFixed(2)})`;
+    }
+    line += ` ($${itemTotal.toFixed(2)})`;
+    return line;
+  }).join('\n');
+}
+
+function buildOwnerOrderSummary(items: DraftItem[]): string {
+  return items.map((item) => {
+    const mods = item.selectedModifiers ?? [];
+    let line = `${item.quantity}x ${item.name}`;
+    if (mods.length > 0) {
+      line += ` (${mods.map((m) => m.modifierName).join(', ')})`;
+    }
+    return line;
+  }).join('\n');
+}
+
+function buildConfirmResponse(
+  currentState: CallerState,
+  menuItems: MenuItem[],
+): FlowOutput {
+  const orderDraft = currentState.orderDraft;
+  if (!orderDraft || orderDraft.items.length === 0) {
+    return {
+      nextState: { ...currentState, flowStep: 'MENU_DISPLAY', lastMessageAt: Date.now() },
+      smsReply: "Something went wrong. Let's start over.\n" + buildMenuText(menuItems),
+      sideEffects: [],
+      flowType: FlowType.ORDER,
+    };
+  }
+
+  const total = calculateTotal(orderDraft.items);
+  const orderSummary = buildOrderSummary(orderDraft.items);
+
+  return {
+    nextState: {
+      ...currentState,
+      flowStep: 'ORDER_CONFIRM',
+      pendingCustomization: null,
+      lastMessageAt: Date.now(),
+    },
+    smsReply: `Your order:\n${orderSummary}\nTotal: $${total.toFixed(2)}\n\nReply YES to confirm or NO to start over.`,
+    sideEffects: [],
+    flowType: FlowType.ORDER,
+  };
+}
+
+// ── Parsing helpers ──────────────────────────────────────────────────────────
 
 function parseOrderItems(
   message: string,

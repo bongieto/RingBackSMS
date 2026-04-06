@@ -28,6 +28,7 @@ export type FlowStep =
   | 'GREETING'
   | 'MENU_DISPLAY'
   | 'ITEM_SELECTION'
+  | 'ITEM_CUSTOMIZATION'
   | 'ORDER_CONFIRM'
   | 'PICKUP_TIME'
   | 'SERVICE_BOOKING'

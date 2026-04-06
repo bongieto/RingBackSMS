@@ -116,6 +116,9 @@ export class CloverAdapter extends BasePosAdapter {
       }
     }
 
+    // TODO: Sync modifier groups from Clover via /v3/merchants/{merchantId}/modifier_groups
+    // Each modifier group has modifiers at /v3/merchants/{merchantId}/modifier_groups/{groupId}/modifiers
+
     logger.info('Catalog synced from Clover', { tenantId, result });
     return result;
   }

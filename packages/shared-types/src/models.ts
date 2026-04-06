@@ -187,6 +187,35 @@ export const MeetingSchema = z.object({
 
 export type Meeting = z.infer<typeof MeetingSchema>;
 
+// ── MenuItem Modifiers ────────────────────────────────────────────────────────
+
+export const MenuItemModifierSchema = z.object({
+  id: z.string().uuid(),
+  groupId: z.string().uuid(),
+  name: z.string(),
+  priceAdjust: z.number(),
+  isDefault: z.boolean(),
+  posModifierId: z.string().nullable(),
+  sortOrder: z.number(),
+});
+
+export type MenuItemModifier = z.infer<typeof MenuItemModifierSchema>;
+
+export const MenuItemModifierGroupSchema = z.object({
+  id: z.string().uuid(),
+  menuItemId: z.string().uuid(),
+  name: z.string(),
+  selectionType: z.enum(['SINGLE', 'MULTIPLE']),
+  required: z.boolean(),
+  minSelections: z.number(),
+  maxSelections: z.number(),
+  posGroupId: z.string().nullable(),
+  sortOrder: z.number(),
+  modifiers: z.array(MenuItemModifierSchema),
+});
+
+export type MenuItemModifierGroup = z.infer<typeof MenuItemModifierGroupSchema>;
+
 // ── MenuItem ──────────────────────────────────────────────────────────────────
 
 export const MenuItemSchema = z.object({
@@ -206,6 +235,7 @@ export const MenuItemSchema = z.object({
   lastSyncedAt: z.date().nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),
+  modifierGroups: z.array(MenuItemModifierGroupSchema).optional(),
 });
 
 export type MenuItem = z.infer<typeof MenuItemSchema>;
