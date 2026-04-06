@@ -5,6 +5,8 @@ import { MeetingStatus } from '@prisma/client';
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { ValidationError } from '@/lib/server/errors';
+import { sendMeetingConfirmationEmail } from '@/lib/server/services/emailService';
+import { logger } from '@/lib/server/logger';
 
 const UpdateMeetingSchema = z.object({
   status: z.nativeEnum(MeetingStatus).optional(),
@@ -69,6 +71,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       },
       include: { conversation: true },
     });
+
+    // Send confirmation email when meeting is confirmed
+    if (body.status === 'CONFIRMED' && meeting.scheduledAt) {
+      sendMeetingConfirmationEmail(existing.tenantId, {
+        callerPhone: meeting.callerPhone,
+        scheduledAt: meeting.scheduledAt.toISOString(),
+        notes: meeting.notes,
+      }).catch((err) =>
+        logger.error('Failed to send meeting confirmation email', { err, meetingId: meeting.id })
+      );
+    }
 
     return apiSuccess(meeting);
   } catch (err: any) {

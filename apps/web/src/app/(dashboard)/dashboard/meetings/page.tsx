@@ -5,7 +5,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/nextjs';
 import {
   Calendar,
-  List,
   Plus,
   ChevronLeft,
   ChevronRight,
@@ -18,10 +17,15 @@ import {
   format,
   startOfWeek,
   endOfWeek,
+  startOfMonth,
+  endOfMonth,
   addWeeks,
   subWeeks,
+  addMonths,
+  subMonths,
   eachDayOfInterval,
   isSameDay,
+  isSameMonth,
   parseISO,
 } from 'date-fns';
 import { Header } from '@/components/layout/Header';
@@ -73,7 +77,7 @@ const STATUS_COLORS: Record<string, StatusBadgeVariant> = {
 
 const STATUS_OPTIONS = ['ALL', 'PENDING', 'CONFIRMED', 'CANCELLED', 'COMPLETED'] as const;
 
-type ViewMode = 'list' | 'week';
+type CalendarMode = 'week' | 'month';
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -83,9 +87,10 @@ export default function MeetingsPage() {
   const queryClient = useQueryClient();
 
   // State
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [calendarMode, setCalendarMode] = useState<CalendarMode>('week');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [weekOffset, setWeekOffset] = useState(0);
+  const [monthOffset, setMonthOffset] = useState(0);
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [newMeeting, setNewMeeting] = useState({
@@ -112,17 +117,42 @@ export default function MeetingsPage() {
     [currentWeekStart, currentWeekEnd]
   );
 
+  // Month calculations
+  const currentMonth = useMemo(() => {
+    const base = new Date();
+    return monthOffset === 0 ? base : addMonths(base, monthOffset);
+  }, [monthOffset]);
+
+  const monthStart = useMemo(() => startOfMonth(currentMonth), [currentMonth]);
+  const monthEnd = useMemo(() => endOfMonth(currentMonth), [currentMonth]);
+
+  // Calendar grid: pad to full weeks
+  const calendarGridStart = useMemo(
+    () => startOfWeek(monthStart, { weekStartsOn: 0 }),
+    [monthStart]
+  );
+  const calendarGridEnd = useMemo(
+    () => endOfWeek(monthEnd, { weekStartsOn: 0 }),
+    [monthEnd]
+  );
+  const calendarDays = useMemo(
+    () => eachDayOfInterval({ start: calendarGridStart, end: calendarGridEnd }),
+    [calendarGridStart, calendarGridEnd]
+  );
+
+  // Date range for query
+  const queryFrom = calendarMode === 'week' ? currentWeekStart : calendarGridStart;
+  const queryTo = calendarMode === 'week' ? currentWeekEnd : calendarGridEnd;
+
   // Query
   const { data, isLoading } = useQuery<PaginatedResponse>({
-    queryKey: ['meetings', tenantId, statusFilter, viewMode, weekOffset],
+    queryKey: ['meetings', tenantId, statusFilter, calendarMode, weekOffset, monthOffset],
     queryFn: () =>
       meetingApi.list(tenantId!, {
-        pageSize: 100,
+        pageSize: 200,
         ...(statusFilter !== 'ALL' && { status: statusFilter }),
-        ...(viewMode === 'week' && {
-          from: currentWeekStart.toISOString(),
-          to: currentWeekEnd.toISOString(),
-        }),
+        from: queryFrom.toISOString(),
+        to: queryTo.toISOString(),
       }),
     enabled: !!tenantId,
     refetchInterval: 60_000,
@@ -190,10 +220,11 @@ export default function MeetingsPage() {
     });
   }
 
-  // Group meetings by day for week view
+  // Group meetings by day
   const meetingsByDay = useMemo(() => {
     const map = new Map<string, Meeting[]>();
-    for (const day of weekDays) {
+    const days = calendarMode === 'week' ? weekDays : calendarDays;
+    for (const day of days) {
       map.set(format(day, 'yyyy-MM-dd'), []);
     }
     for (const m of meetings) {
@@ -204,7 +235,7 @@ export default function MeetingsPage() {
       }
     }
     return map;
-  }, [meetings, weekDays]);
+  }, [meetings, weekDays, calendarDays, calendarMode]);
 
   return (
     <div>
@@ -301,9 +332,9 @@ export default function MeetingsPage() {
       )}
 
       {/* Controls */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
         {/* Status Filter */}
-        <div className="flex gap-1">
+        <div className="flex gap-1 flex-wrap">
           {STATUS_OPTIONS.map((s) => (
             <Button
               key={s}
@@ -316,35 +347,67 @@ export default function MeetingsPage() {
           ))}
         </div>
 
-        {/* View Toggle */}
+        {/* Calendar Mode Toggle */}
         <div className="flex gap-1">
           <Button
-            variant={viewMode === 'list' ? 'default' : 'outline'}
+            variant={calendarMode === 'week' ? 'default' : 'outline'}
             size="sm"
-            onClick={() => setViewMode('list')}
+            onClick={() => setCalendarMode('week')}
           >
-            <List className="h-4 w-4 mr-1" />
-            List
+            Week
           </Button>
           <Button
-            variant={viewMode === 'week' ? 'default' : 'outline'}
+            variant={calendarMode === 'month' ? 'default' : 'outline'}
             size="sm"
-            onClick={() => setViewMode('week')}
+            onClick={() => setCalendarMode('month')}
           >
-            <Calendar className="h-4 w-4 mr-1" />
-            Week
+            Month
           </Button>
         </div>
       </div>
 
-      {/* Content */}
+      {/* Calendar View (always shown at top) */}
       {isLoading ? (
-        <Card>
+        <Card className="mb-6">
           <CardContent className="p-12 text-center">
             <p className="text-muted-foreground">Loading meetings...</p>
           </CardContent>
         </Card>
-      ) : viewMode === 'list' ? (
+      ) : calendarMode === 'week' ? (
+        <div className="mb-6">
+          <WeekViewContent
+            weekDays={weekDays}
+            meetingsByDay={meetingsByDay}
+            weekOffset={weekOffset}
+            currentWeekStart={currentWeekStart}
+            currentWeekEnd={currentWeekEnd}
+            onPrevWeek={() => setWeekOffset((o) => o - 1)}
+            onNextWeek={() => setWeekOffset((o) => o + 1)}
+            onToday={() => setWeekOffset(0)}
+            onSelect={setSelectedMeeting}
+          />
+        </div>
+      ) : (
+        <div className="mb-6">
+          <MonthViewContent
+            calendarDays={calendarDays}
+            currentMonth={currentMonth}
+            monthStart={monthStart}
+            meetingsByDay={meetingsByDay}
+            monthOffset={monthOffset}
+            onPrevMonth={() => setMonthOffset((o) => o - 1)}
+            onNextMonth={() => setMonthOffset((o) => o + 1)}
+            onToday={() => setMonthOffset(0)}
+            onSelect={setSelectedMeeting}
+          />
+        </div>
+      )}
+
+      {/* List View (always shown below) */}
+      <div>
+        <h3 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wider">
+          All Meetings
+        </h3>
         <ListViewContent
           meetings={meetings}
           onConfirm={handleConfirm}
@@ -354,19 +417,7 @@ export default function MeetingsPage() {
           updatePending={updateMutation.isPending}
           cancelPending={cancelMutation.isPending}
         />
-      ) : (
-        <WeekViewContent
-          weekDays={weekDays}
-          meetingsByDay={meetingsByDay}
-          weekOffset={weekOffset}
-          currentWeekStart={currentWeekStart}
-          currentWeekEnd={currentWeekEnd}
-          onPrevWeek={() => setWeekOffset((o) => o - 1)}
-          onNextWeek={() => setWeekOffset((o) => o + 1)}
-          onToday={() => setWeekOffset(0)}
-          onSelect={setSelectedMeeting}
-        />
-      )}
+      </div>
 
       {/* Meeting Detail Panel */}
       {selectedMeeting && (
@@ -579,25 +630,7 @@ function WeekViewContent({
                   </p>
                 ) : (
                   dayMeetings.map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => onSelect(m)}
-                      className={cn(
-                        'w-full text-left rounded px-2 py-1 text-[11px] leading-tight transition-colors',
-                        m.status === 'PENDING' && 'bg-yellow-50 hover:bg-yellow-100 text-yellow-800',
-                        m.status === 'CONFIRMED' && 'bg-blue-50 hover:bg-blue-100 text-blue-800',
-                        m.status === 'COMPLETED' && 'bg-green-50 hover:bg-green-100 text-green-800',
-                        m.status === 'CANCELLED' &&
-                          'bg-red-50 hover:bg-red-100 text-red-800 line-through'
-                      )}
-                    >
-                      <div className="font-medium">
-                        {m.scheduledAt
-                          ? format(parseISO(m.scheduledAt), 'h:mm a')
-                          : 'TBD'}
-                      </div>
-                      <div className="truncate">{maskPhone(m.callerPhone)}</div>
-                    </button>
+                    <MeetingChip key={m.id} meeting={m} onSelect={onSelect} />
                   ))
                 )}
               </div>
@@ -606,6 +639,148 @@ function WeekViewContent({
         })}
       </div>
     </div>
+  );
+}
+
+// ── Month View ───────────────────────────────────────────────────────────────
+
+function MonthViewContent({
+  calendarDays,
+  currentMonth,
+  monthStart,
+  meetingsByDay,
+  monthOffset,
+  onPrevMonth,
+  onNextMonth,
+  onToday,
+  onSelect,
+}: {
+  calendarDays: Date[];
+  currentMonth: Date;
+  monthStart: Date;
+  meetingsByDay: Map<string, Meeting[]>;
+  monthOffset: number;
+  onPrevMonth: () => void;
+  onNextMonth: () => void;
+  onToday: () => void;
+  onSelect: (m: Meeting) => void;
+}) {
+  const today = new Date();
+  const dayHeaders = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  return (
+    <div>
+      {/* Month Navigation */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={onPrevMonth}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={onNextMonth}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          {monthOffset !== 0 && (
+            <Button variant="ghost" size="sm" onClick={onToday}>
+              Today
+            </Button>
+          )}
+        </div>
+        <p className="text-sm font-medium text-muted-foreground">
+          {format(currentMonth, 'MMMM yyyy')}
+        </p>
+      </div>
+
+      {/* Calendar Grid */}
+      <Card>
+        {/* Day Headers */}
+        <div className="grid grid-cols-7 border-b">
+          {dayHeaders.map((d) => (
+            <div key={d} className="px-2 py-2 text-center text-xs font-medium text-muted-foreground">
+              {d}
+            </div>
+          ))}
+        </div>
+
+        {/* Day Cells */}
+        <div className="grid grid-cols-7">
+          {calendarDays.map((day) => {
+            const key = format(day, 'yyyy-MM-dd');
+            const dayMeetings = meetingsByDay.get(key) ?? [];
+            const isCurrentMonth = isSameMonth(day, monthStart);
+            const isToday = isSameDay(day, today);
+
+            return (
+              <div
+                key={key}
+                className={cn(
+                  'min-h-[80px] lg:min-h-[100px] border-b border-r p-1.5 transition-colors',
+                  !isCurrentMonth && 'bg-muted/30',
+                  isToday && 'bg-blue-50'
+                )}
+              >
+                <div
+                  className={cn(
+                    'text-xs font-medium mb-1',
+                    isToday
+                      ? 'text-blue-700 font-bold'
+                      : isCurrentMonth
+                        ? 'text-foreground'
+                        : 'text-muted-foreground/50'
+                  )}
+                >
+                  {format(day, 'd')}
+                </div>
+                <div className="space-y-0.5">
+                  {dayMeetings.slice(0, 3).map((m) => (
+                    <MeetingChip key={m.id} meeting={m} onSelect={onSelect} compact />
+                  ))}
+                  {dayMeetings.length > 3 && (
+                    <p className="text-[10px] text-muted-foreground text-center">
+                      +{dayMeetings.length - 3} more
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ── Shared Meeting Chip ──────────────────────────────────────────────────────
+
+function MeetingChip({
+  meeting,
+  onSelect,
+  compact,
+}: {
+  meeting: Meeting;
+  onSelect: (m: Meeting) => void;
+  compact?: boolean;
+}) {
+  return (
+    <button
+      onClick={() => onSelect(meeting)}
+      className={cn(
+        'w-full text-left rounded px-1.5 py-0.5 text-[11px] leading-tight transition-colors',
+        compact && 'text-[10px]',
+        meeting.status === 'PENDING' && 'bg-yellow-50 hover:bg-yellow-100 text-yellow-800',
+        meeting.status === 'CONFIRMED' && 'bg-blue-50 hover:bg-blue-100 text-blue-800',
+        meeting.status === 'COMPLETED' && 'bg-green-50 hover:bg-green-100 text-green-800',
+        meeting.status === 'CANCELLED' && 'bg-red-50 hover:bg-red-100 text-red-800 line-through'
+      )}
+    >
+      <div className="font-medium">
+        {meeting.scheduledAt
+          ? format(parseISO(meeting.scheduledAt), 'h:mm a')
+          : 'TBD'}
+      </div>
+      {!compact && (
+        <div className="truncate">{maskPhone(meeting.callerPhone)}</div>
+      )}
+    </button>
   );
 }
 
