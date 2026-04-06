@@ -78,7 +78,7 @@ export default function IntegrationsPage() {
     }
   }, [searchParams]);
 
-  const { data: providers, isLoading } = useQuery({
+  const { data: providers, isLoading, error: providersError } = useQuery({
     queryKey: ['pos-providers', tenantId],
     queryFn: () => posApi.listProviders(tenantId!),
     enabled: !!tenantId,
@@ -135,6 +135,31 @@ export default function IntegrationsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Debug / Error states */}
+        {!tenantId && (
+          <Card className="border-amber-200 bg-amber-50">
+            <CardContent className="pt-4 pb-4">
+              <p className="text-sm text-amber-800">Loading organization data...</p>
+            </CardContent>
+          </Card>
+        )}
+        {providersError && (
+          <Card className="border-red-200 bg-red-50">
+            <CardContent className="pt-4 pb-4">
+              <p className="text-sm text-red-800">
+                Failed to load providers: {(providersError as any)?.message || 'Unknown error'}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+        {tenantId && !isLoading && !providersError && (!providers || providers.length === 0) && (
+          <Card className="border-amber-200 bg-amber-50">
+            <CardContent className="pt-4 pb-4">
+              <p className="text-sm text-amber-800">No POS providers found. This may indicate a configuration issue.</p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Post-connect guided flow */}
         {showPostConnect && connectedProvider && (
