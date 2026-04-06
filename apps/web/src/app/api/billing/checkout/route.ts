@@ -20,6 +20,9 @@ export async function POST(req: NextRequest) {
     const url = await createCheckoutSession(body.tenantId, body.plan, body.successUrl, body.cancelUrl);
     return apiSuccess({ url });
   } catch (err: any) {
+    if (err.message === 'Owner email required to create billing account') {
+      return apiError('Please add an owner email in Settings before upgrading', 400);
+    }
     return apiError('Internal server error', 500);
   }
 }
