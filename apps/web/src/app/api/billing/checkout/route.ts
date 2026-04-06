@@ -11,6 +11,7 @@ const CheckoutSchema = z.object({
   plan: z.nativeEnum(Plan),
   successUrl: z.string().url(),
   cancelUrl: z.string().url(),
+  interval: z.enum(['monthly', 'annual']).default('monthly'),
 });
 
 export async function POST(req: NextRequest) {
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
     const body = CheckoutSchema.parse(await req.json());
     const authResult = await verifyTenantAccess(body.tenantId);
     if (isNextResponse(authResult)) return authResult;
-    const url = await createCheckoutSession(body.tenantId, body.plan, body.successUrl, body.cancelUrl);
+    const url = await createCheckoutSession(body.tenantId, body.plan, body.successUrl, body.cancelUrl, body.interval);
     return apiSuccess({ url });
   } catch (err: any) {
     logger.error('Checkout error', { error: err.message, stack: err.stack, type: err.type, code: err.code });

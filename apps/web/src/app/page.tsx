@@ -25,6 +25,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { MobileNav } from '@/components/landing/MobileNav';
+import { PricingSection } from '@/components/landing/PricingSection';
 
 /* ─── SEO Metadata ────────────────────────────────────────────────────────── */
 
@@ -288,8 +289,11 @@ const INDUSTRIES = [
 const PRICING = [
   {
     name: 'Starter',
-    price: 'Free',
-    period: 'forever',
+    monthlyPrice: 'Free',
+    annualPrice: 'Free',
+    monthlyPeriod: 'forever',
+    annualPeriod: 'forever',
+    annualSavings: '',
     description: 'Try it risk-free',
     sms: '25 SMS/month',
     features: [
@@ -304,8 +308,11 @@ const PRICING = [
   },
   {
     name: 'Growth',
-    price: '$49',
-    period: '/month',
+    monthlyPrice: '$49',
+    annualPrice: '$539',
+    monthlyPeriod: '/month',
+    annualPeriod: '/year',
+    annualSavings: 'Save $49',
     description: 'For growing businesses ready to capture every lead',
     sms: '500 SMS/month',
     features: [
@@ -321,8 +328,11 @@ const PRICING = [
   },
   {
     name: 'Scale',
-    price: '$99',
-    period: '/month',
+    monthlyPrice: '$99',
+    annualPrice: '$1,089',
+    monthlyPeriod: '/month',
+    annualPeriod: '/year',
+    annualSavings: 'Save $99',
     description: 'For busy businesses that need full automation',
     sms: '2,500 SMS/month',
     features: [
@@ -338,8 +348,11 @@ const PRICING = [
   },
   {
     name: 'Enterprise',
-    price: 'Custom',
-    period: '',
+    monthlyPrice: 'Custom',
+    annualPrice: 'Custom',
+    monthlyPeriod: '',
+    annualPeriod: '',
+    annualSavings: '',
     description: 'For multi-location businesses and franchises',
     sms: 'Unlimited SMS',
     features: [
@@ -779,55 +792,7 @@ export default function HomePage() {
                 Start free, upgrade when you&apos;re ready. Every plan pays for itself with the revenue you&apos;ll recover.
               </p>
             </div>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {PRICING.map((plan) => (
-                <div
-                  key={plan.name}
-                  className={`rounded-2xl p-6 border-2 flex flex-col ${
-                    plan.highlighted
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-xl shadow-blue-600/20 scale-[1.02]'
-                      : 'bg-white text-slate-900 border-slate-200'
-                  }`}
-                >
-                  {plan.highlighted && (
-                    <div className="text-xs font-bold uppercase tracking-wider text-blue-200 mb-2">Most Popular</div>
-                  )}
-                  <h3 className="text-lg font-bold">{plan.name}</h3>
-                  <div className="mt-2 mb-1">
-                    <span className="text-4xl font-extrabold">{plan.price}</span>
-                    <span className={`text-sm ${plan.highlighted ? 'text-blue-200' : 'text-slate-500'}`}>
-                      {plan.period}
-                    </span>
-                  </div>
-                  <p className={`text-sm mb-4 ${plan.highlighted ? 'text-blue-200' : 'text-slate-500'}`}>
-                    {plan.description}
-                  </p>
-                  <div className={`text-sm font-semibold mb-4 px-3 py-1.5 rounded-lg inline-block w-fit ${
-                    plan.highlighted ? 'bg-blue-500' : 'bg-blue-50 text-blue-700'
-                  }`}>
-                    {plan.sms}
-                  </div>
-                  <ul className="space-y-2.5 mb-6 flex-1">
-                    {plan.features.map((feature) => (
-                      <li key={feature} className="flex items-start gap-2 text-sm">
-                        <Check className={`h-4 w-4 mt-0.5 shrink-0 ${plan.highlighted ? 'text-blue-200' : 'text-green-500'}`} />
-                        <span className={plan.highlighted ? 'text-blue-100' : 'text-slate-600'}>{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <Link
-                    href="/sign-up"
-                    className={`block text-center py-2.5 rounded-lg font-semibold text-sm transition-colors ${
-                      plan.highlighted
-                        ? 'bg-white text-blue-600 hover:bg-blue-50'
-                        : 'bg-slate-900 text-white hover:bg-slate-800'
-                    }`}
-                  >
-                    {plan.cta}
-                  </Link>
-                </div>
-              ))}
-            </div>
+            <PricingSection plans={PRICING} />
             <p className="text-center text-sm text-slate-500 mt-8">
               All plans include a 14-day free trial. No credit card required to start. Cancel anytime.
             </p>

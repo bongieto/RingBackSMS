@@ -68,8 +68,8 @@ export const analyticsApi = {
 };
 
 export const billingApi = {
-  createCheckout: (tenantId: string, plan: string, successUrl: string, cancelUrl: string) =>
-    webApi.post('/billing/checkout', { tenantId, plan, successUrl, cancelUrl }).then((r) => r.data.data),
+  createCheckout: (tenantId: string, plan: string, successUrl: string, cancelUrl: string, interval: 'monthly' | 'annual' = 'monthly') =>
+    webApi.post('/billing/checkout', { tenantId, plan, successUrl, cancelUrl, interval }).then((r) => r.data.data),
   createPortal: (tenantId: string, returnUrl: string) =>
     webApi.post('/billing/portal', { tenantId, returnUrl }).then((r) => r.data.data),
 };

@@ -11,6 +11,24 @@ const PLAN_PRICE_IDS: Record<Plan, string | undefined> = {
   [Plan.ENTERPRISE]: process.env.STRIPE_ENTERPRISE_PRICE_ID?.trim(),
 };
 
+const ANNUAL_PLAN_PRICE_IDS: Record<Plan, string | undefined> = {
+  [Plan.STARTER]: undefined,
+  [Plan.GROWTH]: process.env.STRIPE_GROWTH_ANNUAL_PRICE_ID?.trim(),
+  [Plan.SCALE]: process.env.STRIPE_SCALE_ANNUAL_PRICE_ID?.trim(),
+  [Plan.ENTERPRISE]: undefined,
+};
+
+/** All known price IDs (monthly + annual) mapped back to their plan */
+function planFromPriceId(priceId: string): Plan | undefined {
+  for (const [plan, pid] of Object.entries(PLAN_PRICE_IDS)) {
+    if (pid === priceId) return plan as Plan;
+  }
+  for (const [plan, pid] of Object.entries(ANNUAL_PLAN_PRICE_IDS)) {
+    if (pid === priceId) return plan as Plan;
+  }
+  return undefined;
+}
+
 function getStripeKey(): string {
   const key = process.env.STRIPE_SECRET_KEY?.trim();
   if (!key) throw new Error('STRIPE_SECRET_KEY not set');
@@ -57,7 +75,8 @@ export async function createCheckoutSession(
   tenantId: string,
   plan: Plan,
   successUrl: string,
-  cancelUrl: string
+  cancelUrl: string,
+  interval: 'monthly' | 'annual' = 'monthly'
 ): Promise<string> {
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
@@ -76,7 +95,9 @@ export async function createCheckoutSession(
     logger.info('Auto-created Stripe customer for checkout', { tenantId, customerId });
   }
 
-  const priceId = PLAN_PRICE_IDS[plan];
+  const priceId = interval === 'annual'
+    ? (ANNUAL_PLAN_PRICE_IDS[plan] ?? PLAN_PRICE_IDS[plan])
+    : PLAN_PRICE_IDS[plan];
   if (!priceId) {
     throw new Error(`No Stripe price configured for plan ${plan}`);
   }
@@ -141,11 +162,11 @@ export async function handleSubscriptionUpdated(
     return;
   }
 
-  const planEntry = Object.entries(PLAN_PRICE_IDS).find(([, priceId]) =>
-    subscription.items.data.some((item) => item.price.id === priceId)
-  );
-
-  const plan = planEntry ? (planEntry[0] as Plan) : Plan.STARTER;
+  let plan: Plan = Plan.STARTER;
+  for (const item of subscription.items.data) {
+    const matched = planFromPriceId(item.price.id);
+    if (matched) { plan = matched; break; }
+  }
 
   const previousTenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
