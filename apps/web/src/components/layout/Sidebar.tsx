@@ -16,6 +16,7 @@ import {
   Phone,
   Plug2,
   Briefcase,
+  HelpCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { UserButton, OrganizationSwitcher } from '@clerk/nextjs';
@@ -33,6 +34,7 @@ const navItems = [
   { href: '/dashboard/integrations', label: 'Integrations', icon: Plug2 },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
   { href: '/dashboard/billing', label: 'Billing', icon: CreditCard },
+  { href: '/help', label: 'Help Center', icon: HelpCircle },
 ];
 
 export function Sidebar() {
@@ -73,6 +75,7 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              {...(item.href.startsWith('/dashboard') ? {} : { target: '_blank', rel: 'noopener noreferrer' })}
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors',
                 isActive
