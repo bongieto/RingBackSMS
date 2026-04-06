@@ -106,7 +106,7 @@ export async function provisionPhoneNumber(
     smsMethod: 'POST',
     statusCallback: `${baseUrl}/webhooks/twilio/call-status`,
     statusCallbackMethod: 'POST',
-    voiceUrl: `${baseUrl}/webhooks/twilio/call-status`,
+    voiceUrl: `${baseUrl}/webhooks/twilio/voice`,
     voiceMethod: 'POST',
   });
 

@@ -103,11 +103,11 @@ export async function provisionPhoneNumber(
 
   const purchased = await subClient.incomingPhoneNumbers.create({
     phoneNumber,
-    smsUrl: `${baseUrl}/webhooks/twilio/sms-reply`,
+    smsUrl: `${baseUrl}/api/webhooks/twilio/sms-reply`,
     smsMethod: 'POST',
-    statusCallback: `${baseUrl}/webhooks/twilio/call-status`,
+    statusCallback: `${baseUrl}/api/webhooks/twilio/call-status`,
     statusCallbackMethod: 'POST',
-    voiceUrl: `${baseUrl}/webhooks/twilio/call-status`,
+    voiceUrl: `${baseUrl}/api/webhooks/twilio/voice`,
     voiceMethod: 'POST',
   });
 

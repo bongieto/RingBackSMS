@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
       encryptedAuthToken = updated!.twilioAuthToken;
     }
 
-    const baseUrl = process.env.BASE_URL ?? 'https://api.ringback.com';
+    const baseUrl = process.env.FRONTEND_URL ?? 'https://ringbacksms.com';
 
     const provisionedNumber = await provisionPhoneNumber(
       tenantId,
