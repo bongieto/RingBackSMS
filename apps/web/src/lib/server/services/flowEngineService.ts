@@ -122,7 +122,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     callerPhone,
     inboundMessage,
     currentState,
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
+    aiApiKey: process.env.MINIMAX_API_KEY ?? '',
   });
 
   // Prepend after-hours notice if outside business hours

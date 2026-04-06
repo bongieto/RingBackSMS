@@ -133,10 +133,10 @@ All variables are required unless marked optional.
 | `TWILIO_MASTER_ACCOUNT_SID` | Master account SID for provisioning sub-accounts |
 | `TWILIO_MASTER_AUTH_TOKEN` | Master account auth token |
 
-### Anthropic
+### MiniMax AI
 | Variable | Description |
 |----------|-------------|
-| `ANTHROPIC_API_KEY` | API key for Claude (intent detection + AI replies) |
+| `MINIMAX_API_KEY` | API key for MiniMax (intent detection + AI replies) |
 
 ### Clerk
 | Variable | Description |

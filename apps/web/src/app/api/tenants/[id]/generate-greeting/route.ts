@@ -3,7 +3,13 @@ import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/server/db';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
+
+const AI_MODEL = 'MiniMax-M2.7';
+
+function stripThinkTags(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+}
 
 async function fetchWebsiteContext(url: string): Promise<string | null> {
   try {
@@ -55,10 +61,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       }
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = process.env.MINIMAX_API_KEY;
     if (!apiKey) return apiError('AI service not configured', 500);
 
-    const client = new Anthropic({ apiKey });
+    const client = new OpenAI({
+      baseURL: 'https://api.minimax.io/v1',
+      apiKey,
+    });
 
     const businessInfo = [
       `Business name: ${tenant.name}`,
@@ -71,8 +80,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       websiteContext ? `Website info: ${websiteContext.substring(0, 2000)}` : null,
     ].filter(Boolean).join('\n');
 
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const response = await client.chat.completions.create({
+      model: AI_MODEL,
       max_tokens: 300,
       messages: [{
         role: 'user',
@@ -91,9 +100,8 @@ Return ONLY the greeting text, nothing else.`,
       }],
     });
 
-    const greeting = response.content[0].type === 'text'
-      ? response.content[0].text.trim()
-      : `Hi! Sorry we missed your call at ${tenant.name}. Text us back and we'll help you right away!`;
+    const greeting = stripThinkTags(response.choices[0]?.message?.content ?? '')
+      || `Hi! Sorry we missed your call at ${tenant.name}. Text us back and we'll help you right away!`;
 
     logger.info('Greeting auto-generated', { tenantId: params.id });
     return apiSuccess({ greeting, websiteContext: websiteContext ? 'extracted' : 'none' });

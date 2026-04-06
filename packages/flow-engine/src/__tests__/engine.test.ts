@@ -2,16 +2,18 @@ import { runFlowEngine } from '../engine';
 import { TenantContext, FlowInput } from '../types';
 import { FlowType, BusinessType, Plan } from '@ringback/shared-types';
 
-// Mock Anthropic
-jest.mock('@anthropic-ai/sdk', () => {
-  const MockAnthropic = jest.fn().mockImplementation(() => ({
-    messages: {
-      create: jest.fn().mockResolvedValue({
-        content: [{ type: 'text', text: '{"intent": "ORDER", "confidence": 0.9}' }],
-      }),
+// Mock OpenAI (MiniMax uses OpenAI-compatible API)
+jest.mock('openai', () => {
+  const MockOpenAI = jest.fn().mockImplementation(() => ({
+    chat: {
+      completions: {
+        create: jest.fn().mockResolvedValue({
+          choices: [{ message: { content: '{"intent": "ORDER", "confidence": 0.9}' } }],
+        }),
+      },
     },
   }));
-  return { __esModule: true, default: MockAnthropic };
+  return { __esModule: true, default: MockOpenAI };
 });
 
 const mockTenantContext: TenantContext = {
@@ -101,7 +103,7 @@ const baseInput: FlowInput = {
   callerPhone: '+12175550199',
   inboundMessage: 'ORDER',
   currentState: null,
-  anthropicApiKey: 'test-key',
+  aiApiKey: 'test-key',
 };
 
 describe('Flow Engine', () => {
