@@ -109,6 +109,7 @@ export async function updateTenantConfig(
     websiteUrl: string;
     squareSyncEnabled: boolean;
     squareAutoSync: boolean;
+    requirePayment: boolean;
   }>
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

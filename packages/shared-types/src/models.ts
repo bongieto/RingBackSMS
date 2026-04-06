@@ -77,6 +77,7 @@ export const TenantConfigSchema = z.object({
   squareAutoSync: z.boolean().default(false),
   posSyncEnabled: z.boolean().default(false),
   posAutoSync: z.boolean().default(false),
+  requirePayment: z.boolean().default(false),
   createdAt: z.date(),
   updatedAt: z.date(),
 });

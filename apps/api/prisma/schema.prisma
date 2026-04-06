@@ -145,6 +145,7 @@ model TenantConfig {
   squareAutoSync      Boolean  @default(false)
   posSyncEnabled      Boolean  @default(false)
   posAutoSync         Boolean  @default(false)
+  requirePayment      Boolean  @default(false)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 }
@@ -217,10 +218,13 @@ model Order {
   total          Decimal     @db.Decimal(10, 2)
   pickupTime     String?
   notes          String?     @db.Text
-  squareOrderId  String?
+  squareOrderId   String?
   squarePaymentId String?
-  posOrderId          String?
-  posPaymentId        String?
+  posOrderId      String?
+  posPaymentId    String?
+  stripePaymentId String?
+  stripePaymentUrl String?
+  paymentStatus   String?  @default("UNPAID")
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
