@@ -18,6 +18,7 @@ router.get('/:tenantId', requireAuth, async (req: Request, res: Response) => {
     totalOrders,
     totalMeetings,
     recentUsage,
+    orderRevenue,
   ] = await Promise.all([
     prisma.missedCall.count({ where: { tenantId, occurredAt: { gte: since } } }),
     prisma.conversation.count({ where: { tenantId, createdAt: { gte: since } } }),
@@ -28,11 +29,13 @@ router.get('/:tenantId', requireAuth, async (req: Request, res: Response) => {
       where: { tenantId, createdAt: { gte: since } },
       _count: { id: true },
     }),
+    prisma.order.aggregate({ where: { tenantId, createdAt: { gte: since } }, _sum: { total: true } }),
   ]);
 
   const usageByType = Object.fromEntries(
     recentUsage.map((u) => [u.type, u._count.id])
   );
+  const revenue = Number(orderRevenue._sum.total ?? 0);
 
   sendSuccess(res, {
     period: { days, since },
@@ -40,6 +43,7 @@ router.get('/:tenantId', requireAuth, async (req: Request, res: Response) => {
     conversations: totalConversations,
     orders: totalOrders,
     meetings: totalMeetings,
+    revenue,
     usage: usageByType,
   });
 });

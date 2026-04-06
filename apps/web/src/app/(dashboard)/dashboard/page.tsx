@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { Phone, MessageSquare, ShoppingBag, Calendar, TrendingUp, Clock } from 'lucide-react';
+import { Phone, MessageSquare, ShoppingBag, Calendar, TrendingUp, Clock, DollarSign } from 'lucide-react';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { PosStatusCard } from '@/components/dashboard/PosStatusCard';
 import { Header } from '@/components/layout/Header';
@@ -42,7 +42,7 @@ export default function DashboardPage() {
       />
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         <StatCard
           title="Missed Calls"
           value={analytics?.missedCalls ?? 0}
@@ -65,6 +65,14 @@ export default function DashboardPage() {
           icon={ShoppingBag}
           iconColor="text-green-500"
           change="Via SMS"
+          changeType="positive"
+        />
+        <StatCard
+          title="Revenue"
+          value={`$${((analytics?.revenue as number) ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          icon={DollarSign}
+          iconColor="text-emerald-500"
+          change="Order revenue"
           changeType="positive"
         />
         <StatCard
