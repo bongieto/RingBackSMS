@@ -1,6 +1,8 @@
 import { NextRequest } from 'next/server';
 import { constructStripeEvent, handleSubscriptionUpdated, handleSubscriptionDeleted } from '@/lib/server/services/billingService';
+import { sendPaymentFailedEmail } from '@/lib/server/services/emailService';
 import { logger } from '@/lib/server/logger';
+import { prisma } from '@/lib/server/db';
 import Stripe from 'stripe';
 
 export async function POST(request: NextRequest) {
@@ -24,6 +26,19 @@ export async function POST(request: NextRequest) {
       case 'customer.subscription.deleted':
         await handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
         break;
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
+        if (customerId) {
+          const tenant = await prisma.tenant.findUnique({ where: { stripeCustomerId: customerId } });
+          if (tenant) {
+            sendPaymentFailedEmail(tenant.id).catch((err) =>
+              logger.error('Failed to send payment failed email', { err, tenantId: tenant.id })
+            );
+          }
+        }
+        break;
+      }
       default:
         logger.debug('Unhandled Stripe event', { type: event.type });
     }

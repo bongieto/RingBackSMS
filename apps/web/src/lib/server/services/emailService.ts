@@ -1,0 +1,95 @@
+import { Resend } from 'resend';
+import { Plan } from '@ringback/shared-types';
+import { logger } from '../logger';
+import { prisma } from '../db';
+import {
+  welcomeEmail,
+  subscriptionCancelledEmail,
+  paymentFailedEmail,
+  usageLimitWarningEmail,
+  weeklyDigestEmail,
+} from './emailTemplates';
+
+let resendClient: Resend | null = null;
+
+function getResend(): Resend {
+  if (!resendClient) {
+    resendClient = new Resend(process.env.RESEND_API_KEY);
+  }
+  return resendClient;
+}
+
+const FROM = process.env.RESEND_FROM_EMAIL ?? 'RingbackSMS <info@ringbacksms.com>';
+
+async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
+  try {
+    const resend = getResend();
+    await resend.emails.send({ from: FROM, to, subject, html });
+    logger.info('Email sent', { to, subject });
+    return true;
+  } catch (error) {
+    logger.error('Email send failed', { error, to, subject });
+    return false;
+  }
+}
+
+async function getTenantEmail(tenantId: string): Promise<{ email: string | null; name: string }> {
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    include: { config: true },
+  });
+  return {
+    email: tenant?.config?.ownerEmail ?? null,
+    name: tenant?.name ?? 'there',
+  };
+}
+
+// ── Public API ──────────────────────────────────────────────────────────────
+
+export async function sendWelcomeEmail(tenantId: string, plan: Plan): Promise<void> {
+  const { email, name } = await getTenantEmail(tenantId);
+  if (!email) return;
+  const { subject, html } = welcomeEmail(name, plan);
+  await sendEmail(email, subject, html);
+}
+
+export async function sendSubscriptionCancelledEmail(tenantId: string): Promise<void> {
+  const { email, name } = await getTenantEmail(tenantId);
+  if (!email) return;
+  const { subject, html } = subscriptionCancelledEmail(name);
+  await sendEmail(email, subject, html);
+}
+
+export async function sendPaymentFailedEmail(tenantId: string): Promise<void> {
+  const { email, name } = await getTenantEmail(tenantId);
+  if (!email) return;
+  const { subject, html } = paymentFailedEmail(name);
+  await sendEmail(email, subject, html);
+}
+
+export async function sendUsageLimitWarningEmail(
+  tenantId: string,
+  usedCount: number,
+  limitCount: number
+): Promise<void> {
+  const { email, name } = await getTenantEmail(tenantId);
+  if (!email) return;
+  const { subject, html } = usageLimitWarningEmail(name, usedCount, limitCount);
+  await sendEmail(email, subject, html);
+}
+
+export async function sendWeeklyDigestEmail(
+  tenantId: string,
+  stats: {
+    missedCalls: number;
+    conversations: number;
+    orders: number;
+    meetings: number;
+    revenue: number;
+  }
+): Promise<void> {
+  const { email, name } = await getTenantEmail(tenantId);
+  if (!email) return;
+  const { subject, html } = weeklyDigestEmail(name, stats);
+  await sendEmail(email, subject, html);
+}
