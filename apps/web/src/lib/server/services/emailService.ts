@@ -8,6 +8,8 @@ import {
   paymentFailedEmail,
   usageLimitWarningEmail,
   weeklyDigestEmail,
+  meetingConfirmationEmail,
+  meetingRequestEmail,
 } from './emailTemplates';
 
 let resendClient: Resend | null = null;
@@ -91,5 +93,25 @@ export async function sendWeeklyDigestEmail(
   const { email, name } = await getTenantEmail(tenantId);
   if (!email) return;
   const { subject, html } = weeklyDigestEmail(name, stats);
+  await sendEmail(email, subject, html);
+}
+
+export async function sendMeetingConfirmationEmail(
+  tenantId: string,
+  meeting: { callerPhone: string; scheduledAt: string; notes?: string | null }
+): Promise<void> {
+  const { email, name } = await getTenantEmail(tenantId);
+  if (!email) return;
+  const { subject, html } = meetingConfirmationEmail(name, meeting);
+  await sendEmail(email, subject, html);
+}
+
+export async function sendMeetingRequestEmail(
+  tenantId: string,
+  meeting: { callerPhone: string; scheduledAt: string; notes?: string | null }
+): Promise<void> {
+  const { email, name } = await getTenantEmail(tenantId);
+  if (!email) return;
+  const { subject, html } = meetingRequestEmail(name, meeting);
   await sendEmail(email, subject, html);
 }

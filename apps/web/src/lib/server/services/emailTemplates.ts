@@ -236,3 +236,119 @@ export function weeklyDigestEmail(
     `),
   };
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// 6. Meeting Confirmation — sent when a meeting is confirmed
+// ────────────────────────────────────────────────────────────────────────────
+
+export function meetingConfirmationEmail(
+  businessName: string,
+  meeting: { callerPhone: string; scheduledAt: string; notes?: string | null }
+): { subject: string; html: string } {
+  const date = new Date(meeting.scheduledAt);
+  const dateStr = date.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+  const timeStr = date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  return {
+    subject: `Meeting Confirmed — ${dateStr} at ${timeStr}`,
+    html: layout(`
+      <h2 style="color:#1a1a1a;font-size:22px;margin:0 0 8px;">Meeting Confirmed</h2>
+      <p style="color:#64748b;font-size:15px;line-height:1.6;margin:0 0 24px;">
+        Hi ${businessName}, a meeting has been confirmed.
+      </p>
+
+      <table style="width:100%;border-collapse:collapse;border:1px solid ${BORDER_COLOR};border-radius:8px;overflow:hidden;">
+        <tr>
+          <td style="padding:12px 16px;color:#64748b;font-size:14px;border-bottom:1px solid ${BORDER_COLOR};width:120px;">Date</td>
+          <td style="padding:12px 16px;color:#1a1a1a;font-size:14px;font-weight:600;border-bottom:1px solid ${BORDER_COLOR};">${dateStr}</td>
+        </tr>
+        <tr>
+          <td style="padding:12px 16px;color:#64748b;font-size:14px;border-bottom:1px solid ${BORDER_COLOR};">Time</td>
+          <td style="padding:12px 16px;color:#1a1a1a;font-size:14px;font-weight:600;border-bottom:1px solid ${BORDER_COLOR};">${timeStr}</td>
+        </tr>
+        <tr>
+          <td style="padding:12px 16px;color:#64748b;font-size:14px;border-bottom:1px solid ${BORDER_COLOR};">Customer</td>
+          <td style="padding:12px 16px;color:#1a1a1a;font-size:14px;font-weight:600;border-bottom:1px solid ${BORDER_COLOR};">${meeting.callerPhone}</td>
+        </tr>
+        ${meeting.notes ? `
+        <tr>
+          <td style="padding:12px 16px;color:#64748b;font-size:14px;">Notes</td>
+          <td style="padding:12px 16px;color:#1a1a1a;font-size:14px;">${meeting.notes}</td>
+        </tr>` : ''}
+      </table>
+
+      <div style="text-align:center;margin-top:28px;">
+        ${button('View Meetings', `${DASHBOARD_URL}/dashboard/meetings`)}
+      </div>
+    `),
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 7. Meeting Request — sent when a new meeting is created with a scheduled date
+// ────────────────────────────────────────────────────────────────────────────
+
+export function meetingRequestEmail(
+  businessName: string,
+  meeting: { callerPhone: string; scheduledAt: string; notes?: string | null }
+): { subject: string; html: string } {
+  const date = new Date(meeting.scheduledAt);
+  const dateStr = date.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+  const timeStr = date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  return {
+    subject: `New Meeting Request — ${meeting.callerPhone} on ${dateStr}`,
+    html: layout(`
+      <h2 style="color:#1a1a1a;font-size:22px;margin:0 0 8px;">New Meeting Request</h2>
+      <p style="color:#64748b;font-size:15px;line-height:1.6;margin:0 0 24px;">
+        Hi ${businessName}, a customer has requested a meeting.
+      </p>
+
+      <table style="width:100%;border-collapse:collapse;border:1px solid ${BORDER_COLOR};border-radius:8px;overflow:hidden;">
+        <tr>
+          <td style="padding:12px 16px;color:#64748b;font-size:14px;border-bottom:1px solid ${BORDER_COLOR};width:120px;">Customer</td>
+          <td style="padding:12px 16px;color:#1a1a1a;font-size:14px;font-weight:600;border-bottom:1px solid ${BORDER_COLOR};">${meeting.callerPhone}</td>
+        </tr>
+        <tr>
+          <td style="padding:12px 16px;color:#64748b;font-size:14px;border-bottom:1px solid ${BORDER_COLOR};">Preferred Date</td>
+          <td style="padding:12px 16px;color:#1a1a1a;font-size:14px;font-weight:600;border-bottom:1px solid ${BORDER_COLOR};">${dateStr}</td>
+        </tr>
+        <tr>
+          <td style="padding:12px 16px;color:#64748b;font-size:14px;border-bottom:1px solid ${BORDER_COLOR};">Preferred Time</td>
+          <td style="padding:12px 16px;color:#1a1a1a;font-size:14px;font-weight:600;border-bottom:1px solid ${BORDER_COLOR};">${timeStr}</td>
+        </tr>
+        ${meeting.notes ? `
+        <tr>
+          <td style="padding:12px 16px;color:#64748b;font-size:14px;">Notes</td>
+          <td style="padding:12px 16px;color:#1a1a1a;font-size:14px;">${meeting.notes}</td>
+        </tr>` : ''}
+      </table>
+
+      <p style="color:#64748b;font-size:14px;line-height:1.6;margin:20px 0 0;">
+        Review and confirm or reschedule this meeting in your dashboard.
+      </p>
+
+      <div style="text-align:center;margin-top:28px;">
+        ${button('View Meeting', `${DASHBOARD_URL}/dashboard/meetings`)}
+      </div>
+    `),
+  };
+}

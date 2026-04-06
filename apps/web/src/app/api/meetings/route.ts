@@ -5,6 +5,8 @@ import { MeetingStatus } from '@prisma/client';
 import { z } from 'zod';
 import { apiSuccess, apiCreated, apiPaginated, apiError } from '@/lib/server/response';
 import { ValidationError } from '@/lib/server/errors';
+import { sendMeetingRequestEmail } from '@/lib/server/services/emailService';
+import { logger } from '@/lib/server/logger';
 
 const CreateMeetingSchema = z.object({
   tenantId: z.string().uuid(),
@@ -121,6 +123,17 @@ export async function POST(req: NextRequest) {
       },
       include: { conversation: true },
     });
+
+    // Send notification email if meeting has a scheduled date
+    if (meeting.scheduledAt) {
+      sendMeetingRequestEmail(body.tenantId, {
+        callerPhone: meeting.callerPhone,
+        scheduledAt: meeting.scheduledAt.toISOString(),
+        notes: meeting.notes,
+      }).catch((err) =>
+        logger.error('Failed to send meeting request email', { err, meetingId: meeting.id })
+      );
+    }
 
     return apiCreated(meeting);
   } catch (err: any) {
