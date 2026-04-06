@@ -26,6 +26,8 @@ export const UpdateTenantConfigRequestSchema = z.object({
   slackWebhook: z.string().url().optional(),
   ownerEmail: z.string().email().optional(),
   ownerPhone: z.string().optional(),
+  businessAddress: z.string().optional(),
+  websiteUrl: z.string().url().optional(),
   squareSyncEnabled: z.boolean().optional(),
   squareAutoSync: z.boolean().optional(),
 });

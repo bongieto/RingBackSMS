@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/nextjs';
 import { toast } from 'sonner';
 import Link from 'next/link';
-import { Phone } from 'lucide-react';
+import { Phone, Sparkles, Globe, MapPin } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,8 @@ interface TenantConfig {
   slackWebhook: string | null;
   ownerEmail: string | null;
   ownerPhone: string | null;
+  businessAddress: string | null;
+  websiteUrl: string | null;
 }
 
 const TIMEZONES = [
@@ -61,6 +63,8 @@ export default function SettingsPage() {
     slackWebhook: '',
     ownerEmail: '',
     ownerPhone: '',
+    businessAddress: '',
+    websiteUrl: '',
   });
 
   useEffect(() => {
@@ -76,9 +80,20 @@ export default function SettingsPage() {
         slackWebhook: config.slackWebhook ?? '',
         ownerEmail: config.ownerEmail ?? '',
         ownerPhone: config.ownerPhone ?? '',
+        businessAddress: config.businessAddress ?? '',
+        websiteUrl: config.websiteUrl ?? '',
       });
     }
   }, [config]);
+
+  const generateGreetingMutation = useMutation({
+    mutationFn: () => tenantApi.generateGreeting(tenantId!),
+    onSuccess: (data: { greeting: string }) => {
+      setForm(f => ({ ...f, greeting: data.greeting }));
+      toast.success('Greeting generated! Review and save when ready.');
+    },
+    onError: () => toast.error('Failed to generate greeting'),
+  });
 
   const saveMutation = useMutation({
     mutationFn: () => tenantApi.updateConfig(tenantId!, {
@@ -88,6 +103,8 @@ export default function SettingsPage() {
       slackWebhook: form.slackWebhook || undefined,
       ownerEmail: form.ownerEmail || undefined,
       ownerPhone: form.ownerPhone || undefined,
+      businessAddress: form.businessAddress || undefined,
+      websiteUrl: form.websiteUrl || undefined,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tenant', tenantId] });
@@ -110,6 +127,34 @@ export default function SettingsPage() {
         {/* Phone Number */}
         <PhoneNumberCard tenantId={tenantId} />
 
+        {/* Business Info */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Globe className="h-5 w-5" />
+              Business Info
+            </CardTitle>
+            <CardDescription>Your business address and website for AI context</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                <MapPin className="h-3.5 w-3.5" />
+                Business Address
+              </Label>
+              <Input {...field('businessAddress')} placeholder="123 Main St, Springfield, IL 62701" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                <Globe className="h-3.5 w-3.5" />
+                Website URL
+              </Label>
+              <Input {...field('websiteUrl')} placeholder="https://yourbusiness.com" />
+              <p className="text-xs text-muted-foreground">AI will extract context from your website to improve conversations and greetings</p>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Greeting */}
         <Card>
           <CardHeader>
@@ -118,7 +163,19 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-1.5">
-              <Label>Greeting Message</Label>
+              <div className="flex items-center justify-between">
+                <Label>Greeting Message</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => generateGreetingMutation.mutate()}
+                  disabled={generateGreetingMutation.isPending || !tenantId}
+                >
+                  <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+                  {generateGreetingMutation.isPending ? 'Generating...' : 'Auto-Generate'}
+                </Button>
+              </div>
               <textarea
                 className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[100px] resize-y"
                 {...field('greeting')}
