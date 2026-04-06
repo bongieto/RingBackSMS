@@ -41,13 +41,14 @@ export async function createTenant(input: CreateTenantInput) {
     },
   });
 
-  // Create default FALLBACK flow
-  await prisma.flow.create({
-    data: {
-      tenantId: tenant.id,
-      type: FlowType.FALLBACK,
-      isEnabled: true,
-    },
+  // Create default flows
+  await prisma.flow.createMany({
+    data: [
+      { tenantId: tenant.id, type: FlowType.ORDER, isEnabled: true },
+      { tenantId: tenant.id, type: FlowType.MEETING, isEnabled: true },
+      { tenantId: tenant.id, type: FlowType.FALLBACK, isEnabled: true },
+      { tenantId: tenant.id, type: FlowType.CUSTOM, isEnabled: false },
+    ],
   });
 
   // Auto-create Stripe customer
