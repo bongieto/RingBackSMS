@@ -67,6 +67,16 @@ export async function detectIntent(
     }
   }
 
+  if (enabledFlowTypes.includes(FlowType.INQUIRY)) {
+    // Retail-style "do you have X" / "is X in stock" / "looking for X"
+    const lower = message.toLowerCase();
+    if (
+      /\b(do you have|got any|in stock|available|looking for|how much|price of|have any)\b/.test(lower)
+    ) {
+      return { intent: FlowType.INQUIRY, confidence: 0.9 };
+    }
+  }
+
   if (enabledFlowTypes.includes(FlowType.MEETING)) {
     if (
       upperMsg === 'MEETING' ||
@@ -88,6 +98,7 @@ export async function detectIntent(
   const flowDescriptions: Record<FlowType, string> = {
     [FlowType.ORDER]: 'placing a food or product order',
     [FlowType.MEETING]: 'scheduling a meeting, appointment, or call',
+    [FlowType.INQUIRY]: 'asking about a product — availability, price, or if the shop carries it',
     [FlowType.CUSTOM]: 'a custom business workflow',
     [FlowType.FALLBACK]: 'general conversation or questions',
   };

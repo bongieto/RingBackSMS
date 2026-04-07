@@ -27,6 +27,7 @@ enum Plan {
 enum FlowType {
   ORDER
   MEETING
+  INQUIRY
   CUSTOM
   FALLBACK
 }

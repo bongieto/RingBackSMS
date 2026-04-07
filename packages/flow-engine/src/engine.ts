@@ -3,18 +3,21 @@ import { detectIntent } from './intentDetector';
 import { processOrderFlow } from './flows/orderFlow';
 import { processMeetingFlow } from './flows/meetingFlow';
 import { processFallbackFlow } from './flows/fallbackFlow';
+import { processInquiryFlow } from './flows/inquiryFlow';
 import { FlowType } from '@ringback/shared-types';
 
 export async function runFlowEngine(input: FlowInput): Promise<FlowOutput> {
   const { currentState, tenantContext, inboundMessage } = input;
 
   // If in an active flow (not complete), continue it
-  if (currentState?.currentFlow && currentState.flowStep !== 'ORDER_COMPLETE') {
+  if (currentState?.currentFlow && currentState.flowStep !== 'ORDER_COMPLETE' && currentState.flowStep !== 'INQUIRY_COMPLETE') {
     switch (currentState.currentFlow) {
       case FlowType.ORDER:
         return processOrderFlow(input);
       case FlowType.MEETING:
         return processMeetingFlow(input);
+      case FlowType.INQUIRY:
+        return processInquiryFlow(input);
       case FlowType.FALLBACK:
         // Don't persist fallback, re-detect intent each time
         break;
@@ -41,6 +44,8 @@ export async function runFlowEngine(input: FlowInput): Promise<FlowOutput> {
         return processOrderFlow({ ...input, currentState: null });
       case FlowType.MEETING:
         return processMeetingFlow({ ...input, currentState: null });
+      case FlowType.INQUIRY:
+        return processInquiryFlow({ ...input, currentState: null });
       default:
         break;
     }
