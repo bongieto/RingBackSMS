@@ -32,16 +32,23 @@ export async function GET(
     select: { twilioSubAccountSid: true, twilioAuthToken: true },
   });
 
-  if (!tenant?.twilioSubAccountSid || !tenant.twilioAuthToken) {
-    return apiError('Twilio not configured', 500);
+  let credentials: string;
+  if (tenant?.twilioSubAccountSid && tenant.twilioAuthToken) {
+    // Legacy sub-account path
+    const authToken = decryptNullable(tenant.twilioAuthToken);
+    if (!authToken) {
+      return apiError('Failed to decrypt Twilio credentials', 500);
+    }
+    credentials = Buffer.from(`${tenant.twilioSubAccountSid}:${authToken}`).toString('base64');
+  } else {
+    // Master account path (post-A2P migration)
+    const sid = process.env.TWILIO_MASTER_ACCOUNT_SID;
+    const token = process.env.TWILIO_MASTER_AUTH_TOKEN;
+    if (!sid || !token) {
+      return apiError('Twilio master credentials not configured', 500);
+    }
+    credentials = Buffer.from(`${sid}:${token}`).toString('base64');
   }
-
-  const authToken = decryptNullable(tenant.twilioAuthToken);
-  if (!authToken) {
-    return apiError('Failed to decrypt Twilio credentials', 500);
-  }
-
-  const credentials = Buffer.from(`${tenant.twilioSubAccountSid}:${authToken}`).toString('base64');
 
   const twilioRes = await fetch(missedCall.voicemailUrl, {
     headers: {
