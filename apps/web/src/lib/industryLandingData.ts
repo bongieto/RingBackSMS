@@ -61,6 +61,40 @@ const COMMON_STATS = [
 
 const ctaHref = (hub: HubSlug) => `/sign-up?industry=${hub}`;
 
+/* ─── Hero background images (Unsplash, hot-linked like homepage) ─── */
+const UNSPLASH = (id: string) =>
+  `https://images.unsplash.com/${id}?auto=format&fit=crop&w=2000&q=80`;
+
+const HERO_IMAGE_HUB: Record<HubSlug, string> = {
+  restaurants: UNSPLASH('photo-1517248135467-4c7edcad34c4'),
+  'service-businesses': UNSPLASH('photo-1581578731548-c64695cc6952'),
+  retail: UNSPLASH('photo-1441986300917-64674bd600d8'),
+};
+
+const HERO_IMAGE_NICHE: Record<string, string> = {
+  'restaurants/full-service': UNSPLASH('photo-1414235077428-338989a2e8c0'),
+  'restaurants/food-trucks': UNSPLASH('photo-1565299585323-38d6b0865b47'),
+  'restaurants/pizzerias': UNSPLASH('photo-1513104890138-7c749659a591'),
+  'restaurants/cafes-bakeries': UNSPLASH('photo-1509440159596-0249088772ff'),
+  'service-businesses/beauty-salons': UNSPLASH('photo-1560066984-138dadb4c035'),
+  'service-businesses/cleaning-services': UNSPLASH('photo-1527515637462-cff94eecc1ac'),
+  'service-businesses/caregiving-home-health': UNSPLASH('photo-1576765608535-5f04d1e3f289'),
+  'service-businesses/plumbing': UNSPLASH('photo-1585704032915-c3400ca199e7'),
+  'service-businesses/electrical': UNSPLASH('photo-1565608087341-404b25492fee'),
+  'service-businesses/hvac': UNSPLASH('photo-1631545806609-19c0caa75bd0'),
+  'retail/florists': UNSPLASH('photo-1490750967868-88aa4486c946'),
+  'retail/cake-shops': UNSPLASH('photo-1535254973040-607b474cb50d'),
+  'retail/wedding-photographers': UNSPLASH('photo-1519741497674-611481863552'),
+  'retail/boutiques': UNSPLASH('photo-1567401893414-76b7b1e5a7a5'),
+};
+
+export function getHeroImage(entry: IndustryLandingContent): string {
+  const override = HERO_IMAGE_NICHE[entry.slug];
+  if (override) return override;
+  if (entry.kind === 'hub') return HERO_IMAGE_HUB[entry.slug as HubSlug];
+  return HERO_IMAGE_HUB[entry.parent!];
+}
+
 /* ─── HUBS ──────────────────────────────────────────────────────────────── */
 
 const RESTAURANTS: IndustryLandingContent = {
