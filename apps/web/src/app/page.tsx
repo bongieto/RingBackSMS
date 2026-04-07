@@ -313,6 +313,7 @@ const INDUSTRIES = [
     pain: 'Busy dinner rush, can\'t answer the phone',
     solution: 'AI takes orders via text — works with Square, Clover & Toast POS, menus sync automatically',
     stat: '35% more takeout orders',
+    href: '/industries/restaurants',
   },
   {
     icon: Scissors,
@@ -320,6 +321,7 @@ const INDUSTRIES = [
     pain: 'Hands full with a client, phone keeps ringing',
     solution: 'Customers book their next appointment via SMS',
     stat: '50% fewer no-shows',
+    href: '/industries/service-businesses/beauty-salons',
   },
   {
     icon: Stethoscope,
@@ -327,6 +329,7 @@ const INDUSTRIES = [
     pain: 'Front desk overwhelmed with call volume',
     solution: 'AI answers common questions and schedules visits',
     stat: '40% less phone time for staff',
+    href: '/industries/service-businesses',
   },
   {
     icon: Wrench,
@@ -334,6 +337,7 @@ const INDUSTRIES = [
     pain: 'On a job site, can\'t pick up leads',
     solution: 'Captures lead details and schedules estimates',
     stat: '3x more leads captured',
+    href: '/industries/service-businesses',
   },
   {
     icon: Store,
@@ -341,13 +345,15 @@ const INDUSTRIES = [
     pain: 'Helping in-store customers, missing phone orders',
     solution: 'AI answers product questions and hours',
     stat: '25% more customer inquiries handled',
+    href: '/industries/retail',
   },
   {
     icon: Truck,
-    name: 'Auto Shops & Detailing',
-    pain: 'Under the hood, hands are greasy',
-    solution: 'Books service appointments automatically',
-    stat: '60% faster appointment booking',
+    name: 'Food Trucks',
+    pain: 'Moving every day, customers can\'t reach you',
+    solution: 'SMS ordering with location-aware preorders',
+    stat: '2x more preorders',
+    href: '/industries/restaurants/food-trucks',
   },
 ];
 
@@ -810,9 +816,9 @@ export default function HomePage() {
             </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {INDUSTRIES.map((industry) => (
-                <div key={industry.name} className="bg-white/5 rounded-2xl p-6 border border-white/10 hover:bg-white/10 transition-colors">
+                <Link key={industry.name} href={industry.href} className="block bg-white/5 rounded-2xl p-6 border border-white/10 hover:bg-white/10 hover:border-blue-400/40 transition-colors group">
                   <industry.icon className="h-8 w-8 text-blue-400 mb-4" />
-                  <h3 className="text-lg font-bold mb-2">{industry.name}</h3>
+                  <h3 className="text-lg font-bold mb-2 group-hover:text-blue-300">{industry.name}</h3>
                   <p className="text-sm text-slate-400 mb-3">
                     <span className="text-red-400 font-medium">Pain:</span> {industry.pain}
                   </p>
@@ -823,7 +829,7 @@ export default function HomePage() {
                     <TrendingUp className="h-3.5 w-3.5" />
                     {industry.stat}
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           </div>
