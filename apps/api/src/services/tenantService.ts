@@ -1,124 +1,13 @@
-import { PrismaClient, BusinessType, Plan } from '@prisma/client';
-import { FlowType } from '@ringback/shared-types';
-import { logger } from '../utils/logger';
-import { NotFoundError } from '../utils/errors';
-import { createStripeCustomer } from './billingService';
+import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-export interface CreateTenantInput {
-  name: string;
-  businessType: BusinessType;
-  plan?: Plan;
-  clerkOrgId?: string;
-  ownerEmail?: string;
-  ownerPhone?: string;
-  timezone?: string;
-}
-
-export async function createTenant(input: CreateTenantInput) {
-  const tenant = await prisma.tenant.create({
-    data: {
-      name: input.name,
-      businessType: input.businessType,
-      plan: input.plan ?? Plan.STARTER,
-      clerkOrgId: input.clerkOrgId,
-      isActive: true,
-    },
-  });
-
-  // Create default config
-  await prisma.tenantConfig.create({
-    data: {
-      tenantId: tenant.id,
-      greeting: `Hi! Sorry we missed your call from ${input.name}. How can we help you today?`,
-      timezone: input.timezone ?? 'America/Chicago',
-      businessDays: [1, 2, 3, 4, 5], // Mon-Fri
-      businessHoursStart: '09:00',
-      businessHoursEnd: '17:00',
-      ownerEmail: input.ownerEmail,
-      ownerPhone: input.ownerPhone,
-    },
-  });
-
-  // Create default flows
-  await prisma.flow.createMany({
-    data: [
-      { tenantId: tenant.id, type: FlowType.ORDER, isEnabled: true },
-      { tenantId: tenant.id, type: FlowType.MEETING, isEnabled: true },
-      { tenantId: tenant.id, type: FlowType.FALLBACK, isEnabled: true },
-      { tenantId: tenant.id, type: FlowType.CUSTOM, isEnabled: false },
-    ],
-  });
-
-  // Auto-create Stripe customer
-  if (input.ownerEmail) {
-    try {
-      await createStripeCustomer(tenant.id, input.ownerEmail, input.name);
-    } catch (err) {
-      logger.error('Failed to create Stripe customer', { err, tenantId: tenant.id });
-    }
-  }
-
-  logger.info('Tenant created', { tenantId: tenant.id, name: tenant.name });
-  return tenant;
-}
-
-export async function getTenantById(id: string) {
-  const tenant = await prisma.tenant.findUnique({
-    where: { id },
-    include: {
-      config: true,
-      flows: true,
-    },
-  });
-
-  if (!tenant) throw new NotFoundError('Tenant');
-  return tenant;
-}
-
-export async function getTenantByClerkOrg(clerkOrgId: string) {
-  const tenant = await prisma.tenant.findUnique({
-    where: { clerkOrgId },
-    include: {
-      config: true,
-      flows: { where: { isEnabled: true } },
-      menuItems: { where: { isAvailable: true } },
-    },
-  });
-
-  if (!tenant) throw new NotFoundError('Tenant');
-  return tenant;
-}
-
-export async function updateTenantConfig(
-  tenantId: string,
-  updates: Partial<{
-    greeting: string;
-    timezone: string;
-    businessHoursStart: string;
-    businessHoursEnd: string;
-    businessDays: number[];
-    businessSchedule: Record<string, { open: string; close: string }> | null;
-    closedDates: string[];
-    aiPersonality: string;
-    calcomLink: string;
-    slackWebhook: string;
-    ownerEmail: string;
-    ownerPhone: string;
-    businessAddress: string;
-    websiteUrl: string;
-    squareSyncEnabled: boolean;
-    squareAutoSync: boolean;
-    requirePayment: boolean;
-  }>
-) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return prisma.tenantConfig.update({
-    where: { tenantId },
-    data: updates as any,
-  });
-}
+// NOTE: Tenant CRUD (create, read, update config, menu, flows) is handled
+// by the Next.js app routes under apps/web/src/app/api/tenants. The former
+// Express implementations were removed because they diverged from the
+// canonical versions (missing business-type profile seeding and tenant
+// ownership checks). Only functions still used by admin-only routes
+// remain here.
 
 export async function listTenants(page = 1, pageSize = 20) {
   const [tenants, total] = await Promise.all([
@@ -139,53 +28,4 @@ export async function listTenants(page = 1, pageSize = 20) {
   ]);
 
   return { tenants, total };
-}
-
-export async function getTenantMenuItems(tenantId: string) {
-  return prisma.menuItem.findMany({
-    where: { tenantId, isAvailable: true },
-    orderBy: [{ category: 'asc' }, { name: 'asc' }],
-  });
-}
-
-export async function upsertMenuItem(
-  tenantId: string,
-  item: {
-    id?: string;
-    name: string;
-    description?: string;
-    price: number;
-    category?: string;
-    isAvailable?: boolean;
-    duration?: number | null;
-    requiresBooking?: boolean;
-  }
-) {
-  if (item.id) {
-    return prisma.menuItem.update({
-      where: { id: item.id },
-      data: {
-        name: item.name,
-        description: item.description,
-        price: item.price,
-        category: item.category,
-        isAvailable: item.isAvailable ?? true,
-        duration: item.duration ?? null,
-        requiresBooking: item.requiresBooking ?? false,
-      },
-    });
-  }
-
-  return prisma.menuItem.create({
-    data: {
-      tenantId,
-      name: item.name,
-      description: item.description,
-      price: item.price,
-      category: item.category,
-      isAvailable: item.isAvailable ?? true,
-      duration: item.duration ?? null,
-      requiresBooking: item.requiresBooking ?? false,
-    },
-  });
 }

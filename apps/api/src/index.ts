@@ -6,7 +6,6 @@ import compression from 'compression';
 import { clerkAuth } from './middleware/authMiddleware';
 import { errorHandler } from './middleware/errorHandler';
 import webhookRoutes from './routes/webhooks';
-import tenantRoutes from './routes/tenants';
 import conversationRoutes from './routes/conversations';
 import analyticsRoutes from './routes/analytics';
 import billingRoutes from './routes/billing';
@@ -55,7 +54,10 @@ app.use(clerkAuth);
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use('/webhooks', webhookRoutes);
-app.use('/tenants', tenantRoutes);
+// NOTE: /tenants is now served by the Next.js app routes under
+// apps/web/src/app/api/tenants. The Express implementation was removed
+// because it diverged from the canonical one (missing business-type
+// profile seeding and tenant ownership checks).
 app.use('/conversations', conversationRoutes);
 app.use('/analytics', analyticsRoutes);
 app.use('/billing', billingRoutes);

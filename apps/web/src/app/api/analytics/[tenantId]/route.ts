@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
-import { apiSuccess, apiError } from '@/lib/server/response';
+import { apiSuccess } from '@/lib/server/response';
 
 export async function GET(request: NextRequest, { params }: { params: { tenantId: string } }) {
   const authResult = await verifyTenantAccess(params.tenantId);
@@ -24,19 +25,15 @@ export async function GET(request: NextRequest, { params }: { params: { tenantId
     prisma.order.aggregate({ where: { tenantId, createdAt: { gte: since } }, _sum: { total: true } }),
     prisma.usageLog.groupBy({ by: ['type'], where: { tenantId, createdAt: { gte: monthStart } }, _count: { id: true } }),
     // Daily breakdown for trend charts
-    prisma.$queryRawUnsafe<Array<{ date: string; conversations: bigint; orders: bigint; missed_calls: bigint }>>(
-      `SELECT
+    prisma.$queryRaw<Array<{ date: Date; conversations: bigint }>>(Prisma.sql`
+      SELECT
         DATE("createdAt") as date,
-        COUNT(*) FILTER (WHERE true) as conversations,
-        0 as orders,
-        0 as missed_calls
+        COUNT(*)::bigint as conversations
       FROM "Conversation"
-      WHERE "tenantId" = $1 AND "createdAt" >= $2
+      WHERE "tenantId" = ${tenantId} AND "createdAt" >= ${since}
       GROUP BY DATE("createdAt")
-      ORDER BY date`,
-      tenantId,
-      since
-    ).catch(() => []),
+      ORDER BY date
+    `).catch(() => [] as Array<{ date: Date; conversations: bigint }>),
     prisma.contact.count({ where: { tenantId } }),
   ]);
   const usage = Object.fromEntries(recentUsage.map((u) => [u.type, u._count.id]));
