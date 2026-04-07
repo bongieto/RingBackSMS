@@ -221,6 +221,21 @@ export async function reopenSnoozedTasks(): Promise<number> {
   return result.count;
 }
 
+/**
+ * Hard-delete DONE/DISMISSED tasks older than `days` (default 30).
+ * Kept around briefly for analytics, then pruned.
+ */
+export async function pruneOldTasks(days = 30): Promise<number> {
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const result = await prisma.task.deleteMany({
+    where: {
+      status: { in: ['DONE', 'DISMISSED'] },
+      updatedAt: { lt: cutoff },
+    },
+  });
+  return result.count;
+}
+
 export type SnoozeOption = '1h' | 'tomorrow' | 'next_week';
 
 /**
