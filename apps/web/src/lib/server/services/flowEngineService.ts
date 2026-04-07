@@ -148,6 +148,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     const contactName: string | null = callerContext.contact?.name ?? null;
 
     let lastOrderSummary: string | null = null;
+    let lastOrderItems: CallerMemory['lastOrderItems'] = undefined;
     if (callerContext.lastOrder) {
       const daysAgo = Math.max(
         1,
@@ -155,6 +156,41 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       );
       const total = (callerContext.lastOrder.totalCents / 100).toFixed(2);
       lastOrderSummary = `order #${callerContext.lastOrder.orderNumber}, $${total}, ${daysAgo} day${daysAgo === 1 ? '' : 's'} ago`;
+
+      // Shape the JSON items column into the CallerMemory type, dropping
+      // anything that isn't a well-formed menu item reference.
+      try {
+        const rawItems = Array.isArray(callerContext.lastOrder.items)
+          ? (callerContext.lastOrder.items as unknown[])
+          : [];
+        lastOrderItems = rawItems
+          .map((r) => {
+            const item = r as {
+              menuItemId?: unknown;
+              name?: unknown;
+              quantity?: unknown;
+              price?: unknown;
+            };
+            if (
+              typeof item.menuItemId === 'string' &&
+              typeof item.name === 'string' &&
+              typeof item.quantity === 'number' &&
+              typeof item.price === 'number'
+            ) {
+              return {
+                menuItemId: item.menuItemId,
+                name: item.name,
+                quantity: item.quantity,
+                price: item.price,
+              };
+            }
+            return null;
+          })
+          .filter((x): x is NonNullable<typeof x> => x !== null);
+        if (lastOrderItems.length === 0) lastOrderItems = undefined;
+      } catch {
+        lastOrderItems = undefined;
+      }
     }
 
     callerMemory = {
@@ -162,6 +198,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       contactStatus: callerContext.contact?.status ?? null,
       tier: callerContext.tier,
       lastOrderSummary,
+      lastOrderItems,
       lastConversationPreview: callerContext.lastConversation?.lastMessagePreview ?? null,
     };
   }
