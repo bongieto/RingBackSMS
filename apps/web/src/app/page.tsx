@@ -225,7 +225,7 @@ const FEATURES = [
     icon: ShieldCheck,
     title: 'Multi-Tenant Security',
     description:
-      'Bank-grade AES-256 encryption. Row-level data isolation. Each business gets its own private workspace — your data never touches another account.',
+      'Enterprise-grade encryption. Row-level data isolation. Each business gets its own private workspace — your data never touches another account.',
   },
   {
     icon: Store,
@@ -419,7 +419,7 @@ const FAQ = [
   {
     question: 'Is my customer data secure?',
     answer:
-      'Absolutely. We use AES-256-GCM encryption for all stored tokens and sensitive data. Every business gets isolated data storage with PostgreSQL Row-Level Security — your data is never accessible to other accounts. We\'re SOC 2 compliant and HIPAA-ready for medical practices.',
+      'Absolutely. We use enterprise-grade encryption for all stored tokens and sensitive data. Every business gets isolated data storage with PostgreSQL Row-Level Security — your data is never accessible to other accounts. We\'re SOC 2 compliant and HIPAA-ready for medical practices.',
   },
   {
     question: 'How long does setup take?',

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
+import { decryptMessages } from '@/lib/server/encryption';
 import { apiSuccess, apiError } from '@/lib/server/response';
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
@@ -32,7 +33,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
   const activities = [
     ...conversations.map((c) => {
-      const msgs = Array.isArray(c.messages) ? (c.messages as Array<{ role: string; content: string }>) : [];
+      const msgs = decryptMessages(c.messages) as Array<{ role: string; content: string }>;
       const lastMsg = msgs[msgs.length - 1];
       return {
         type: 'conversation' as const,

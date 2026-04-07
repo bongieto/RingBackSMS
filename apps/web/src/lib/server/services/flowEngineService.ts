@@ -10,6 +10,8 @@ import { incrementSmsUsage } from './usageMeterService';
 import { logger } from '../logger';
 import { isWithinBusinessHours, getBusinessHoursDisplay } from '../businessHours';
 import { prisma } from '../db';
+import { encryptMessages, decryptMessages } from '../encryption';
+import { Prisma } from '@prisma/client';
 
 export interface ProcessInboundSmsInput {
   tenantId: string;
@@ -40,14 +42,15 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
 
     if (existingConv?.handoffStatus === 'HUMAN') {
       // Save message but skip AI — human is handling this conversation
-      const messages = Array.isArray(existingConv.messages) ? existingConv.messages : [];
+      const messages = decryptMessages(existingConv.messages);
+      const updatedMessages = [
+        ...messages,
+        { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },
+      ];
       await prisma.conversation.update({
         where: { id: existingConversationId },
         data: {
-          messages: [
-            ...messages,
-            { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },
-          ],
+          messages: encryptMessages(updatedMessages) as unknown as Prisma.InputJsonValue,
           updatedAt: new Date(),
         },
       });
@@ -178,7 +181,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
         tenantId,
         callerPhone,
         flowType: result.flowType,
-        messages: newMessages,
+        messages: encryptMessages(newMessages) as unknown as Prisma.InputJsonValue,
         isActive: true,
         ...(isEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
       },
@@ -194,11 +197,12 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       select: { messages: true },
     });
 
-    const messages = Array.isArray(existing?.messages) ? existing.messages : [];
+    const messages = decryptMessages(existing?.messages);
+    const updatedMessages = [...messages, ...newMessages];
     await prisma.conversation.update({
       where: { id: conversationId },
       data: {
-        messages: [...messages, ...newMessages],
+        messages: encryptMessages(updatedMessages) as unknown as Prisma.InputJsonValue,
         flowType: result.flowType,
         updatedAt: new Date(),
         ...(isEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),

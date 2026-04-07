@@ -3,6 +3,7 @@ import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { Prisma } from '@prisma/client';
 import { sendSms } from '@/lib/server/services/twilioService';
+import { encryptMessages, decryptMessages } from '@/lib/server/encryption';
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
@@ -18,14 +19,23 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (isNextResponse(authResult)) return authResult;
 
     await sendSms(conversation.tenantId, conversation.callerPhone, message);
-    const existing = Array.isArray(conversation.messages) ? conversation.messages : [];
+    const existing = decryptMessages(conversation.messages);
+    const updatedMessages = [
+      ...existing,
+      { role: 'assistant', content: message, timestamp: new Date().toISOString(), sender: 'human' },
+    ];
     const updated = await prisma.conversation.update({
       where: { id: params.id },
-      data: { messages: [...existing, { role: 'assistant', content: message, timestamp: new Date().toISOString(), sender: 'human' }] as unknown as Prisma.InputJsonValue, updatedAt: new Date() },
+      data: {
+        messages: encryptMessages(updatedMessages) as unknown as Prisma.InputJsonValue,
+        updatedAt: new Date(),
+      },
       include: { orders: true, meetings: true },
     });
+    // Decrypt messages for the response so the client sees plain messages
+    const responseData = { ...updated, messages: decryptMessages(updated.messages) };
     logger.info('Manual reply sent', { conversationId: params.id });
-    return apiSuccess(updated);
+    return apiSuccess(responseData);
   } catch (err: any) {
     return apiError('Internal server error', 500);
   }

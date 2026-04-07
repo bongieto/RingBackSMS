@@ -64,3 +64,29 @@ export function decryptNullable(value: string | null | undefined): string | null
   if (value == null || value === '') return null;
   return decrypt(value);
 }
+
+/**
+ * Encrypts a conversation messages array for storage in the Json column.
+ * Returns an encrypted string that will be stored in the Json field.
+ */
+export function encryptMessages(messages: unknown[]): string {
+  return encrypt(JSON.stringify(messages));
+}
+
+/**
+ * Decrypts conversation messages from storage.
+ * Backward compatible: if stored value is already an array (old unencrypted data),
+ * returns it as-is. If it's an encrypted string, decrypts and parses it.
+ */
+export function decryptMessages(stored: unknown): unknown[] {
+  if (stored == null) return [];
+  if (Array.isArray(stored)) return stored; // backward compat: old unencrypted data
+  if (typeof stored === 'string' && stored.length > 0) {
+    try {
+      return JSON.parse(decrypt(stored));
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
