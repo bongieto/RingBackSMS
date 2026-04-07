@@ -426,14 +426,14 @@ export default function HelpPage() {
                   </tr>
                   <tr className="border-b">
                     <td className="py-2 pr-4 font-medium">Growth</td>
-                    <td className="py-2 pr-4">$49/mo</td>
-                    <td className="py-2 pr-4">500</td>
+                    <td className="py-2 pr-4">$79/mo</td>
+                    <td className="py-2 pr-4">750</td>
                     <td className="py-2">+ Order, Meeting &amp; Inquiry flows, POS integrations, daily digest</td>
                   </tr>
                   <tr className="border-b">
                     <td className="py-2 pr-4 font-medium">Scale</td>
-                    <td className="py-2 pr-4">$99/mo</td>
-                    <td className="py-2 pr-4">2,500</td>
+                    <td className="py-2 pr-4">$199/mo</td>
+                    <td className="py-2 pr-4">5,000</td>
                     <td className="py-2">+ Slack, two-way POS sync, recovery funnel, urgency escalation</td>
                   </tr>
                   <tr>
