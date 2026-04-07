@@ -50,7 +50,18 @@ export enum UsageType {
   POS_ORDER = 'POS_ORDER',
 }
 
-export const VOICE_TYPES = ['Polly.Joanna', 'Polly.Matthew', 'Polly.Salli', 'Polly.Ivy'] as const;
+// Accept both legacy non-neural and new neural voice IDs. The voice webhook
+// transparently upgrades legacy IDs at runtime, so existing tenant rows keep working.
+export const VOICE_TYPES = [
+  'Polly.Joanna-Neural',
+  'Polly.Matthew-Neural',
+  'Polly.Salli-Neural',
+  'Polly.Ivy-Neural',
+  'Polly.Joanna',
+  'Polly.Matthew',
+  'Polly.Salli',
+  'Polly.Ivy',
+] as const;
 export type VoiceType = typeof VOICE_TYPES[number];
 
 export enum ContactStatus {

@@ -97,7 +97,7 @@ export default function SettingsPage() {
   const [form, setForm] = useState({
     greeting: '',
     voiceGreeting: '',
-    voiceType: 'Polly.Joanna' as 'Polly.Joanna' | 'Polly.Matthew' | 'Polly.Salli' | 'Polly.Ivy',
+    voiceType: 'Polly.Joanna-Neural' as 'Polly.Joanna-Neural' | 'Polly.Matthew-Neural' | 'Polly.Salli-Neural' | 'Polly.Ivy-Neural',
     timezone: 'America/Chicago',
     businessSchedule: deriveScheduleFromFlat([1, 2, 3, 4, 5], '11:00', '20:00'),
     closedDates: [] as string[],
@@ -127,7 +127,17 @@ export default function SettingsPage() {
       setForm({
         greeting: config.greeting ?? '',
         voiceGreeting: (config as TenantConfig & { voiceGreeting?: string | null }).voiceGreeting ?? '',
-        voiceType: ((config as TenantConfig & { voiceType?: string }).voiceType as 'Polly.Joanna' | 'Polly.Matthew' | 'Polly.Salli' | 'Polly.Ivy') ?? 'Polly.Joanna',
+        voiceType: (() => {
+          const raw = (config as TenantConfig & { voiceType?: string }).voiceType ?? 'Polly.Joanna-Neural';
+          // Auto-upgrade legacy non-neural voice IDs to their neural variants
+          const upgradeMap: Record<string, string> = {
+            'Polly.Joanna': 'Polly.Joanna-Neural',
+            'Polly.Matthew': 'Polly.Matthew-Neural',
+            'Polly.Salli': 'Polly.Salli-Neural',
+            'Polly.Ivy': 'Polly.Ivy-Neural',
+          };
+          return (upgradeMap[raw] ?? raw) as 'Polly.Joanna-Neural' | 'Polly.Matthew-Neural' | 'Polly.Salli-Neural' | 'Polly.Ivy-Neural';
+        })(),
         timezone: config.timezone ?? 'America/Chicago',
         businessSchedule: schedule,
         closedDates: config.closedDates ?? [],
@@ -358,10 +368,10 @@ export default function SettingsPage() {
                 value={form.voiceType}
                 onChange={(e) => setForm(f => ({ ...f, voiceType: e.target.value as typeof f.voiceType }))}
               >
-                <option value="Polly.Joanna">Joanna (Female, warm)</option>
-                <option value="Polly.Matthew">Matthew (Male, warm)</option>
-                <option value="Polly.Salli">Salli (Female, neutral)</option>
-                <option value="Polly.Ivy">Ivy (Female, youthful)</option>
+                <option value="Polly.Joanna-Neural">Joanna (Female, warm)</option>
+                <option value="Polly.Matthew-Neural">Matthew (Male, warm)</option>
+                <option value="Polly.Salli-Neural">Salli (Female, neutral)</option>
+                <option value="Polly.Ivy-Neural">Ivy (Female, youthful)</option>
               </select>
               <p className="text-xs text-muted-foreground">Call your number to preview.</p>
             </div>

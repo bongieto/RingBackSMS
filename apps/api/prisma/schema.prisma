@@ -129,7 +129,7 @@ model TenantConfig {
   tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   greeting            String   @db.Text
   voiceGreeting       String?  @db.Text
-  voiceType           String   @default("Polly.Joanna")
+  voiceType           String   @default("Polly.Joanna-Neural")
   timezone            String   @default("America/Chicago")
   businessHoursStart  String   @default("11:00")
   businessHoursEnd    String   @default("20:00")
