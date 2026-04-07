@@ -10,7 +10,7 @@ function stripThinkTags(text: string): string {
 }
 
 export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput> {
-  const { tenantContext, inboundMessage, currentState, aiApiKey } = input;
+  const { tenantContext, inboundMessage, currentState, aiApiKey, callerMemory } = input;
 
   const client = new OpenAI({
     baseURL: 'https://api.minimax.io/v1',
@@ -48,9 +48,32 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
     catalogContext = `\nAvailable products/services:\n${itemLines.join('\n')}`;
   }
 
+  // Caller memory: a one-paragraph "what we know about this person" block so
+  // the AI can greet them by name and avoid re-asking what they ordered last time.
+  let callerContextBlock = '';
+  if (callerMemory) {
+    const lines: string[] = [];
+    if (callerMemory.contactName) {
+      const status = callerMemory.contactStatus && callerMemory.contactStatus !== 'LEAD'
+        ? ` (${callerMemory.contactStatus.toLowerCase()})`
+        : '';
+      lines.push(`Caller name: ${callerMemory.contactName}${status}.`);
+    }
+    if (callerMemory.tier === 'RETURNING') lines.push('This is a returning customer — greet them warmly.');
+    if (callerMemory.tier === 'SAME_DAY') lines.push('This caller already contacted us earlier today.');
+    if (callerMemory.tier === 'RAPID_REDIAL') lines.push('This caller just called multiple times in a row — likely urgent.');
+    if (callerMemory.lastOrderSummary) lines.push(`Last order: ${callerMemory.lastOrderSummary}.`);
+    if (callerMemory.lastConversationPreview) {
+      lines.push(`Last message exchanged: "${callerMemory.lastConversationPreview.slice(0, 140)}".`);
+    }
+    if (lines.length > 0) {
+      callerContextBlock = `\nCaller context (use naturally — don't repeat verbatim): ${lines.join(' ')}`;
+    }
+  }
+
   const systemPrompt = `You are a helpful SMS assistant for ${tenantContext.tenantName}.
 Be ${personality}. Keep responses under 160 characters when possible (SMS limit).
-${capabilities}${businessAddress}${websiteContext}${catalogContext}
+${capabilities}${businessAddress}${websiteContext}${catalogContext}${callerContextBlock}
 If asked about ordering food, direct them to reply ORDER.
 If asked about scheduling, direct them to reply MEETING.
 When asked about services or products, reference the available list above.
