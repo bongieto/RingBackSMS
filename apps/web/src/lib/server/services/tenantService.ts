@@ -188,6 +188,7 @@ export async function upsertMenuItem(
     description?: string;
     price: number;
     category?: string;
+    imageUrl?: string | null;
     isAvailable?: boolean;
     duration?: number | null;
     requiresBooking?: boolean;
@@ -201,6 +202,7 @@ export async function upsertMenuItem(
         description: item.description,
         price: item.price,
         category: item.category,
+        imageUrl: item.imageUrl ?? null,
         isAvailable: item.isAvailable ?? true,
         duration: item.duration ?? null,
         requiresBooking: item.requiresBooking ?? false,
@@ -215,6 +217,7 @@ export async function upsertMenuItem(
       description: item.description,
       price: item.price,
       category: item.category,
+      imageUrl: item.imageUrl ?? null,
       isAvailable: item.isAvailable ?? true,
       duration: item.duration ?? null,
       requiresBooking: item.requiresBooking ?? false,
