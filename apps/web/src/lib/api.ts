@@ -6,7 +6,7 @@ const api = axios.create({
 });
 
 /** Axios instance for Next.js API routes (same origin) */
-const webApi = axios.create({
+export const webApi = axios.create({
   baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },
 });
@@ -66,7 +66,7 @@ export const conversationApi = {
 
 export const analyticsApi = {
   get: (tenantId: string, days = 30) =>
-    api.get(`/analytics/${tenantId}`, { params: { days } }).then((r) => r.data.data),
+    webApi.get(`/analytics/${tenantId}`, { params: { days } }).then((r) => r.data.data),
   recovery: (tenantId: string, days = 30) => {
     const to = new Date();
     const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
