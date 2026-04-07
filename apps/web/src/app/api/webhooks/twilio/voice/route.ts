@@ -6,7 +6,20 @@ import { logger } from '@/lib/server/logger';
 import { checkRateLimit } from '@/lib/server/rateLimit';
 import { getValidationToken } from '@/lib/server/services/twilioService';
 
-const ALLOWED_VOICES = new Set(['Polly.Joanna', 'Polly.Matthew', 'Polly.Salli', 'Polly.Ivy']);
+const ALLOWED_VOICES = new Set([
+  'Polly.Joanna-Neural',
+  'Polly.Matthew-Neural',
+  'Polly.Salli-Neural',
+  'Polly.Ivy-Neural',
+]);
+
+/** Transparently upgrade legacy non-neural voice IDs stored in the DB. */
+const LEGACY_VOICE_UPGRADE: Record<string, string> = {
+  'Polly.Joanna': 'Polly.Joanna-Neural',
+  'Polly.Matthew': 'Polly.Matthew-Neural',
+  'Polly.Salli': 'Polly.Salli-Neural',
+  'Polly.Ivy': 'Polly.Ivy-Neural',
+};
 
 /** Build TwiML XML string without the Twilio SDK VoiceResponse class (avoids serverless bundling issues) */
 function buildVoiceTwiml(opts: {
@@ -17,7 +30,8 @@ function buildVoiceTwiml(opts: {
 }): string {
   const intro = opts.voiceGreeting?.trim()
     || `Hi, thanks for calling ${opts.businessName}. We can help you faster by text — you'll receive a message in just a moment. If you'd prefer a callback, leave a message after the beep.`;
-  const voice = ALLOWED_VOICES.has(opts.voiceType) ? opts.voiceType : 'Polly.Joanna';
+  const upgraded = LEGACY_VOICE_UPGRADE[opts.voiceType] ?? opts.voiceType;
+  const voice = ALLOWED_VOICES.has(upgraded) ? upgraded : 'Polly.Joanna-Neural';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
