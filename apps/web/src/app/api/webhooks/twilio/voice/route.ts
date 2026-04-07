@@ -28,6 +28,7 @@ function buildVoiceTwiml(opts: {
   voiceGreeting: string | null;
   voiceType: string;
   recordingCallbackUrl: string;
+  transcribeCallbackUrl: string;
 }): string {
   const intro = opts.voiceGreeting?.trim()
     || `Hi, thanks for calling ${opts.businessName}. We can help you faster by text — you'll receive a message in just a moment. If you'd prefer a callback, leave a message after the beep.`;
@@ -37,7 +38,7 @@ function buildVoiceTwiml(opts: {
 <Response>
   <Pause length="1"/>
   <Say voice="${voice}" language="en-US">${escapeXml(intro)}</Say>
-  <Record maxLength="60" finishOnKey="#" playBeep="true" recordingStatusCallback="${escapeXml(opts.recordingCallbackUrl)}" recordingStatusCallbackMethod="POST" transcribe="false"/>
+  <Record maxLength="60" finishOnKey="#" playBeep="true" recordingStatusCallback="${escapeXml(opts.recordingCallbackUrl)}" recordingStatusCallbackMethod="POST" transcribe="true" transcribeCallback="${escapeXml(opts.transcribeCallbackUrl)}"/>
   <Say voice="${voice}" language="en-US">Thank you for calling. Check your texts for a message from us. Goodbye!</Say>
 </Response>`;
 }
@@ -107,6 +108,7 @@ export async function POST(request: NextRequest) {
         twilioCallSid: callSid,
         occurredAt: new Date(),
         smsSent: false,
+        transcriptionStatus: 'pending',
       },
       select: { id: true },
     });
@@ -143,6 +145,7 @@ export async function POST(request: NextRequest) {
     voiceGreeting: tenant.config?.voiceGreeting ?? null,
     voiceType: tenant.config?.voiceType ?? 'Polly.Joanna',
     recordingCallbackUrl: `${baseUrl}/api/webhooks/twilio/recording-callback`,
+    transcribeCallbackUrl: `${baseUrl}/api/webhooks/twilio/transcription-callback`,
   });
 
   logger.info('Voice webhook responded with TwiML', { tenantId: tenant.id, callSid });
