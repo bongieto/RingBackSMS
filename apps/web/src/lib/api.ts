@@ -177,6 +177,23 @@ export const searchApi = {
     webApi.get('/search', { params: { tenantId, q } }).then((r) => r.data.data),
 };
 
+export const taskApi = {
+  list: (status?: string) =>
+    webApi.get('/tasks', { params: status ? { status } : {} }).then((r) => r.data.data),
+  count: () => webApi.get('/tasks/count').then((r) => r.data.data),
+  create: (data: { title: string; description?: string; priority?: string }) =>
+    webApi.post('/tasks', data).then((r) => r.data.data),
+  complete: (id: string) =>
+    webApi.patch(`/tasks/${id}`, { action: 'complete' }).then((r) => r.data.data),
+  snooze: (id: string, snoozeOption: '1h' | 'tomorrow' | 'next_week') =>
+    webApi.patch(`/tasks/${id}`, { action: 'snooze', snoozeOption }).then((r) => r.data.data),
+  dismiss: (id: string) =>
+    webApi.patch(`/tasks/${id}`, { action: 'dismiss' }).then((r) => r.data.data),
+  reopen: (id: string) =>
+    webApi.patch(`/tasks/${id}`, { action: 'reopen' }).then((r) => r.data.data),
+  delete: (id: string) => webApi.delete(`/tasks/${id}`).then((r) => r.data),
+};
+
 export const notificationApi = {
   test: (tenantId: string, channel: 'email' | 'sms' | 'slack') =>
     webApi.post('/notifications/test', { tenantId, channel }).then((r) => r.data.data),
