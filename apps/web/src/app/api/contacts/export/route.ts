@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { apiError } from '@/lib/server/response';
+import { decryptMaybePlaintext } from '@/lib/server/encryption';
 
 export async function GET(request: NextRequest) {
   const tenantId = new URL(request.url).searchParams.get('tenantId');
@@ -24,8 +25,8 @@ export async function GET(request: NextRequest) {
     [
       escape(c.id),
       escape(c.phone),
-      escape(c.name),
-      escape(c.email),
+      escape(decryptMaybePlaintext(c.name)),
+      escape(decryptMaybePlaintext(c.email)),
       escape(c.status),
       escape(c.tags.join(';')),
       c.totalOrders,

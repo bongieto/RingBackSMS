@@ -4,6 +4,7 @@ import { prisma } from '@/lib/server/db';
 import { processInboundSms } from '@/lib/server/services/flowEngineService';
 import { decryptNullable } from '@/lib/server/encryption';
 import { logger } from '@/lib/server/logger';
+import { checkRateLimit } from '@/lib/server/rateLimit';
 import { TwilioInboundSmsSchema } from '@ringback/shared-types';
 
 export async function POST(request: NextRequest) {
@@ -16,6 +17,15 @@ export async function POST(request: NextRequest) {
   if (!parseResult.success) return new Response('Invalid payload', { status: 400 });
 
   const { MessageSid, From, Body, To } = parseResult.data;
+
+  // Rate limit: 60 SMS per minute per sender phone (abuse/loop protection)
+  const rl = await checkRateLimit(`twilio-sms:${From}`, 60, 60);
+  if (!rl.allowed) {
+    logger.warn('Twilio SMS webhook rate limited', { from: From });
+    return new Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
+      headers: { 'Content-Type': 'text/xml' }, status: 200,
+    });
+  }
 
   // Resolve tenant
   const tenant = await prisma.tenant.findUnique({

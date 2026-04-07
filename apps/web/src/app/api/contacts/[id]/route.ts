@@ -5,6 +5,11 @@ import { ContactStatus } from '@prisma/client';
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
+import { encryptNullable, decryptMaybePlaintext } from '@/lib/server/encryption';
+
+function decryptContact<T extends { name: string | null; email: string | null }>(c: T): T {
+  return { ...c, name: decryptMaybePlaintext(c.name), email: decryptMaybePlaintext(c.email) };
+}
 
 const UpdateSchema = z.object({
   name: z.string().optional(),
@@ -29,7 +34,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     }),
   ]);
 
-  return apiSuccess({ ...contact, conversationCount, orderCount });
+  return apiSuccess({ ...decryptContact(contact), conversationCount, orderCount });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -44,8 +49,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const contact = await prisma.contact.update({
       where: { id: params.id },
       data: {
-        ...(body.name !== undefined && { name: body.name || null }),
-        ...(body.email !== undefined && { email: body.email || null }),
+        ...(body.name !== undefined && { name: encryptNullable(body.name || null) }),
+        ...(body.email !== undefined && { email: encryptNullable(body.email || null) }),
         ...(body.notes !== undefined && { notes: body.notes || null }),
         ...(body.tags !== undefined && { tags: body.tags }),
         ...(body.status !== undefined && { status: body.status }),
@@ -53,7 +58,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     });
 
     logger.info('Contact updated', { contactId: contact.id });
-    return apiSuccess(contact);
+    return apiSuccess(decryptContact(contact));
   } catch (err: any) {
     return apiError('Internal server error', 500);
   }

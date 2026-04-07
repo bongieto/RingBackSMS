@@ -3,6 +3,7 @@ import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { searchAvailableNumbers, searchNearbyNumbers } from '@/lib/server/services/twilioService';
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
+import { checkRateLimit, rateLimitResponse } from '@/lib/server/rateLimit';
 
 // Allow up to 30s for Twilio API calls (exact + nearby fallback)
 export const maxDuration = 30;
@@ -27,6 +28,10 @@ export async function POST(req: NextRequest) {
     const { areaCode, tenantId } = SearchSchema.parse(await req.json());
     const authResult = await verifyTenantAccess(tenantId);
     if (isNextResponse(authResult)) return authResult;
+
+    // Twilio number search is billed — limit 10/min per tenant
+    const rl = await checkRateLimit(`phone-search:${tenantId}`, 10, 60);
+    if (!rl.allowed) return rateLimitResponse(rl);
 
     // Try exact area code first (10s timeout)
     let numbers: Array<{ phoneNumber: string; friendlyName: string }> = [];
