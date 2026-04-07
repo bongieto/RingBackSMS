@@ -1,6 +1,7 @@
 import { OrderStatus } from '@prisma/client';
 import { logger } from '../logger';
 import { prisma } from '../db';
+import { autoCompleteTasksForEntity } from './taskService';
 
 function generateOrderNumber(): string {
   const timestamp = Date.now().toString(36).toUpperCase();
@@ -80,7 +81,7 @@ export async function updateOrderStatus(
   squareOrderId?: string,
   squarePaymentId?: string
 ) {
-  return prisma.order.update({
+  const updated = await prisma.order.update({
     where: { id: orderId },
     data: {
       status,
@@ -88,6 +89,14 @@ export async function updateOrderStatus(
       ...(squarePaymentId && { squarePaymentId }),
     },
   });
+  // If the order moved out of PENDING via the dashboard/Square, auto-resolve
+  // any related task so the action-items inbox stays in sync.
+  if (status !== OrderStatus.PENDING) {
+    await autoCompleteTasksForEntity('ORDER', 'orderId', orderId).catch((err) =>
+      logger.warn('Failed to auto-complete order task', { err, orderId })
+    );
+  }
+  return updated;
 }
 
 export async function getTenantOrders(

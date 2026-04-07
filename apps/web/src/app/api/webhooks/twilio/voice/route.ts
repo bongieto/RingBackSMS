@@ -10,6 +10,7 @@ import { isWithinBusinessHours } from '@/lib/server/businessHours';
 import { getCallerContext, type CallerTier } from '@/lib/server/services/callerContextService';
 import { sendHighPriorityAlert } from '@/lib/server/services/notificationService';
 import { acquireAlertLock } from '@/lib/server/services/stateService';
+import { createTask } from '@/lib/server/services/taskService';
 import { maskPhone } from '@/lib/server/phoneUtils';
 
 const ALLOWED_VOICES = new Set([
@@ -200,14 +201,24 @@ export async function POST(request: NextRequest) {
   // to once per (tenant, caller) per 30 minutes so we don't spam the owner.
   if (tier === 'RAPID_REDIAL') {
     acquireAlertLock(`rapidredial:${tenant.id}:${from}`, 30 * 60)
-      .then((acquired) => {
+      .then(async (acquired) => {
         if (!acquired) return;
         const callCount = (callerContext?.recentMissedCalls.length ?? 0) + 1;
-        return sendHighPriorityAlert({
+        await sendHighPriorityAlert({
           tenantId: tenant.id,
           subject: `Repeat caller — ${maskPhone(from)}`,
           message: `${maskPhone(from)} has called ${callCount} times in the last few minutes. Probably urgent.`,
         });
+        if (missedCallId) {
+          await createTask({
+            tenantId: tenant.id,
+            source: 'RAPID_REDIAL',
+            title: `🔥 Call back ${maskPhone(from)} — ${callCount}+ attempts`,
+            priority: 'URGENT',
+            callerPhone: from,
+            missedCallId,
+          });
+        }
       })
       .catch((err) => logger.error('Rapid-redial alert failed', { err, tenantId: tenant.id }));
   }
