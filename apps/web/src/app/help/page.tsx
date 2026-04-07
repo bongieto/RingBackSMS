@@ -15,6 +15,7 @@ import {
   Plug2,
   PhoneForwarded,
   Bot,
+  Mic,
   HelpCircle,
   ChevronRight,
 } from 'lucide-react';
@@ -113,6 +114,7 @@ export default function HelpPage() {
           <NavCard icon={Phone} title="Getting Started" description="Set up your account in 5 minutes" href="#getting-started" />
           <NavCard icon={PhoneForwarded} title="Call Forwarding" description="Connect your business phone" href="#call-forwarding" />
           <NavCard icon={Bot} title="AI & Conversations" description="How the AI responds for you" href="#ai-conversations" />
+          <NavCard icon={Mic} title="Voicemails" description="Transcripts, AI summaries, one-tap reply" href="#voicemails" />
           <NavCard icon={UtensilsCrossed} title="Menu & Orders" description="Take food orders via text" href="#menu-orders" />
           <NavCard icon={Briefcase} title="Services & Booking" description="Service businesses & appointments" href="#services-booking" />
           <NavCard icon={Calendar} title="Meetings" description="Schedule appointments via SMS" href="#meetings" />
@@ -246,6 +248,28 @@ export default function HelpPage() {
           </SubSection>
         </Section>
 
+        {/* ── Voicemails ──────────────────────────────────── */}
+        <Section id="voicemails" title="Voicemails">
+          <p className="text-gray-700 mb-4">Every missed call that leaves a recording shows up on the <strong>Voicemails</strong> page. Instead of pressing play on each one, you get a transcript, an AI summary, and a colored intent badge so the highest-value recoveries float to the top.</p>
+
+          <SubSection title="AI transcription & summary">
+            <ul className="list-disc pl-6 text-gray-700 space-y-2">
+              <li><strong>Transcript:</strong> Generated automatically when the recording finishes — usually within ~30 seconds. Click any row to expand the full transcript.</li>
+              <li><strong>One-line summary:</strong> The AI condenses what the caller wanted into a single sentence so you can triage at a glance.</li>
+              <li><strong>Intent badge:</strong> Each voicemail is tagged <strong>ORDER</strong>, <strong>BOOKING</strong>, <strong>QUESTION</strong>, <strong>COMPLAINT</strong>, <strong>SPAM</strong>, or <strong>OTHER</strong>. Use the intent dropdown above the table to filter — e.g., show only ORDER voicemails during a busy lunch rush.</li>
+              <li><strong>Status:</strong> While the transcript is being generated you&apos;ll see &quot;Transcribing…&quot;. If transcription fails (very noisy audio, dropped recording) the row is marked <strong>Failed</strong> — the original audio is still playable.</li>
+            </ul>
+          </SubSection>
+
+          <SubSection title="One-click reply & callback">
+            <ul className="list-disc pl-6 text-gray-700 space-y-2">
+              <li><strong>Reply:</strong> The Reply button on each row opens a small popover with a message composer and your saved <a href="#settings" className="text-blue-600 hover:underline">reply templates</a> as one-tap chips. The reply is sent via SMS and threads into the caller&apos;s conversation, switching that thread to Human handoff so the AI stops auto-responding.</li>
+              <li><strong>Call back:</strong> The Call back button is a tel: link that opens your device&apos;s dialer with the caller&apos;s number pre-filled.</li>
+              <li><strong>Funnel impact:</strong> Replying from this view stamps the &quot;Owner responded&quot; step on the recovery funnel automatically — no extra bookkeeping.</li>
+            </ul>
+          </SubSection>
+        </Section>
+
         {/* ── Menu & Orders ───────────────────────────────── */}
         <Section id="menu-orders" title="Menu & Orders">
           <p className="text-gray-700 mb-4">If you run a restaurant or food business, the Menu and Order system lets customers browse your offerings and place orders entirely via text.</p>
@@ -344,6 +368,15 @@ export default function HelpPage() {
               <li>Write notes on any contact for your team</li>
               <li>Send a manual SMS directly from a contact&apos;s profile</li>
               <li>Export your contacts to CSV for use in other tools</li>
+            </ul>
+          </SubSection>
+
+          <SubSection title="Automatic contact linking & VIP detection">
+            <p className="text-gray-700 mb-2">Every missed call automatically upserts a Contact for the caller&apos;s phone number, so the same person across multiple calls is always one record. On the Voicemails page each row surfaces:</p>
+            <ul className="list-disc pl-6 text-gray-700 space-y-2">
+              <li><strong>Caller name</strong> (when known) instead of just a masked phone number — clickable through to the contact profile.</li>
+              <li><strong>Status badge:</strong> <strong>VIP</strong> (gold), <strong>Customer</strong> (green), or <strong>Lead</strong> (gray). Promote anyone to VIP from their contact profile to make their future calls jump out.</li>
+              <li><strong>Repeat counter:</strong> A &quot;2nd call today&quot; / &quot;3rd call today&quot; badge appears when the same number has called more than once in the last 24 hours — the clearest signal that someone urgently needs you.</li>
             </ul>
           </SubSection>
         </Section>
@@ -451,6 +484,19 @@ export default function HelpPage() {
             <p className="text-sm text-gray-600 mt-2">Configure this in <strong>Settings &rarr; Payments</strong>.</p>
           </SubSection>
 
+          <SubSection title="After-hours greetings">
+            <p className="text-gray-700 mb-2">In the Greeting card you&apos;ll find a second pair of fields labeled <strong>After-hours SMS greeting</strong> and <strong>After-hours voice greeting</strong>. These are used whenever a call arrives outside the business hours configured in your <strong>Business Schedule</strong> (using the timezone set on your tenant).</p>
+            <ul className="list-disc pl-6 text-gray-700 space-y-2">
+              <li>Leave them blank to fall back to your normal greeting around the clock.</li>
+              <li>Use them to set a different tone after-hours — e.g., &quot;We&apos;re closed now, but reply MENU to order ahead for tomorrow.&quot;</li>
+              <li>Double-check your <strong>Timezone</strong> setting first — that&apos;s what decides what counts as after-hours.</li>
+            </ul>
+          </SubSection>
+
+          <SubSection title="Reply templates">
+            <p className="text-gray-700">Manage your library of one-tap SMS replies in the <strong>Reply Templates</strong> card on Settings. Add a label and body for each template (e.g., &quot;On our way&quot;, &quot;Closed today&quot;, &quot;Pickup ready in 15&quot;). They appear as chips inside the Reply popover on every voicemail and conversation row.</p>
+          </SubSection>
+
           <SubSection title="Phone number">
             <p className="text-gray-700">Go to <strong>Settings &rarr; Phone</strong> to provision a phone number or view your current number. This is the number callers are forwarded to and the number SMS messages come from.</p>
           </SubSection>
@@ -467,6 +513,18 @@ export default function HelpPage() {
             <li><strong>Time period:</strong> View data for the last 7, 30, or 90 days</li>
           </ul>
           <p className="text-gray-700 mt-3">The <strong>Overview</strong> dashboard also shows a summary of key metrics plus your most recent conversations.</p>
+
+          <SubSection title="Recovery funnel">
+            <p className="text-gray-700 mb-2">The Recovery Funnel card on the Analytics page shows exactly where missed-call revenue is leaking. Each step counts unique missed calls and the bar between steps shows the drop rate:</p>
+            <ol className="list-decimal pl-6 text-gray-700 space-y-1">
+              <li><strong>Missed calls</strong> — every inbound call that wasn&apos;t answered.</li>
+              <li><strong>SMS sent</strong> — your auto-greeting actually went out.</li>
+              <li><strong>Caller replied</strong> — the caller texted back at least once.</li>
+              <li><strong>Owner responded</strong> — you (or the AI) sent the first outbound reply, either from the dashboard or via SMS.</li>
+              <li><strong>Orders / meetings created</strong> — the recovery converted into real revenue.</li>
+            </ol>
+            <p className="text-gray-700 mt-3">Below the funnel you&apos;ll see headline KPIs: <strong>conversion rate</strong> (orders ÷ missed calls), <strong>average response time</strong> (how long it takes you to reply), <strong>meetings booked</strong>, and <strong>week-over-week deltas</strong> on the headline numbers.</p>
+          </SubSection>
         </Section>
 
         {/* ── FAQ ─────────────────────────────────────────── */}
@@ -534,6 +592,30 @@ export default function HelpPage() {
 
           <FAQ question="Can I use RingBackSMS for multiple businesses?">
             <p>Yes. RingBackSMS supports multiple organizations. Use the organization switcher in the top-left of the sidebar to switch between businesses. Each business gets its own phone number, menu, settings, and conversations.</p>
+          </FAQ>
+
+          <FAQ question="Why is my voicemail transcript blank or marked Failed?">
+            <p>Transcripts come from Twilio&apos;s built-in transcription, which struggles with very noisy environments (busy kitchens, road noise) or extremely short recordings. When that happens the row is marked <strong>Failed</strong> — the audio is still playable, you just won&apos;t see text. We&apos;re working on a Whisper-based upgrade that will dramatically improve accuracy.</p>
+          </FAQ>
+
+          <FAQ question="How accurate is the intent tag on voicemails?">
+            <p>The intent tag (ORDER, BOOKING, QUESTION, COMPLAINT, SPAM, OTHER) is generated by our AI from the transcript. It&apos;s very accurate when the transcript is clean. If the AI can&apos;t classify confidently — or if it errors out — it falls back to <strong>OTHER</strong> rather than guessing wrong, so you can still see and review the voicemail.</p>
+          </FAQ>
+
+          <FAQ question="Can I edit or add reply templates?">
+            <p>Yes. Go to <strong>Settings &rarr; Reply Templates</strong> to create, rename, or delete templates. Each template has a short label (the chip text) and a longer body (what actually gets sent). Templates appear inside the Reply popover on every voicemail and conversation row.</p>
+          </FAQ>
+
+          <FAQ question="How do after-hours greetings decide what counts as &ldquo;after hours&rdquo;?">
+            <p>RingBackSMS uses your <strong>Business Schedule</strong> and <strong>Timezone</strong> settings on the Settings page. If a call arrives outside those hours, the after-hours SMS and voice greetings are used. Closed dates (holidays) also count as after-hours. If either after-hours field is left blank, your normal greeting is used as the fallback.</p>
+          </FAQ>
+
+          <FAQ question="What does &ldquo;Owner responded&rdquo; mean in the recovery funnel?">
+            <p>It&apos;s the first time you (or anyone on your team) sent an outbound message to the caller — either by clicking Reply on a voicemail/conversation in the dashboard, or by replying directly from your phone via SMS. We stamp it the moment that message goes out so the funnel reflects real human response times.</p>
+          </FAQ>
+
+          <FAQ question="Why isn&apos;t my VIP badge showing on a contact&apos;s voicemails?">
+            <p>The VIP badge only appears when the linked contact&apos;s <strong>status</strong> is set to <strong>VIP</strong>. Open the contact from <strong>Contacts</strong>, change their status, and the badge will appear on every future voicemail row from that number (and on existing ones the next time you load the page).</p>
           </FAQ>
 
           <FAQ question="How do I get support?">
