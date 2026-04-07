@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useOrganization, useUser } from '@clerk/nextjs';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -30,8 +30,15 @@ const STEPS = [
   { id: 3, title: "You're All Set", icon: Check },
 ];
 
+const INDUSTRY_TO_BUSINESS_TYPE: Record<string, string> = {
+  restaurants: 'RESTAURANT',
+  'service-businesses': 'SERVICE',
+  retail: 'RETAIL',
+};
+
 export default function OnboardingPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useUser();
   const { organization } = useOrganization();
   const [step, setStep] = useState(1);
@@ -44,6 +51,14 @@ export default function OnboardingPage() {
     greeting: '',
     timezone: 'America/Chicago',
   });
+
+  // Preselect business type from ?industry= query param (set by industry landing pages).
+  useEffect(() => {
+    const industry = searchParams?.get('industry');
+    if (!industry) return;
+    const bt = INDUSTRY_TO_BUSINESS_TYPE[industry];
+    if (bt) setForm((f) => (f.businessType ? f : { ...f, businessType: bt }));
+  }, [searchParams]);
 
   const createTenantMutation = useMutation({
     mutationFn: () =>

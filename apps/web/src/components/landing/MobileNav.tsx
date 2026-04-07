@@ -6,11 +6,11 @@ import { SignedIn, SignedOut } from '@clerk/nextjs';
 import { Menu, X } from 'lucide-react';
 
 const links = [
-  { href: '#how-it-works', label: 'How It Works' },
-  { href: '#features', label: 'Features' },
-  { href: '#industries', label: 'Industries' },
-  { href: '#pricing', label: 'Pricing' },
-  { href: '#faq', label: 'FAQ' },
+  { href: '/#how-it-works', label: 'How It Works' },
+  { href: '/#features', label: 'Features' },
+  { href: '/industries', label: 'Industries' },
+  { href: '/#pricing', label: 'Pricing' },
+  { href: '/#faq', label: 'FAQ' },
 ];
 
 export function MobileNav() {
