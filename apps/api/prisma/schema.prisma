@@ -178,12 +178,15 @@ model MissedCall {
   voicemailUrl        String?
   voicemailDuration   Int?
   voicemailReceivedAt DateTime?
+  contactId           String?
+  contact             Contact?  @relation(fields: [contactId], references: [id])
   createdAt           DateTime  @default(now())
 
   conversations Conversation[]
 
   @@index([tenantId, callerPhone])
   @@index([tenantId, occurredAt])
+  @@index([contactId])
 }
 
 model Conversation {
@@ -345,6 +348,7 @@ model Contact {
   updatedAt     DateTime      @updatedAt
 
   contactNotes  ContactNote[]
+  missedCalls   MissedCall[]
 
   @@unique([tenantId, phone])
   @@index([tenantId])

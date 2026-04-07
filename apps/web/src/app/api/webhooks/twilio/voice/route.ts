@@ -5,6 +5,7 @@ import { sendSms } from '@/lib/server/services/twilioService';
 import { logger } from '@/lib/server/logger';
 import { checkRateLimit } from '@/lib/server/rateLimit';
 import { getValidationToken } from '@/lib/server/services/twilioService';
+import { linkMissedCallToContact } from '@/lib/server/services/contactLinking';
 
 const ALLOWED_VOICES = new Set([
   'Polly.Joanna-Neural',
@@ -97,8 +98,9 @@ export async function POST(request: NextRequest) {
   const baseUrl = process.env.FRONTEND_URL ?? '';
 
   // Create the missed call record immediately
+  let missedCallId: string | null = null;
   try {
-    await prisma.missedCall.create({
+    const created = await prisma.missedCall.create({
       data: {
         tenantId: tenant.id,
         callerPhone: from,
@@ -106,12 +108,21 @@ export async function POST(request: NextRequest) {
         occurredAt: new Date(),
         smsSent: false,
       },
+      select: { id: true },
     });
+    missedCallId = created.id;
   } catch (err: any) {
     // Duplicate CallSid — call already tracked
     if (!err.message?.includes('Unique constraint')) {
       logger.error('Failed to create missed call record', { err, tenantId: tenant.id });
     }
+  }
+
+  // Fire-and-forget: link to Contact (creates one if needed). Doesn't block TwiML.
+  if (missedCallId) {
+    linkMissedCallToContact(tenant.id, from, missedCallId).catch((err) =>
+      logger.error('Contact linking failed', { err, tenantId: tenant.id })
+    );
   }
 
   // Send the SMS greeting immediately (don't wait for voicemail)
