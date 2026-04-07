@@ -241,7 +241,7 @@ const SERVICE_BUSINESSES: IndustryLandingContent = {
     { q: 'Will the AI sound like a robot?', a: 'No. Every tenant gets a custom personality tuned to their business — friendly salon, no-nonsense trades, warm caregiving. Most customers assume they\'re texting your front desk.' },
     { q: 'Can it handle emergencies?', a: 'Yes. You define urgency keywords (flood, no power, elderly fall, etc.) and the AI escalates those directly to your phone as a push notification instead of handling them via text.' },
     { q: "Do I need a new phone number?", a: "No. Keep your existing number or port it to us. Either way, customers see your business name — not 'Unknown.'" },
-    { q: 'How much does it cost?', a: 'Free Starter plan up to 25 SMS/month. Growth at $49/mo covers up to 500 SMS which is enough for most solo operators. Scale at $99/mo for busy multi-tech shops.' },
+    { q: 'How much does it cost?', a: 'Free Starter plan up to 25 SMS/month. Growth at $79/mo covers up to 750 SMS which is enough for most solo operators. Scale at $199/mo for busy multi-tech shops.' },
   ],
   statBar: COMMON_STATS,
   relatedNiches: ['beauty-salons', 'cleaning-services', 'caregiving-home-health', 'plumbing', 'electrical', 'hvac'],

@@ -14,14 +14,14 @@ import { PLAN_LIMITS, Plan } from '@ringback/shared-types';
 
 const PLAN_PRICES: Record<string, { monthly: string; annual: string }> = {
   STARTER: { monthly: 'Free', annual: 'Free' },
-  GROWTH: { monthly: '$49/mo', annual: '$490/yr' },
-  SCALE: { monthly: '$99/mo', annual: '$990/yr' },
+  GROWTH: { monthly: '$79/mo', annual: '$790/yr' },
+  SCALE: { monthly: '$199/mo', annual: '$1,990/yr' },
   ENTERPRISE: { monthly: 'Custom', annual: 'Custom' },
 };
 
 const ANNUAL_SAVINGS: Record<string, string> = {
-  GROWTH: '$98',
-  SCALE: '$198',
+  GROWTH: '$158',
+  SCALE: '$398',
 };
 
 const PLAN_ICONS: Record<string, React.ElementType> = {
