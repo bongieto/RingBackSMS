@@ -2,9 +2,9 @@ import { NextRequest } from 'next/server';
 import twilio from 'twilio';
 import { prisma } from '@/lib/server/db';
 import { processInboundSms } from '@/lib/server/services/flowEngineService';
-import { decryptNullable } from '@/lib/server/encryption';
 import { logger } from '@/lib/server/logger';
 import { checkRateLimit } from '@/lib/server/rateLimit';
+import { getValidationToken } from '@/lib/server/services/twilioService';
 import { TwilioInboundSmsSchema } from '@ringback/shared-types';
 
 export async function POST(request: NextRequest) {
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
   // Resolve tenant
   const tenant = await prisma.tenant.findUnique({
     where: { twilioPhoneNumber: To },
-    select: { id: true, isActive: true, twilioAuthToken: true },
+    select: { id: true, isActive: true, twilioSubAccountSid: true, twilioAuthToken: true },
   });
 
   if (!tenant || !tenant.isActive) {
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Verify signature — fail-closed if token is missing
-  const authToken = decryptNullable(tenant.twilioAuthToken);
+  const authToken = getValidationToken(tenant);
   if (!authToken) {
     logger.error('Missing Twilio auth token, cannot validate signature', { tenantId: tenant.id });
     return new Response('Configuration error', { status: 500 });

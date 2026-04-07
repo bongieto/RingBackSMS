@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server';
 import twilio from 'twilio';
 import { prisma } from '@/lib/server/db';
-import { decryptNullable } from '@/lib/server/encryption';
 import { logger } from '@/lib/server/logger';
+import { getValidationToken } from '@/lib/server/services/twilioService';
 
 export async function POST(request: NextRequest) {
   const text = await request.text();
@@ -32,10 +32,10 @@ export async function POST(request: NextRequest) {
 
   const tenant = await prisma.tenant.findUnique({
     where: { id: missedCall.tenantId },
-    select: { twilioAuthToken: true },
+    select: { twilioSubAccountSid: true, twilioAuthToken: true },
   });
 
-  const authToken = tenant ? decryptNullable(tenant.twilioAuthToken) : null;
+  const authToken = tenant ? getValidationToken(tenant) : null;
   if (!authToken) {
     logger.error('Missing Twilio auth token for recording callback', { callSid, tenantId: missedCall.tenantId });
     return new Response('Configuration error', { status: 500 });

@@ -1,5 +1,5 @@
 import twilio from 'twilio';
-import { encrypt, decrypt, encryptNullable } from '../encryption';
+import { encrypt, decrypt, encryptNullable, decryptNullable } from '../encryption';
 import { logger } from '../logger';
 import { prisma } from '../db';
 
@@ -8,6 +8,31 @@ function getMasterClient(): twilio.Twilio {
     process.env.TWILIO_MASTER_ACCOUNT_SID!,
     process.env.TWILIO_MASTER_AUTH_TOKEN!
   );
+}
+
+function getMessagingServiceSid(): string {
+  const sid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+  if (!sid) {
+    throw new Error(
+      'TWILIO_MESSAGING_SERVICE_SID is not set — required to attach numbers to the A2P 10DLC campaign'
+    );
+  }
+  return sid;
+}
+
+/**
+ * Returns the correct Twilio auth token to use for webhook signature
+ * validation for a given tenant. Master-owned tenants (no sub-account)
+ * use the master auth token; legacy sub-account tenants use their own.
+ */
+export function getValidationToken(tenant: {
+  twilioSubAccountSid: string | null;
+  twilioAuthToken: string | null;
+}): string | null {
+  if (tenant.twilioSubAccountSid) {
+    return decryptNullable(tenant.twilioAuthToken);
+  }
+  return process.env.TWILIO_MASTER_AUTH_TOKEN ?? null;
 }
 
 /**
@@ -89,19 +114,20 @@ export async function searchNearbyNumbers(
 }
 
 /**
- * Provisions a phone number on a tenant sub-account with SMS/voice webhooks.
+ * Provisions a phone number on the Twilio MASTER account and attaches it
+ * to the A2P 10DLC Messaging Service so outbound SMS goes through the
+ * registered campaign sender pool. Each tenant still gets its own
+ * dedicated number — the difference vs. legacy is account ownership.
  */
 export async function provisionPhoneNumber(
   tenantId: string,
-  subAccountSid: string,
-  encryptedAuthToken: string,
   phoneNumber: string,
   baseUrl: string
 ): Promise<string> {
-  const authToken = decrypt(encryptedAuthToken);
-  const subClient = twilio(subAccountSid, authToken);
+  const messagingServiceSid = getMessagingServiceSid();
+  const master = getMasterClient();
 
-  const purchased = await subClient.incomingPhoneNumbers.create({
+  const purchased = await master.incomingPhoneNumbers.create({
     phoneNumber,
     smsUrl: `${baseUrl}/api/webhooks/twilio/sms-reply`,
     smsMethod: 'POST',
@@ -111,17 +137,44 @@ export async function provisionPhoneNumber(
     voiceMethod: 'POST',
   });
 
+  // Attach to the A2P campaign sender pool
+  try {
+    await master.messaging.v1.services(messagingServiceSid).phoneNumbers.create({
+      phoneNumberSid: purchased.sid,
+    });
+  } catch (err) {
+    logger.error('Failed to attach number to Messaging Service', {
+      tenantId,
+      phoneNumberSid: purchased.sid,
+      err,
+    });
+    throw err;
+  }
+
   await prisma.tenant.update({
     where: { id: tenantId },
-    data: { twilioPhoneNumber: purchased.phoneNumber },
+    data: {
+      twilioPhoneNumber: purchased.phoneNumber,
+      twilioPhoneNumberSid: purchased.sid,
+    },
   });
 
-  logger.info('Phone number provisioned', { tenantId, phoneNumber: purchased.phoneNumber });
+  logger.info('Phone number provisioned on master + attached to MG', {
+    tenantId,
+    phoneNumber: purchased.phoneNumber,
+    messagingServiceSid,
+  });
   return purchased.phoneNumber;
 }
 
 /**
  * Sends an SMS from the tenant's Twilio number.
+ *
+ * Branched on `twilioSubAccountSid`:
+ *  - Legacy (sub-account present): use sub-account client + `from`
+ *  - New (master-owned): use master client + `messagingServiceSid` + `from`.
+ *    Passing both lets sticky-sender route through the A2P campaign while
+ *    preserving the tenant's dedicated number.
  */
 export async function sendSms(
   tenantId: string,
@@ -137,20 +190,35 @@ export async function sendSms(
     },
   });
 
-  if (!tenant?.twilioSubAccountSid || !tenant.twilioAuthToken || !tenant.twilioPhoneNumber) {
-    throw new Error(`Tenant ${tenantId} has no Twilio configuration`);
+  if (!tenant?.twilioPhoneNumber) {
+    // Runtime guard: never let Twilio pick a random pool number, which
+    // would cause SMS to be sent under the wrong tenant's identity.
+    throw new Error(`Tenant ${tenantId} has no provisioned Twilio phone number`);
   }
 
-  const authToken = decrypt(tenant.twilioAuthToken);
-  const client = twilio(tenant.twilioSubAccountSid, authToken);
+  // Legacy sub-account path — left untouched for backward compatibility.
+  if (tenant.twilioSubAccountSid && tenant.twilioAuthToken) {
+    const authToken = decrypt(tenant.twilioAuthToken);
+    const client = twilio(tenant.twilioSubAccountSid, authToken);
+    const message = await client.messages.create({
+      to: toPhone,
+      from: tenant.twilioPhoneNumber,
+      body,
+    });
+    logger.debug('SMS sent (legacy sub-account)', { tenantId, messageSid: message.sid });
+    return message.sid;
+  }
 
-  const message = await client.messages.create({
+  // New master-account + Messaging Service path
+  const messagingServiceSid = getMessagingServiceSid();
+  const master = getMasterClient();
+  const message = await master.messages.create({
     to: toPhone,
     from: tenant.twilioPhoneNumber,
+    messagingServiceSid,
     body,
   });
-
-  logger.debug('SMS sent', { tenantId, messageSid: message.sid });
+  logger.debug('SMS sent (master + MG)', { tenantId, messageSid: message.sid });
   return message.sid;
 }
 

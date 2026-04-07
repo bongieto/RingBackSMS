@@ -136,20 +136,36 @@ export async function sendSms(
     },
   });
 
-  if (!tenant?.twilioSubAccountSid || !tenant.twilioAuthToken || !tenant.twilioPhoneNumber) {
-    throw new Error(`Tenant ${tenantId} has no Twilio configuration`);
+  if (!tenant?.twilioPhoneNumber) {
+    throw new Error(`Tenant ${tenantId} has no provisioned Twilio phone number`);
   }
 
-  const authToken = decrypt(tenant.twilioAuthToken);
-  const client = twilio(tenant.twilioSubAccountSid, authToken);
+  // Legacy sub-account path
+  if (tenant.twilioSubAccountSid && tenant.twilioAuthToken) {
+    const authToken = decrypt(tenant.twilioAuthToken);
+    const client = twilio(tenant.twilioSubAccountSid, authToken);
+    const message = await client.messages.create({
+      to: toPhone,
+      from: tenant.twilioPhoneNumber,
+      body,
+    });
+    logger.debug('SMS sent (legacy sub-account)', { tenantId, messageSid: message.sid });
+    return message.sid;
+  }
 
-  const message = await client.messages.create({
+  // New master + Messaging Service path
+  const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+  if (!messagingServiceSid) {
+    throw new Error('TWILIO_MESSAGING_SERVICE_SID is not set');
+  }
+  const master = getMasterClient();
+  const message = await master.messages.create({
     to: toPhone,
     from: tenant.twilioPhoneNumber,
+    messagingServiceSid,
     body,
   });
-
-  logger.debug('SMS sent', { tenantId, messageSid: message.sid });
+  logger.debug('SMS sent (master + MG)', { tenantId, messageSid: message.sid });
   return message.sid;
 }
 
