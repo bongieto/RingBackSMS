@@ -5,6 +5,7 @@ import { logger } from '../logger';
 import { NotFoundError } from '../errors';
 import { prisma } from '../db';
 import { createStripeCustomer } from './billingService';
+import { getProfile } from '@/lib/businessTypeProfile';
 
 export interface CreateTenantInput {
   name: string;
@@ -17,6 +18,8 @@ export interface CreateTenantInput {
 }
 
 export async function createTenant(input: CreateTenantInput) {
+  const profile = getProfile(input.businessType);
+
   const tenant = await prisma.tenant.create({
     data: {
       name: input.name,
@@ -27,27 +30,29 @@ export async function createTenant(input: CreateTenantInput) {
     },
   });
 
-  // Create default config
+  // Create default config seeded from business-type profile
   await prisma.tenantConfig.create({
     data: {
       tenantId: tenant.id,
-      greeting: `Hi! Sorry we missed your call from ${input.name}. How can we help you today?`,
+      greeting: profile.defaultGreeting(input.name),
+      aiPersonality: profile.aiPersonalityHint,
       timezone: input.timezone ?? 'America/Chicago',
-      businessDays: [1, 2, 3, 4, 5], // Mon-Fri
-      businessHoursStart: '09:00',
-      businessHoursEnd: '17:00',
+      businessDays: profile.defaultHours.days,
+      businessHoursStart: profile.defaultHours.start,
+      businessHoursEnd: profile.defaultHours.end,
       ownerEmail: input.ownerEmail,
       ownerPhone: input.ownerPhone,
     },
   });
 
-  // Create default FALLBACK flow
-  await prisma.flow.create({
-    data: {
+  // Enable flows per profile (FALLBACK always included)
+  const flowsToCreate = Array.from(new Set([...profile.enabledFlows, FlowType.FALLBACK]));
+  await prisma.flow.createMany({
+    data: flowsToCreate.map((type) => ({
       tenantId: tenant.id,
-      type: FlowType.FALLBACK,
+      type,
       isEnabled: true,
-    },
+    })),
   });
 
   // Set tenantId in Clerk organization metadata
