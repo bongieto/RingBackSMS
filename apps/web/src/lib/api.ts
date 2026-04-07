@@ -33,6 +33,8 @@ export const tenantApi = {
     api.patch(`/tenants/${id}/config`, data).then((r) => r.data.data),
   generateGreeting: (id: string) =>
     webApi.post(`/tenants/${id}/generate-greeting`).then((r) => r.data.data),
+  generateAllGreetings: (id: string) =>
+    webApi.post(`/tenants/${id}/generate-greetings`).then((r) => r.data.data),
   getMenu: (id: string) => api.get(`/tenants/${id}/menu`).then((r) => r.data.data),
   upsertMenuItem: (id: string, item: Record<string, unknown>) =>
     api.post(`/tenants/${id}/menu`, item).then((r) => r.data.data),
