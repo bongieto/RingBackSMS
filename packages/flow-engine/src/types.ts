@@ -19,6 +19,12 @@ export interface CallerMemory {
   contactStatus?: 'LEAD' | 'CUSTOMER' | 'VIP' | 'INACTIVE' | null;
   tier?: 'NEW' | 'RAPID_REDIAL' | 'SAME_DAY' | 'RETURNING';
   lastOrderSummary?: string | null;   // e.g. "2 pepperoni, 1 caesar — $36, 3 days ago"
+  lastOrderItems?: Array<{
+    menuItemId: string;
+    name: string;
+    quantity: number;
+    price: number;
+  }>;
   lastConversationPreview?: string | null;
 }
 

@@ -18,13 +18,20 @@ function buildInitialState(input: FlowInput): CallerState {
 }
 
 export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
-  const { tenantContext, inboundMessage, currentState } = input;
+  const { tenantContext, inboundMessage, currentState, callerMemory } = input;
   const menuItems = tenantContext.menuItems.filter((m) => m.isAvailable);
   const upperMsg = inboundMessage.trim().toUpperCase();
 
   const step = (currentState?.flowStep as FlowStep) ?? 'GREETING';
 
-  // ── GREETING → MENU_DISPLAY ──────────────────────────────────────────────
+  // Filter last-order items down to ones still on the current menu so we never
+  // offer a reorder that contains removed/unavailable items.
+  const reorderItems = (callerMemory?.lastOrderItems ?? []).filter((li) =>
+    menuItems.some((m) => m.id === li.menuItemId)
+  );
+  const hasReorder = reorderItems.length > 0;
+
+  // ── GREETING → MENU_DISPLAY (or reorder prompt) ─────────────────────────
   if (step === 'GREETING' || !currentState || currentState.currentFlow !== FlowType.ORDER) {
     const menuText = menuItems
       .map((item, i) => {
@@ -44,6 +51,20 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       flowStep: 'MENU_DISPLAY',
     };
 
+    // Returning customer with a reusable last order → offer SAME shortcut
+    if (hasReorder) {
+      const summary = buildReorderSummary(reorderItems);
+      const total = reorderItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+      const firstName = callerMemory?.contactName?.split(' ')[0];
+      const greet = firstName ? `Welcome back, ${firstName}!` : 'Welcome back!';
+      return {
+        nextState,
+        smsReply: `${greet} Last time you ordered:\n${summary}\nTotal: $${total.toFixed(2)}\n\nReply SAME to reorder, or MENU to see the full menu.`,
+        sideEffects: [],
+        flowType: FlowType.ORDER,
+      };
+    }
+
     return {
       nextState,
       smsReply: `Thanks for ordering with ${tenantContext.tenantName}! ${menuDisplay}`,
@@ -54,6 +75,51 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
 
   // ── MENU_DISPLAY → ITEM_CUSTOMIZATION or ORDER_CONFIRM ──────────────────
   if (step === 'MENU_DISPLAY') {
+    // SAME shortcut: hydrate orderDraft from the caller's last order and jump
+    // straight to confirmation, skipping item selection and customization.
+    if (upperMsg === 'SAME' && hasReorder) {
+      const draftItems = reorderItems.map((li) => ({
+        menuItemId: li.menuItemId,
+        name: li.name,
+        quantity: li.quantity,
+        price: li.price,
+        selectedModifiers: [] as Array<{ groupName: string; modifierName: string; priceAdjust: number }>,
+      }));
+      const total = draftItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+      const orderSummary = buildOrderSummary(draftItems);
+
+      const nextState: CallerState = {
+        ...currentState,
+        flowStep: 'ORDER_CONFIRM',
+        orderDraft: { items: draftItems },
+        lastMessageAt: Date.now(),
+      };
+
+      return {
+        nextState,
+        smsReply: `Got it — same as last time:\n${orderSummary}\nTotal: $${total.toFixed(2)}\n\nReply YES to confirm or NO to start over.`,
+        sideEffects: [],
+        flowType: FlowType.ORDER,
+      };
+    }
+
+    // MENU shortcut: user declined the reorder offer, show full menu
+    if (upperMsg === 'MENU' && hasReorder) {
+      const menuText = menuItems
+        .map((item, i) => {
+          let line = `${i + 1}. ${item.name} - $${item.price.toFixed(2)}`;
+          if (item.duration) line += ` (${item.duration} min)`;
+          return line;
+        })
+        .join('\n');
+      return {
+        nextState: { ...currentState, lastMessageAt: Date.now() },
+        smsReply: `Here's our menu:\n${menuText}\n\nReply with item numbers and quantities (e.g., "1x2, 3x1") or item names.`,
+        sideEffects: [],
+        flowType: FlowType.ORDER,
+      };
+    }
+
     const parsedItems = parseOrderItems(inboundMessage, menuItems);
 
     if (parsedItems.length === 0) {
@@ -625,6 +691,15 @@ function buildOrderSummary(items: DraftItem[]): string {
     line += ` ($${itemTotal.toFixed(2)})`;
     return line;
   }).join('\n');
+}
+
+/** Compact summary for the SAME-reorder welcome (no modifiers / per-item totals). */
+function buildReorderSummary(
+  items: Array<{ name: string; quantity: number; price: number }>,
+): string {
+  return items
+    .map((i) => `${i.quantity}x ${i.name} ($${(i.price * i.quantity).toFixed(2)})`)
+    .join('\n');
 }
 
 function buildOwnerOrderSummary(items: DraftItem[]): string {
