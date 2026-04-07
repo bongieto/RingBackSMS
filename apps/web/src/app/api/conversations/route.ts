@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
+import { decryptMessages } from '@/lib/server/encryption';
 import { apiPaginated, apiError } from '@/lib/server/response';
 
 export async function GET(request: NextRequest) {
@@ -20,5 +21,7 @@ export async function GET(request: NextRequest) {
     prisma.conversation.findMany({ where, orderBy: { updatedAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize }),
     prisma.conversation.count({ where }),
   ]);
-  return apiPaginated(conversations, total, page, pageSize);
+  // Decrypt messages for each conversation in the response
+  const decrypted = conversations.map((c) => ({ ...c, messages: decryptMessages(c.messages) }));
+  return apiPaginated(decrypted, total, page, pageSize);
 }

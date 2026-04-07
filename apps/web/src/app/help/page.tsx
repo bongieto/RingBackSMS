@@ -525,7 +525,7 @@ export default function HelpPage() {
           </FAQ>
 
           <FAQ question="Is my data secure?">
-            <p>Yes. We use AES-256 encryption for sensitive credentials, row-level data isolation between businesses, and secure Twilio sub-accounts per tenant. Your customer data is never shared between businesses. See our <Link href="/privacy" className="text-blue-600 hover:underline">Privacy Policy</Link> for details.</p>
+            <p>Yes. We use enterprise-grade encryption for sensitive credentials, row-level data isolation between businesses, and secure Twilio sub-accounts per tenant. Your customer data is never shared between businesses. See our <Link href="/privacy" className="text-blue-600 hover:underline">Privacy Policy</Link> for details.</p>
           </FAQ>
 
           <FAQ question="How do I cancel my subscription?">
