@@ -30,19 +30,19 @@ export default api;
 export const tenantApi = {
   getMe: () => webApi.get('/tenants/me').then((r) => r.data.data),
   updateConfig: (id: string, data: Record<string, unknown>) =>
-    api.patch(`/tenants/${id}/config`, data).then((r) => r.data.data),
+    webApi.patch(`/tenants/${id}/config`, data).then((r) => r.data.data),
   generateGreeting: (id: string) =>
     webApi.post(`/tenants/${id}/generate-greeting`).then((r) => r.data.data),
   generateAllGreetings: (id: string) =>
     webApi.post(`/tenants/${id}/generate-greetings`).then((r) => r.data.data),
-  getMenu: (id: string) => api.get(`/tenants/${id}/menu`).then((r) => r.data.data),
+  getMenu: (id: string) => webApi.get(`/tenants/${id}/menu`).then((r) => r.data.data),
   upsertMenuItem: (id: string, item: Record<string, unknown>) =>
-    api.post(`/tenants/${id}/menu`, item).then((r) => r.data.data),
+    webApi.post(`/tenants/${id}/menu`, item).then((r) => r.data.data),
   deleteMenuItem: (tenantId: string, itemId: string) =>
-    api.delete(`/tenants/${tenantId}/menu/${itemId}`).then((r) => r.data),
-  getFlows: (id: string) => api.get(`/tenants/${id}/flows`).then((r) => r.data.data),
+    webApi.delete(`/tenants/${tenantId}/menu/${itemId}`).then((r) => r.data),
+  getFlows: (id: string) => webApi.get(`/tenants/${id}/flows`).then((r) => r.data.data),
   updateFlow: (tenantId: string, flowId: string, data: Record<string, unknown>) =>
-    api.patch(`/tenants/${tenantId}/flows/${flowId}`, data).then((r) => r.data.data),
+    webApi.patch(`/tenants/${tenantId}/flows/${flowId}`, data).then((r) => r.data.data),
 };
 
 export const orderApi = {

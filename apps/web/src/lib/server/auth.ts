@@ -64,7 +64,8 @@ export async function requireSuperAdmin(): Promise<string | NextResponse> {
   const { userId } = await auth();
   if (!userId) return apiError('Authentication required', 401);
   const adminId = process.env.SUPER_ADMIN_USER_ID?.trim();
-  if (adminId && userId !== adminId) return apiError('Forbidden', 403);
+  // Fail closed: if the env var is missing, nobody is super-admin.
+  if (!adminId || userId !== adminId) return apiError('Forbidden', 403);
   return userId;
 }
 

@@ -275,6 +275,7 @@ export const ContactSchema = z.object({
   tags: z.array(z.string()),
   totalOrders: z.number().int(),
   totalSpent: z.number().int(),
+  stripeCustomerId: z.string().nullable().optional(),
   lastContactAt: z.date().nullable(),
   createdAt: z.date(),
   updatedAt: z.date(),

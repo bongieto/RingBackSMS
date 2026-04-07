@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { z } from 'zod';
 import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { updateTenantConfig } from '@/lib/server/services/tenantService';
 import { UpdateTenantConfigRequestSchema } from '@ringback/shared-types';
@@ -13,7 +14,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const config = await updateTenantConfig(params.id, body);
     return apiSuccess(config);
   } catch (err) {
+    if (err instanceof z.ZodError) {
+      const details = err.errors
+        .map((e) => `${e.path.join('.') || 'body'}: ${e.message}`)
+        .join('; ');
+      return apiError(details || 'Invalid request', 400);
+    }
     if (err instanceof AppError) return apiError(err.message, err.statusCode);
+    console.error('[PATCH /api/tenants/:id/config] failed', err);
     return apiError('Internal server error', 500);
   }
 }
