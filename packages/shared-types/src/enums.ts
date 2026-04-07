@@ -17,6 +17,7 @@ export enum Plan {
 export enum FlowType {
   ORDER = 'ORDER',
   MEETING = 'MEETING',
+  INQUIRY = 'INQUIRY',
   CUSTOM = 'CUSTOM',
   FALLBACK = 'FALLBACK',
 }

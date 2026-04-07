@@ -97,7 +97,7 @@ const RETAIL: BusinessTypeProfile = {
   label: 'Retail shop',
   emoji: '🛍️',
   catalogNoun: 'products',
-  enabledFlows: [FlowType.ORDER, FlowType.FALLBACK],
+  enabledFlows: [FlowType.INQUIRY, FlowType.ORDER, FlowType.FALLBACK],
   defaultGreeting: (name) =>
     `Hi! Sorry we missed your call at ${name}. Ask us about any product — we'll check availability and can hold one for you.`,
   defaultHours: { start: '10:00', end: '19:00', days: [1, 2, 3, 4, 5, 6] },
