@@ -19,8 +19,12 @@ export type CreateTenantRequest = z.infer<typeof CreateTenantRequestSchema>;
 export const UpdateTenantConfigRequestSchema = z.object({
   greeting: z.string().optional(),
   greetingAfterHours: z.string().nullable().optional(),
+  greetingRapidRedial: z.string().nullable().optional(),
+  greetingReturning: z.string().nullable().optional(),
   voiceGreeting: z.string().max(500).nullable().optional(),
   voiceGreetingAfterHours: z.string().max(500).nullable().optional(),
+  voiceGreetingRapidRedial: z.string().max(500).nullable().optional(),
+  voiceGreetingReturning: z.string().max(500).nullable().optional(),
   voiceType: z.enum(VOICE_TYPES).optional(),
   timezone: z.string().optional(),
   businessHoursStart: z.string().optional(),
