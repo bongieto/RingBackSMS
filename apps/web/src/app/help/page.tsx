@@ -19,6 +19,7 @@ import {
   HelpCircle,
   ChevronRight,
 } from 'lucide-react';
+import { Logo } from '@/components/Logo';
 
 export const metadata: Metadata = {
   title: 'Help Center — RingBackSMS',
@@ -89,9 +90,7 @@ export default function HelpPage() {
       {/* Header */}
       <header className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
-          <Link href="/" className="text-xl font-bold text-gray-900">
-            RingBack<span className="text-blue-600">SMS</span>
-          </Link>
+          <Logo size="md" variant="light" />
           <Link href="/" className="text-sm text-gray-600 hover:text-gray-900">
             &larr; Back to Home
           </Link>

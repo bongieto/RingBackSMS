@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { Logo } from '@/components/Logo';
 import { getProfile } from '@/lib/businessTypeProfile';
 import type { BusinessType } from '@ringback/shared-types';
 
@@ -89,9 +90,7 @@ export default function OnboardingPage() {
       <div className="w-full max-w-lg">
         {/* Logo */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-extrabold">
-            RingBack<span className="text-blue-500">SMS</span>
-          </h1>
+          <Logo size="lg" variant="light" href={null} />
           <p className="text-muted-foreground mt-1">Let's get you set up in 2 minutes</p>
         </div>
 

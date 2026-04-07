@@ -13,6 +13,7 @@ import {
 import { MobileNav } from '@/components/landing/MobileNav';
 import { PricingSection } from '@/components/landing/PricingSection';
 import { IndustryJsonLd } from './IndustryJsonLd';
+import { Logo } from '@/components/Logo';
 
 const SITE_URL = 'https://ring-back-sms.vercel.app';
 
@@ -135,7 +136,7 @@ export default function IndustryLandingPage({ params }: PageProps) {
       {/* ─── Nav ───────────────────────────────────────────────────── */}
       <nav className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <Link href="/" className="font-extrabold text-slate-900 text-lg">RingBackSMS</Link>
+          <Logo size="md" variant="light" />
           <div className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
             <Link href="/industries" className="hover:text-blue-600">Industries</Link>
             <Link href="/#features" className="hover:text-blue-600">Features</Link>
@@ -406,7 +407,7 @@ export default function IndustryLandingPage({ params }: PageProps) {
       <footer className="bg-slate-900 text-slate-400 py-12 text-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between gap-6">
           <div>
-            <div className="font-bold text-white mb-2">RingBackSMS</div>
+            <div className="mb-2"><Logo size="sm" variant="dark" /></div>
             <div>Never miss a customer again.</div>
           </div>
           <div className="flex gap-6 flex-wrap">
