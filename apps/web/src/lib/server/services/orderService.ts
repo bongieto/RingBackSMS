@@ -52,6 +52,24 @@ export async function createOrder(input: CreateOrderInput) {
     total: order.total,
   });
 
+  // Denormalize onto Contact so getCallerContext can read lastOrder cheaply
+  // and the dashboard can show lifetime totals without aggregating Orders.
+  try {
+    const totalCents = Math.round(Number(order.total) * 100);
+    await prisma.contact.updateMany({
+      where: { tenantId: input.tenantId, phone: input.callerPhone },
+      data: {
+        lastOrderId: order.id,
+        lastOrderAt: order.createdAt,
+        totalOrders: { increment: 1 },
+        totalSpent: { increment: totalCents },
+        lastContactAt: new Date(),
+      },
+    });
+  } catch (err) {
+    logger.warn('Failed to denormalize order onto Contact', { err, orderId: order.id });
+  }
+
   return order;
 }
 
