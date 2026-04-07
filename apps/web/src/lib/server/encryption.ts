@@ -66,6 +66,26 @@ export function decryptNullable(value: string | null | undefined): string | null
 }
 
 /**
+ * Decrypts a value that MAY be legacy plaintext. Used for progressive
+ * encryption rollout on fields like Contact.name / Contact.email where
+ * existing rows are plaintext and new writes are encrypted.
+ *
+ * Returns the plaintext if decryption succeeds, otherwise returns the
+ * stored value as-is (assumed legacy plaintext).
+ */
+export function decryptMaybePlaintext(value: string | null | undefined): string | null {
+  if (value == null || value === '') return null;
+  // Quick format check: our encrypted format is `iv:tag:ciphertext` (base64)
+  // If it doesn't have exactly 2 colons, treat as plaintext.
+  if (typeof value !== 'string' || value.split(':').length !== 3) return value;
+  try {
+    return decrypt(value);
+  } catch {
+    return value; // legacy plaintext or corrupted; prefer showing original
+  }
+}
+
+/**
  * Encrypts a conversation messages array for storage in the Json column.
  * Returns an encrypted string that will be stored in the Json field.
  */

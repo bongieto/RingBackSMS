@@ -2,9 +2,15 @@ import { NextRequest } from 'next/server';
 import { posRegistry } from '@/lib/server/pos/registry';
 import { handlePosWebhookEvent } from '@/lib/server/pos/webhookDispatcher';
 import { logger } from '@/lib/server/logger';
+import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/server/rateLimit';
 
 export async function POST(request: NextRequest, { params }: { params: { provider: string } }) {
   const { provider } = params;
+
+  const ip = getClientIp(request.headers);
+  const rl = await checkRateLimit(`pos:${provider}:${ip}`, 120, 60);
+  if (!rl.allowed) return rateLimitResponse(rl);
+
   const text = await request.text();
 
   try {

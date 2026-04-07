@@ -4,6 +4,7 @@ import { prisma } from '@/lib/server/db';
 import { sendSms } from '@/lib/server/services/twilioService';
 import { decryptNullable } from '@/lib/server/encryption';
 import { logger } from '@/lib/server/logger';
+import { checkRateLimit } from '@/lib/server/rateLimit';
 
 /** Build TwiML XML string without the Twilio SDK VoiceResponse class (avoids serverless bundling issues) */
 function buildVoiceTwiml(businessName: string, recordingCallbackUrl: string): string {
@@ -32,6 +33,14 @@ export async function POST(request: NextRequest) {
 
   if (!callSid || !from || !to) {
     return new Response('Missing required fields', { status: 400 });
+  }
+
+  // Rate limit: 30 calls per minute per caller phone
+  const rl = await checkRateLimit(`twilio-voice:${from}`, 30, 60);
+  if (!rl.allowed) {
+    logger.warn('Twilio voice webhook rate limited', { from });
+    const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`;
+    return new Response(twiml, { headers: { 'Content-Type': 'text/xml' }, status: 200 });
   }
 
   // Resolve tenant by the called number

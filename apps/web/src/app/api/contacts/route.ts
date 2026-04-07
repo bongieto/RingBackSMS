@@ -5,6 +5,12 @@ import { ContactStatus, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { apiSuccess, apiCreated, apiPaginated, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
+import { encryptNullable, decryptMaybePlaintext } from '@/lib/server/encryption';
+
+// Decrypt name/email on the way out; phone stays plaintext (lookup key)
+function decryptContact<T extends { name: string | null; email: string | null }>(c: T): T {
+  return { ...c, name: decryptMaybePlaintext(c.name), email: decryptMaybePlaintext(c.email) };
+}
 
 const CreateSchema = z.object({
   tenantId: z.string().min(1),
@@ -29,29 +35,45 @@ export async function GET(request: NextRequest) {
   const page = parseInt(searchParams.get('page') ?? '1', 10);
   const pageSize = parseInt(searchParams.get('pageSize') ?? '20', 10);
 
-  const where: Prisma.ContactWhereInput = {
+  // Name is encrypted — cannot do a SQL-level LIKE on it. If a search term
+  // is present, fetch the full tenant-scoped set (filtered by tag/status/
+  // phone prefix) then filter + paginate in memory after decryption.
+  const baseWhere: Prisma.ContactWhereInput = {
     tenantId,
-    ...(search && {
-      OR: [
-        { name: { contains: search, mode: 'insensitive' as Prisma.QueryMode } },
-        { phone: { contains: search } },
-      ],
-    }),
     ...(tag && { tags: { has: tag } }),
     ...(status && { status }),
   };
 
+  if (search) {
+    const all = await prisma.contact.findMany({
+      where: baseWhere,
+      orderBy: { updatedAt: 'desc' },
+    });
+    const needle = search.toLowerCase();
+    const decrypted = all.map(decryptContact);
+    const filtered = decrypted.filter((c) => {
+      return (
+        (c.name && c.name.toLowerCase().includes(needle)) ||
+        (c.email && c.email.toLowerCase().includes(needle)) ||
+        (c.phone && c.phone.includes(search))
+      );
+    });
+    const total = filtered.length;
+    const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
+    return apiPaginated(pageItems, total, page, pageSize);
+  }
+
   const [contacts, total] = await Promise.all([
     prisma.contact.findMany({
-      where,
+      where: baseWhere,
       orderBy: { updatedAt: 'desc' },
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),
-    prisma.contact.count({ where }),
+    prisma.contact.count({ where: baseWhere }),
   ]);
 
-  return apiPaginated(contacts, total, page, pageSize);
+  return apiPaginated(contacts.map(decryptContact), total, page, pageSize);
 }
 
 export async function POST(req: NextRequest) {
@@ -64,8 +86,8 @@ export async function POST(req: NextRequest) {
       data: {
         tenantId: body.tenantId,
         phone: body.phone,
-        name: body.name ?? null,
-        email: body.email || null,
+        name: encryptNullable(body.name ?? null),
+        email: encryptNullable(body.email || null),
         notes: body.notes ?? null,
         tags: body.tags ?? [],
         status: body.status ?? ContactStatus.LEAD,
@@ -73,7 +95,7 @@ export async function POST(req: NextRequest) {
     });
 
     logger.info('Contact created', { contactId: contact.id, tenantId: body.tenantId });
-    return apiCreated(contact);
+    return apiCreated(decryptContact(contact));
   } catch (err: any) {
     return apiError('Internal server error', 500);
   }

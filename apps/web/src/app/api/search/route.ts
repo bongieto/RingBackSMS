@@ -3,6 +3,7 @@ import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
+import { decryptMaybePlaintext } from '@/lib/server/encryption';
 
 const SearchSchema = z.object({
   q: z.string().min(1).max(100),
@@ -19,20 +20,14 @@ export async function GET(request: NextRequest) {
     const authResult = await verifyTenantAccess(tenantId);
     if (isNextResponse(authResult)) return authResult;
 
-    const query = `%${q}%`;
-
-    const [contacts, conversations, orders] = await Promise.all([
+    // Name & email are encrypted at rest — fetch a bounded tenant slice and
+    // filter in memory. Phone is plaintext and still usable at SQL level.
+    const [allTenantContacts, conversations, orders] = await Promise.all([
       prisma.contact.findMany({
-        where: {
-          tenantId,
-          OR: [
-            { name: { contains: q, mode: 'insensitive' } },
-            { phone: { contains: q } },
-            { email: { contains: q, mode: 'insensitive' } },
-          ],
-        },
-        select: { id: true, name: true, phone: true, status: true },
-        take: 5,
+        where: { tenantId },
+        select: { id: true, name: true, phone: true, email: true, status: true },
+        orderBy: { updatedAt: 'desc' },
+        take: 500,
       }),
       prisma.conversation.findMany({
         where: {
@@ -56,6 +51,22 @@ export async function GET(request: NextRequest) {
         orderBy: { createdAt: 'desc' },
       }),
     ]);
+
+    const needle = q.toLowerCase();
+    const contacts = allTenantContacts
+      .map((c) => ({
+        ...c,
+        name: decryptMaybePlaintext(c.name),
+        email: decryptMaybePlaintext(c.email),
+      }))
+      .filter(
+        (c) =>
+          (c.name && c.name.toLowerCase().includes(needle)) ||
+          (c.email && c.email.toLowerCase().includes(needle)) ||
+          (c.phone && c.phone.includes(q)),
+      )
+      .slice(0, 5)
+      .map(({ email: _e, ...rest }) => rest);
 
     return apiSuccess({
       contacts: contacts.map((c) => ({ ...c, type: 'contact' as const })),

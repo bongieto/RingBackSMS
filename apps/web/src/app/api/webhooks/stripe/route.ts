@@ -6,9 +6,15 @@ import { createOrder } from '@/lib/server/services/orderService';
 import { getCallerState, setCallerState } from '@/lib/server/services/stateService';
 import { logger } from '@/lib/server/logger';
 import { prisma } from '@/lib/server/db';
+import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/server/rateLimit';
 import Stripe from 'stripe';
 
 export async function POST(request: NextRequest) {
+  // Rate limit as belt-and-suspenders on top of signature verification
+  const ip = getClientIp(request.headers);
+  const rl = await checkRateLimit(`stripe:${ip}`, 120, 60);
+  if (!rl.allowed) return rateLimitResponse(rl);
+
   const rawBody = Buffer.from(await request.arrayBuffer());
   const sig = request.headers.get('stripe-signature') ?? '';
 

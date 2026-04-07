@@ -419,7 +419,7 @@ const FAQ = [
   {
     question: 'Is my customer data secure?',
     answer:
-      'Absolutely. We use enterprise-grade encryption for all stored tokens and sensitive data. Every business gets isolated data storage with PostgreSQL Row-Level Security — your data is never accessible to other accounts. We\'re SOC 2 compliant and HIPAA-ready for medical practices.',
+      'Absolutely. We use enterprise-grade encryption for all stored tokens and sensitive data. Every business gets isolated data storage with PostgreSQL Row-Level Security — your data is never accessible to other accounts. We\'re built on SOC 2–compliant infrastructure.',
   },
   {
     question: 'How long does setup take?',
@@ -914,7 +914,6 @@ export default function HomePage() {
                   <li><Link href="/help" className="hover:text-white transition-colors">Help Center</Link></li>
                   <li><Link href="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link></li>
                   <li><Link href="/terms" className="hover:text-white transition-colors">Terms of Service</Link></li>
-                  <li><span className="hover:text-white transition-colors cursor-default">HIPAA Compliance</span></li>
                 </ul>
               </div>
             </div>

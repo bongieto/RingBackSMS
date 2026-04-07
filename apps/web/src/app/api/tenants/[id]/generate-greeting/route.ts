@@ -3,6 +3,7 @@ import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
+import { checkRateLimit, rateLimitResponse } from '@/lib/server/rateLimit';
 import OpenAI from 'openai';
 
 const AI_MODEL = 'MiniMax-M2.7';
@@ -37,6 +38,10 @@ async function fetchWebsiteContext(url: string): Promise<string | null> {
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const authResult = await verifyTenantAccess(params.id);
   if (isNextResponse(authResult)) return authResult;
+
+  // AI generation is billed — limit 20/hour per tenant
+  const rl = await checkRateLimit(`gen-greeting:${params.id}`, 20, 3600);
+  if (!rl.allowed) return rateLimitResponse(rl);
 
   try {
     const tenant = await prisma.tenant.findUnique({

@@ -9,6 +9,7 @@ import {
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
+import { checkRateLimit, rateLimitResponse } from '@/lib/server/rateLimit';
 
 // Provisioning creates a sub-account + buys a number — can take a while
 export const maxDuration = 30;
@@ -23,6 +24,10 @@ export async function POST(req: NextRequest) {
     const { phoneNumber, tenantId } = ProvisionSchema.parse(await req.json());
     const authResult = await verifyTenantAccess(tenantId);
     if (isNextResponse(authResult)) return authResult;
+
+    // Twilio provisioning is billed — limit 5/hour per tenant
+    const rl = await checkRateLimit(`phone-provision:${tenantId}`, 5, 3600);
+    if (!rl.allowed) return rateLimitResponse(rl);
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
