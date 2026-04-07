@@ -14,12 +14,14 @@ function getResend(): Resend {
 }
 
 export type NotificationChannel = 'email' | 'sms' | 'slack';
+export type NotificationPriority = 'NORMAL' | 'HIGH';
 
 export interface NotificationPayload {
   tenantId: string;
   subject: string;
   message: string;
   channel: NotificationChannel;
+  priority?: NotificationPriority;
 }
 
 export async function sendNotification(payload: NotificationPayload): Promise<void> {
@@ -99,6 +101,61 @@ async function sendSlackNotification(
   } catch (error) {
     logger.error('Slack notification failed', { error });
   }
+}
+
+/**
+ * Fans a high-priority alert out to every channel the tenant has configured
+ * (SMS to ownerPhone + Slack with @channel mention + email). Used for things
+ * like rapid-redial detection where the owner needs to act now.
+ */
+export async function sendHighPriorityAlert(payload: {
+  tenantId: string;
+  subject: string;
+  message: string;
+}): Promise<void> {
+  const config = await prisma.tenantConfig.findUnique({
+    where: { tenantId: payload.tenantId },
+  });
+  if (!config) {
+    logger.warn('No config for high-priority alert', { tenantId: payload.tenantId });
+    return;
+  }
+
+  const subject = `🔥 URGENT — ${payload.subject}`;
+
+  const tasks: Promise<unknown>[] = [];
+
+  if (config.ownerPhone) {
+    tasks.push(
+      sendSms(payload.tenantId, config.ownerPhone, `${subject}\n${payload.message}`).catch(
+        (error) => logger.error('High-priority SMS failed', { error, tenantId: payload.tenantId })
+      )
+    );
+  }
+
+  if (config.slackWebhook) {
+    tasks.push(
+      fetch(config.slackWebhook, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: `<!channel> *${subject}*\n${payload.message}`,
+        }),
+      }).catch((error) =>
+        logger.error('High-priority Slack failed', { error, tenantId: payload.tenantId })
+      )
+    );
+  }
+
+  if (config.ownerEmail) {
+    tasks.push(
+      sendEmailNotification(config.ownerEmail, subject, payload.message).catch((error) =>
+        logger.error('High-priority email failed', { error, tenantId: payload.tenantId })
+      )
+    );
+  }
+
+  await Promise.all(tasks);
 }
 
 export async function sendMissedCallAlert(
