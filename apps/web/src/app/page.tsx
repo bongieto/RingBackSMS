@@ -23,6 +23,9 @@ import {
   PhoneIncoming,
   MessageCircle,
   TrendingUp,
+  Mic,
+  Crown,
+  MoonStar,
 } from 'lucide-react';
 import { MobileNav } from '@/components/landing/MobileNav';
 import { PricingSection } from '@/components/landing/PricingSection';
@@ -148,6 +151,38 @@ const faqJsonLd = {
     },
     {
       '@type': 'Question',
+      name: 'Do voicemails get transcribed automatically?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'Yes. Every voicemail is transcribed within ~30 seconds and tagged by our AI with a one-line summary and an intent badge (ORDER, BOOKING, QUESTION, COMPLAINT, SPAM, OTHER). You can filter the voicemails list by intent so the highest-value recoveries float to the top.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'Can RingBackSMS handle calls after hours?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'Yes. You can configure a separate SMS and voice greeting for calls that arrive outside your business hours. The AI keeps taking orders and booking appointments overnight.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'How do I know if RingBackSMS is actually recovering revenue?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'The Recovery Funnel on the Analytics page shows the entire missed-call → order pipeline: missed calls, SMS sent, caller replied, owner responded, orders and meetings created. You see drop rates between every step plus week-over-week deltas on conversion and average response time.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'Does RingBackSMS flag VIPs and repeat callers?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'Yes. Every missed call auto-links to a contact in your CRM. Voicemail rows show a status badge (VIP, Customer, Lead) and a "Nth call today" counter for repeat callers so you can prioritize the highest-value recoveries first.',
+      },
+    },
+    {
+      '@type': 'Question',
       name: 'Do I need to change my phone number?',
       acceptedAnswer: {
         '@type': 'Answer',
@@ -238,6 +273,36 @@ const FEATURES = [
     title: 'Built-in CRM',
     description:
       'Full CRM with contact timeline, notes, status tracking (Lead → VIP), and one-click SMS outreach. Know every customer by name.',
+  },
+  {
+    icon: Mic,
+    title: 'AI Voicemail Triage',
+    description:
+      'Every voicemail gets an instant transcript, a one-line AI summary, and a colored intent tag (ORDER, BOOKING, QUESTION, COMPLAINT). Skim, don\'t listen.',
+  },
+  {
+    icon: MessageCircle,
+    title: 'One-Tap Reply & Callback',
+    description:
+      'Reply to any voicemail with a saved template chip in two taps — or hit the call-back button. Replies thread into the conversation automatically.',
+  },
+  {
+    icon: TrendingUp,
+    title: 'Recovery Funnel Analytics',
+    description:
+      'See exactly where missed-call revenue leaks: missed → SMS sent → caller replied → owner responded → order. Drop rates, conversion %, and avg response time.',
+  },
+  {
+    icon: MoonStar,
+    title: 'After-Hours Auto-Responses',
+    description:
+      'Set a separate SMS and voice greeting for calls outside business hours. Capture late-night orders and book tomorrow\'s appointments while you sleep.',
+  },
+  {
+    icon: Crown,
+    title: 'VIP & Repeat-Caller Detection',
+    description:
+      'Every missed call auto-links to a contact. VIPs and repeat callers ("3rd call today") jump out of the voicemail list so you call back the right one first.',
   },
 ];
 
@@ -440,6 +505,26 @@ const FAQ = [
     question: 'Can customers pay via text?',
     answer:
       'Yes. After confirming an order, customers receive a secure Stripe Checkout link via SMS. You can require payment upfront (the order is only placed after payment) or send the link as a follow-up after the order is placed. Payment links expire after 30 minutes.',
+  },
+  {
+    question: 'Do voicemails get transcribed automatically?',
+    answer:
+      'Yes. Every voicemail is transcribed within ~30 seconds and tagged by our AI with a one-line summary and an intent badge (ORDER, BOOKING, QUESTION, COMPLAINT, SPAM, OTHER). You can filter the voicemails list by intent so the highest-value recoveries float to the top — no more pressing play on every recording.',
+  },
+  {
+    question: 'Can RingBackSMS handle calls after hours?',
+    answer:
+      'Absolutely. You can configure a separate SMS and voice greeting for calls that arrive outside your business hours. The AI keeps taking orders and booking appointments overnight, so you wake up to a queue of recovered revenue instead of missed calls.',
+  },
+  {
+    question: 'How do I know if RingBackSMS is actually recovering revenue?',
+    answer:
+      'The Recovery Funnel on your Analytics page shows the entire missed-call → order pipeline: how many calls were missed, how many got an SMS, how many callers replied, how fast you responded, and how many turned into orders or meetings. You see drop rates between every step plus week-over-week deltas.',
+  },
+  {
+    question: 'Do you flag VIPs and repeat callers?',
+    answer:
+      'Yes. Every missed call auto-links to a Contact in your CRM. Voicemail rows show a status badge (VIP, Customer, Lead) and a "Nth call today" counter for repeat callers — so you instantly know who to call back first.',
   },
   {
     question: 'Do you integrate with my POS system?',
