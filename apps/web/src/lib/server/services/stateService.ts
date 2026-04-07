@@ -83,6 +83,23 @@ export async function isDuplicate(tenantId: string, messageSid: string): Promise
   }
 }
 
+/**
+ * Atomically acquires a short-lived lock for a given alert key.
+ * Returns true if the lock was acquired (caller should fire the alert),
+ * false if another caller already holds it within the TTL window.
+ * Used to debounce noisy notifications like rapid-redial alerts.
+ */
+export async function acquireAlertLock(key: string, ttlSeconds: number): Promise<boolean> {
+  try {
+    const redis = getRedis();
+    const result = await redis.set(`alertlock:${key}`, '1', 'EX', ttlSeconds, 'NX');
+    return result !== null;
+  } catch (error) {
+    logger.error('acquireAlertLock error', { error });
+    return true; // Fail open — better to over-alert than swallow
+  }
+}
+
 export async function getRateCount(tenantId: string, callerPhone: string): Promise<number> {
   try {
     const redis = getRedis();

@@ -7,6 +7,10 @@ import { checkRateLimit } from '@/lib/server/rateLimit';
 import { getValidationToken } from '@/lib/server/services/twilioService';
 import { linkMissedCallToContact } from '@/lib/server/services/contactLinking';
 import { isWithinBusinessHours } from '@/lib/server/businessHours';
+import { getCallerContext, type CallerTier } from '@/lib/server/services/callerContextService';
+import { sendHighPriorityAlert } from '@/lib/server/services/notificationService';
+import { acquireAlertLock } from '@/lib/server/services/stateService';
+import { maskPhone } from '@/lib/server/phoneUtils';
 
 const ALLOWED_VOICES = new Set([
   'Polly.Joanna-Neural',
@@ -42,6 +46,61 @@ function buildVoiceTwiml(opts: {
   <Record maxLength="60" finishOnKey="#" playBeep="true" recordingStatusCallback="${escapeXml(opts.recordingCallbackUrl)}" recordingStatusCallbackMethod="POST" transcribe="true" transcribeCallback="${escapeXml(opts.transcribeCallbackUrl)}"/>
   <Say voice="${voice}" language="en-US">Thank you for calling. Check your texts for a message from us. Goodbye!</Say>
 </Response>`;
+}
+
+/**
+ * Selects the SMS + voice greeting text based on caller tier and after-hours
+ * status. Falls back gracefully: rapid-redial → after-hours → returning → default.
+ */
+function selectGreeting(opts: {
+  tier: CallerTier;
+  isAfterHours: boolean;
+  config: {
+    greeting: string;
+    greetingAfterHours: string | null;
+    greetingRapidRedial: string | null;
+    greetingReturning: string | null;
+    voiceGreeting: string | null;
+    voiceGreetingAfterHours: string | null;
+    voiceGreetingRapidRedial: string | null;
+    voiceGreetingReturning: string | null;
+  } | null;
+}): { sms: string | null; voice: string | null } {
+  if (!opts.config) return { sms: null, voice: null };
+  const c = opts.config;
+  const pick = (...xs: (string | null | undefined)[]): string | null => {
+    for (const x of xs) {
+      const trimmed = x?.trim();
+      if (trimmed) return trimmed;
+    }
+    return null;
+  };
+
+  if (opts.tier === 'RAPID_REDIAL') {
+    return {
+      sms: pick(c.greetingRapidRedial, c.greeting),
+      voice: pick(c.voiceGreetingRapidRedial, c.voiceGreeting),
+    };
+  }
+
+  if (opts.isAfterHours) {
+    return {
+      sms: pick(c.greetingAfterHours, c.greeting),
+      voice: pick(c.voiceGreetingAfterHours, c.voiceGreeting),
+    };
+  }
+
+  if (opts.tier === 'RETURNING') {
+    return {
+      sms: pick(c.greetingReturning, c.greeting),
+      voice: pick(c.voiceGreetingReturning, c.voiceGreeting),
+    };
+  }
+
+  return {
+    sms: pick(c.greeting),
+    voice: pick(c.voiceGreeting),
+  };
 }
 
 function escapeXml(s: string): string {
@@ -99,6 +158,14 @@ export async function POST(request: NextRequest) {
   const businessName = tenant.name;
   const baseUrl = process.env.FRONTEND_URL ?? '';
 
+  // Look up caller context BEFORE creating the new MissedCall so the tier
+  // calculation reflects prior calls (not this one).
+  const callerContext = await getCallerContext(tenant.id, from).catch((err) => {
+    logger.error('getCallerContext failed', { err, tenantId: tenant.id });
+    return null;
+  });
+  const tier: CallerTier = callerContext?.tier ?? 'NEW';
+
   // Create the missed call record immediately
   let missedCallId: string | null = null;
   try {
@@ -110,6 +177,7 @@ export async function POST(request: NextRequest) {
         occurredAt: new Date(),
         smsSent: false,
         transcriptionStatus: 'pending',
+        callerTier: tier,
       },
       select: { id: true },
     });
@@ -128,8 +196,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Pick open vs after-hours greetings (falls back to regular when after-hours fields are blank)
-  const open = tenant.config
+  // High-priority alert when the same caller is rapid-redialing — debounced
+  // to once per (tenant, caller) per 30 minutes so we don't spam the owner.
+  if (tier === 'RAPID_REDIAL') {
+    acquireAlertLock(`rapidredial:${tenant.id}:${from}`, 30 * 60)
+      .then((acquired) => {
+        if (!acquired) return;
+        const callCount = (callerContext?.recentMissedCalls.length ?? 0) + 1;
+        return sendHighPriorityAlert({
+          tenantId: tenant.id,
+          subject: `Repeat caller — ${maskPhone(from)}`,
+          message: `${maskPhone(from)} has called ${callCount} times in the last few minutes. Probably urgent.`,
+        });
+      })
+      .catch((err) => logger.error('Rapid-redial alert failed', { err, tenantId: tenant.id }));
+  }
+
+  // Pick open vs after-hours / tier-aware greetings
+  const isOpen = tenant.config
     ? isWithinBusinessHours({
         businessHoursStart: tenant.config.businessHoursStart,
         businessHoursEnd: tenant.config.businessHoursEnd,
@@ -140,12 +224,11 @@ export async function POST(request: NextRequest) {
       })
     : true;
 
-  const smsGreeting = open
-    ? tenant.config?.greeting
-    : tenant.config?.greetingAfterHours?.trim() || tenant.config?.greeting;
-  const voiceGreetingText = open
-    ? tenant.config?.voiceGreeting ?? null
-    : (tenant.config?.voiceGreetingAfterHours?.trim() || tenant.config?.voiceGreeting) ?? null;
+  const { sms: smsGreeting, voice: voiceGreetingText } = selectGreeting({
+    tier,
+    isAfterHours: !isOpen,
+    config: tenant.config,
+  });
 
   // Send the SMS greeting immediately (don't wait for voicemail)
   if (smsGreeting) {
@@ -168,7 +251,7 @@ export async function POST(request: NextRequest) {
     transcribeCallbackUrl: `${baseUrl}/api/webhooks/twilio/transcription-callback`,
   });
 
-  logger.info('Voice webhook responded with TwiML', { tenantId: tenant.id, callSid });
+  logger.info('Voice webhook responded with TwiML', { tenantId: tenant.id, callSid, tier });
 
   return new Response(twiml, {
     headers: { 'Content-Type': 'text/xml' },
