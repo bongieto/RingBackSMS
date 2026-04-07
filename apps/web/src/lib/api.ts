@@ -65,6 +65,15 @@ export const conversationApi = {
 export const analyticsApi = {
   get: (tenantId: string, days = 30) =>
     api.get(`/analytics/${tenantId}`, { params: { days } }).then((r) => r.data.data),
+  recovery: (tenantId: string, days = 30) => {
+    const to = new Date();
+    const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+    return webApi
+      .get('/analytics/recovery', {
+        params: { tenantId, from: from.toISOString(), to: to.toISOString() },
+      })
+      .then((r) => r.data.data);
+  },
 };
 
 export const billingApi = {
