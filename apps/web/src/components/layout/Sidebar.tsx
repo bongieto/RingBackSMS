@@ -3,8 +3,11 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
+import axios from 'axios';
 import {
   LayoutDashboard,
+  ListChecks,
   MessageSquare,
   ShoppingBag,
   Calendar,
@@ -27,6 +30,7 @@ import { UserButton, OrganizationSwitcher } from '@clerk/nextjs';
 
 const navItems = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
+  { href: '/dashboard/tasks', label: 'Action Items', icon: ListChecks, badgeKey: 'tasks' as const },
   { href: '/dashboard/conversations', label: 'Conversations', icon: MessageSquare },
   { href: '/dashboard/voicemails', label: 'Voicemails', icon: Voicemail },
   { href: '/dashboard/contacts', label: 'Contacts', icon: Users },
@@ -42,8 +46,19 @@ const navItems = [
   { href: '/help', label: 'Help Center', icon: HelpCircle },
 ];
 
+function useTaskBadge() {
+  const { data } = useQuery<{ open: number; urgent: number }>({
+    queryKey: ['tasks-count'],
+    queryFn: () => axios.get('/api/tasks/count').then((r) => r.data.data),
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+  return data ?? { open: 0, urgent: 0 };
+}
+
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  const taskBadge = useTaskBadge();
 
   return (
     <>
@@ -90,7 +105,19 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               )}
             >
               <Icon className="h-4 w-4 shrink-0" />
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {('badgeKey' in item) && item.badgeKey === 'tasks' && taskBadge.open > 0 && (
+                <span
+                  className={cn(
+                    'ml-auto inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-semibold min-w-[20px]',
+                    taskBadge.urgent > 0
+                      ? 'bg-red-500 text-white animate-pulse'
+                      : 'bg-blue-500 text-white'
+                  )}
+                >
+                  {taskBadge.open}
+                </span>
+              )}
             </Link>
           );
         })}

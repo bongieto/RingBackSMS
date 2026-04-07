@@ -6,6 +6,7 @@ import { StatCard } from '@/components/dashboard/StatCard';
 import { PosStatusCard } from '@/components/dashboard/PosStatusCard';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ActionItemsCard } from '@/components/dashboard/ActionItemsCard';
 import { Badge } from '@/components/ui/badge';
 import { analyticsApi, conversationApi, tenantApi } from '@/lib/api';
 import { formatRelativeTime, maskPhone } from '@/lib/utils';
@@ -40,6 +41,10 @@ export default function DashboardPage() {
         title="Overview"
         description="Your RingBack activity for the last 30 days"
       />
+
+      <div className="mb-6">
+        <ActionItemsCard />
+      </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
