@@ -175,6 +175,26 @@ export default function SettingsPage() {
     onError: () => toast.error('Failed to generate greeting'),
   });
 
+  const generateAllGreetingsMutation = useMutation({
+    mutationFn: () => tenantApi.generateAllGreetings(tenantId!),
+    onSuccess: (data: { generated: Record<string, string> }) => {
+      const g = data.generated ?? {};
+      setForm(f => ({
+        ...f,
+        greeting: g.greeting || f.greeting,
+        greetingAfterHours: g.greetingAfterHours || f.greetingAfterHours,
+        greetingRapidRedial: g.greetingRapidRedial || f.greetingRapidRedial,
+        greetingReturning: g.greetingReturning || f.greetingReturning,
+        voiceGreeting: g.voiceGreeting || f.voiceGreeting,
+        voiceGreetingAfterHours: g.voiceGreetingAfterHours || f.voiceGreetingAfterHours,
+        voiceGreetingRapidRedial: g.voiceGreetingRapidRedial || f.voiceGreetingRapidRedial,
+        voiceGreetingReturning: g.voiceGreetingReturning || f.voiceGreetingReturning,
+      }));
+      toast.success('All greetings generated! Review each one and save when ready.');
+    },
+    onError: () => toast.error('Failed to generate greetings (rate-limited or service error)'),
+  });
+
   const testNotificationMutation = useMutation({
     mutationFn: (channel: 'email' | 'sms' | 'slack') =>
       notificationApi.test(tenantId!, channel),
@@ -345,6 +365,25 @@ export default function SettingsPage() {
             <CardDescription>This SMS is sent immediately when a call is missed</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 flex items-start gap-3">
+              <Sparkles className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="font-medium">Let AI write all 8 greetings for you</p>
+                <p className="text-xs text-blue-800 mt-0.5">
+                  Set your brand voice in <span className="font-medium">AI Personality</span> below, then click Generate. AI optimizes for SMS length and tier-specific tone. You can edit anything before saving.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => generateAllGreetingsMutation.mutate()}
+                disabled={generateAllGreetingsMutation.isPending || !tenantId}
+              >
+                <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+                {generateAllGreetingsMutation.isPending ? 'Generating…' : 'Generate all'}
+              </Button>
+            </div>
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label>Greeting Message</Label>
