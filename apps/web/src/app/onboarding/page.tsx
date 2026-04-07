@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import api from '@/lib/api';
+import { webApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { Logo } from '@/components/Logo';
 import { getProfile } from '@/lib/businessTypeProfile';
@@ -63,7 +63,7 @@ export default function OnboardingPage() {
 
   const createTenantMutation = useMutation({
     mutationFn: () =>
-      api.post('/tenants', {
+      webApi.post('/tenants', {
         name: form.name,
         businessType: form.businessType,
         ownerEmail: form.ownerEmail,
@@ -74,7 +74,7 @@ export default function OnboardingPage() {
     onSuccess: async (tenant) => {
       // Update greeting if customized
       if (form.greeting) {
-        await api.patch(`/tenants/${tenant.id}/config`, { greeting: form.greeting });
+        await webApi.patch(`/tenants/${tenant.id}/config`, { greeting: form.greeting });
       }
       toast.success('Account created! Welcome to RingBackSMS 🎉');
       setStep(3);

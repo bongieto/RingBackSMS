@@ -198,14 +198,25 @@ export default function BillingPage() {
                   <div>{limits.squareIntegration ? '✓ POS Integration' : '✗ POS Integration'}</div>
                   <div>{limits.calcomIntegration ? '✓ Cal.com' : '✗ Cal.com'}</div>
                 </div>
-                {!isCurrent && plan !== Plan.ENTERPRISE && (
+                {!isCurrent && plan !== Plan.ENTERPRISE && plan !== Plan.STARTER && (
                   <Button
                     className="w-full mt-3"
                     size="sm"
                     onClick={() => checkoutMutation.mutate({ plan, interval: billingInterval })}
                     disabled={checkoutMutation.isPending}
                   >
-                    {plan === Plan.STARTER ? 'Downgrade' : 'Upgrade'}
+                    Upgrade
+                  </Button>
+                )}
+                {!isCurrent && plan === Plan.STARTER && currentPlan !== Plan.STARTER && (
+                  <Button
+                    variant="outline"
+                    className="w-full mt-3"
+                    size="sm"
+                    onClick={() => portalMutation.mutate()}
+                    disabled={portalMutation.isPending}
+                  >
+                    Downgrade via Portal
                   </Button>
                 )}
                 {plan === Plan.ENTERPRISE && !isCurrent && (
