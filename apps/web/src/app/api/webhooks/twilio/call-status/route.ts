@@ -1,8 +1,7 @@
 import { NextRequest } from 'next/server';
 import twilio from 'twilio';
 import { prisma } from '@/lib/server/db';
-import { sendSms } from '@/lib/server/services/twilioService';
-import { decryptNullable } from '@/lib/server/encryption';
+import { sendSms, getValidationToken } from '@/lib/server/services/twilioService';
 import { logger } from '@/lib/server/logger';
 import { TwilioCallStatusSchema } from '@ringback/shared-types';
 
@@ -27,7 +26,7 @@ export async function POST(request: NextRequest) {
   if (!tenant || !tenant.isActive) return new Response('OK', { status: 200 });
 
   // Verify Twilio signature
-  const authToken = decryptNullable(tenant.twilioAuthToken);
+  const authToken = getValidationToken(tenant);
   if (authToken) {
     const sig = request.headers.get('x-twilio-signature') ?? '';
     const url = `${process.env.FRONTEND_URL ?? ''}/api/webhooks/twilio/call-status`;

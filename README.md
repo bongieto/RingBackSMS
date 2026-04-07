@@ -132,6 +132,7 @@ All variables are required unless marked optional.
 |----------|-------------|
 | `TWILIO_MASTER_ACCOUNT_SID` | Master account SID for provisioning sub-accounts |
 | `TWILIO_MASTER_AUTH_TOKEN` | Master account auth token |
+| `TWILIO_MESSAGING_SERVICE_SID` | A2P 10DLC Messaging Service SID — new tenant numbers are attached here |
 
 ### MiniMax AI
 | Variable | Description |

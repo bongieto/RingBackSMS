@@ -2,9 +2,9 @@ import { NextRequest } from 'next/server';
 import twilio from 'twilio';
 import { prisma } from '@/lib/server/db';
 import { sendSms } from '@/lib/server/services/twilioService';
-import { decryptNullable } from '@/lib/server/encryption';
 import { logger } from '@/lib/server/logger';
 import { checkRateLimit } from '@/lib/server/rateLimit';
+import { getValidationToken } from '@/lib/server/services/twilioService';
 
 /** Build TwiML XML string without the Twilio SDK VoiceResponse class (avoids serverless bundling issues) */
 function buildVoiceTwiml(businessName: string, recordingCallbackUrl: string): string {
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Verify Twilio signature — fail-closed if token is missing
-  const authToken = decryptNullable(tenant.twilioAuthToken);
+  const authToken = getValidationToken(tenant);
   if (!authToken) {
     logger.error('Missing Twilio auth token, cannot validate signature', { tenantId: tenant.id });
     return new Response('Configuration error', { status: 500 });

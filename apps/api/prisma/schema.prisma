@@ -87,6 +87,7 @@ model Tenant {
   twilioSubAccountSid   String?      @unique
   twilioAuthToken       String?      // AES-256-GCM encrypted
   twilioPhoneNumber     String?      @unique
+  twilioPhoneNumberSid  String?      @unique
   stripeCustomerId      String?      @unique
   stripeSubscriptionId  String?      @unique
   clerkOrgId            String?      @unique
