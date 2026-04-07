@@ -107,8 +107,12 @@ export async function updateTenantConfig(
   updates: Partial<{
     greeting: string;
     greetingAfterHours: string | null;
+    greetingRapidRedial: string | null;
+    greetingReturning: string | null;
     voiceGreeting: string | null;
     voiceGreetingAfterHours: string | null;
+    voiceGreetingRapidRedial: string | null;
+    voiceGreetingReturning: string | null;
     voiceType: string;
     timezone: string;
     businessHoursStart: string;
