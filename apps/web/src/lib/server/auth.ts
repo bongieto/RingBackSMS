@@ -57,18 +57,6 @@ export async function verifyTenantAccess(tenantId: string): Promise<TenantAuthCo
   return { userId, orgId, tenantId };
 }
 
-/**
- * Verifies super-admin access. Returns userId or error response.
- */
-export async function requireSuperAdmin(): Promise<string | NextResponse> {
-  const { userId } = await auth();
-  if (!userId) return apiError('Authentication required', 401);
-  const adminId = process.env.SUPER_ADMIN_USER_ID?.trim();
-  // Fail closed: if the env var is missing, nobody is super-admin.
-  if (!adminId || userId !== adminId) return apiError('Forbidden', 403);
-  return userId;
-}
-
 export function isNextResponse(val: unknown): val is NextResponse {
   return val instanceof NextResponse;
 }

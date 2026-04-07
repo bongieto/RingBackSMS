@@ -137,17 +137,6 @@ export const contactApi = {
     webApi.post('/contacts/bulk', { tenantId, contactIds, action, value }).then((r) => r.data.data),
 };
 
-export const squareApi = {
-  getConnectUrl: (tenantId: string) =>
-    api.get('/integrations/square/connect', { params: { tenantId } }).then((r) => r.data.data),
-  disconnect: (tenantId: string) =>
-    api.delete('/integrations/square/disconnect', { params: { tenantId } }).then((r) => r.data.data),
-  syncCatalog: (tenantId: string) =>
-    api.post('/integrations/square/sync-catalog', null, { params: { tenantId } }).then((r) => r.data.data),
-  pushCatalog: (tenantId: string) =>
-    api.post('/integrations/square/push-catalog', null, { params: { tenantId } }).then((r) => r.data.data),
-};
-
 export const voicemailApi = {
   list: (tenantId: string, params?: Record<string, unknown>) =>
     webApi.get('/voicemails', { params: { tenantId, ...params } }).then((r) => r.data),
