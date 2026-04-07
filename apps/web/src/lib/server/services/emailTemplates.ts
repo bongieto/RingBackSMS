@@ -352,3 +352,72 @@ export function meetingRequestEmail(
     `),
   };
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// 8. Daily Task Digest — sent once a day with open action items
+// ────────────────────────────────────────────────────────────────────────────
+
+export function dailyTaskDigestEmail(
+  businessName: string,
+  tasks: Array<{
+    id: string;
+    title: string;
+    priority: 'URGENT' | 'HIGH' | 'NORMAL';
+    source: string;
+    callerPhone?: string | null;
+    createdAt: Date | string;
+  }>
+): { subject: string; html: string } {
+  const urgent = tasks.filter((t) => t.priority === 'URGENT');
+  const high = tasks.filter((t) => t.priority === 'HIGH');
+  const normal = tasks.filter((t) => t.priority === 'NORMAL');
+
+  const priorityColor = (p: string) =>
+    p === 'URGENT' ? '#dc2626' : p === 'HIGH' ? '#d97706' : '#64748b';
+
+  const row = (t: (typeof tasks)[number]) => `
+    <tr>
+      <td style="padding:10px 12px;border-bottom:1px solid ${BORDER_COLOR};vertical-align:top;">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${priorityColor(t.priority)};margin-right:8px;"></span>
+        <strong style="color:#1a1a1a;font-size:14px;">${escapeHtml(t.title)}</strong>
+        <div style="color:#94a3b8;font-size:12px;margin-top:2px;">
+          ${t.source}${t.callerPhone ? ` · ${escapeHtml(t.callerPhone)}` : ''}
+        </div>
+      </td>
+    </tr>`;
+
+  const section = (label: string, list: typeof tasks) =>
+    list.length === 0
+      ? ''
+      : `
+    <h3 style="color:${priorityColor(list[0].priority)};font-size:14px;text-transform:uppercase;letter-spacing:0.5px;margin:24px 0 8px;">${label} (${list.length})</h3>
+    <table style="width:100%;border-collapse:collapse;border:1px solid ${BORDER_COLOR};border-radius:8px;overflow:hidden;">
+      ${list.map(row).join('')}
+    </table>`;
+
+  const total = tasks.length;
+  return {
+    subject: `${total} action item${total === 1 ? '' : 's'} waiting${urgent.length > 0 ? ` — ${urgent.length} urgent` : ''}`,
+    html: layout(`
+      <h2 style="color:#1a1a1a;font-size:22px;margin:0 0 8px;">Your action items</h2>
+      <p style="color:#64748b;font-size:15px;line-height:1.6;margin:0 0 16px;">
+        Good morning ${escapeHtml(businessName)}. You have <strong>${total}</strong> open item${total === 1 ? '' : 's'} in your inbox.
+      </p>
+      ${section('Urgent', urgent)}
+      ${section('High priority', high)}
+      ${section('Normal', normal)}
+      <div style="text-align:center;margin-top:28px;">
+        ${button('Open dashboard', `${DASHBOARD_URL}/dashboard/tasks`)}
+      </div>
+    `),
+  };
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}

@@ -10,6 +10,7 @@ import {
   weeklyDigestEmail,
   meetingConfirmationEmail,
   meetingRequestEmail,
+  dailyTaskDigestEmail,
 } from './emailTemplates';
 
 let resendClient: Resend | null = null;
@@ -104,6 +105,23 @@ export async function sendMeetingConfirmationEmail(
   if (!email) return;
   const { subject, html } = meetingConfirmationEmail(name, meeting);
   await sendEmail(email, subject, html);
+}
+
+export async function sendDailyTaskDigestEmail(
+  tenantId: string,
+  tasks: Array<{
+    id: string;
+    title: string;
+    priority: 'URGENT' | 'HIGH' | 'NORMAL';
+    source: string;
+    callerPhone?: string | null;
+    createdAt: Date | string;
+  }>
+): Promise<boolean> {
+  const { email, name } = await getTenantEmail(tenantId);
+  if (!email) return false;
+  const { subject, html } = dailyTaskDigestEmail(name, tasks);
+  return sendEmail(email, subject, html);
 }
 
 export async function sendMeetingRequestEmail(
