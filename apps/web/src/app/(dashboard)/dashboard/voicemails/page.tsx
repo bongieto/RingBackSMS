@@ -4,14 +4,14 @@ import { Fragment, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/nextjs';
 import { toast } from 'sonner';
-import { Voicemail, Phone, MessageSquare, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { Voicemail, Phone, MessageSquare, ChevronLeft, ChevronRight, Trash2, PhoneCall, Reply } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { voicemailApi } from '@/lib/api';
+import { voicemailApi, replyTemplateApi } from '@/lib/api';
 import { maskPhone } from '@/lib/utils';
 
 interface VoicemailContact {
@@ -98,7 +98,30 @@ export default function VoicemailsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [intentFilter, setIntentFilter] = useState<VoicemailIntent | ''>('');
+  const [replyOpenId, setReplyOpenId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
   const queryClient = useQueryClient();
+
+  const { data: templates = [] } = useQuery<{ id: string; label: string; body: string }[]>({
+    queryKey: ['reply-templates', tenantId],
+    queryFn: () => replyTemplateApi.list(tenantId!),
+    enabled: !!tenantId,
+  });
+
+  const sendReply = useMutation({
+    mutationFn: ({ id, message }: { id: string; message: string }) => voicemailApi.reply(id, message),
+    onSuccess: () => {
+      toast.success('Reply sent');
+      setReplyOpenId(null);
+      setReplyText('');
+    },
+    onError: () => toast.error('Failed to send reply'),
+  });
+
+  const openReply = (id: string) => {
+    setReplyOpenId(id);
+    setReplyText('');
+  };
 
   const { data, isLoading } = useQuery<PaginatedResponse>({
     queryKey: ['voicemails', tenantId, page, intentFilter],
@@ -352,15 +375,33 @@ export default function VoicemailsPage() {
                       </Badge>
                     </td>
                     <td className="p-4">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        aria-label="Delete voicemail"
-                        onClick={() => handleDeleteOne(vm.id)}
-                        disabled={deleteOne.isPending}
-                      >
-                        <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label="Reply by SMS"
+                          onClick={(e) => { e.stopPropagation(); openReply(vm.id); if (!expanded.has(vm.id)) toggleExpand(vm.id); }}
+                        >
+                          <Reply className="h-4 w-4" />
+                        </Button>
+                        <a
+                          href={`tel:${vm.callerPhone}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md hover:bg-accent"
+                          aria-label="Call back"
+                        >
+                          <PhoneCall className="h-4 w-4" />
+                        </a>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label="Delete voicemail"
+                          onClick={(e) => { e.stopPropagation(); handleDeleteOne(vm.id); }}
+                          disabled={deleteOne.isPending}
+                        >
+                          <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                   {expanded.has(vm.id) && (
@@ -378,6 +419,49 @@ export default function VoicemailsPage() {
                             </span>
                           )}
                         </div>
+                        {replyOpenId === vm.id && (
+                          <div className="mt-4 space-y-2 border-t pt-3" onClick={(e) => e.stopPropagation()}>
+                            <div className="text-xs uppercase text-muted-foreground">Reply by SMS</div>
+                            {templates.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {templates.map((t) => (
+                                  <button
+                                    key={t.id}
+                                    type="button"
+                                    className="text-xs rounded-full border px-2.5 py-1 hover:bg-accent"
+                                    onClick={() => setReplyText(t.body)}
+                                  >
+                                    {t.label}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            <textarea
+                              value={replyText}
+                              onChange={(e) => setReplyText(e.target.value)}
+                              placeholder="Type your reply…"
+                              rows={3}
+                              maxLength={1600}
+                              className="w-full rounded-md border border-input bg-background p-2 text-sm"
+                            />
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => { setReplyOpenId(null); setReplyText(''); }}
+                              >
+                                Cancel
+                              </Button>
+                              <Button
+                                size="sm"
+                                disabled={!replyText.trim() || sendReply.isPending}
+                                onClick={() => sendReply.mutate({ id: vm.id, message: replyText.trim() })}
+                              >
+                                Send reply
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )}

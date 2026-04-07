@@ -146,6 +146,19 @@ export const voicemailApi = {
     webApi.delete(`/voicemails/${id}`, { params: { tenantId } }).then((r) => r.data),
   bulkDelete: (tenantId: string, ids: string[]) =>
     webApi.post('/voicemails/bulk-delete', { tenantId, ids }).then((r) => r.data),
+  reply: (id: string, message: string) =>
+    webApi.post(`/voicemails/${id}/reply`, { message }).then((r) => r.data),
+};
+
+export const replyTemplateApi = {
+  list: (tenantId: string) =>
+    webApi.get('/reply-templates', { params: { tenantId } }).then((r) => r.data.data),
+  create: (tenantId: string, label: string, body: string) =>
+    webApi.post('/reply-templates', { tenantId, label, body }).then((r) => r.data.data),
+  update: (id: string, data: { label?: string; body?: string; sortOrder?: number }) =>
+    webApi.patch(`/reply-templates/${id}`, data).then((r) => r.data.data),
+  delete: (id: string) =>
+    webApi.delete(`/reply-templates/${id}`).then((r) => r.data.data),
 };
 
 export const searchApi = {

@@ -118,6 +118,7 @@ model Tenant {
   usageLogs     UsageLog[]
   contacts      Contact[]
   syncLogs      PosSyncLog[]
+  replyTemplates ReplyTemplate[]
 
   @@index([twilioPhoneNumber])
   @@index([clerkOrgId])
@@ -376,6 +377,19 @@ model PosSyncLog {
   completedAt    DateTime?
 
   @@index([tenantId, startedAt])
+}
+
+model ReplyTemplate {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  label     String
+  body      String   @db.Text
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 model ContactNote {
