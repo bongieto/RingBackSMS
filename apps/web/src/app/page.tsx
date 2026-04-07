@@ -601,8 +601,17 @@ export default function HomePage() {
         </nav>
 
         {/* ─── Hero Section ────────────────────────────────────────── */}
-        <section className="pt-32 pb-20 sm:pt-40 sm:pb-28 bg-gradient-to-b from-slate-50 to-white">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <section
+          className="relative pt-32 pb-20 sm:pt-40 sm:pb-28 overflow-hidden bg-cover bg-center"
+          style={{
+            backgroundImage:
+              "url('https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=2000&q=80')",
+          }}
+        >
+          {/* Light gradient overlay so copy stays legible */}
+          <div className="absolute inset-0 bg-gradient-to-r from-white via-white/90 to-white/40" />
+          <div className="absolute inset-0 bg-gradient-to-b from-white/60 via-transparent to-white/80" />
+          <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid lg:grid-cols-2 gap-12 items-center">
               {/* Left: Copy */}
               <div className="space-y-6 sm:space-y-8 text-center lg:text-left">
