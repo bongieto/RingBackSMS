@@ -28,6 +28,12 @@ export default function AnalyticsPage() {
     enabled: !!tenantId,
   });
 
+  const { data: recovery } = useQuery({
+    queryKey: ['analytics-recovery', tenantId, days],
+    queryFn: () => analyticsApi.recovery(tenantId!, days),
+    enabled: !!tenantId,
+  });
+
   const usageChartData = Object.entries(analytics?.usage ?? {}).map(([type, count]) => ({
     name: type.replace('_', ' '),
     count: count as number,
@@ -67,6 +73,76 @@ export default function AnalyticsPage() {
         <StatCard title="Meetings" value={analytics?.meetings ?? 0} icon={Calendar} iconColor="text-orange-500" />
         <StatCard title="Revenue" value={formatRevenue(analytics?.revenue ?? 0)} icon={DollarSign} iconColor="text-emerald-500" />
       </div>
+
+      {/* Recovery Funnel */}
+      {recovery && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Recovery Funnel</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              const steps = [
+                { label: 'Missed calls', value: recovery.missedCalls },
+                { label: 'SMS sent', value: recovery.smsSent },
+                { label: 'Caller replied', value: recovery.callerReplied },
+                { label: 'Owner responded', value: recovery.ownerResponded },
+                { label: 'Orders created', value: recovery.ordersCreated },
+              ];
+              const max = Math.max(1, ...steps.map((s) => s.value));
+              return (
+                <div className="space-y-3">
+                  {steps.map((s, i) => {
+                    const pct = (s.value / max) * 100;
+                    const dropRate = i > 0 && steps[i - 1].value > 0
+                      ? Math.round(((steps[i - 1].value - s.value) / steps[i - 1].value) * 100)
+                      : null;
+                    return (
+                      <div key={s.label}>
+                        <div className="flex items-baseline justify-between text-sm mb-1">
+                          <span className="font-medium">{s.label}</span>
+                          <span className="text-muted-foreground">
+                            {s.value}
+                            {dropRate !== null && dropRate > 0 && (
+                              <span className="ml-2 text-xs text-red-500">−{dropRate}%</span>
+                            )}
+                          </span>
+                        </div>
+                        <div className="h-3 rounded bg-muted overflow-hidden">
+                          <div
+                            className="h-full bg-blue-500 transition-all"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="grid grid-cols-3 gap-4 pt-4 border-t mt-4 text-sm">
+                    <div>
+                      <div className="text-muted-foreground text-xs">Conversion</div>
+                      <div className="font-semibold text-lg">
+                        {(recovery.conversionRate * 100).toFixed(1)}%
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground text-xs">Avg response time</div>
+                      <div className="font-semibold text-lg">
+                        {recovery.avgResponseTimeSeconds > 0
+                          ? `${Math.round(recovery.avgResponseTimeSeconds / 60)}m`
+                          : '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground text-xs">Meetings booked</div>
+                      <div className="font-semibold text-lg">{recovery.meetingsBooked}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Daily Trend Chart */}
       {dailyTrend.length > 0 && (

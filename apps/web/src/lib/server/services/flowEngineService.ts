@@ -210,6 +210,23 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     });
   }
 
+  // Mark firstReplyAt on the most recent missed call from this caller (idempotent).
+  try {
+    const recentMissedCall = await prisma.missedCall.findFirst({
+      where: { tenantId, callerPhone, firstReplyAt: null },
+      orderBy: { occurredAt: 'desc' },
+      select: { id: true },
+    });
+    if (recentMissedCall) {
+      await prisma.missedCall.update({
+        where: { id: recentMissedCall.id },
+        data: { firstReplyAt: new Date() },
+      });
+    }
+  } catch (err) {
+    logger.error('Failed to set firstReplyAt', { err, tenantId, callerPhone });
+  }
+
   // Notify owner if escalation
   if (isEscalation) {
     await sendNotification({

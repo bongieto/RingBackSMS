@@ -31,6 +31,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     // Send the SMS first — if Twilio rejects, don't pollute the conversation.
     await sendSms(missedCall.tenantId, missedCall.callerPhone, message);
 
+    // Stamp the response timestamp for funnel analytics (idempotent: only first time).
+    await prisma.missedCall.updateMany({
+      where: { id: missedCall.id, ownerRespondedAt: null },
+      data: { ownerRespondedAt: new Date() },
+    });
+
     // Find the most recent active conversation for this caller, else create one
     // tied to this missed call.
     let conversation = await prisma.conversation.findFirst({

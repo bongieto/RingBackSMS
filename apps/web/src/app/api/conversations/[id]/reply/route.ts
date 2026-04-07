@@ -19,6 +19,27 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (isNextResponse(authResult)) return authResult;
 
     await sendSms(conversation.tenantId, conversation.callerPhone, message);
+
+    // Stamp ownerRespondedAt on the most recent unanswered missed call from this caller.
+    try {
+      const recent = await prisma.missedCall.findFirst({
+        where: {
+          tenantId: conversation.tenantId,
+          callerPhone: conversation.callerPhone,
+          ownerRespondedAt: null,
+        },
+        orderBy: { occurredAt: 'desc' },
+        select: { id: true },
+      });
+      if (recent) {
+        await prisma.missedCall.update({
+          where: { id: recent.id },
+          data: { ownerRespondedAt: new Date() },
+        });
+      }
+    } catch (err) {
+      logger.error('Failed to set ownerRespondedAt from conversation reply', { err, conversationId: params.id });
+    }
     const existing = decryptMessages(conversation.messages);
     const updatedMessages = [
       ...existing,

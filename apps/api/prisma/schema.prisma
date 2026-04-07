@@ -185,6 +185,8 @@ model MissedCall {
   voicemailSummary    String?   @db.Text
   voicemailIntent     String?
   transcriptionStatus String?
+  firstReplyAt        DateTime?
+  ownerRespondedAt    DateTime?
   contactId           String?
   contact             Contact?  @relation(fields: [contactId], references: [id])
   createdAt           DateTime  @default(now())
