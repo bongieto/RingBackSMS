@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { Phone, Sparkles, Globe, MapPin, CheckCircle, X, Copy, CalendarOff, Plus, CreditCard, Send } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { ReplyTemplatesCard } from '@/components/settings/ReplyTemplatesCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -576,6 +577,9 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Reply Templates */}
+        <ReplyTemplatesCard tenantId={tenantId} />
 
         {/* Payments */}
         <Card>
