@@ -421,7 +421,7 @@ const PRICING = [
       'Daily digest email',
       'Priority support',
     ],
-    cta: 'Start 14-Day Trial',
+    cta: 'Start Free',
     highlighted: true,
   },
   {
@@ -442,7 +442,7 @@ const PRICING = [
       'AI ↔ human handoff tracking',
       'Priority phone support',
     ],
-    cta: 'Start 14-Day Trial',
+    cta: 'Start Free',
     highlighted: false,
   },
   {
@@ -933,7 +933,7 @@ export default function HomePage() {
             </div>
             <PricingSection plans={PRICING} />
             <p className="text-center text-sm text-slate-500 mt-8">
-              All plans include a 14-day free trial. No credit card required to start. Cancel anytime.
+              Start free — no credit card required. Upgrade anytime from your dashboard.
             </p>
           </div>
         </section>

@@ -42,7 +42,7 @@ const PRICING_PLANS = [
     description: 'Most small shops',
     sms: '750 SMS/month',
     features: ['Everything in Starter', 'Order, Meeting & Inquiry flows', 'POS integration (Square, Clover, Toast, Shopify)', 'Caller memory & reorder shortcuts', 'Custom AI personality', 'Daily digest email', 'Priority support'],
-    cta: 'Start 14-day trial',
+    cta: 'Start Free',
     highlighted: true,
   },
   {
@@ -55,7 +55,7 @@ const PRICING_PLANS = [
     description: 'Multi-tech / multi-location',
     sms: '5,000 SMS/month',
     features: ['Everything in Growth', 'Slack notifications', 'Two-way POS catalog sync', 'Recovery funnel analytics', 'Urgency keyword escalation', 'AI ↔ human handoff tracking', 'Priority phone support'],
-    cta: 'Start 14-day trial',
+    cta: 'Start Free',
     highlighted: false,
   },
   {
