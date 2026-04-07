@@ -59,6 +59,8 @@ export const TenantConfigSchema = z.object({
   id: z.string().uuid(),
   tenantId: z.string().uuid(),
   greeting: z.string(),
+  voiceGreeting: z.string().nullable(),
+  voiceType: z.string().default('Polly.Joanna'),
   timezone: z.string().default('America/Chicago'),
   businessHoursStart: z.string().default('11:00'),
   businessHoursEnd: z.string().default('20:00'),
