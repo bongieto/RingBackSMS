@@ -57,6 +57,43 @@ export async function POST(request: NextRequest) {
           ? session.payment_intent
           : session.payment_intent?.id ?? session.id;
 
+        // Enrich the Contact with whatever Stripe knows about this customer.
+        // Only fills blank fields so we never clobber manually-edited data.
+        if (tenantId && callerPhone) {
+          const stripeCustomerId = typeof session.customer === 'string'
+            ? session.customer
+            : session.customer?.id ?? null;
+          const customerEmail = session.customer_details?.email ?? null;
+          const customerName = session.customer_details?.name ?? null;
+
+          try {
+            const existing = await prisma.contact.findFirst({
+              where: { tenantId, phone: callerPhone },
+              select: { id: true, name: true, email: true, stripeCustomerId: true },
+            });
+            if (existing) {
+              const patch: {
+                name?: string;
+                email?: string;
+                stripeCustomerId?: string;
+              } = {};
+              if (!existing.name && customerName) patch.name = customerName;
+              if (!existing.email && customerEmail) patch.email = customerEmail;
+              if (!existing.stripeCustomerId && stripeCustomerId) patch.stripeCustomerId = stripeCustomerId;
+              if (Object.keys(patch).length > 0) {
+                await prisma.contact.update({ where: { id: existing.id }, data: patch });
+                logger.info('Contact enriched from Stripe checkout', {
+                  tenantId,
+                  contactId: existing.id,
+                  filled: Object.keys(patch),
+                });
+              }
+            }
+          } catch (err) {
+            logger.warn('Contact enrichment from Stripe failed', { err, tenantId });
+          }
+        }
+
         if (orderId && tenantId) {
           // Pay-after-order flow: order already exists, just mark as paid
           await prisma.order.update({
