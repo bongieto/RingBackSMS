@@ -14,6 +14,14 @@ import { Input } from '@/components/ui/input';
 import { voicemailApi } from '@/lib/api';
 import { maskPhone } from '@/lib/utils';
 
+interface VoicemailContact {
+  id: string;
+  name: string | null;
+  status: 'LEAD' | 'CUSTOMER' | 'VIP' | 'INACTIVE';
+  totalOrders: number;
+  totalSpent: number;
+}
+
 interface VoicemailRecord {
   id: string;
   callerPhone: string;
@@ -21,6 +29,27 @@ interface VoicemailRecord {
   voicemailReceivedAt: string | null;
   occurredAt: string;
   smsSent: boolean;
+  repeatCount24h: number;
+  contact: VoicemailContact | null;
+}
+
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function statusBadgeVariant(status: VoicemailContact['status']): 'default' | 'success' | 'outline' | 'secondary' {
+  switch (status) {
+    case 'VIP':
+      return 'default';
+    case 'CUSTOMER':
+      return 'success';
+    case 'INACTIVE':
+      return 'secondary';
+    default:
+      return 'outline';
+  }
 }
 
 interface PaginatedResponse {
@@ -192,9 +221,35 @@ export default function VoicemailsPage() {
                       />
                     </td>
                     <td className="p-4">
-                      <div className="flex items-center gap-2">
-                        <Phone className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm font-mono">{maskPhone(vm.callerPhone)}</span>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Phone className="h-4 w-4 text-muted-foreground" />
+                          {vm.contact?.name ? (
+                            <a
+                              href={`/dashboard/contacts/${vm.contact.id}`}
+                              className="text-sm font-medium hover:underline"
+                            >
+                              {vm.contact.name}
+                            </a>
+                          ) : (
+                            <span className="text-sm font-mono">{maskPhone(vm.callerPhone)}</span>
+                          )}
+                          {vm.contact && (
+                            <Badge variant={statusBadgeVariant(vm.contact.status)} className="text-xs">
+                              {vm.contact.status}
+                            </Badge>
+                          )}
+                          {vm.repeatCount24h > 1 && (
+                            <Badge variant="outline" className="text-xs">
+                              {ordinal(vm.repeatCount24h)} call today
+                            </Badge>
+                          )}
+                        </div>
+                        {vm.contact?.name && (
+                          <span className="text-xs font-mono text-muted-foreground ml-6">
+                            {maskPhone(vm.callerPhone)}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="p-4 text-sm">
