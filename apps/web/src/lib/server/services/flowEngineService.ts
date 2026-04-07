@@ -1,4 +1,5 @@
-import { runFlowEngine, TenantContext, detectEscalationIntent } from '@ringback/flow-engine';
+import { runFlowEngine, TenantContext, detectEscalationIntent, type CallerMemory } from '@ringback/flow-engine';
+import { getCallerContext } from './callerContextService';
 import { FlowType, SideEffect } from '@ringback/shared-types';
 import { getCallerState, setCallerState, isDuplicate } from './stateService';
 import { createOrder } from './orderService';
@@ -136,6 +137,35 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     timezone: tenant.config.timezone,
   });
 
+  // Build caller memory so the AI can greet by name and reference prior orders
+  const callerContext = await getCallerContext(tenantId, callerPhone).catch((err) => {
+    logger.warn('getCallerContext failed in processInboundSms', { err, tenantId });
+    return null;
+  });
+
+  let callerMemory: CallerMemory | undefined;
+  if (callerContext) {
+    const contactName: string | null = callerContext.contact?.name ?? null;
+
+    let lastOrderSummary: string | null = null;
+    if (callerContext.lastOrder) {
+      const daysAgo = Math.max(
+        1,
+        Math.round((Date.now() - callerContext.lastOrder.createdAt.getTime()) / (24 * 60 * 60 * 1000))
+      );
+      const total = (callerContext.lastOrder.totalCents / 100).toFixed(2);
+      lastOrderSummary = `order #${callerContext.lastOrder.orderNumber}, $${total}, ${daysAgo} day${daysAgo === 1 ? '' : 's'} ago`;
+    }
+
+    callerMemory = {
+      contactName,
+      contactStatus: callerContext.contact?.status ?? null,
+      tier: callerContext.tier,
+      lastOrderSummary,
+      lastConversationPreview: callerContext.lastConversation?.lastMessagePreview ?? null,
+    };
+  }
+
   // Run flow engine
   const result = await runFlowEngine({
     tenantContext,
@@ -143,6 +173,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     inboundMessage,
     currentState,
     aiApiKey: process.env.MINIMAX_API_KEY ?? '',
+    callerMemory,
   });
 
   // Prepend after-hours notice if outside business hours
