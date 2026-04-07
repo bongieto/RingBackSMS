@@ -130,6 +130,8 @@ export async function updateTenantConfig(
     squareSyncEnabled: boolean;
     squareAutoSync: boolean;
     requirePayment: boolean;
+    dailyDigestEnabled: boolean;
+    dailyDigestHour: number;
   }>
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

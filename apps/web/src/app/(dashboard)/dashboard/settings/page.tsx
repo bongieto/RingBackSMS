@@ -40,6 +40,8 @@ interface TenantConfig {
   businessAddress: string | null;
   websiteUrl: string | null;
   requirePayment?: boolean;
+  dailyDigestEnabled?: boolean;
+  dailyDigestHour?: number;
 }
 
 const TIMEZONES = [
@@ -116,6 +118,8 @@ export default function SettingsPage() {
     businessAddress: '',
     websiteUrl: '',
     requirePayment: false,
+    dailyDigestEnabled: true,
+    dailyDigestHour: 8,
   });
 
   const [newClosedDate, setNewClosedDate] = useState('');
@@ -162,6 +166,8 @@ export default function SettingsPage() {
         businessAddress: config.businessAddress ?? '',
         websiteUrl: config.websiteUrl ?? '',
         requirePayment: config.requirePayment ?? false,
+        dailyDigestEnabled: (config as any).dailyDigestEnabled ?? true,
+        dailyDigestHour: (config as any).dailyDigestHour ?? 8,
       });
     }
   }, [config]);
@@ -232,6 +238,8 @@ export default function SettingsPage() {
         businessAddress: form.businessAddress || undefined,
         websiteUrl: form.websiteUrl || undefined,
         requirePayment: form.requirePayment,
+        dailyDigestEnabled: form.dailyDigestEnabled,
+        dailyDigestHour: form.dailyDigestHour,
       });
     },
     onSuccess: () => {
@@ -712,6 +720,37 @@ export default function SettingsPage() {
                   )}
                 </div>
               </div>
+            </div>
+            <div className="pt-4 border-t space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Daily action-items digest</Label>
+                  <p className="text-xs text-muted-foreground">Email me a daily summary of open tasks</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={form.dailyDigestEnabled}
+                  onChange={(e) => setForm((f) => ({ ...f, dailyDigestEnabled: e.target.checked }))}
+                  className="h-4 w-4"
+                />
+              </div>
+              {form.dailyDigestEnabled && (
+                <div className="space-y-1.5 max-w-xs">
+                  <Label>Send at</Label>
+                  <select
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={form.dailyDigestHour}
+                    onChange={(e) => setForm((f) => ({ ...f, dailyDigestHour: parseInt(e.target.value, 10) }))}
+                  >
+                    {Array.from({ length: 24 }, (_, h) => (
+                      <option key={h} value={h}>
+                        {h === 0 ? '12:00 AM' : h < 12 ? `${h}:00 AM` : h === 12 ? '12:00 PM' : `${h - 12}:00 PM`}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground">In your business timezone ({form.timezone})</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

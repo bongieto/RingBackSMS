@@ -42,6 +42,8 @@ export const UpdateTenantConfigRequestSchema = z.object({
   squareSyncEnabled: z.boolean().optional(),
   squareAutoSync: z.boolean().optional(),
   requirePayment: z.boolean().optional(),
+  dailyDigestEnabled: z.boolean().optional(),
+  dailyDigestHour: z.number().int().min(0).max(23).optional(),
 });
 
 export type UpdateTenantConfigRequest = z.infer<typeof UpdateTenantConfigRequestSchema>;
