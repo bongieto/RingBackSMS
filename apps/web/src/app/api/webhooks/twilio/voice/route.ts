@@ -6,6 +6,7 @@ import { logger } from '@/lib/server/logger';
 import { checkRateLimit } from '@/lib/server/rateLimit';
 import { getValidationToken } from '@/lib/server/services/twilioService';
 import { linkMissedCallToContact } from '@/lib/server/services/contactLinking';
+import { isWithinBusinessHours } from '@/lib/server/businessHours';
 
 const ALLOWED_VOICES = new Set([
   'Polly.Joanna-Neural',
@@ -127,9 +128,28 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Pick open vs after-hours greetings (falls back to regular when after-hours fields are blank)
+  const open = tenant.config
+    ? isWithinBusinessHours({
+        businessHoursStart: tenant.config.businessHoursStart,
+        businessHoursEnd: tenant.config.businessHoursEnd,
+        businessDays: tenant.config.businessDays,
+        businessSchedule: (tenant.config.businessSchedule as any) ?? null,
+        closedDates: tenant.config.closedDates,
+        timezone: tenant.config.timezone,
+      })
+    : true;
+
+  const smsGreeting = open
+    ? tenant.config?.greeting
+    : tenant.config?.greetingAfterHours?.trim() || tenant.config?.greeting;
+  const voiceGreetingText = open
+    ? tenant.config?.voiceGreeting ?? null
+    : (tenant.config?.voiceGreetingAfterHours?.trim() || tenant.config?.voiceGreeting) ?? null;
+
   // Send the SMS greeting immediately (don't wait for voicemail)
-  if (tenant.config?.greeting) {
-    sendSms(tenant.id, from, tenant.config.greeting)
+  if (smsGreeting) {
+    sendSms(tenant.id, from, smsGreeting)
       .then(() =>
         prisma.missedCall.update({
           where: { twilioCallSid: callSid },
@@ -142,7 +162,7 @@ export async function POST(request: NextRequest) {
   // Build TwiML response: short greeting + optional voicemail
   const twiml = buildVoiceTwiml({
     businessName,
-    voiceGreeting: tenant.config?.voiceGreeting ?? null,
+    voiceGreeting: voiceGreetingText,
     voiceType: tenant.config?.voiceType ?? 'Polly.Joanna',
     recordingCallbackUrl: `${baseUrl}/api/webhooks/twilio/recording-callback`,
     transcribeCallbackUrl: `${baseUrl}/api/webhooks/twilio/transcription-callback`,

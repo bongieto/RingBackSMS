@@ -106,7 +106,9 @@ export async function updateTenantConfig(
   tenantId: string,
   updates: Partial<{
     greeting: string;
+    greetingAfterHours: string | null;
     voiceGreeting: string | null;
+    voiceGreetingAfterHours: string | null;
     voiceType: string;
     timezone: string;
     businessHoursStart: string;

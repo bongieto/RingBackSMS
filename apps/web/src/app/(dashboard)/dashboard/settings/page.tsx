@@ -97,7 +97,9 @@ export default function SettingsPage() {
 
   const [form, setForm] = useState({
     greeting: '',
+    greetingAfterHours: '',
     voiceGreeting: '',
+    voiceGreetingAfterHours: '',
     voiceType: 'Polly.Joanna-Neural' as 'Polly.Joanna-Neural' | 'Polly.Matthew-Neural' | 'Polly.Salli-Neural' | 'Polly.Ivy-Neural',
     timezone: 'America/Chicago',
     businessSchedule: deriveScheduleFromFlat([1, 2, 3, 4, 5], '11:00', '20:00'),
@@ -127,7 +129,9 @@ export default function SettingsPage() {
 
       setForm({
         greeting: config.greeting ?? '',
+        greetingAfterHours: (config as any).greetingAfterHours ?? '',
         voiceGreeting: (config as TenantConfig & { voiceGreeting?: string | null }).voiceGreeting ?? '',
+        voiceGreetingAfterHours: (config as any).voiceGreetingAfterHours ?? '',
         voiceType: (() => {
           const raw = (config as TenantConfig & { voiceType?: string }).voiceType ?? 'Polly.Joanna-Neural';
           // Auto-upgrade legacy non-neural voice IDs to their neural variants
@@ -177,7 +181,9 @@ export default function SettingsPage() {
       const flat = deriveFlatFromSchedule(form.businessSchedule);
       return tenantApi.updateConfig(tenantId!, {
         greeting: form.greeting,
+        greetingAfterHours: form.greetingAfterHours || null,
         voiceGreeting: form.voiceGreeting || null,
+        voiceGreetingAfterHours: form.voiceGreetingAfterHours || null,
         voiceType: form.voiceType,
         timezone: form.timezone,
         businessSchedule: form.businessSchedule,
@@ -375,6 +381,33 @@ export default function SettingsPage() {
                 <option value="Polly.Ivy-Neural">Ivy (Female, youthful)</option>
               </select>
               <p className="text-xs text-muted-foreground">Call your number to preview.</p>
+            </div>
+
+            <div className="space-y-1.5 border-t pt-4">
+              <Label>After-hours SMS greeting (optional)</Label>
+              <textarea
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[80px] resize-y"
+                value={form.greetingAfterHours}
+                onChange={(e) => setForm(f => ({ ...f, greetingAfterHours: e.target.value }))}
+                placeholder="Thanks for calling! We're closed right now but we'll get back to you first thing in the morning."
+              />
+              <p className="text-xs text-muted-foreground">
+                Sent when calls arrive outside your business hours. Leave blank to use the regular greeting.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>After-hours voice greeting (optional)</Label>
+              <textarea
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[80px] resize-y"
+                value={form.voiceGreetingAfterHours}
+                maxLength={500}
+                onChange={(e) => setForm(f => ({ ...f, voiceGreetingAfterHours: e.target.value }))}
+                placeholder="Hi, thanks for calling. We're closed right now — leave a message after the beep and we'll text you back as soon as we open."
+              />
+              <p className="text-xs text-muted-foreground">
+                Spoken when calls arrive outside business hours. Max 500 characters.
+              </p>
             </div>
           </CardContent>
         </Card>
