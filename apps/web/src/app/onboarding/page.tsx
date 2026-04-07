@@ -12,6 +12,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import api from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { getProfile } from '@/lib/businessTypeProfile';
+import type { BusinessType } from '@ringback/shared-types';
 
 const BUSINESS_TYPES = [
   { value: 'RESTAURANT', label: 'Restaurant / Food', emoji: '🍜' },
@@ -64,9 +66,8 @@ export default function OnboardingPage() {
     onError: () => toast.error('Setup failed. Please try again.'),
   });
 
-  const defaultGreeting = form.name
-    ? `Hi! Sorry we missed your call at ${form.name}. How can we help you today? Reply ORDER to place an order, MEETING to schedule a call, or just tell us what you need!`
-    : '';
+  const profile = getProfile(form.businessType as BusinessType);
+  const defaultGreeting = form.name ? profile.defaultGreeting(form.name) : '';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center p-4">
@@ -225,11 +226,11 @@ export default function OnboardingPage() {
               </div>
               <div className="bg-muted/50 rounded-lg p-4 text-left space-y-2 text-sm">
                 <p className="font-medium">Next steps:</p>
-                <p>📱 Go to <strong>Settings &rarr; Phone</strong> to provision your RingbackSMS number</p>
-                <p>📞 <strong>Forward your business phone</strong> so unanswered calls go to your RingbackSMS number (dial <strong>*67*[RingbackSMS number]#</strong> or set &quot;Forward when unanswered&quot; in your phone settings)</p>
-                <p>🍜 Add your <strong>Menu items</strong> so customers can order via SMS</p>
-                <p>⚡ Enable <strong>Flows</strong> to activate ORDER and MEETING automation</p>
-                <p>🟦 Connect <strong>Square</strong> to sync your POS catalog</p>
+                {profile.onboardingNextSteps.map((s) => (
+                  <p key={s.title}>
+                    {s.emoji} <strong>{s.title}</strong> — {s.description}
+                  </p>
+                ))}
               </div>
               <Button className="w-full" size="lg" onClick={() => router.push('/dashboard')}>
                 Go to Dashboard →

@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { logger } from '../logger';
 import { prisma } from '../db';
+import { getProfile } from '@/lib/businessTypeProfile';
 
 let aiClient: OpenAI | null = null;
 
@@ -42,7 +43,8 @@ export async function buildTenantSystemPrompt(tenantId: string): Promise<string>
   if (!tenant) throw new Error(`Tenant ${tenantId} not found`);
 
   const config = tenant.config;
-  const personality = config?.aiPersonality ?? 'helpful, friendly, and professional';
+  const profile = getProfile(tenant.businessType);
+  const personality = config?.aiPersonality ?? profile.aiPersonalityHint;
   const enabledFlows = tenant.flows.map((f) => f.type.toLowerCase()).join(', ');
   const tz = config?.timezone ?? 'America/Chicago';
 
