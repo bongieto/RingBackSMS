@@ -14,8 +14,8 @@ export interface PlanLimits {
 
 export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
   [Plan.STARTER]: {
-    smsPerMonth: 200,
-    aiCallsPerMonth: 100,
+    smsPerMonth: 25,
+    aiCallsPerMonth: 25,
     overagePricePerSms: 5, // $0.05
     maxFlows: 2,
     squareIntegration: false,
@@ -25,7 +25,7 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     prioritySupport: false,
   },
   [Plan.GROWTH]: {
-    smsPerMonth: 1000,
+    smsPerMonth: 750,
     aiCallsPerMonth: 500,
     overagePricePerSms: 4, // $0.04
     maxFlows: 5,

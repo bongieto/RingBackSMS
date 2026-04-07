@@ -204,13 +204,29 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     };
   }
 
-  // Run flow engine
+  // Run flow engine. If MINIMAX_API_KEY is unset, skip the AI round-trip
+  // (which would otherwise 401) and send a safe fallback reply so the
+  // customer still hears back.
+  const aiApiKey = process.env.MINIMAX_API_KEY?.trim();
+  if (!aiApiKey) {
+    logger.error('MINIMAX_API_KEY is not configured; sending fallback reply', {
+      tenantId,
+      callerPhone,
+    });
+    const fallbackReply =
+      "Thanks for reaching out! We got your message and will get back to you shortly.";
+    await sendSms(tenantId, callerPhone, fallbackReply).catch((err) =>
+      logger.error('Failed to send fallback SMS', { err, tenantId, callerPhone })
+    );
+    return;
+  }
+
   const result = await runFlowEngine({
     tenantContext,
     callerPhone,
     inboundMessage,
     currentState,
-    aiApiKey: process.env.MINIMAX_API_KEY ?? '',
+    aiApiKey,
     callerMemory,
   });
 
