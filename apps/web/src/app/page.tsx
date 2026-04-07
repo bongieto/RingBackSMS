@@ -605,7 +605,7 @@ export default function HomePage() {
           className="relative pt-32 pb-20 sm:pt-40 sm:pb-28 overflow-hidden bg-cover bg-center"
           style={{
             backgroundImage:
-              "url('https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=2000&q=80')",
+              "url('https://images.unsplash.com/photo-1556740758-90de374c12ad?auto=format&fit=crop&w=2000&q=80')",
           }}
         >
           {/* Light gradient overlay so copy stays legible */}
