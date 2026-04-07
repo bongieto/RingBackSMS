@@ -4,6 +4,7 @@ import { ArrowRight, ChevronRight } from 'lucide-react';
 import { SignedIn, SignedOut } from '@clerk/nextjs';
 import { getHubs, getNichesForHub, type HubSlug } from '@/lib/industryLandingData';
 import { MobileNav } from '@/components/landing/MobileNav';
+import { Logo } from '@/components/Logo';
 
 const SITE_URL = 'https://ring-back-sms.vercel.app';
 
@@ -30,7 +31,7 @@ export default function IndustriesIndexPage() {
       {/* Nav */}
       <nav className="sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <Link href="/" className="font-extrabold text-slate-900 text-lg">RingBackSMS</Link>
+          <Logo size="md" variant="light" />
           <div className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
             <Link href="/industries" className="text-blue-600">Industries</Link>
             <Link href="/#features" className="hover:text-blue-600">Features</Link>

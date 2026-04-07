@@ -17,7 +17,6 @@ import {
   UtensilsCrossed,
   CreditCard,
   Zap,
-  Phone,
   Plug2,
   Briefcase,
   HelpCircle,
@@ -29,6 +28,7 @@ import { cn } from '@/lib/utils';
 import { UserButton, OrganizationSwitcher } from '@clerk/nextjs';
 import { tenantApi } from '@/lib/api';
 import { getProfile } from '@/lib/businessTypeProfile';
+import { Logo } from '@/components/Logo';
 
 type NavItem = {
   href: string;
@@ -92,12 +92,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
     <>
       {/* Logo */}
       <div className="p-6 border-b border-slate-700">
-        <div className="flex items-center gap-2">
-          <Phone className="h-6 w-6 text-blue-400" />
-          <span className="text-xl font-bold">
-            RingBack<span className="text-blue-400">SMS</span>
-          </span>
-        </div>
+        <Logo size="md" variant="dark" />
       </div>
 
       {/* Org Switcher */}
@@ -205,12 +200,7 @@ export function MobileHeader() {
         <button onClick={() => setOpen(true)} className="p-1.5 -ml-1.5 rounded-lg hover:bg-slate-800">
           <Menu className="h-6 w-6" />
         </button>
-        <div className="flex items-center gap-2">
-          <Phone className="h-5 w-5 text-blue-400" />
-          <span className="text-lg font-bold">
-            RingBack<span className="text-blue-400">SMS</span>
-          </span>
-        </div>
+        <Logo size="sm" variant="dark" />
         <div className="w-9" /> {/* Spacer for centering */}
       </div>
 

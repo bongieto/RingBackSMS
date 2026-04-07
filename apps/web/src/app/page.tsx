@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { MobileNav } from '@/components/landing/MobileNav';
 import { PricingSection } from '@/components/landing/PricingSection';
+import { Logo } from '@/components/Logo';
 
 /* ─── SEO Metadata ────────────────────────────────────────────────────────── */
 
@@ -566,12 +567,7 @@ export default function HomePage() {
         {/* ─── Navigation ──────────────────────────────────────────── */}
         <nav className="fixed top-0 w-full bg-white/80 backdrop-blur-lg border-b border-slate-100 z-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-            <Link href="/" className="flex items-center gap-1">
-              <Phone className="h-6 w-6 text-blue-600" />
-              <span className="text-xl font-extrabold text-slate-900">
-                RingBack<span className="text-blue-600">SMS</span>
-              </span>
-            </Link>
+            <Logo size="md" variant="light" />
             <div className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600">
               <a href="#how-it-works" className="hover:text-blue-600 transition-colors">How It Works</a>
               <a href="#features" className="hover:text-blue-600 transition-colors">Features</a>
@@ -961,11 +957,8 @@ export default function HomePage() {
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-12 mb-12">
               {/* Brand */}
               <div className="lg:col-span-1">
-                <div className="flex items-center gap-1 mb-4">
-                  <Phone className="h-5 w-5 text-blue-400" />
-                  <span className="text-lg font-extrabold text-white">
-                    RingBack<span className="text-blue-400">SMS</span>
-                  </span>
+                <div className="mb-4">
+                  <Logo size="sm" variant="dark" />
                 </div>
                 <p className="text-sm leading-relaxed mb-3">
                   AI-powered SMS auto-response for missed calls. Built for restaurants, salons, clinics, and
