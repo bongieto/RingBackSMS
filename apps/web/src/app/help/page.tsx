@@ -392,7 +392,7 @@ export default function HelpPage() {
               <li><strong>Toast</strong> — Pull your Toast menu structure and items.</li>
               <li><strong>Shopify</strong> — Import products from your Shopify store.</li>
             </ul>
-            <p className="text-sm text-gray-600 mt-3">POS integrations are available on the <strong>Scale</strong> plan and above. Go to <strong>Integrations</strong> to connect.</p>
+            <p className="text-sm text-gray-600 mt-3">POS integrations are available on the <strong>Growth</strong> plan and above. Go to <strong>Integrations</strong> to connect. You can pull your catalog from the POS or push RingBackSMS items the other way, and every sync is logged with item counts and status.</p>
           </SubSection>
 
           <SubSection title="Other integrations">
@@ -428,13 +428,13 @@ export default function HelpPage() {
                     <td className="py-2 pr-4 font-medium">Growth</td>
                     <td className="py-2 pr-4">$49/mo</td>
                     <td className="py-2 pr-4">500</td>
-                    <td className="py-2">+ Order &amp; Meeting flows, advanced analytics, Slack</td>
+                    <td className="py-2">+ Order, Meeting &amp; Inquiry flows, POS integrations, daily digest</td>
                   </tr>
                   <tr className="border-b">
                     <td className="py-2 pr-4 font-medium">Scale</td>
-                    <td className="py-2 pr-4">$149/mo</td>
+                    <td className="py-2 pr-4">$99/mo</td>
                     <td className="py-2 pr-4">2,500</td>
-                    <td className="py-2">+ POS integrations, custom AI personality</td>
+                    <td className="py-2">+ Slack, two-way POS sync, recovery funnel, urgency escalation</td>
                   </tr>
                   <tr>
                     <td className="py-2 pr-4 font-medium">Enterprise</td>
@@ -511,7 +511,7 @@ export default function HelpPage() {
             <li><strong>Meetings booked:</strong> Appointments scheduled via SMS</li>
             <li><strong>Time period:</strong> View data for the last 7, 30, or 90 days</li>
           </ul>
-          <p className="text-gray-700 mt-3">The <strong>Overview</strong> dashboard also shows a summary of key metrics plus your most recent conversations.</p>
+          <p className="text-gray-700 mt-3">The <strong>Overview</strong> dashboard also shows a summary of key metrics plus your most recent conversations. Enable the <strong>Daily digest email</strong> in Settings and you&apos;ll get the same snapshot in your inbox every morning.</p>
 
           <SubSection title="Recovery funnel">
             <p className="text-gray-700 mb-2">The Recovery Funnel card on the Analytics page shows exactly where missed-call revenue is leaking. Each step counts unique missed calls and the bar between steps shows the drop rate:</p>

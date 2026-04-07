@@ -7,6 +7,7 @@ import {
   getIndustryLanding,
   getAllIndustrySlugPaths,
   getNichesForHub,
+  getHeroImage,
   INDUSTRY_LANDING,
   type HubSlug,
 } from '@/lib/industryLandingData';
@@ -172,8 +173,12 @@ export default function IndustryLandingPage({ params }: PageProps) {
       </div>
 
       {/* ─── Hero ──────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-blue-50 via-white to-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
+      <section
+        className="relative overflow-hidden bg-cover bg-center"
+        style={{ backgroundImage: `url('${getHeroImage(entry)}')` }}
+      >
+        <div className="absolute inset-0 bg-gradient-to-b from-white/90 via-white/80 to-white" />
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold mb-6">

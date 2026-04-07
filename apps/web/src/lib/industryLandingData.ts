@@ -61,6 +61,40 @@ const COMMON_STATS = [
 
 const ctaHref = (hub: HubSlug) => `/sign-up?industry=${hub}`;
 
+/* ─── Hero background images (Unsplash, hot-linked like homepage) ─── */
+const UNSPLASH = (id: string) =>
+  `https://images.unsplash.com/${id}?auto=format&fit=crop&w=2000&q=80`;
+
+const HERO_IMAGE_HUB: Record<HubSlug, string> = {
+  restaurants: UNSPLASH('photo-1517248135467-4c7edcad34c4'),
+  'service-businesses': UNSPLASH('photo-1581578731548-c64695cc6952'),
+  retail: UNSPLASH('photo-1441986300917-64674bd600d8'),
+};
+
+const HERO_IMAGE_NICHE: Record<string, string> = {
+  'restaurants/full-service': UNSPLASH('photo-1414235077428-338989a2e8c0'),
+  'restaurants/food-trucks': UNSPLASH('photo-1565299585323-38d6b0865b47'),
+  'restaurants/pizzerias': UNSPLASH('photo-1513104890138-7c749659a591'),
+  'restaurants/cafes-bakeries': UNSPLASH('photo-1509440159596-0249088772ff'),
+  'service-businesses/beauty-salons': UNSPLASH('photo-1560066984-138dadb4c035'),
+  'service-businesses/cleaning-services': UNSPLASH('photo-1527515637462-cff94eecc1ac'),
+  'service-businesses/caregiving-home-health': UNSPLASH('photo-1576765608535-5f04d1e3f289'),
+  'service-businesses/plumbing': UNSPLASH('photo-1585704032915-c3400ca199e7'),
+  'service-businesses/electrical': UNSPLASH('photo-1565608087341-404b25492fee'),
+  'service-businesses/hvac': UNSPLASH('photo-1631545806609-19c0caa75bd0'),
+  'retail/florists': UNSPLASH('photo-1490750967868-88aa4486c946'),
+  'retail/cake-shops': UNSPLASH('photo-1535254973040-607b474cb50d'),
+  'retail/wedding-photographers': UNSPLASH('photo-1519741497674-611481863552'),
+  'retail/boutiques': UNSPLASH('photo-1567401893414-76b7b1e5a7a5'),
+};
+
+export function getHeroImage(entry: IndustryLandingContent): string {
+  const override = HERO_IMAGE_NICHE[entry.slug];
+  if (override) return override;
+  if (entry.kind === 'hub') return HERO_IMAGE_HUB[entry.slug as HubSlug];
+  return HERO_IMAGE_HUB[entry.parent!];
+}
+
 /* ─── HUBS ──────────────────────────────────────────────────────────────── */
 
 const RESTAURANTS: IndustryLandingContent = {
@@ -186,7 +220,7 @@ const SERVICE_BUSINESSES: IndustryLandingContent = {
   ],
   benefits: [
     { icon: Bot, title: 'AI receptionist 24/7', body: "Sounds like a professional front-desk person. Quotes your standard services, asks qualifying questions, and only escalates the weird stuff." },
-    { icon: Calendar, title: 'Drops jobs on your calendar', body: "Integrates with Cal.com or your existing scheduler. The customer picks a slot via text and it's on your calendar before you finish the current job." },
+    { icon: Calendar, title: 'Drops jobs on your calendar', body: "The AI sends a Cal.com booking link right in the conversation — or hands the request off to your existing scheduler. The customer picks a slot via text and it's on your calendar before you finish the current job." },
     { icon: Zap, title: 'Replies in under 3 seconds', body: "Your customer gets a real reply before they can dial the next business on their list. The race to respond is over." },
     { icon: MessageCircle, title: 'Auto reminders & confirmations', body: 'Reduces no-shows by ~50% with 24-hour and 2-hour SMS reminders, and a "Running late?" check-in 10 min before.' },
     { icon: TrendingUp, title: 'Lead quality scoring', body: 'Tags every inbound by intent (urgent/quote/question/spam) so you know which leads to call personally and which the AI can close.' },
@@ -203,7 +237,7 @@ const SERVICE_BUSINESSES: IndustryLandingContent = {
     { quote: "Home health is relationship-driven and families panic when nobody picks up. Now they get a warm response immediately and a real human follows up within the hour.", name: 'Robert K.', role: 'Director, Sunrise Home Care' },
   ],
   faqs: [
-    { q: 'Does it integrate with my scheduling software?', a: 'Yes — Cal.com is built in. Google Calendar, Square Appointments, and Acuity work via standard integrations. If you use a niche scheduler we can add a webhook in minutes.' },
+    { q: 'Does it integrate with my scheduling software?', a: 'Yes — drop your Cal.com booking link into Settings and the AI sends it to the customer in the conversation. Google Calendar, Square Appointments, and Acuity work the same way. If you use a niche scheduler we can add a webhook in minutes.' },
     { q: 'Will the AI sound like a robot?', a: 'No. Every tenant gets a custom personality tuned to their business — friendly salon, no-nonsense trades, warm caregiving. Most customers assume they\'re texting your front desk.' },
     { q: 'Can it handle emergencies?', a: 'Yes. You define urgency keywords (flood, no power, elderly fall, etc.) and the AI escalates those directly to your phone as a push notification instead of handling them via text.' },
     { q: "Do I need a new phone number?", a: "No. Keep your existing number or port it to us. Either way, customers see your business name — not 'Unknown.'" },
@@ -335,28 +369,28 @@ const niche = (c: NicheConfig): IndustryLandingContent => ({
 const commonServiceBenefits = (verb: string, thing: string): NicheConfig['benefits'] => [
   { icon: Bot, title: 'AI receptionist 24/7', body: `Sounds like your front-desk person — quotes ${thing}, answers common questions, and only escalates the weird stuff.` },
   { icon: Zap, title: '<3 second replies', body: 'Customers get a real answer before they dial the next business on the list.' },
-  { icon: Calendar, title: 'Auto-books on your calendar', body: `${verb} confirmed appointments drop straight into Cal.com, Google Calendar, or your existing scheduler.` },
+  { icon: Calendar, title: 'Books into your calendar', body: `${verb} confirmed appointments via a Cal.com booking link sent right in the conversation — works with Google Calendar, Square Appointments, and Acuity too.` },
   { icon: MessageCircle, title: 'Reminders + no-show defense', body: '24-hour and 2-hour SMS reminders cut no-shows by ~50%. Customers can reschedule by text in one tap.' },
   { icon: ShieldCheck, title: 'Emergency escalation', body: 'Real urgencies ping your phone immediately via push or Slack — the AI knows when to back off.' },
-  { icon: TrendingUp, title: 'Every lead scored', body: 'Inbounds are tagged by intent (urgent / quote / question / spam) so you prioritize the ones that pay.' },
+  { icon: TrendingUp, title: 'Rapid-redial detection', body: 'NEW / RAPID_REDIAL / RETURNING caller tags surface urgency instantly — real emergencies jump the queue.' },
 ];
 
 const commonRestaurantBenefits = (): NicheConfig['benefits'] => [
-  { icon: Bot, title: 'AI order-taker', body: 'Reads your menu, answers modifiers, confirms totals in natural conversation.' },
+  { icon: Bot, title: 'AI order-taker with modifiers', body: 'Handles half-and-half pizzas, size upcharges, and allergy notes in natural conversation.' },
   { icon: Zap, title: '<3 second reply', body: 'First response in under 3 seconds — before the caller hits the next shop.' },
-  { icon: Package, title: 'POS sync included', body: 'Square, Clover, Toast, Shopify. Menu in, orders out. No counter clutter.' },
-  { icon: DollarSign, title: 'Payment by text', body: 'Stripe link in the same thread so orders come in paid.' },
-  { icon: Clock, title: 'After-hours capture', body: 'Takes preorders overnight and on closed days. Your competitors sleep; you book.' },
-  { icon: ShieldCheck, title: 'Escalates the weird stuff', body: 'Allergies, complaints, big-party asks → push notification so you can take over.' },
+  { icon: Package, title: 'Two-way POS sync', body: 'Square, Clover, Toast, Shopify. Import your menu or push RingBackSMS items back to POS, with full sync history.' },
+  { icon: DollarSign, title: 'Reorder memory', body: '"Last time you got the large pepperoni — reply SAME to reorder." Regulars checkout in two taps.' },
+  { icon: Clock, title: 'Holiday-aware hours', body: 'Per-day business hours plus closed-date calendar — the AI knows when you\'re actually open.' },
+  { icon: ShieldCheck, title: 'Escalates the weird stuff', body: 'Allergies, complaints, big-party asks → push notification so you can take over in one tap.' },
 ];
 
 const commonRetailBenefits = (): NicheConfig['benefits'] => [
   { icon: Package, title: 'Catalog-aware replies', body: 'Matches customer questions against your catalog in real time — name, price, photo, stock status.' },
   { icon: Sparkles, title: 'Reserve by text', body: 'Customer replies YES and the item is on hold — reservation task appears in your inbox.' },
-  { icon: Zap, title: '<3 second replies', body: 'They know you carry it before they dial the next shop.' },
-  { icon: Clock, title: '24/7 coverage', body: 'Answer inquiries overnight, Sundays, holidays — even when the shop is dark.' },
-  { icon: MessageCircle, title: 'Human handoff for custom', body: 'Bespoke orders and consultations escalate to you with all the context pre-collected.' },
-  { icon: ShieldCheck, title: 'No inventory hell', body: 'Simple in-stock toggle per product. No SKUs, no Shopify migration, no barcodes.' },
+  { icon: Zap, title: 'Remembers every caller', body: 'Returning shoppers are recognized instantly, past conversations summarized into the AI prompt.' },
+  { icon: Clock, title: 'Holiday-aware hours', body: 'Per-day schedules plus closed-date calendar — the AI honors your actual calendar.' },
+  { icon: MessageCircle, title: 'AI ↔ human handoff', body: 'One-tap take-over — AI steps back, you finish the chat with full context pre-collected.' },
+  { icon: ShieldCheck, title: 'Reply templates', body: 'Save your most-used responses as one-tap snippets for the moments you take over.' },
 ];
 
 /* ─── Niches ───────────────────────────────────────────────────────── */
