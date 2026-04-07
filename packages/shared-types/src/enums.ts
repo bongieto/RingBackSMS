@@ -50,6 +50,9 @@ export enum UsageType {
   POS_ORDER = 'POS_ORDER',
 }
 
+export const VOICE_TYPES = ['Polly.Joanna', 'Polly.Matthew', 'Polly.Salli', 'Polly.Ivy'] as const;
+export type VoiceType = typeof VOICE_TYPES[number];
+
 export enum ContactStatus {
   LEAD = 'LEAD',
   CUSTOMER = 'CUSTOMER',

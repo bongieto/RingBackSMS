@@ -6,14 +6,24 @@ import { logger } from '@/lib/server/logger';
 import { checkRateLimit } from '@/lib/server/rateLimit';
 import { getValidationToken } from '@/lib/server/services/twilioService';
 
+const ALLOWED_VOICES = new Set(['Polly.Joanna', 'Polly.Matthew', 'Polly.Salli', 'Polly.Ivy']);
+
 /** Build TwiML XML string without the Twilio SDK VoiceResponse class (avoids serverless bundling issues) */
-function buildVoiceTwiml(businessName: string, recordingCallbackUrl: string): string {
+function buildVoiceTwiml(opts: {
+  businessName: string;
+  voiceGreeting: string | null;
+  voiceType: string;
+  recordingCallbackUrl: string;
+}): string {
+  const intro = opts.voiceGreeting?.trim()
+    || `Hi, thanks for calling ${opts.businessName}. We can help you faster by text — you'll receive a message in just a moment. If you'd prefer a callback, leave a message after the beep.`;
+  const voice = ALLOWED_VOICES.has(opts.voiceType) ? opts.voiceType : 'Polly.Joanna';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
-  <Say voice="Polly.Joanna" language="en-US">Hi, thanks for calling ${escapeXml(businessName)}. We can help you faster by text — you'll receive a message in just a moment. If you'd prefer a callback, leave a message after the beep.</Say>
-  <Record maxLength="60" finishOnKey="#" playBeep="true" recordingStatusCallback="${escapeXml(recordingCallbackUrl)}" recordingStatusCallbackMethod="POST" transcribe="false"/>
-  <Say voice="Polly.Joanna" language="en-US">Thank you for calling. Check your texts for a message from us. Goodbye!</Say>
+  <Say voice="${voice}" language="en-US">${escapeXml(intro)}</Say>
+  <Record maxLength="60" finishOnKey="#" playBeep="true" recordingStatusCallback="${escapeXml(opts.recordingCallbackUrl)}" recordingStatusCallbackMethod="POST" transcribe="false"/>
+  <Say voice="${voice}" language="en-US">Thank you for calling. Check your texts for a message from us. Goodbye!</Say>
 </Response>`;
 }
 
@@ -103,7 +113,12 @@ export async function POST(request: NextRequest) {
   }
 
   // Build TwiML response: short greeting + optional voicemail
-  const twiml = buildVoiceTwiml(businessName, `${baseUrl}/api/webhooks/twilio/recording-callback`);
+  const twiml = buildVoiceTwiml({
+    businessName,
+    voiceGreeting: tenant.config?.voiceGreeting ?? null,
+    voiceType: tenant.config?.voiceType ?? 'Polly.Joanna',
+    recordingCallbackUrl: `${baseUrl}/api/webhooks/twilio/recording-callback`,
+  });
 
   logger.info('Voice webhook responded with TwiML', { tenantId: tenant.id, callSid });
 

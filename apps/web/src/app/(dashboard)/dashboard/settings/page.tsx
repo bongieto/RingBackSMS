@@ -96,6 +96,8 @@ export default function SettingsPage() {
 
   const [form, setForm] = useState({
     greeting: '',
+    voiceGreeting: '',
+    voiceType: 'Polly.Joanna' as 'Polly.Joanna' | 'Polly.Matthew' | 'Polly.Salli' | 'Polly.Ivy',
     timezone: 'America/Chicago',
     businessSchedule: deriveScheduleFromFlat([1, 2, 3, 4, 5], '11:00', '20:00'),
     closedDates: [] as string[],
@@ -124,6 +126,8 @@ export default function SettingsPage() {
 
       setForm({
         greeting: config.greeting ?? '',
+        voiceGreeting: (config as TenantConfig & { voiceGreeting?: string | null }).voiceGreeting ?? '',
+        voiceType: ((config as TenantConfig & { voiceType?: string }).voiceType as 'Polly.Joanna' | 'Polly.Matthew' | 'Polly.Salli' | 'Polly.Ivy') ?? 'Polly.Joanna',
         timezone: config.timezone ?? 'America/Chicago',
         businessSchedule: schedule,
         closedDates: config.closedDates ?? [],
@@ -162,6 +166,8 @@ export default function SettingsPage() {
       const flat = deriveFlatFromSchedule(form.businessSchedule);
       return tenantApi.updateConfig(tenantId!, {
         greeting: form.greeting,
+        voiceGreeting: form.voiceGreeting || null,
+        voiceType: form.voiceType,
         timezone: form.timezone,
         businessSchedule: form.businessSchedule,
         closedDates: form.closedDates,
@@ -329,6 +335,35 @@ export default function SettingsPage() {
                 {...field('greeting')}
                 placeholder="Hi! Sorry we missed your call..."
               />
+            </div>
+
+            <div className="space-y-1.5 border-t pt-4">
+              <Label>Voice Greeting (what callers hear)</Label>
+              <textarea
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[80px] resize-y"
+                value={form.voiceGreeting}
+                maxLength={500}
+                onChange={(e) => setForm(f => ({ ...f, voiceGreeting: e.target.value }))}
+                placeholder="Hi, thanks for calling. We can help you faster by text — you'll receive a message in just a moment. If you'd prefer a callback, leave a message after the beep."
+              />
+              <p className="text-xs text-muted-foreground">
+                Spoken via text-to-speech before voicemail. Leave blank to use the default. Max 500 characters.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Voice</Label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                value={form.voiceType}
+                onChange={(e) => setForm(f => ({ ...f, voiceType: e.target.value as typeof f.voiceType }))}
+              >
+                <option value="Polly.Joanna">Joanna (Female, warm)</option>
+                <option value="Polly.Matthew">Matthew (Male, warm)</option>
+                <option value="Polly.Salli">Salli (Female, neutral)</option>
+                <option value="Polly.Ivy">Ivy (Female, youthful)</option>
+              </select>
+              <p className="text-xs text-muted-foreground">Call your number to preview.</p>
             </div>
           </CardContent>
         </Card>

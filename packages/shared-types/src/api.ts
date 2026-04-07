@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BusinessType, Plan, FlowType } from './enums';
+import { BusinessType, Plan, FlowType, VOICE_TYPES } from './enums';
 import { BusinessScheduleSchema } from './models';
 
 // ── Request schemas ───────────────────────────────────────────────────────────
@@ -18,6 +18,8 @@ export type CreateTenantRequest = z.infer<typeof CreateTenantRequestSchema>;
 
 export const UpdateTenantConfigRequestSchema = z.object({
   greeting: z.string().optional(),
+  voiceGreeting: z.string().max(500).nullable().optional(),
+  voiceType: z.enum(VOICE_TYPES).optional(),
   timezone: z.string().optional(),
   businessHoursStart: z.string().optional(),
   businessHoursEnd: z.string().optional(),
