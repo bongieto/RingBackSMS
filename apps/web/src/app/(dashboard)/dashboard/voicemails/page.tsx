@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/nextjs';
 import { toast } from 'sonner';
@@ -22,6 +22,8 @@ interface VoicemailContact {
   totalSpent: number;
 }
 
+type VoicemailIntent = 'ORDER' | 'BOOKING' | 'QUESTION' | 'COMPLAINT' | 'SPAM' | 'OTHER';
+
 interface VoicemailRecord {
   id: string;
   callerPhone: string;
@@ -29,8 +31,25 @@ interface VoicemailRecord {
   voicemailReceivedAt: string | null;
   occurredAt: string;
   smsSent: boolean;
+  voicemailTranscript: string | null;
+  voicemailSummary: string | null;
+  voicemailIntent: VoicemailIntent | null;
+  transcriptionStatus: 'pending' | 'done' | 'failed' | null;
   repeatCount24h: number;
   contact: VoicemailContact | null;
+}
+
+const INTENT_OPTIONS: VoicemailIntent[] = ['ORDER', 'BOOKING', 'QUESTION', 'COMPLAINT', 'SPAM', 'OTHER'];
+
+function intentBadgeClass(intent: VoicemailIntent): string {
+  switch (intent) {
+    case 'ORDER': return 'bg-green-100 text-green-800 border-green-200';
+    case 'BOOKING': return 'bg-blue-100 text-blue-800 border-blue-200';
+    case 'QUESTION': return 'bg-gray-100 text-gray-800 border-gray-200';
+    case 'COMPLAINT': return 'bg-amber-100 text-amber-900 border-amber-200';
+    case 'SPAM': return 'bg-red-100 text-red-800 border-red-200';
+    default: return 'bg-muted text-muted-foreground border-border';
+  }
 }
 
 function ordinal(n: number): string {
@@ -77,13 +96,24 @@ export default function VoicemailsPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [intentFilter, setIntentFilter] = useState<VoicemailIntent | ''>('');
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery<PaginatedResponse>({
-    queryKey: ['voicemails', tenantId, page],
-    queryFn: () => voicemailApi.list(tenantId!, { page, pageSize: 20 }),
+    queryKey: ['voicemails', tenantId, page, intentFilter],
+    queryFn: () => voicemailApi.list(tenantId!, { page, pageSize: 20, ...(intentFilter ? { intent: intentFilter } : {}) }),
     enabled: !!tenantId,
   });
+
+  const toggleExpand = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['voicemails', tenantId] });
@@ -157,6 +187,17 @@ export default function VoicemailsPage() {
           onChange={(e) => setSearch(e.target.value)}
           className="max-w-sm"
         />
+        <select
+          value={intentFilter}
+          onChange={(e) => { setIntentFilter(e.target.value as VoicemailIntent | ''); setPage(1); }}
+          className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+          aria-label="Filter by intent"
+        >
+          <option value="">All intents</option>
+          {INTENT_OPTIONS.map((i) => (
+            <option key={i} value={i}>{i}</option>
+          ))}
+        </select>
         {selected.size > 0 && (
           <Button
             variant="destructive"
@@ -202,6 +243,8 @@ export default function VoicemailsPage() {
                     />
                   </th>
                   <th className="p-4 font-medium">Caller</th>
+                  <th className="p-4 font-medium">Summary</th>
+                  <th className="p-4 font-medium">Intent</th>
                   <th className="p-4 font-medium">Date & Time</th>
                   <th className="p-4 font-medium">Duration</th>
                   <th className="p-4 font-medium">Recording</th>
@@ -211,7 +254,15 @@ export default function VoicemailsPage() {
               </thead>
               <tbody>
                 {filtered.map((vm) => (
-                  <tr key={vm.id} className="border-b last:border-0 hover:bg-muted/50">
+                  <Fragment key={vm.id}>
+                  <tr
+                    className="border-b last:border-0 hover:bg-muted/50 cursor-pointer"
+                    onClick={(e) => {
+                      const tag = (e.target as HTMLElement).tagName;
+                      if (['INPUT', 'BUTTON', 'AUDIO', 'A', 'SVG', 'PATH'].includes(tag)) return;
+                      toggleExpand(vm.id);
+                    }}
+                  >
                     <td className="p-4">
                       <input
                         type="checkbox"
@@ -251,6 +302,24 @@ export default function VoicemailsPage() {
                           </span>
                         )}
                       </div>
+                    </td>
+                    <td className="p-4 text-sm max-w-xs">
+                      {vm.transcriptionStatus === 'pending' ? (
+                        <span className="text-muted-foreground italic">Transcribing…</span>
+                      ) : vm.voicemailSummary ? (
+                        <span className="line-clamp-2">{vm.voicemailSummary}</span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="p-4">
+                      {vm.voicemailIntent ? (
+                        <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${intentBadgeClass(vm.voicemailIntent)}`}>
+                          {vm.voicemailIntent}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      )}
                     </td>
                     <td className="p-4 text-sm">
                       {vm.voicemailReceivedAt
@@ -294,6 +363,25 @@ export default function VoicemailsPage() {
                       </Button>
                     </td>
                   </tr>
+                  {expanded.has(vm.id) && (
+                    <tr className="border-b last:border-0 bg-muted/30">
+                      <td colSpan={9} className="p-4">
+                        <div className="text-xs uppercase text-muted-foreground mb-1">Transcript</div>
+                        <div className="text-sm whitespace-pre-wrap">
+                          {vm.voicemailTranscript || (
+                            <span className="text-muted-foreground italic">
+                              {vm.transcriptionStatus === 'pending'
+                                ? 'Transcription in progress…'
+                                : vm.transcriptionStatus === 'failed'
+                                ? 'Transcription failed.'
+                                : 'No transcript available.'}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

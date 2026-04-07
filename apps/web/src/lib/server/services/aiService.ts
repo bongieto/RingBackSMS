@@ -111,6 +111,56 @@ export async function generateReply(
   }
 }
 
+export type VoicemailIntent = 'ORDER' | 'BOOKING' | 'QUESTION' | 'COMPLAINT' | 'SPAM' | 'OTHER';
+
+export interface VoicemailAnalysis {
+  summary: string;
+  intent: VoicemailIntent;
+}
+
+const VOICEMAIL_INTENTS: VoicemailIntent[] = ['ORDER', 'BOOKING', 'QUESTION', 'COMPLAINT', 'SPAM', 'OTHER'];
+
+/**
+ * Summarize a voicemail transcript and classify it into one intent.
+ * Returns a safe fallback on any error so the caller never blocks.
+ */
+export async function analyzeVoicemail(transcript: string): Promise<VoicemailAnalysis> {
+  if (!transcript?.trim()) return { summary: '', intent: 'OTHER' };
+
+  const prompt = `You are triaging voicemails left for a small business. Read the transcript and respond with JSON only.
+
+Transcript: "${transcript.replace(/"/g, '\\"')}"
+
+Rules:
+- "summary": one short sentence (max 120 characters) capturing what the caller wants. No greeting fluff.
+- "intent": one of ${VOICEMAIL_INTENTS.join(' | ')}.
+  ORDER = wants to buy/order/pickup; BOOKING = wants appointment/reservation; QUESTION = asking info; COMPLAINT = unhappy; SPAM = robocall/sales; OTHER = anything else.
+
+Respond with JSON only: {"summary": "...", "intent": "..."}`;
+
+  try {
+    const client = getClient();
+    const response = await client.chat.completions.create({
+      model: AI_MODEL,
+      max_tokens: 200,
+      temperature: 0.2,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const raw = stripThinkTags(response.choices[0]?.message?.content ?? '').trim();
+    // Strip code fences if model wraps JSON
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+    const parsed = JSON.parse(cleaned) as { summary?: string; intent?: string };
+    const summary = (parsed.summary ?? '').slice(0, 200);
+    const intent = (VOICEMAIL_INTENTS as string[]).includes(parsed.intent ?? '')
+      ? (parsed.intent as VoicemailIntent)
+      : 'OTHER';
+    return { summary, intent };
+  } catch (error) {
+    logger.error('Voicemail analysis failed', { error });
+    return { summary: '', intent: 'OTHER' };
+  }
+}
+
 /**
  * Classifies the intent of an inbound message for a specific tenant.
  */

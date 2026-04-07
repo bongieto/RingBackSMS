@@ -14,10 +14,14 @@ export async function GET(req: NextRequest) {
   const page = parseInt(req.nextUrl.searchParams.get('page') ?? '1', 10);
   const pageSize = parseInt(req.nextUrl.searchParams.get('pageSize') ?? '20', 10);
 
-  const where = {
+  const intentParam = req.nextUrl.searchParams.get('intent');
+  const where: any = {
     tenantId,
     voicemailUrl: { not: null },
   };
+  if (intentParam) {
+    where.voicemailIntent = intentParam;
+  }
 
   const [rows, total] = await Promise.all([
     prisma.missedCall.findMany({
@@ -29,6 +33,10 @@ export async function GET(req: NextRequest) {
         voicemailReceivedAt: true,
         occurredAt: true,
         smsSent: true,
+        voicemailTranscript: true,
+        voicemailSummary: true,
+        voicemailIntent: true,
+        transcriptionStatus: true,
         contactId: true,
         contact: {
           select: {
@@ -70,6 +78,10 @@ export async function GET(req: NextRequest) {
     voicemailReceivedAt: r.voicemailReceivedAt,
     occurredAt: r.occurredAt,
     smsSent: r.smsSent,
+    voicemailTranscript: r.voicemailTranscript,
+    voicemailSummary: r.voicemailSummary,
+    voicemailIntent: r.voicemailIntent,
+    transcriptionStatus: r.transcriptionStatus,
     repeatCount24h: repeatMap.get(r.callerPhone) ?? 1,
     contact: r.contact
       ? {
