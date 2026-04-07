@@ -27,7 +27,7 @@ const PRICING_PLANS = [
     annualSavings: '',
     description: 'Try it risk-free',
     sms: '25 SMS/month',
-    features: ['1 phone number', 'AI auto-responses', 'Basic analytics', 'Email notifications'],
+    features: ['1 phone number', 'AI fallback responses', 'Voicemail transcription & tags', 'Reply templates', 'Email notifications'],
     cta: 'Start Free',
     highlighted: false,
   },
@@ -40,7 +40,7 @@ const PRICING_PLANS = [
     annualSavings: 'Save $98',
     description: 'Most small shops',
     sms: '500 SMS/month',
-    features: ['Everything in Starter', 'POS integration', 'Custom AI personality', 'Priority support'],
+    features: ['Everything in Starter', 'Order, Meeting & Inquiry flows', 'POS integration (Square, Clover, Toast, Shopify)', 'Caller memory & reorder shortcuts', 'Custom AI personality', 'Daily digest email', 'Priority support'],
     cta: 'Start 14-day trial',
     highlighted: true,
   },
@@ -53,7 +53,7 @@ const PRICING_PLANS = [
     annualSavings: 'Save $198',
     description: 'Multi-tech / multi-location',
     sms: '2,500 SMS/month',
-    features: ['Everything in Growth', 'Advanced analytics', 'API access', 'Dedicated success manager'],
+    features: ['Everything in Growth', 'Slack notifications', 'Two-way POS catalog sync', 'Recovery funnel analytics', 'Urgency keyword escalation', 'AI ↔ human handoff tracking'],
     cta: 'Start 14-day trial',
     highlighted: false,
   },
@@ -329,6 +329,9 @@ export default function IndustryLandingPage({ params }: PageProps) {
                 </div>
               ))}
             </div>
+            <p className="text-center text-xs text-slate-400 mt-8">
+              *Representative examples. Customer names and figures are illustrative.
+            </p>
           </div>
         </section>
       )}

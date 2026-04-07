@@ -26,6 +26,10 @@ import {
   Mic,
   Crown,
   MoonStar,
+  Repeat,
+  Search,
+  AlertTriangle,
+  Users,
 } from 'lucide-react';
 import { MobileNav } from '@/components/landing/MobileNav';
 import { PricingSection } from '@/components/landing/PricingSection';
@@ -235,15 +239,33 @@ const FEATURES = [
   },
   {
     icon: UtensilsCrossed,
-    title: 'SMS Ordering System',
+    title: 'SMS Ordering with Modifiers',
     description:
-      'Customers browse your menu, build an order, choose pickup times — all via text. Orders sync to your POS automatically with Square integration.',
+      'Customers browse your menu, pick sizes and toppings, add allergy notes, and choose pickup times — all by text. Orders sync to Square, Clover, Toast, or Shopify and come through paid via Stripe link.',
   },
   {
     icon: Clock,
     title: 'Appointment Booking',
     description:
-      'Let customers book meetings and appointments through text. Integrates with Cal.com and sends confirmation SMS with all the details.',
+      'Service businesses can book appointments by text. AI validates business hours, collects the details, and drops a Cal.com booking link right in the conversation.',
+  },
+  {
+    icon: Search,
+    title: 'Catalog-Aware Product Answers',
+    description:
+      '"Do you have it in my size?" gets a real answer in 3 seconds. AI searches your catalog, quotes price and availability, and puts the item on hold when the customer replies YES.',
+  },
+  {
+    icon: Repeat,
+    title: 'Remembers Every Caller',
+    description:
+      'Returning customers get "Last time you ordered pepperoni + Caesar — reply SAME." AI knows their name, last order, and whether they\'re a VIP, lead, or rapid redial.',
+  },
+  {
+    icon: AlertTriangle,
+    title: 'Urgency & Emergency Escalation',
+    description:
+      'Keywords like "flood," "burst pipe," "burning smell," or "large party" trigger instant push and Slack notifications so you never bury a real emergency in voicemail.',
   },
   {
     icon: Zap,
@@ -253,9 +275,9 @@ const FEATURES = [
   },
   {
     icon: BarChart3,
-    title: 'Real-Time Analytics',
+    title: 'Real-Time Analytics & Daily Digest',
     description:
-      'Track missed calls, response rates, orders placed, and revenue captured. See exactly how much money RingBackSMS saves your business.',
+      'Track missed calls, conversations, orders, bookings, and revenue in real time. Optional daily-digest email lands in your inbox every morning.',
   },
   {
     icon: ShieldCheck,
@@ -265,15 +287,15 @@ const FEATURES = [
   },
   {
     icon: Store,
-    title: 'POS Integrations',
+    title: 'Two-Way POS Sync',
     description:
-      'Connect Square, Clover, Toast, or Shopify. Sync your menu, take SMS orders, and push them straight to your kitchen POS.',
+      'Connect Square, Clover, Toast, or Shopify. Pull your menu or push RingBackSMS items into your POS. Full sync history so you can see exactly what changed and when.',
   },
   {
-    icon: DollarSign,
-    title: 'Built-in CRM',
+    icon: Users,
+    title: 'Built-in CRM with Handoff',
     description:
-      'Full CRM with contact timeline, notes, status tracking (Lead → VIP), and one-click SMS outreach. Know every customer by name.',
+      'Contact timeline unifies every conversation, order, and meeting. Tags, notes, status (Lead → Customer → VIP), CSV export, bulk import — plus one-tap AI-to-human handoff when you want to take over.',
   },
   {
     icon: Mic,
@@ -295,9 +317,9 @@ const FEATURES = [
   },
   {
     icon: MoonStar,
-    title: 'After-Hours Auto-Responses',
+    title: 'Business Hours & Holidays',
     description:
-      'Set a separate SMS and voice greeting for calls outside business hours. Capture late-night orders and book tomorrow\'s appointments while you sleep.',
+      'Set per-day hours, holiday closures, and a separate after-hours greeting. AI capture late-night orders and books tomorrow\'s appointments while you sleep.',
   },
   {
     icon: Crown,
@@ -370,10 +392,11 @@ const PRICING = [
     sms: '25 SMS/month',
     features: [
       '1 phone number',
-      'AI auto-responses',
+      'AI auto-responses (Fallback flow)',
+      'Voicemail transcription & intent tags',
+      'Reply templates',
       'Basic analytics',
       'Email notifications',
-      'Fallback flow only',
     ],
     cta: 'Start Free',
     highlighted: false,
@@ -389,10 +412,13 @@ const PRICING = [
     sms: '500 SMS/month',
     features: [
       'Everything in Starter',
-      'Order & Meeting flows',
-      'POS integration',
+      'Order, Meeting & Inquiry flows',
+      'POS integration (Square, Clover, Toast, Shopify)',
+      'Caller memory & reorder shortcuts',
+      'Modifier groups (size, toppings, allergy notes)',
       'SMS + Email notifications',
       'Custom AI personality',
+      'Daily digest email',
       'Priority support',
     ],
     cta: 'Start 14-Day Trial',
@@ -409,11 +435,12 @@ const PRICING = [
     sms: '2,500 SMS/month',
     features: [
       'Everything in Growth',
-      'Multiple phone numbers',
-      'Slack notifications',
-      'Advanced analytics',
-      'Custom flow builder',
-      'API access',
+      'Slack notifications for orders, bookings & inquiries',
+      'Two-way POS catalog sync',
+      'Recovery funnel analytics',
+      'Urgency keyword escalation',
+      'AI ↔ human handoff tracking',
+      'Priority support',
     ],
     cta: 'Start 14-Day Trial',
     highlighted: false,
@@ -432,8 +459,8 @@ const PRICING = [
       'Unlimited locations',
       'Dedicated account manager',
       'Custom integrations',
-      'SLA guarantee',
-      'On-premise deployment option',
+      'Custom SLAs available',
+      'White-glove onboarding',
     ],
     cta: 'Contact Sales',
     highlighted: false,
@@ -491,7 +518,7 @@ const FAQ = [
   {
     question: 'Is my customer data secure?',
     answer:
-      'Absolutely. We use enterprise-grade encryption for all stored tokens and sensitive data. Every business gets isolated data storage with PostgreSQL Row-Level Security — your data is never accessible to other accounts. We\'re built on SOC 2–compliant infrastructure.',
+      'Yes. We encrypt all stored Twilio credentials and sensitive tokens at rest and in transit. Every tenant gets strict data isolation via PostgreSQL Row-Level Security — your conversations, contacts, and orders are never visible to other accounts. SOC 2 readiness is in progress.',
   },
   {
     question: 'How long does setup take?',
@@ -536,7 +563,17 @@ const FAQ = [
   {
     question: 'Do you integrate with my POS system?',
     answer:
-      'Yes — RingBackSMS connects with Square, Clover, Toast, and Shopify out of the box. Once connected, your menu is automatically synced so customers can browse and order via SMS. Orders are pushed directly to your POS in real time, so your kitchen gets them instantly with no manual entry required.',
+      'Yes — RingBackSMS connects with Square, Clover, Toast, and Shopify out of the box. You can pull your menu from the POS or push RingBackSMS items the other way. Orders placed by SMS land in your POS automatically, and the full sync history is visible in the dashboard.',
+  },
+  {
+    question: 'Does it handle holidays and different hours each day?',
+    answer:
+      'Yes. You can set per-day business hours (e.g., closed Mondays, late Friday), mark specific holiday closures, and configure a separate after-hours greeting. The AI respects all of this and books customers into the next open slot.',
+  },
+  {
+    question: 'Can customers with existing accounts just reorder?',
+    answer:
+      'Yes. Returning customers see "Last time you ordered X — reply SAME to reorder." The AI recognizes them from their phone number, remembers their past order, and can replay it in a single message.',
   },
 ];
 
@@ -832,11 +869,14 @@ export default function HomePage() {
                   </p>
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-green-500/10 rounded-full text-xs font-bold text-green-400">
                     <TrendingUp className="h-3.5 w-3.5" />
-                    {industry.stat}
+                    {industry.stat}*
                   </div>
                 </Link>
               ))}
             </div>
+            <p className="text-center text-xs text-slate-500 mt-8">
+              *Illustrative outcomes based on typical customer patterns.
+            </p>
           </div>
         </section>
 
@@ -874,6 +914,9 @@ export default function HomePage() {
                 </div>
               ))}
             </div>
+            <p className="text-center text-xs text-slate-400 mt-8">
+              *Representative examples. Customer names and stats are illustrative.
+            </p>
           </div>
         </section>
 
