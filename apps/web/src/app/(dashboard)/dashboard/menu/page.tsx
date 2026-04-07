@@ -40,6 +40,7 @@ interface MenuItem {
   description: string | null;
   price: number;
   category: string | null;
+  imageUrl?: string | null;
   isAvailable: boolean;
   requiresBooking?: boolean;
   modifierGroups?: ModifierGroup[];
@@ -51,6 +52,7 @@ interface MenuItemFormData {
   description: string;
   price: string;
   category: string;
+  imageUrl: string;
   isAvailable: boolean;
 }
 
@@ -59,6 +61,7 @@ const defaultForm: MenuItemFormData = {
   description: '',
   price: '',
   category: '',
+  imageUrl: '',
   isAvailable: true,
 };
 
@@ -106,6 +109,7 @@ export default function MenuPage() {
       tenantApi.upsertMenuItem(tenantId!, {
         ...data,
         price: parseFloat(data.price),
+        imageUrl: data.imageUrl || null,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['menu', tenantId] });
@@ -166,9 +170,22 @@ export default function MenuPage() {
                 <Label>Description</Label>
                 <Input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Crispy Filipino spring rolls..." />
               </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>Image URL (optional)</Label>
+                <Input
+                  type="url"
+                  value={form.imageUrl}
+                  onChange={e => setForm(f => ({ ...f, imageUrl: e.target.value }))}
+                  placeholder="https://example.com/photo.jpg"
+                />
+                {form.imageUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={form.imageUrl} alt="preview" className="mt-2 h-24 w-24 rounded-md object-cover border" />
+                )}
+              </div>
               <div className="flex items-center gap-3">
                 <Switch checked={form.isAvailable} onCheckedChange={v => setForm(f => ({ ...f, isAvailable: v }))} />
-                <Label>Available</Label>
+                <Label>{profile.catalogNoun === 'products' ? 'In stock' : 'Available'}</Label>
               </div>
             </div>
             <div className="flex gap-3 mt-4">
@@ -220,10 +237,14 @@ export default function MenuPage() {
                               )}
                             </button>
                           )}
+                          {item.imageUrl && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={item.imageUrl} alt={item.name} className="h-10 w-10 rounded object-cover border shrink-0" />
+                          )}
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-medium">{item.name}</span>
-                              {!item.isAvailable && <Badge variant="secondary">Unavailable</Badge>}
+                              {!item.isAvailable && <Badge variant="secondary">{profile.catalogNoun === 'products' ? 'Out of stock' : 'Unavailable'}</Badge>}
                               {hasModifiers && (
                                 <Badge variant="outline" className="text-xs gap-1">
                                   <ListFilter className="h-3 w-3" />
@@ -237,7 +258,7 @@ export default function MenuPage() {
                         <div className="flex items-center gap-4 flex-shrink-0">
                           <span className="font-semibold">${Number(item.price).toFixed(2)}</span>
                           <Button variant="ghost" size="icon" onClick={() => {
-                            setForm({ id: item.id, name: item.name, description: item.description ?? '', price: String(item.price), category: item.category ?? '', isAvailable: item.isAvailable });
+                            setForm({ id: item.id, name: item.name, description: item.description ?? '', price: String(item.price), category: item.category ?? '', imageUrl: item.imageUrl ?? '', isAvailable: item.isAvailable });
                             setShowForm(true);
                           }}>
                             <Pencil className="h-4 w-4" />

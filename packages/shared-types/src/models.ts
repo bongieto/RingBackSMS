@@ -233,6 +233,7 @@ export const MenuItemSchema = z.object({
   description: z.string().nullable(),
   price: z.number().nonnegative(),
   category: z.string().nullable(),
+  imageUrl: z.string().url().nullable().optional(),
   isAvailable: z.boolean().default(true),
   duration: z.number().int().positive().nullable(),
   requiresBooking: z.boolean().default(false),
