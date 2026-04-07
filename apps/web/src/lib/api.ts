@@ -142,6 +142,10 @@ export const voicemailApi = {
     webApi.get('/voicemails', { params: { tenantId, ...params } }).then((r) => r.data),
   audioUrl: (id: string, tenantId: string) =>
     `/api/voicemails/${id}/audio?tenantId=${tenantId}`,
+  delete: (id: string, tenantId: string) =>
+    webApi.delete(`/voicemails/${id}`, { params: { tenantId } }).then((r) => r.data),
+  bulkDelete: (tenantId: string, ids: string[]) =>
+    webApi.post('/voicemails/bulk-delete', { tenantId, ids }).then((r) => r.data),
 };
 
 export const searchApi = {

@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/nextjs';
-import { Voicemail, Phone, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react';
+import { toast } from 'sonner';
+import { Voicemail, Phone, MessageSquare, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent } from '@/components/ui/card';
@@ -46,12 +47,64 @@ export default function VoicemailsPage() {
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery<PaginatedResponse>({
     queryKey: ['voicemails', tenantId, page],
     queryFn: () => voicemailApi.list(tenantId!, { page, pageSize: 20 }),
     enabled: !!tenantId,
   });
+
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['voicemails', tenantId] });
+    setSelected(new Set());
+  };
+
+  const deleteOne = useMutation({
+    mutationFn: (id: string) => voicemailApi.delete(id, tenantId!),
+    onSuccess: () => {
+      toast.success('Voicemail deleted');
+      refresh();
+    },
+    onError: () => toast.error('Failed to delete voicemail'),
+  });
+
+  const deleteBulk = useMutation({
+    mutationFn: (ids: string[]) => voicemailApi.bulkDelete(tenantId!, ids),
+    onSuccess: (res: { data: { deleted: number } }) => {
+      toast.success(`${res.data.deleted} voicemail${res.data.deleted !== 1 ? 's' : ''} deleted`);
+      refresh();
+    },
+    onError: () => toast.error('Failed to delete voicemails'),
+  });
+
+  const handleDeleteOne = (id: string) => {
+    if (!confirm('Delete this voicemail? This cannot be undone.')) return;
+    deleteOne.mutate(id);
+  };
+
+  const handleDeleteBulk = () => {
+    if (selected.size === 0) return;
+    if (!confirm(`Delete ${selected.size} voicemail${selected.size !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+    deleteBulk.mutate(Array.from(selected));
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = (ids: string[]) => {
+    setSelected((prev) => {
+      if (ids.every((id) => prev.has(id))) return new Set();
+      return new Set(ids);
+    });
+  };
 
   const voicemails = data?.data ?? [];
   const pagination = data?.pagination;
@@ -67,14 +120,25 @@ export default function VoicemailsPage() {
         description={pagination ? `${pagination.total} voicemail${pagination.total !== 1 ? 's' : ''}` : 'Loading...'}
       />
 
-      {/* Search */}
-      <div className="mb-4">
+      {/* Search + bulk actions */}
+      <div className="mb-4 flex items-center gap-3">
         <Input
           placeholder="Search by phone number..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="max-w-sm"
         />
+        {selected.size > 0 && (
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={handleDeleteBulk}
+            disabled={deleteBulk.isPending}
+          >
+            <Trash2 className="h-4 w-4 mr-1.5" />
+            Delete {selected.size}
+          </Button>
+        )}
       </div>
 
       {/* Content */}
@@ -100,16 +164,33 @@ export default function VoicemailsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b text-left text-sm text-muted-foreground">
+                  <th className="p-4 font-medium w-10">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all"
+                      checked={filtered.length > 0 && filtered.every((v) => selected.has(v.id))}
+                      onChange={() => toggleSelectAll(filtered.map((v) => v.id))}
+                    />
+                  </th>
                   <th className="p-4 font-medium">Caller</th>
                   <th className="p-4 font-medium">Date & Time</th>
                   <th className="p-4 font-medium">Duration</th>
                   <th className="p-4 font-medium">Recording</th>
                   <th className="p-4 font-medium">SMS</th>
+                  <th className="p-4 font-medium w-10"></th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((vm) => (
                   <tr key={vm.id} className="border-b last:border-0 hover:bg-muted/50">
+                    <td className="p-4">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select voicemail from ${maskPhone(vm.callerPhone)}`}
+                        checked={selected.has(vm.id)}
+                        onChange={() => toggleSelect(vm.id)}
+                      />
+                    </td>
                     <td className="p-4">
                       <div className="flex items-center gap-2">
                         <Phone className="h-4 w-4 text-muted-foreground" />
@@ -145,6 +226,17 @@ export default function VoicemailsPage() {
                           'Not sent'
                         )}
                       </Badge>
+                    </td>
+                    <td className="p-4">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        aria-label="Delete voicemail"
+                        onClick={() => handleDeleteOne(vm.id)}
+                        disabled={deleteOne.isPending}
+                      >
+                        <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                      </Button>
                     </td>
                   </tr>
                 ))}
