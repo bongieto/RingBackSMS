@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
 import { sendNotification } from '@/lib/server/services/notificationService';
+import { createTask, autoCompleteTasksForEntity } from '@/lib/server/services/taskService';
 
 const HandoffSchema = z.object({
   status: z.enum(['AI', 'HUMAN']),
@@ -50,6 +51,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         message: `A conversation with ${conversation.callerPhone} needs human attention.`,
         channel: 'slack',
       }).catch((err) => logger.error('Failed to send Slack handoff notification', { err }));
+
+      createTask({
+        tenantId: conversation.tenantId,
+        source: 'CONVERSATION',
+        title: `Reply needed: ${conversation.callerPhone}`,
+        priority: 'HIGH',
+        callerPhone: conversation.callerPhone,
+        conversationId: params.id,
+      }).catch((err) => logger.warn('Failed to create handoff task', { err }));
+    } else {
+      // Returning to AI → close any open handoff task for this conversation.
+      autoCompleteTasksForEntity('CONVERSATION', 'conversationId', params.id).catch((err) =>
+        logger.warn('Failed to auto-complete handoff task', { err })
+      );
     }
 
     return apiSuccess(updated);

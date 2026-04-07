@@ -5,6 +5,7 @@ import { getCallerState, setCallerState, isDuplicate } from './stateService';
 import { createOrder } from './orderService';
 import { createMeeting } from './schedulingService';
 import { sendNotification } from './notificationService';
+import { createTask } from './taskService';
 import { sendSms } from './twilioService';
 import { createOrderPaymentSession } from './paymentService';
 import { incrementSmsUsage } from './usageMeterService';
@@ -303,6 +304,17 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       message: `Customer ${callerPhone} requested to speak with a human. Please check the conversation in your dashboard.`,
       channel: 'email',
     }).catch((err) => logger.warn('Failed to send escalation notification', { error: err }));
+
+    // Create an action item for the owner
+    await createTask({
+      tenantId,
+      source: 'CONVERSATION',
+      title: `Reply needed: ${callerPhone}`,
+      description: inboundMessage,
+      priority: 'HIGH',
+      callerPhone,
+      conversationId: conversationId as string,
+    }).catch((err) => logger.warn('Failed to create handoff task', { error: err }));
   }
 
   // Process side effects (context passes data between effects, e.g. orderId from SAVE_ORDER to CREATE_PAYMENT_LINK)

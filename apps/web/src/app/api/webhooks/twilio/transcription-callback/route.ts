@@ -4,6 +4,7 @@ import { prisma } from '@/lib/server/db';
 import { logger } from '@/lib/server/logger';
 import { getValidationToken } from '@/lib/server/services/twilioService';
 import { analyzeVoicemail } from '@/lib/server/services/aiService';
+import { createTask } from '@/lib/server/services/taskService';
 
 /**
  * Fire-and-forget: read the transcript back from the DB, run AI analysis,
@@ -13,7 +14,7 @@ async function summarizeAndTagVoicemail(missedCallId: string): Promise<void> {
   try {
     const row = await prisma.missedCall.findUnique({
       where: { id: missedCallId },
-      select: { voicemailTranscript: true },
+      select: { voicemailTranscript: true, tenantId: true, callerPhone: true },
     });
     if (!row?.voicemailTranscript) return;
     const { summary, intent } = await analyzeVoicemail(row.voicemailTranscript);
@@ -21,6 +22,19 @@ async function summarizeAndTagVoicemail(missedCallId: string): Promise<void> {
       where: { id: missedCallId },
       data: { voicemailSummary: summary, voicemailIntent: intent, transcriptionStatus: 'done' },
     });
+
+    // Create an actionable task for the owner — skip obvious spam.
+    if (intent !== 'SPAM') {
+      await createTask({
+        tenantId: row.tenantId,
+        source: 'VOICEMAIL',
+        title: summary || 'New voicemail',
+        description: row.voicemailTranscript,
+        priority: intent === 'COMPLAINT' ? 'URGENT' : 'HIGH',
+        callerPhone: row.callerPhone,
+        missedCallId,
+      }).catch((err) => logger.warn('Failed to create voicemail task', { err, missedCallId }));
+    }
   } catch (err) {
     logger.error('summarizeAndTagVoicemail failed', { err, missedCallId });
     await prisma.missedCall

@@ -2,6 +2,7 @@ import axios from 'axios';
 import { MeetingStatus } from '@prisma/client';
 import { logger } from '../logger';
 import { prisma } from '../db';
+import { createTask, autoCompleteTasksForEntity } from './taskService';
 
 export interface CreateMeetingInput {
   tenantId: string;
@@ -23,6 +24,18 @@ export async function createMeeting(input: CreateMeetingInput) {
   });
 
   logger.info('Meeting created', { tenantId: input.tenantId, meetingId: meeting.id });
+
+  // Action item for the owner — confirm/schedule the meeting
+  await createTask({
+    tenantId: input.tenantId,
+    source: 'MEETING',
+    title: `Confirm meeting request from ${input.callerPhone}`,
+    description: input.notes ?? input.preferredTime ?? undefined,
+    priority: 'HIGH',
+    callerPhone: input.callerPhone,
+    meetingId: meeting.id,
+  }).catch((err) => logger.warn('Failed to create meeting task', { err, meetingId: meeting.id }));
+
   return meeting;
 }
 
@@ -76,7 +89,7 @@ export async function updateMeetingWithBooking(
   bookingUid: string,
   scheduledAt: Date
 ) {
-  return prisma.meeting.update({
+  const updated = await prisma.meeting.update({
     where: { id: meetingId },
     data: {
       calcomBookingId: bookingId,
@@ -85,6 +98,10 @@ export async function updateMeetingWithBooking(
       status: MeetingStatus.CONFIRMED,
     },
   });
+  await autoCompleteTasksForEntity('MEETING', 'meetingId', meetingId).catch((err) =>
+    logger.warn('Failed to auto-complete meeting task', { err, meetingId })
+  );
+  return updated;
 }
 
 export async function getTenantMeetings(

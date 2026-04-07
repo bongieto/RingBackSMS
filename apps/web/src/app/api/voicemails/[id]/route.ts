@@ -5,6 +5,7 @@ import { prisma } from '@/lib/server/db';
 import { decryptNullable } from '@/lib/server/encryption';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
+import { autoCompleteTasksForEntity } from '@/lib/server/services/taskService';
 
 /**
  * Extract the Twilio Recording SID (REXXXX...) from a recording URL.
@@ -86,8 +87,14 @@ export async function DELETE(
       voicemailUrl: null,
       voicemailDuration: null,
       voicemailReceivedAt: null,
+      voicemailHandledAt: new Date(),
     },
   });
+
+  // Close the linked action item, if any.
+  await autoCompleteTasksForEntity('VOICEMAIL', 'missedCallId', params.id).catch((err) =>
+    logger.warn('Failed to auto-complete voicemail task', { err, missedCallId: params.id })
+  );
 
   return apiSuccess({ id: params.id, deleted: true });
 }
