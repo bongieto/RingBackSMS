@@ -27,18 +27,35 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { UserButton, OrganizationSwitcher } from '@clerk/nextjs';
+import { tenantApi } from '@/lib/api';
+import { getProfile } from '@/lib/businessTypeProfile';
 
-const navItems = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  badgeKey?: 'tasks';
+  show?: (nav: ReturnType<typeof getProfile>['nav']) => boolean;
+  labelFrom?: (nav: ReturnType<typeof getProfile>['nav']) => string;
+};
+
+const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
-  { href: '/dashboard/tasks', label: 'Action Items', icon: ListChecks, badgeKey: 'tasks' as const },
+  { href: '/dashboard/tasks', label: 'Action Items', icon: ListChecks, badgeKey: 'tasks' },
   { href: '/dashboard/conversations', label: 'Conversations', icon: MessageSquare },
   { href: '/dashboard/voicemails', label: 'Voicemails', icon: Voicemail },
   { href: '/dashboard/contacts', label: 'Contacts', icon: Users },
-  { href: '/dashboard/orders', label: 'Orders', icon: ShoppingBag },
-  { href: '/dashboard/meetings', label: 'Meetings', icon: Calendar },
+  { href: '/dashboard/orders', label: 'Orders', icon: ShoppingBag, show: (n) => n.showOrders },
+  { href: '/dashboard/meetings', label: 'Meetings', icon: Calendar, show: (n) => n.showMeetings },
   { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3 },
-  { href: '/dashboard/menu', label: 'Menu', icon: UtensilsCrossed },
-  { href: '/dashboard/services', label: 'Services', icon: Briefcase },
+  {
+    href: '/dashboard/menu',
+    label: 'Menu',
+    icon: UtensilsCrossed,
+    show: (n) => n.showMenu,
+    labelFrom: (n) => n.menuLabel ?? 'Menu',
+  },
+  { href: '/dashboard/services', label: 'Services', icon: Briefcase, show: (n) => n.showServices },
   { href: '/dashboard/flows', label: 'Flows', icon: Zap },
   { href: '/dashboard/integrations', label: 'Integrations', icon: Plug2 },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
@@ -56,9 +73,20 @@ function useTaskBadge() {
   return data ?? { open: 0, urgent: 0 };
 }
 
+function useTenantProfile() {
+  const { data: tenant } = useQuery<{ businessType?: string }>({
+    queryKey: ['tenant-me'],
+    queryFn: () => tenantApi.getMe(),
+    staleTime: 60_000,
+  });
+  return getProfile(tenant?.businessType);
+}
+
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const taskBadge = useTaskBadge();
+  const profile = useTenantProfile();
+  const visibleItems = navItems.filter((i) => !i.show || i.show(profile.nav));
 
   return (
     <>
@@ -86,8 +114,9 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const Icon = item.icon;
+          const label = item.labelFrom ? item.labelFrom(profile.nav) : item.label;
           const isActive = item.href === '/dashboard'
             ? pathname === '/dashboard'
             : pathname === item.href || pathname.startsWith(item.href + '/');
@@ -105,7 +134,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               )}
             >
               <Icon className="h-4 w-4 shrink-0" />
-              <span className="flex-1">{item.label}</span>
+              <span className="flex-1">{label}</span>
               {('badgeKey' in item) && item.badgeKey === 'tasks' && taskBadge.open > 0 && (
                 <span
                   className={cn(

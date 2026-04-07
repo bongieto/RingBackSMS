@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { tenantApi } from '@/lib/api';
+import { getProfile } from '@/lib/businessTypeProfile';
 
 interface Modifier {
   id: string;
@@ -64,6 +65,13 @@ const defaultForm: MenuItemFormData = {
 export default function MenuPage() {
   const { organization } = useOrganization();
   const tenantId = organization?.publicMetadata?.tenantId as string | undefined;
+  const { data: tenant } = useQuery<{ businessType?: string }>({
+    queryKey: ['tenant-me'],
+    queryFn: () => tenantApi.getMe(),
+  });
+  const profile = getProfile(tenant?.businessType);
+  const nounLabel = profile.catalogNoun === 'products' ? 'Products' : 'Menu';
+  const nounSingular = profile.catalogNoun === 'products' ? 'product' : 'item';
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<MenuItemFormData>(defaultForm);
@@ -127,11 +135,11 @@ export default function MenuPage() {
   return (
     <div>
       <Header
-        title="Menu"
-        description="Manage items customers can order via SMS"
+        title={nounLabel}
+        description={`Manage ${nounSingular}s customers can ${profile.catalogNoun === 'products' ? 'inquire about and reserve' : 'order'} via SMS`}
         action={
           <Button onClick={() => { setForm(defaultForm); setShowForm(true); }}>
-            <Plus className="h-4 w-4 mr-2" /> Add Item
+            <Plus className="h-4 w-4 mr-2" /> Add {nounSingular}
           </Button>
         }
       />

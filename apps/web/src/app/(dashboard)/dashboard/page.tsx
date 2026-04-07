@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { analyticsApi, conversationApi, tenantApi } from '@/lib/api';
 import { formatRelativeTime, maskPhone } from '@/lib/utils';
 import { useOrganization } from '@clerk/nextjs';
+import { getProfile } from '@/lib/businessTypeProfile';
 
 export default function DashboardPage() {
   const { organization } = useOrganization();
@@ -34,6 +35,8 @@ export default function DashboardPage() {
   });
 
   const recentConversations = conversationsData?.data ?? [];
+  const profile = getProfile((tenant as { businessType?: string } | undefined)?.businessType);
+  const showCard = (key: string) => profile.dashboardCards.includes(key as never);
 
   return (
     <div>
@@ -47,47 +50,57 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-        <StatCard
-          title="Missed Calls"
-          value={analytics?.missedCalls ?? 0}
-          icon={Phone}
-          iconColor="text-blue-500"
-          change="Last 30 days"
-          changeType="neutral"
-        />
-        <StatCard
-          title="Conversations"
-          value={analytics?.conversations ?? 0}
-          icon={MessageSquare}
-          iconColor="text-purple-500"
-          change="Auto-replied"
-          changeType="positive"
-        />
-        <StatCard
-          title="Orders"
-          value={analytics?.orders ?? 0}
-          icon={ShoppingBag}
-          iconColor="text-green-500"
-          change="Via SMS"
-          changeType="positive"
-        />
-        <StatCard
-          title="Revenue"
-          value={`$${((analytics?.revenue as number) ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-          icon={DollarSign}
-          iconColor="text-emerald-500"
-          change="Order revenue"
-          changeType="positive"
-        />
-        <StatCard
-          title="Meetings"
-          value={analytics?.meetings ?? 0}
-          icon={Calendar}
-          iconColor="text-orange-500"
-          change="Scheduled"
-          changeType="positive"
-        />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        {showCard('missedCalls') && (
+          <StatCard
+            title="Missed Calls"
+            value={analytics?.missedCalls ?? 0}
+            icon={Phone}
+            iconColor="text-blue-500"
+            change="Last 30 days"
+            changeType="neutral"
+          />
+        )}
+        {showCard('conversations') && (
+          <StatCard
+            title="Conversations"
+            value={analytics?.conversations ?? 0}
+            icon={MessageSquare}
+            iconColor="text-purple-500"
+            change="Auto-replied"
+            changeType="positive"
+          />
+        )}
+        {showCard('orders') && (
+          <StatCard
+            title={profile.catalogNoun === 'products' ? 'Reservations' : 'Orders'}
+            value={analytics?.orders ?? 0}
+            icon={ShoppingBag}
+            iconColor="text-green-500"
+            change="Via SMS"
+            changeType="positive"
+          />
+        )}
+        {showCard('revenue') && (
+          <StatCard
+            title="Revenue"
+            value={`$${((analytics?.revenue as number) ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            icon={DollarSign}
+            iconColor="text-emerald-500"
+            change="Order revenue"
+            changeType="positive"
+          />
+        )}
+        {showCard('meetings') && (
+          <StatCard
+            title="Meetings"
+            value={analytics?.meetings ?? 0}
+            icon={Calendar}
+            iconColor="text-orange-500"
+            change="Scheduled"
+            changeType="positive"
+          />
+        )}
       </div>
 
       {/* POS Status */}
