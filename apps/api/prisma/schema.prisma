@@ -130,8 +130,12 @@ model TenantConfig {
   tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   greeting            String   @db.Text
   greetingAfterHours  String?  @db.Text
+  greetingRapidRedial String?  @db.Text
+  greetingReturning   String?  @db.Text
   voiceGreeting       String?  @db.Text
   voiceGreetingAfterHours String? @db.Text
+  voiceGreetingRapidRedial String? @db.Text
+  voiceGreetingReturning  String? @db.Text
   voiceType           String   @default("Polly.Joanna-Neural")
   timezone            String   @default("America/Chicago")
   businessHoursStart  String   @default("11:00")
@@ -189,6 +193,7 @@ model MissedCall {
   ownerRespondedAt    DateTime?
   contactId           String?
   contact             Contact?  @relation(fields: [contactId], references: [id])
+  callerTier          String?
   createdAt           DateTime  @default(now())
 
   conversations Conversation[]
@@ -353,6 +358,9 @@ model Contact {
   totalOrders   Int           @default(0)
   totalSpent    Int           @default(0)  // in cents
   lastContactAt DateTime?
+  stripeCustomerId String?
+  lastOrderId   String?
+  lastOrderAt   DateTime?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
