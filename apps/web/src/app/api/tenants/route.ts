@@ -14,6 +14,8 @@ export async function POST(request: NextRequest) {
     return apiCreated(tenant);
   } catch (err) {
     if (err instanceof AppError) return apiError(err.message, err.statusCode);
-    return apiError('Internal server error', 500);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[POST /api/tenants] failed', err);
+    return apiError(`Internal server error: ${message}`, 500);
   }
 }
