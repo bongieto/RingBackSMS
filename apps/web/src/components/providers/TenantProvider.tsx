@@ -8,11 +8,13 @@ import { tenantApi } from '@/lib/api';
 
 interface TenantContextType {
   tenantId: string | undefined;
+  businessType: string | undefined;
   isLoading: boolean;
 }
 
 const TenantContext = createContext<TenantContextType>({
   tenantId: undefined,
+  businessType: undefined,
   isLoading: true,
 });
 
@@ -30,6 +32,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
   const { organization, isLoaded } = useOrganization();
   const router = useRouter();
   const [resolvedTenantId, setResolvedTenantId] = useState<string | undefined>(undefined);
+  const [businessType, setBusinessType] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
 
   const metadataTenantId = organization?.publicMetadata?.tenantId as string | undefined;
@@ -45,9 +48,10 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     tenantApi
       .getMe()
-      .then((tenant: { id: string }) => {
+      .then((tenant: { id: string; businessType?: string }) => {
         if (cancelled) return;
         setResolvedTenantId(tenant.id);
+        setBusinessType(tenant.businessType);
         setIsLoading(false);
       })
       .catch((err: { response?: { status?: number } }) => {
@@ -71,7 +75,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
   }, [isLoaded, organization, metadataTenantId, router]);
 
   return (
-    <TenantContext.Provider value={{ tenantId: resolvedTenantId, isLoading }}>
+    <TenantContext.Provider value={{ tenantId: resolvedTenantId, businessType, isLoading }}>
       {isLoading || !resolvedTenantId ? (
         <div className="flex min-h-screen items-center justify-center">
           <Loader2 className="h-6 w-6 animate-spin text-gray-400" />

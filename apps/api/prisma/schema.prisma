@@ -379,6 +379,8 @@ model Contact {
   phone         String
   name          String?
   email         String?
+  nameSearchHash  String?     // HMAC of lowercased name for SQL-level search on encrypted field
+  emailSearchHash String?     // HMAC of lowercased email for SQL-level search on encrypted field
   notes         String?       // kept for backward compat; use contactNotes for new entries
   status        ContactStatus @default(LEAD)
   tags          String[]      @default([])
@@ -397,6 +399,9 @@ model Contact {
   @@unique([tenantId, phone])
   @@index([tenantId])
   @@index([tenantId, status])
+  @@index([tenantId, updatedAt])
+  @@index([tenantId, nameSearchHash])
+  @@index([tenantId, emailSearchHash])
 }
 
 model PosSyncLog {

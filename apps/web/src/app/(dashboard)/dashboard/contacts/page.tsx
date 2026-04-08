@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useOrganization } from '@clerk/nextjs';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { useTenantId } from '@/components/providers/TenantProvider';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import {
@@ -80,13 +80,19 @@ function downloadBlob(blob: Blob, filename: string) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ContactsPage() {
-  const { organization } = useOrganization();
-  const tenantId = organization?.publicMetadata?.tenantId as string | undefined;
+  const { tenantId } = useTenantId();
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [tagFilter, setTagFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+
+  // Debounce search input so each keystroke doesn't fire a request.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -96,15 +102,17 @@ export default function ContactsPage() {
   const [bulkStatus, setBulkStatus] = useState('');
 
   const { data, isLoading } = useQuery({
-    queryKey: ['contacts', tenantId, search, tagFilter, statusFilter, page],
+    queryKey: ['contacts', tenantId, debouncedSearch, tagFilter, statusFilter, page],
     queryFn: () => contactApi.list(tenantId!, {
-      search: search || undefined,
+      search: debouncedSearch || undefined,
       tag: tagFilter || undefined,
       status: statusFilter || undefined,
       page,
       pageSize: 20,
     }),
     enabled: !!tenantId,
+    staleTime: 5 * 60 * 1000,
+    placeholderData: keepPreviousData,
   });
 
   const contacts: Contact[] = data?.data ?? [];
@@ -115,6 +123,17 @@ export default function ContactsPage() {
     queryKey: ['contact', selectedId],
     queryFn: () => contactApi.get(selectedId!),
     enabled: !!selectedId,
+  });
+
+  const { data: selectedStats } = useQuery<{ conversationCount: number; orderCount: number }>({
+    queryKey: ['contact-stats', selectedId],
+    queryFn: async () => {
+      const res = await fetch(`/api/contacts/${selectedId}/stats`);
+      const json = await res.json();
+      return json.data ?? json;
+    },
+    enabled: !!selectedId,
+    staleTime: 60_000,
   });
 
   const saveMutation = useMutation({
@@ -414,7 +433,11 @@ export default function ContactsPage() {
         {/* Right: Detail panel */}
         {selectedContact && (
           <ContactDetailPanel
-            contact={selectedContact}
+            contact={{
+              ...selectedContact,
+              conversationCount: selectedStats?.conversationCount ?? selectedContact.conversationCount ?? 0,
+              orderCount: selectedStats?.orderCount ?? selectedContact.orderCount ?? 0,
+            }}
             onSave={(updates) => saveMutation.mutate({ id: selectedContact.id, ...updates })}
             onDelete={() => {
               if (confirm(`Delete ${selectedContact.name || selectedContact.phone}? This cannot be undone.`)) {

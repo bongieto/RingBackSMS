@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { UserButton, OrganizationSwitcher } from '@clerk/nextjs';
-import { tenantApi } from '@/lib/api';
+import { useTenantId } from '@/components/providers/TenantProvider';
 import { getProfile } from '@/lib/businessTypeProfile';
 import { Logo } from '@/components/Logo';
 
@@ -76,12 +76,8 @@ function useTaskBadge() {
 }
 
 function useTenantProfile() {
-  const { data: tenant } = useQuery<{ businessType?: string }>({
-    queryKey: ['tenant-me'],
-    queryFn: () => tenantApi.getMe(),
-    staleTime: 60_000,
-  });
-  return getProfile(tenant?.businessType);
+  const { businessType } = useTenantId();
+  return getProfile(businessType);
 }
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
