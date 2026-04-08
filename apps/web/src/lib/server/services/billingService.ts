@@ -111,6 +111,12 @@ export async function createCheckoutSession(
     cancel_url: cancelUrl,
     'metadata[tenantId]': tenantId,
     'metadata[plan]': plan,
+    // Copy metadata onto the subscription itself so webhooks
+    // (customer.subscription.created/updated) can resolve the tenant.
+    // Stripe does NOT propagate checkout-session metadata to the
+    // subscription automatically.
+    'subscription_data[metadata][tenantId]': tenantId,
+    'subscription_data[metadata][plan]': plan,
   };
 
   // Add SMS price if configured
