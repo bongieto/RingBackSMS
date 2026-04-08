@@ -158,9 +158,13 @@ export async function GET(_request: NextRequest) {
     },
     {
       name: 'Square POS',
-      configured: !!(process.env.SQUARE_APPLICATION_ID && process.env.SQUARE_APPLICATION_SECRET),
+      configured: !!(
+        (process.env.SQUARE_APPLICATION_ID || process.env.SQUARE_APP_ID) &&
+        (process.env.SQUARE_APPLICATION_SECRET || process.env.SQUARE_APP_SECRET)
+      ),
       status:
-        process.env.SQUARE_APPLICATION_ID && process.env.SQUARE_APPLICATION_SECRET
+        (process.env.SQUARE_APPLICATION_ID || process.env.SQUARE_APP_ID) &&
+        (process.env.SQUARE_APPLICATION_SECRET || process.env.SQUARE_APP_SECRET)
           ? 'ok'
           : 'unconfigured',
       tenantsConnected: squareCount,
