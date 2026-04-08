@@ -920,6 +920,77 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* ─── For Agencies ────────────────────────────────────────── */}
+        <section id="agencies" className="py-20 sm:py-28 bg-white">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="text-center mb-16">
+              <div className="inline-block px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold uppercase tracking-wide mb-4">
+                For Agencies
+              </div>
+              <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900">
+                Built for agencies managing multiple clients
+              </h2>
+              <p className="text-lg text-slate-600 mt-4 max-w-2xl mx-auto">
+                Run every client business from a single login. Each client stays fully isolated — their own phone number, contacts, conversations, and billing.
+              </p>
+            </div>
+
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {[
+                {
+                  icon: Users,
+                  title: 'One login, all clients',
+                  desc: 'Switch between client businesses from the org switcher. No juggling passwords or browser profiles.',
+                },
+                {
+                  icon: ShieldCheck,
+                  title: 'Isolated per client',
+                  desc: 'Each client has its own phone number, data, settings, and team members. Zero cross-bleed.',
+                },
+                {
+                  icon: DollarSign,
+                  title: 'Per-client billing',
+                  desc: 'Each client carries its own Stripe subscription. Invoice them directly or roll it into your managed fee.',
+                },
+                {
+                  icon: TrendingUp,
+                  title: 'Scale with your book',
+                  desc: 'Add or remove clients any time. No seat limits, no setup fees, no long-term commitments.',
+                },
+              ].map(({ icon: Icon, title, desc }) => (
+                <div
+                  key={title}
+                  className="bg-slate-50 rounded-2xl p-6 hover:bg-blue-50 hover:border-blue-100 border border-transparent transition-all group"
+                >
+                  <div className="h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center mb-4 group-hover:bg-blue-600 transition-colors">
+                    <Icon className="h-5 w-5 text-blue-600 group-hover:text-white transition-colors" aria-hidden />
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900 mb-2">{title}</h3>
+                  <p className="text-sm text-slate-600 leading-relaxed">{desc}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-4">
+              <a
+                href="mailto:support@ringbacksms.com?subject=Agency%20access%20request"
+                className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-lg transition-colors"
+              >
+                Request agency access <ArrowRight className="h-4 w-4" />
+              </a>
+              <a
+                href="/help#agencies"
+                className="inline-flex items-center gap-2 text-slate-700 hover:text-blue-600 font-semibold px-6 py-3 rounded-lg transition-colors"
+              >
+                See how it works
+              </a>
+            </div>
+            <p className="text-center text-xs text-slate-500 mt-6 max-w-xl mx-auto">
+              Agency access is granted on request while we finalize agency pricing. Contact support to enable it on your account.
+            </p>
+          </div>
+        </section>
+
         {/* ─── Pricing ─────────────────────────────────────────────── */}
         <section id="pricing" className="py-20 sm:py-28 bg-slate-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -934,6 +1005,9 @@ export default function HomePage() {
             <PricingSection plans={PRICING} />
             <p className="text-center text-sm text-slate-500 mt-8">
               All plans include a 14-day free trial. No credit card required to start. Cancel anytime.
+            </p>
+            <p className="text-center text-xs text-slate-500 mt-2">
+              Billing is per business. <a href="#agencies" className="text-blue-600 hover:underline">Agency access</a> — managing multiple clients from one login — is granted on request.
             </p>
           </div>
         </section>

@@ -26,7 +26,7 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { UserButton, OrganizationSwitcher } from '@clerk/nextjs';
+import { UserButton, OrganizationSwitcher, useUser } from '@clerk/nextjs';
 import { useTenantId } from '@/components/providers/TenantProvider';
 import { getProfile } from '@/lib/businessTypeProfile';
 import { Logo } from '@/components/Logo';
@@ -85,6 +85,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const taskBadge = useTaskBadge();
   const profile = useTenantProfile();
   const visibleItems = navItems.filter((i) => !i.show || i.show(profile.nav));
+  const { user } = useUser();
+  const isAgency = Boolean((user?.publicMetadata as Record<string, unknown> | undefined)?.isAgency);
 
   return (
     <>
@@ -100,6 +102,9 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             elements: {
               rootBox: 'w-full',
               organizationSwitcherTrigger: 'w-full rounded-lg bg-slate-800 px-3 py-2 text-sm text-white hover:bg-slate-700',
+              ...(isAgency
+                ? {}
+                : { organizationSwitcherPopoverActionButton__createOrganization: 'hidden' }),
             },
           }}
         />
