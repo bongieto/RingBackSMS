@@ -11,15 +11,18 @@ export async function POST(request: NextRequest) {
   if (!userId) return apiError('Unauthorized', 401);
   try {
     const body = CreateTenantRequestSchema.parse(await request.json());
+    // Prefer server-side orgId (trusted), but fall back to the client-sent
+    // clerkOrgId if the Clerk session hasn't picked up the active org yet.
+    const effectiveOrgId = orgId ?? body.clerkOrgId;
 
     // Idempotent: if a tenant already exists for this Clerk org, return it
     // instead of failing on the unique clerkOrgId constraint.
-    if (orgId) {
-      const existing = await prisma.tenant.findUnique({ where: { clerkOrgId: orgId } });
+    if (effectiveOrgId) {
+      const existing = await prisma.tenant.findUnique({ where: { clerkOrgId: effectiveOrgId } });
       if (existing) return apiCreated(existing);
     }
 
-    const tenant = await createTenant({ ...body, clerkOrgId: orgId ?? undefined });
+    const tenant = await createTenant({ ...body, clerkOrgId: effectiveOrgId ?? undefined });
     return apiCreated(tenant);
   } catch (err) {
     if (err instanceof AppError) return apiError(err.message, err.statusCode);
