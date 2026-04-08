@@ -2,10 +2,10 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useOrganization } from '@clerk/nextjs';
 import { Plus, Pencil, Trash2, Briefcase, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
+import { useTenantId } from '@/components/providers/TenantProvider';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -45,8 +45,7 @@ const defaultForm: ServiceFormData = {
 };
 
 export default function ServicesPage() {
-  const { organization } = useOrganization();
-  const tenantId = organization?.publicMetadata?.tenantId as string | undefined;
+  const { tenantId } = useTenantId();
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<ServiceFormData>(defaultForm);
