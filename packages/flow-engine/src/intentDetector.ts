@@ -58,8 +58,12 @@ export async function detectIntent(
   if (enabledFlowTypes.includes(FlowType.ORDER)) {
     if (
       upperMsg === 'ORDER' ||
+      upperMsg === 'ORDERING' ||
+      upperMsg === 'START ORDER' ||
       upperMsg.includes('ORDER FOOD') ||
       upperMsg.includes('PLACE ORDER') ||
+      upperMsg.includes('START ORDER') ||
+      upperMsg.includes('I WANT TO ORDER') ||
       upperMsg.includes('BUY') ||
       upperMsg.includes('MENU')
     ) {

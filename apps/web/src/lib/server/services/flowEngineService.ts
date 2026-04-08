@@ -7,6 +7,7 @@ import { createMeeting } from './schedulingService';
 import { sendNotification } from './notificationService';
 import { createTask } from './taskService';
 import { sendSms } from './twilioService';
+import { matchesLocationKeyword, buildLocationReply } from './foodTruckLocationService';
 import { createOrderPaymentSession } from './paymentService';
 import { incrementSmsUsage } from './usageMeterService';
 import { logger } from '../logger';
@@ -67,6 +68,76 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
 
       logger.info('Message received during human handoff, skipping AI', { tenantId, callerPhone });
       return;
+    }
+  }
+
+  // Food-truck short-circuit: "where are you?" → reply with today's spot
+  // without running the full flow engine / LLM roundtrip.
+  if (matchesLocationKeyword(inboundMessage)) {
+    const ftTenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { businessType: true, config: { select: { timezone: true } } },
+    });
+    if (ftTenant?.businessType === 'FOOD_TRUCK') {
+      const reply = await buildLocationReply(
+        tenantId,
+        new Date(),
+        ftTenant.config?.timezone ?? 'America/Chicago'
+      ).catch((err) => {
+        logger.error('buildLocationReply failed', { err, tenantId });
+        return null;
+      });
+      if (reply) {
+        await sendSms(tenantId, callerPhone, reply).catch((err) =>
+          logger.error('Failed to send food-truck location SMS', { err, tenantId })
+        );
+
+        // Persist the exchange to a conversation so it shows up in the dashboard.
+        try {
+          const newMessages = [
+            { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },
+            { role: 'assistant', content: reply, timestamp: new Date(), sender: 'bot' },
+          ];
+          if (existingConversationId) {
+            const existing = await prisma.conversation.findUnique({
+              where: { id: existingConversationId },
+              select: { messages: true },
+            });
+            const messages = decryptMessages(existing?.messages);
+            await prisma.conversation.update({
+              where: { id: existingConversationId },
+              data: {
+                messages: encryptMessages([...messages, ...newMessages]) as unknown as Prisma.InputJsonValue,
+                updatedAt: new Date(),
+              },
+            });
+          } else {
+            const conv = await prisma.conversation.create({
+              data: {
+                tenantId,
+                callerPhone,
+                messages: encryptMessages(newMessages) as unknown as Prisma.InputJsonValue,
+                isActive: true,
+              },
+            });
+            await setCallerState({
+              tenantId,
+              callerPhone,
+              conversationId: conv.id,
+              currentFlow: null,
+              flowStep: null,
+              orderDraft: null,
+              lastMessageAt: Date.now(),
+              messageCount: 1,
+              dedupKey: messageSid,
+            });
+          }
+        } catch (err) {
+          logger.error('Failed to persist food-truck location conversation', { err, tenantId });
+        }
+        logger.info('Food-truck location reply sent', { tenantId, callerPhone });
+        return;
+      }
     }
   }
 
