@@ -39,3 +39,5 @@ prisma/migrations/
 # Turbo
 .turbo/
 .vercel
+.env.production
+.env.prod.tmp
