@@ -14,6 +14,12 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   title: 'RingBackSMS — AI SMS for Missed Calls',
   description: 'Auto-respond to missed calls with AI-powered SMS. Never lose a customer again.',
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+    googleBot: { index: false, follow: false },
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
