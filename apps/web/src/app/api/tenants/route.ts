@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { auth, clerkClient } from '@clerk/nextjs/server';
 import { createTenant } from '@/lib/server/services/tenantService';
 import { CreateTenantRequestSchema } from '@ringback/shared-types';
 import { apiCreated, apiError } from '@/lib/server/response';
@@ -15,14 +15,36 @@ export async function POST(request: NextRequest) {
     // clerkOrgId if the Clerk session hasn't picked up the active org yet.
     const effectiveOrgId = orgId ?? body.clerkOrgId;
 
-    // Idempotent: if a tenant already exists for this Clerk org, return it
-    // instead of failing on the unique clerkOrgId constraint.
+    // Idempotent: if a tenant already exists for this Clerk org, update its
+    // name to match the submitted business name and return it. This ensures
+    // the tenant name stays in sync with what the user typed during onboarding.
     if (effectiveOrgId) {
       const existing = await prisma.tenant.findUnique({ where: { clerkOrgId: effectiveOrgId } });
-      if (existing) return apiCreated(existing);
+      if (existing) {
+        const updated = existing.name !== body.name
+          ? await prisma.tenant.update({ where: { id: existing.id }, data: { name: body.name } })
+          : existing;
+        // Also rename the Clerk org so the sidebar/org switcher reflects it.
+        try {
+          const clerk = await clerkClient();
+          await clerk.organizations.updateOrganization(effectiveOrgId, { name: body.name });
+        } catch (e) {
+          console.warn('[POST /api/tenants] failed to rename Clerk org', e);
+        }
+        return apiCreated(updated);
+      }
     }
 
     const tenant = await createTenant({ ...body, clerkOrgId: effectiveOrgId ?? undefined });
+    // Rename the Clerk org to match the new tenant name for consistency.
+    if (effectiveOrgId) {
+      try {
+        const clerk = await clerkClient();
+        await clerk.organizations.updateOrganization(effectiveOrgId, { name: body.name });
+      } catch (e) {
+        console.warn('[POST /api/tenants] failed to rename Clerk org', e);
+      }
+    }
     return apiCreated(tenant);
   } catch (err) {
     if (err instanceof AppError) return apiError(err.message, err.statusCode);
