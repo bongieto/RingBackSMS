@@ -86,15 +86,18 @@ function deriveFlatFromSchedule(schedule: BusinessSchedule) {
 
 export default function SettingsPage() {
   const { organization } = useOrganization();
-  const tenantId = organization?.publicMetadata?.tenantId as string | undefined;
   const queryClient = useQueryClient();
 
+  // Always fetch the live tenant via /tenants/me instead of relying on
+  // potentially stale Clerk publicMetadata (e.g. left over from a seed).
   const { data: tenant } = useQuery({
-    queryKey: ['tenant', tenantId],
+    queryKey: ['tenant', organization?.id],
     queryFn: () => tenantApi.getMe(),
-    enabled: !!tenantId,
+    enabled: !!organization?.id,
   });
 
+  const tenantId = (tenant?.id as string | undefined)
+    ?? (organization?.publicMetadata?.tenantId as string | undefined);
   const config: TenantConfig | undefined = tenant?.config;
 
   const [form, setForm] = useState({
