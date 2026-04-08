@@ -1,6 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
 import { auth, clerkClient, currentUser } from '@clerk/nextjs/server';
-import { getTenantByClerkOrg } from '@/lib/server/services/tenantService';
+import {
+  getTenantByClerkOrg,
+  ensureTenantForClerkOrg,
+} from '@/lib/server/services/tenantService';
 import { prisma } from '@/lib/server/db';
 import { NotFoundError } from '@/lib/server/errors';
 import { apiSuccess, apiError } from '@/lib/server/response';
@@ -43,12 +45,27 @@ export async function GET() {
         }
       }
 
-      if (!candidate) throw err;
-      await prisma.tenant.update({
-        where: { id: candidate.id },
-        data: { clerkOrgId: orgId },
-      });
-      tenant = await getTenantByClerkOrg(orgId);
+      if (!candidate) {
+        // Safety belt: no tenant exists for this Clerk org via any tier.
+        // This happens when the `organization.created` webhook hasn't
+        // landed yet (or was never registered). Create a stub so the
+        // dashboard never 404s. The stub will be updated when the user
+        // submits the onboarding form (POST /api/tenants is idempotent).
+        const userForEmail = await currentUser();
+        const ownerEmail = userForEmail?.emailAddresses?.[0]?.emailAddress?.toLowerCase();
+        await ensureTenantForClerkOrg({
+          clerkOrgId: orgId,
+          name: org.name,
+          ownerEmail,
+        });
+        tenant = await getTenantByClerkOrg(orgId);
+      } else {
+        await prisma.tenant.update({
+          where: { id: candidate.id },
+          data: { clerkOrgId: orgId },
+        });
+        tenant = await getTenantByClerkOrg(orgId);
+      }
     }
 
     // Backfill Clerk publicMetadata if tenantId is missing or stale

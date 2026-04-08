@@ -80,6 +80,36 @@ export async function createTenant(input: CreateTenantInput) {
   return tenant;
 }
 
+/**
+ * Idempotent: ensure a tenant row exists for a given Clerk organization.
+ * Used by the Clerk `organization.created` webhook and as a safety-belt
+ * inside `GET /api/tenants/me` so the dashboard never hits 404 due to a
+ * missing tenant row. If no tenant exists, creates a stub with defaults
+ * that will be overwritten when the user submits the onboarding form.
+ */
+export async function ensureTenantForClerkOrg(input: {
+  clerkOrgId: string;
+  name?: string | null;
+  ownerEmail?: string;
+}) {
+  const existing = await prisma.tenant.findUnique({
+    where: { clerkOrgId: input.clerkOrgId },
+  });
+  if (existing) return existing;
+
+  const name =
+    (input.name && input.name.trim()) ||
+    `Organization ${input.clerkOrgId.slice(-6)}`;
+
+  return createTenant({
+    name,
+    businessType: BusinessType.OTHER,
+    plan: Plan.STARTER,
+    clerkOrgId: input.clerkOrgId,
+    ownerEmail: input.ownerEmail,
+  });
+}
+
 export async function getTenantById(id: string) {
   const tenant = await prisma.tenant.findUnique({
     where: { id },
