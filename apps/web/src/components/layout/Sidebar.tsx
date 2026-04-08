@@ -154,6 +154,17 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             elements: {
               userButtonBox: 'flex items-center gap-2',
               userButtonOuterIdentifier: 'text-slate-300 text-sm',
+              userButtonPopoverCard:
+                'bg-white text-slate-900 shadow-2xl border border-slate-200 rounded-xl',
+              userButtonPopoverMain: 'bg-white',
+              userButtonPopoverActions: 'bg-white',
+              userButtonPopoverActionButton:
+                'text-slate-700 hover:bg-slate-100',
+              userButtonPopoverActionButtonText: 'text-slate-700 font-medium',
+              userButtonPopoverActionButtonIcon: 'text-slate-500',
+              userButtonPopoverFooter: 'bg-slate-50 border-t border-slate-200',
+              userPreviewMainIdentifier: 'text-slate-900 font-semibold',
+              userPreviewSecondaryIdentifier: 'text-slate-500',
             },
           }}
           showName
