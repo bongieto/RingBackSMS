@@ -70,7 +70,6 @@ export async function GET() {
   } catch (err) {
     if (err instanceof NotFoundError) return apiError('Tenant not found', 404);
     console.error('[GET /api/tenants/me] failed', err);
-    const msg = err instanceof Error ? err.message : 'Tenant lookup failed';
-    return apiError(`[debug] ${msg}`, 500);
+    return apiError('Tenant lookup failed', 500);
   }
 }
