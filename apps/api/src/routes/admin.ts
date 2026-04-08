@@ -15,7 +15,7 @@ const prisma = new PrismaClient();
 
 function requireSuperAdmin(req: Request, res: Response, next: NextFunction): void {
   const auth = getAuth(req);
-  const adminUserId = process.env.SUPER_ADMIN_USER_ID;
+  const adminUserId = process.env.SUPER_ADMIN_CLERK_USER_ID;
 
   if (!adminUserId) {
     sendError(res, 'Admin access not configured', 503);

@@ -4,7 +4,7 @@ import { prisma } from '@/lib/server/db';
 import { apiSuccess, apiError } from '@/lib/server/response';
 
 function isSuperAdmin(userId: string | null): boolean {
-  const adminId = process.env.SUPER_ADMIN_USER_ID?.trim();
+  const adminId = process.env.SUPER_ADMIN_CLERK_USER_ID?.trim();
   return !!userId && !!adminId && userId === adminId;
 }
 
