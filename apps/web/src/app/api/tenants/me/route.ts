@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth, clerkClient } from '@clerk/nextjs/server';
+import { auth, clerkClient, currentUser } from '@clerk/nextjs/server';
 import { getTenantByClerkOrg } from '@/lib/server/services/tenantService';
 import { prisma } from '@/lib/server/db';
 import { NotFoundError } from '@/lib/server/errors';
@@ -21,16 +21,33 @@ export async function GET() {
       const clerk = await clerkClient();
       const org = await clerk.organizations.getOrganization({ organizationId: orgId });
       const metaTenantId = org.publicMetadata?.tenantId as string | undefined;
-      if (!metaTenantId) throw err;
-      const orphan = await prisma.tenant.findUnique({ where: { id: metaTenantId } });
-      if (!orphan) throw err;
-      if (orphan.clerkOrgId && orphan.clerkOrgId !== orgId) throw err;
-      if (!orphan.clerkOrgId) {
-        await prisma.tenant.update({
-          where: { id: orphan.id },
-          data: { clerkOrgId: orgId },
-        });
+      let candidate = metaTenantId
+        ? await prisma.tenant.findUnique({ where: { id: metaTenantId } })
+        : null;
+
+      // Secondary heal: match by signed-in user's email against
+      // TenantConfig.ownerEmail. Handles cases where onboarding wrote a
+      // clerkOrgId that differs from the current session's orgId (e.g. the
+      // user switched Clerk orgs or client/server session mismatch).
+      if (!candidate) {
+        const user = await currentUser();
+        const email = user?.emailAddresses?.[0]?.emailAddress?.toLowerCase();
+        if (email) {
+          const cfg = await prisma.tenantConfig.findFirst({
+            where: { ownerEmail: { equals: email, mode: 'insensitive' } },
+            orderBy: { createdAt: 'desc' },
+          });
+          if (cfg) {
+            candidate = await prisma.tenant.findUnique({ where: { id: cfg.tenantId } });
+          }
+        }
       }
+
+      if (!candidate) throw err;
+      await prisma.tenant.update({
+        where: { id: candidate.id },
+        data: { clerkOrgId: orgId },
+      });
       tenant = await getTenantByClerkOrg(orgId);
     }
 
