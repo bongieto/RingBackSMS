@@ -9,11 +9,13 @@ export async function GET() {
   try {
     const tenant = await getTenantByClerkOrg(orgId);
 
-    // Backfill Clerk publicMetadata if tenantId is not set
+    // Backfill Clerk publicMetadata if tenantId is missing or stale
+    // (e.g. seed id from an earlier dev session).
     try {
       const clerk = await clerkClient();
       const org = await clerk.organizations.getOrganization({ organizationId: orgId });
-      if (!org.publicMetadata?.tenantId) {
+      const currentMeta = org.publicMetadata?.tenantId as string | undefined;
+      if (currentMeta !== tenant.id) {
         await clerk.organizations.updateOrganizationMetadata(orgId, {
           publicMetadata: { tenantId: tenant.id },
         });

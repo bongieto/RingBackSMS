@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useOrganization } from '@clerk/nextjs';
 import { tenantApi } from '@/lib/api';
 
@@ -15,13 +16,18 @@ const TenantContext = createContext<TenantContextType>({
 });
 
 /**
- * Resolves tenantId for dashboard pages.
- * 1. First tries organization.publicMetadata.tenantId (fast, from Clerk)
- * 2. If not set, calls /api/tenants/me to look up tenant by clerkOrgId
- * 3. That endpoint also backfills Clerk publicMetadata for future loads
+ * Resolves tenantId for dashboard pages by calling /api/tenants/me,
+ * which is the single source of truth. Clerk publicMetadata is used
+ * only as a last-resort fallback if the API call fails for a reason
+ * other than 404, because metadata can be stale (e.g. a seed id left
+ * over from an earlier dev session).
+ *
+ * If no tenant exists for the current Clerk org, the user is
+ * redirected to /onboarding.
  */
 export function TenantProvider({ children }: { children: React.ReactNode }) {
   const { organization, isLoaded } = useOrganization();
+  const router = useRouter();
   const [resolvedTenantId, setResolvedTenantId] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -30,30 +36,38 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isLoaded) return;
 
-    // If tenantId is already in metadata, use it
-    if (metadataTenantId) {
-      setResolvedTenantId(metadataTenantId);
-      setIsLoading(false);
-      return;
-    }
-
-    // If no organization, can't resolve
     if (!organization) {
       setIsLoading(false);
       return;
     }
 
-    // Look up tenant by clerkOrgId via API
+    let cancelled = false;
     tenantApi
       .getMe()
       .then((tenant: { id: string }) => {
+        if (cancelled) return;
         setResolvedTenantId(tenant.id);
         setIsLoading(false);
       })
-      .catch(() => {
+      .catch((err: { response?: { status?: number } }) => {
+        if (cancelled) return;
+        const status = err?.response?.status;
+        if (status === 404) {
+          // No tenant for this Clerk org yet — user needs to onboard.
+          setIsLoading(false);
+          router.replace('/onboarding');
+          return;
+        }
+        // Transient error — fall back to metadata if present, but flag
+        // that the id may be stale.
+        setResolvedTenantId(metadataTenantId);
         setIsLoading(false);
       });
-  }, [isLoaded, organization, metadataTenantId]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoaded, organization, metadataTenantId, router]);
 
   return (
     <TenantContext.Provider value={{ tenantId: resolvedTenantId, isLoading }}>
