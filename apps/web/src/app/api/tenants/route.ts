@@ -5,6 +5,7 @@ import { CreateTenantRequestSchema } from '@ringback/shared-types';
 import { apiCreated, apiError } from '@/lib/server/response';
 import { AppError } from '@/lib/server/errors';
 import { prisma } from '@/lib/server/db';
+import { isAgencyUser, isSuperAdmin, countUserOrganizations } from '@/lib/server/agency';
 
 export async function POST(request: NextRequest) {
   const { userId, orgId } = await auth();
@@ -32,6 +33,18 @@ export async function POST(request: NextRequest) {
           console.warn('[POST /api/tenants] failed to rename Clerk org', e);
         }
         return apiCreated(updated);
+      }
+    }
+
+    // Agency gate: only agency-flagged users (or the super admin) may create a
+    // 2nd+ organization. First-org creation is always allowed.
+    if (!isSuperAdmin(userId)) {
+      const orgCount = await countUserOrganizations(userId);
+      if (orgCount >= 1 && !(await isAgencyUser(userId))) {
+        return apiError(
+          'Multiple organizations require agency access. Contact support@ringbacksms.com to enable it on your account.',
+          403,
+        );
       }
     }
 

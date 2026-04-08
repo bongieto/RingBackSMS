@@ -122,6 +122,7 @@ export default function HelpPage() {
           <NavCard icon={CreditCard} title="Billing & Plans" description="Pricing, usage, and upgrades" href="#billing" />
           <NavCard icon={Settings} title="Settings" description="Configure your business profile" href="#settings" />
           <NavCard icon={BarChart3} title="Analytics" description="Track your performance" href="#analytics" />
+          <NavCard icon={Briefcase} title="Agencies" description="Manage multiple clients from one login" href="#agencies" />
           <NavCard icon={HelpCircle} title="FAQs" description="Common questions answered" href="#faq" />
         </div>
       </div>
@@ -527,6 +528,36 @@ export default function HelpPage() {
         </Section>
 
         {/* ── FAQ ─────────────────────────────────────────── */}
+        <Section id="agencies" title="Agencies & Multi-business">
+          <p className="text-gray-700 mb-4">
+            RingBackSMS supports agencies and operators managing multiple client businesses from a single login. Each client is a fully isolated organization with its own phone number, contacts, conversations, menu, settings, and Stripe subscription — no data bleeds between them.
+          </p>
+          <p className="text-gray-700 mb-6">
+            <strong>Agency access is gated.</strong> By default, an account can own one organization. To enable multi-client management, email <strong>support@ringbacksms.com</strong> and we&apos;ll grant agency access on your account while we finalize agency pricing.
+          </p>
+
+          <SubSection title="Adding a new client">
+            <Step number={1} title="Request agency access">
+              Email support to enable agency access on your account. You&apos;ll be notified once it&apos;s granted.
+            </Step>
+            <Step number={2} title="Open the organization switcher">
+              In the sidebar, click the organization name at the top to open the switcher, then choose <strong>Create organization</strong>.
+            </Step>
+            <Step number={3} title="Onboard the new client">
+              Enter the client&apos;s business name and complete onboarding — phone number, greeting, menu or services, and business hours — just like your first business.
+            </Step>
+            <Step number={4} title="Switch between clients">
+              Use the switcher any time to toggle between client dashboards. Everything you see is scoped to the active organization.
+            </Step>
+          </SubSection>
+
+          <SubSection title="Inviting client staff">
+            <p className="text-gray-700 text-sm">
+              You can invite each client&apos;s team members as members of only their organization. They&apos;ll see just their own business and won&apos;t have access to your other clients. Manage members from the organization switcher&apos;s <strong>Manage organization</strong> panel.
+            </p>
+          </SubSection>
+        </Section>
+
         <Section id="faq" title="Frequently Asked Questions">
 
           <FAQ question="Do I need to change my business phone number?">
@@ -590,7 +621,23 @@ export default function HelpPage() {
           </FAQ>
 
           <FAQ question="Can I use RingBackSMS for multiple businesses?">
-            <p>Yes. RingBackSMS supports multiple organizations. Use the organization switcher in the top-left of the sidebar to switch between businesses. Each business gets its own phone number, menu, settings, and conversations.</p>
+            <p>Yes, with agency access enabled. RingBackSMS supports multiple organizations per login — use the organization switcher in the sidebar to switch between businesses. Each business gets its own phone number, menu, settings, and conversations. By default an account owns one organization; email <strong>support@ringbacksms.com</strong> to enable agency access.</p>
+          </FAQ>
+
+          <FAQ question="Can agencies resell RingBackSMS to their clients?">
+            <p>Yes. With agency access enabled, you can manage every client from a single login. Each client is a fully isolated organization with its own phone number, data, team members, and Stripe subscription. Invoice your clients directly or roll the subscription cost into your managed-service fee.</p>
+          </FAQ>
+
+          <FAQ question="How do I get agency access?">
+            <p>Email <strong>support@ringbacksms.com</strong> with a brief description of your agency and the number of clients you plan to manage. We&apos;ll enable agency access on your account while we finalize agency-tier pricing. There&apos;s no additional cost to enable the capability today.</p>
+          </FAQ>
+
+          <FAQ question="How does billing work when I manage multiple clients?">
+            <p>Each client organization carries its own Stripe subscription — there&apos;s no combined bill. You&apos;ll see a separate subscription per client in the Billing tab of that client&apos;s dashboard. Agencies typically either point the subscription directly at the client&apos;s card, or pay it themselves and bill the client as part of a managed-service retainer.</p>
+          </FAQ>
+
+          <FAQ question="Can I grant a client access to only their own organization?">
+            <p>Yes. Open the organization switcher, choose <strong>Manage organization</strong> on the client&apos;s org, and invite their staff as members of just that organization. They&apos;ll only see their own business — your other clients stay fully private.</p>
           </FAQ>
 
           <FAQ question="Why is my voicemail transcript blank or marked Failed?">
