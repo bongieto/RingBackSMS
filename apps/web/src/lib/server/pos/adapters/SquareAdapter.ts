@@ -32,7 +32,7 @@ export class SquareAdapter extends BasePosAdapter {
     const baseUrl = getSquareBaseUrl();
 
     const params = new URLSearchParams({
-      client_id: process.env.SQUARE_APPLICATION_ID ?? '',
+      client_id: (process.env.SQUARE_APPLICATION_ID || process.env.SQUARE_APP_ID) ?? '',
       scope:
         'MERCHANT_PROFILE_READ ITEMS_READ ITEMS_WRITE ORDERS_WRITE PAYMENTS_WRITE',
       state: tenantId,
@@ -48,8 +48,8 @@ export class SquareAdapter extends BasePosAdapter {
     const response = await axios.post(
       `${baseUrl}/oauth2/token`,
       {
-        client_id: process.env.SQUARE_APPLICATION_ID,
-        client_secret: process.env.SQUARE_APPLICATION_SECRET,
+        client_id: (process.env.SQUARE_APPLICATION_ID || process.env.SQUARE_APP_ID),
+        client_secret: (process.env.SQUARE_APPLICATION_SECRET || process.env.SQUARE_APP_SECRET),
         code,
         grant_type: 'authorization_code',
         redirect_uri: `${getAppBaseUrl()}/api/integrations/square/callback`,
@@ -104,8 +104,8 @@ export class SquareAdapter extends BasePosAdapter {
     const response = await axios.post(
       `${baseUrl}/oauth2/token`,
       {
-        client_id: process.env.SQUARE_APPLICATION_ID,
-        client_secret: process.env.SQUARE_APPLICATION_SECRET,
+        client_id: (process.env.SQUARE_APPLICATION_ID || process.env.SQUARE_APP_ID),
+        client_secret: (process.env.SQUARE_APPLICATION_SECRET || process.env.SQUARE_APP_SECRET),
         refresh_token: tokens.refreshToken,
         grant_type: 'refresh_token',
       },
