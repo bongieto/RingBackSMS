@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useOrganization } from '@clerk/nextjs';
+import { Loader2 } from 'lucide-react';
 import { tenantApi } from '@/lib/api';
 
 interface TenantContextType {
@@ -71,7 +72,13 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <TenantContext.Provider value={{ tenantId: resolvedTenantId, isLoading }}>
-      {children}
+      {isLoading || !resolvedTenantId ? (
+        <div className="flex min-h-screen items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+        </div>
+      ) : (
+        children
+      )}
     </TenantContext.Provider>
   );
 }
