@@ -33,6 +33,7 @@ export interface BusinessTypeProfile {
     showServices: boolean;
     showOrders: boolean;
     showMeetings: boolean;
+    showLocation?: boolean;
     menuLabel?: string;
   };
   dashboardCards: DashboardCardKey[];
@@ -64,6 +65,30 @@ const RESTAURANT: BusinessTypeProfile = {
   onboardingNextSteps: [
     { emoji: '📱', title: 'Provision your number', description: 'Settings → Phone', href: '/dashboard/settings/phone' },
     { emoji: '📞', title: 'Forward unanswered calls', description: 'So missed calls reach RingbackSMS', href: '/help' },
+    { emoji: '🍜', title: 'Add menu items', description: 'So customers can order via SMS', href: '/dashboard/menu' },
+    { emoji: '🟦', title: 'Connect Square', description: 'Sync your POS catalog', href: '/dashboard/integrations' },
+  ],
+};
+
+const FOOD_TRUCK: BusinessTypeProfile = {
+  label: 'Food Truck',
+  emoji: '🚚',
+  catalogNoun: 'menu',
+  enabledFlows: [FlowType.ORDER, FlowType.FALLBACK],
+  defaultGreeting: (name) =>
+    `Hi! Sorry we missed your call at ${name}. Text WHERE to see today's location, or ORDER to start a pickup order.`,
+  defaultHours: { start: '11:00', end: '20:00', days: [1, 2, 3, 4, 5, 6] },
+  nav: { showMenu: true, showServices: false, showOrders: true, showMeetings: false, showLocation: true },
+  dashboardCards: ['missedCalls', 'conversations', 'orders', 'revenue'],
+  aiPersonalityHint:
+    "You're the friendly voice of a mobile food truck. Help customers find today's spot, place pickup orders, and answer menu questions. Keep replies warm, quick, and casual.",
+  taskCopy: {
+    orderConfirm: 'Confirm pickup order',
+    meetingConfirm: 'Confirm reservation',
+  },
+  onboardingNextSteps: [
+    { emoji: '📱', title: 'Provision your number', description: 'Settings → Phone', href: '/dashboard/settings/phone' },
+    { emoji: '📍', title: 'Set weekly schedule', description: "So customers can text 'where' to find you", href: '/dashboard/location' },
     { emoji: '🍜', title: 'Add menu items', description: 'So customers can order via SMS', href: '/dashboard/menu' },
     { emoji: '🟦', title: 'Connect Square', description: 'Sync your POS catalog', href: '/dashboard/integrations' },
   ],
@@ -143,6 +168,7 @@ const OTHER: BusinessTypeProfile = {
 
 export const PROFILES: Record<BusinessType, BusinessTypeProfile> = {
   [BusinessType.RESTAURANT]: RESTAURANT,
+  [BusinessType.FOOD_TRUCK]: FOOD_TRUCK,
   [BusinessType.SERVICE]: SERVICE,
   [BusinessType.CONSULTANT]: SERVICE,
   [BusinessType.MEDICAL]: SERVICE,

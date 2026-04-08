@@ -21,6 +21,7 @@ import {
   Briefcase,
   HelpCircle,
   Voicemail,
+  MapPin,
   Menu,
   X,
 } from 'lucide-react';
@@ -56,6 +57,7 @@ const navItems: NavItem[] = [
     labelFrom: (n) => n.menuLabel ?? 'Menu',
   },
   { href: '/dashboard/services', label: 'Services', icon: Briefcase, show: (n) => n.showServices },
+  { href: '/dashboard/location', label: 'Location', icon: MapPin, show: (n) => !!n.showLocation },
   { href: '/dashboard/flows', label: 'Flows', icon: Zap },
   { href: '/dashboard/integrations', label: 'Integrations', icon: Plug2 },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },

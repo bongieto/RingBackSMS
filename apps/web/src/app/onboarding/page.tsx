@@ -18,6 +18,7 @@ import type { BusinessType } from '@ringback/shared-types';
 
 const BUSINESS_TYPES = [
   { value: 'RESTAURANT', label: 'Restaurant / Food', emoji: '🍜' },
+  { value: 'FOOD_TRUCK', label: 'Food Truck', emoji: '🚚' },
   { value: 'SERVICE', label: 'Service Business', emoji: '🔧' },
   { value: 'CONSULTANT', label: 'Consultant', emoji: '💼' },
   { value: 'MEDICAL', label: 'Medical / Health', emoji: '🏥' },
