@@ -5,7 +5,7 @@ import { ContactStatus } from '@prisma/client';
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
-import { encryptNullable, decryptMaybePlaintext } from '@/lib/server/encryption';
+import { encryptNullable, decryptMaybePlaintext, hashForSearch } from '@/lib/server/encryption';
 
 function decryptContact<T extends { name: string | null; email: string | null }>(c: T): T {
   return { ...c, name: decryptMaybePlaintext(c.name), email: decryptMaybePlaintext(c.email) };
@@ -25,16 +25,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   const authResult = await verifyTenantAccess(contact.tenantId);
   if (isNextResponse(authResult)) return authResult;
 
-  const [conversationCount, orderCount] = await Promise.all([
-    prisma.conversation.count({
-      where: { tenantId: contact.tenantId, callerPhone: contact.phone },
-    }),
-    prisma.order.count({
-      where: { tenantId: contact.tenantId, callerPhone: contact.phone },
-    }),
-  ]);
-
-  return apiSuccess({ ...decryptContact(contact), conversationCount, orderCount });
+  // Counts are fetched lazily via /api/contacts/[id]/stats so the detail
+  // panel can paint immediately.
+  return apiSuccess(decryptContact(contact));
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -49,8 +42,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const contact = await prisma.contact.update({
       where: { id: params.id },
       data: {
-        ...(body.name !== undefined && { name: encryptNullable(body.name || null) }),
-        ...(body.email !== undefined && { email: encryptNullable(body.email || null) }),
+        ...(body.name !== undefined && {
+          name: encryptNullable(body.name || null),
+          nameSearchHash: hashForSearch(body.name || null),
+        }),
+        ...(body.email !== undefined && {
+          email: encryptNullable(body.email || null),
+          emailSearchHash: hashForSearch(body.email || null),
+        }),
         ...(body.notes !== undefined && { notes: body.notes || null }),
         ...(body.tags !== undefined && { tags: body.tags }),
         ...(body.status !== undefined && { status: body.status }),

@@ -72,13 +72,22 @@ export async function POST(request: NextRequest) {
               select: { id: true, name: true, email: true, stripeCustomerId: true },
             });
             if (existing) {
+              const { encryptNullable, hashForSearch } = await import('@/lib/server/encryption');
               const patch: {
-                name?: string;
-                email?: string;
+                name?: string | null;
+                email?: string | null;
+                nameSearchHash?: string | null;
+                emailSearchHash?: string | null;
                 stripeCustomerId?: string;
               } = {};
-              if (!existing.name && customerName) patch.name = customerName;
-              if (!existing.email && customerEmail) patch.email = customerEmail;
+              if (!existing.name && customerName) {
+                patch.name = encryptNullable(customerName);
+                patch.nameSearchHash = hashForSearch(customerName);
+              }
+              if (!existing.email && customerEmail) {
+                patch.email = encryptNullable(customerEmail);
+                patch.emailSearchHash = hashForSearch(customerEmail);
+              }
               if (!existing.stripeCustomerId && stripeCustomerId) patch.stripeCustomerId = stripeCustomerId;
               if (Object.keys(patch).length > 0) {
                 await prisma.contact.update({ where: { id: existing.id }, data: patch });

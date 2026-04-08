@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'crypto';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12; // 96-bit IV for GCM
@@ -83,6 +83,23 @@ export function decryptMaybePlaintext(value: string | null | undefined): string 
   } catch {
     return value; // legacy plaintext or corrupted; prefer showing original
   }
+}
+
+/**
+ * Deterministic HMAC-SHA256 of a normalized value, used to make encrypted
+ * columns searchable at the SQL level (exact match only). Not reversible.
+ *
+ * Uses CONTACT_SEARCH_HMAC_KEY if set; otherwise derives a stable key from
+ * ENCRYPTION_KEY so dev environments keep working without extra config.
+ */
+export function hashForSearch(value: string | null | undefined): string | null {
+  if (value == null) return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === '') return null;
+  const keyMaterial =
+    process.env.CONTACT_SEARCH_HMAC_KEY ||
+    `ringback-search:${process.env.ENCRYPTION_KEY ?? 'fallback'}`;
+  return createHmac('sha256', keyMaterial).update(normalized).digest('hex');
 }
 
 /**

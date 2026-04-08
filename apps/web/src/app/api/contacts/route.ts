@@ -5,7 +5,7 @@ import { ContactStatus, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { apiSuccess, apiCreated, apiPaginated, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
-import { encryptNullable, decryptMaybePlaintext } from '@/lib/server/encryption';
+import { encryptNullable, decryptMaybePlaintext, hashForSearch } from '@/lib/server/encryption';
 
 // Decrypt name/email on the way out; phone stays plaintext (lookup key)
 function decryptContact<T extends { name: string | null; email: string | null }>(c: T): T {
@@ -35,42 +35,39 @@ export async function GET(request: NextRequest) {
   const page = parseInt(searchParams.get('page') ?? '1', 10);
   const pageSize = parseInt(searchParams.get('pageSize') ?? '20', 10);
 
-  // Name is encrypted — cannot do a SQL-level LIKE on it. If a search term
-  // is present, fetch the full tenant-scoped set (filtered by tag/status/
-  // phone prefix) then filter + paginate in memory after decryption.
+  // Name / email are encrypted so we can't do SQL LIKE on them. For search
+  // we use deterministic HMAC hash columns for exact-match lookups on name
+  // or email, plus substring match on the unencrypted phone column. This
+  // avoids the historical "load + decrypt the whole tenant" pattern.
   const baseWhere: Prisma.ContactWhereInput = {
     tenantId,
     ...(tag && { tags: { has: tag } }),
     ...(status && { status }),
   };
 
-  if (search) {
-    const all = await prisma.contact.findMany({
-      where: baseWhere,
-      orderBy: { updatedAt: 'desc' },
-    });
-    const needle = search.toLowerCase();
-    const decrypted = all.map(decryptContact);
-    const filtered = decrypted.filter((c) => {
-      return (
-        (c.name && c.name.toLowerCase().includes(needle)) ||
-        (c.email && c.email.toLowerCase().includes(needle)) ||
-        (c.phone && c.phone.includes(search))
-      );
-    });
-    const total = filtered.length;
-    const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
-    return apiPaginated(pageItems, total, page, pageSize);
-  }
+  const where: Prisma.ContactWhereInput = search
+    ? {
+        ...baseWhere,
+        OR: [
+          { phone: { contains: search } },
+          ...(hashForSearch(search)
+            ? [
+                { nameSearchHash: hashForSearch(search)! },
+                { emailSearchHash: hashForSearch(search)! },
+              ]
+            : []),
+        ],
+      }
+    : baseWhere;
 
   const [contacts, total] = await Promise.all([
     prisma.contact.findMany({
-      where: baseWhere,
+      where,
       orderBy: { updatedAt: 'desc' },
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),
-    prisma.contact.count({ where: baseWhere }),
+    prisma.contact.count({ where }),
   ]);
 
   return apiPaginated(contacts.map(decryptContact), total, page, pageSize);
@@ -88,6 +85,8 @@ export async function POST(req: NextRequest) {
         phone: body.phone,
         name: encryptNullable(body.name ?? null),
         email: encryptNullable(body.email || null),
+        nameSearchHash: hashForSearch(body.name ?? null),
+        emailSearchHash: hashForSearch(body.email || null),
         notes: body.notes ?? null,
         tags: body.tags ?? [],
         status: body.status ?? ContactStatus.LEAD,
