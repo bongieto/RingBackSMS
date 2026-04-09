@@ -13,9 +13,9 @@ interface LogoProps {
 }
 
 const SIZE_STYLES: Record<LogoSize, { text: string; icon: number }> = {
-  sm: { text: 'text-lg', icon: 24 },
-  md: { text: 'text-xl', icon: 28 },
-  lg: { text: 'text-3xl', icon: 36 },
+  sm: { text: 'text-lg', icon: 20 },
+  md: { text: 'text-xl', icon: 24 },
+  lg: { text: 'text-3xl', icon: 32 },
 };
 
 export function Logo({
