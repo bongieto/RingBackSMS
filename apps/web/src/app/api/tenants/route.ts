@@ -7,6 +7,8 @@ import { AppError } from '@/lib/server/errors';
 import { prisma } from '@/lib/server/db';
 import { isAgencyUser, isSuperAdmin, countUserOrganizations } from '@/lib/server/agency';
 import { linkTenantToAgency } from '@/lib/server/services/agencyService';
+import { getProfile } from '@/lib/businessTypeProfile';
+import { FlowType } from '@ringback/shared-types';
 
 export async function POST(request: NextRequest) {
   const { userId, orgId } = await auth();
@@ -17,15 +19,65 @@ export async function POST(request: NextRequest) {
     // clerkOrgId if the Clerk session hasn't picked up the active org yet.
     const effectiveOrgId = orgId ?? body.clerkOrgId;
 
-    // Idempotent: if a tenant already exists for this Clerk org, update its
-    // name to match the submitted business name and return it. This ensures
-    // the tenant name stays in sync with what the user typed during onboarding.
+    // Idempotent: if a tenant already exists for this Clerk org (e.g. a
+    // stub created by the organization.created webhook), upgrade it in
+    // place with the full onboarding payload: name, business type,
+    // default flows/config for that business type, and mark onboarding
+    // as complete.
     if (effectiveOrgId) {
       const existing = await prisma.tenant.findUnique({ where: { clerkOrgId: effectiveOrgId } });
       if (existing) {
-        const updated = existing.name !== body.name
-          ? await prisma.tenant.update({ where: { id: existing.id }, data: { name: body.name } })
-          : existing;
+        const profile = getProfile(body.businessType);
+        const updated = await prisma.tenant.update({
+          where: { id: existing.id },
+          data: {
+            name: body.name,
+            businessType: body.businessType,
+            onboardingCompletedAt: new Date(),
+          },
+        });
+        // Upsert the config with values derived from the selected
+        // business type profile, only writing the greeting if none is
+        // set yet so we don't clobber a customized one.
+        const existingConfig = await prisma.tenantConfig.findUnique({
+          where: { tenantId: existing.id },
+          select: { greeting: true },
+        });
+        await prisma.tenantConfig.upsert({
+          where: { tenantId: existing.id },
+          update: {
+            aiPersonality: profile.aiPersonalityHint,
+            timezone: body.timezone ?? 'America/Chicago',
+            businessDays: profile.defaultHours.days,
+            businessHoursStart: profile.defaultHours.start,
+            businessHoursEnd: profile.defaultHours.end,
+            ownerEmail: body.ownerEmail ?? undefined,
+            ownerPhone: body.ownerPhone ?? undefined,
+            ...(existingConfig?.greeting
+              ? {}
+              : { greeting: profile.defaultGreeting(body.name) }),
+          },
+          create: {
+            tenantId: existing.id,
+            greeting: profile.defaultGreeting(body.name),
+            aiPersonality: profile.aiPersonalityHint,
+            timezone: body.timezone ?? 'America/Chicago',
+            businessDays: profile.defaultHours.days,
+            businessHoursStart: profile.defaultHours.start,
+            businessHoursEnd: profile.defaultHours.end,
+            ownerEmail: body.ownerEmail,
+            ownerPhone: body.ownerPhone,
+          },
+        });
+        // Enable the default flows for this business type (idempotent).
+        const flowsToCreate = Array.from(new Set([...profile.enabledFlows, FlowType.FALLBACK]));
+        for (const type of flowsToCreate) {
+          await prisma.flow.upsert({
+            where: { tenantId_type: { tenantId: existing.id, type } },
+            update: { isEnabled: true },
+            create: { tenantId: existing.id, type, isEnabled: true },
+          });
+        }
         // Also rename the Clerk org so the sidebar/org switcher reflects it.
         try {
           const clerk = await clerkClient();
@@ -50,6 +102,12 @@ export async function POST(request: NextRequest) {
     }
 
     const tenant = await createTenant({ ...body, clerkOrgId: effectiveOrgId ?? undefined });
+    // Mark onboarding as complete — this path runs when the user
+    // submitted the onboarding form for an org with no existing stub.
+    await prisma.tenant.update({
+      where: { id: tenant.id },
+      data: { onboardingCompletedAt: new Date() },
+    });
     // If the creating user is an agency, auto-link the new tenant so
     // commissions accrue to them on subscription invoices.
     if (await isAgencyUser(userId)) {

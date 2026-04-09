@@ -48,8 +48,17 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     tenantApi
       .getMe()
-      .then((tenant: { id: string; businessType?: string }) => {
+      .then((tenant: { id: string; businessType?: string; onboardingCompletedAt?: string | null }) => {
         if (cancelled) return;
+        // If the tenant row exists but onboarding was never completed
+        // (e.g. the row is a stub created by the Clerk webhook), push
+        // the user through the onboarding form so they can set their
+        // business type and basic config.
+        if (!tenant.onboardingCompletedAt) {
+          setIsLoading(false);
+          router.replace('/onboarding');
+          return;
+        }
         setResolvedTenantId(tenant.id);
         setBusinessType(tenant.businessType);
         setIsLoading(false);
