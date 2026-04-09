@@ -213,7 +213,7 @@ export default function BillingPage() {
                     className="w-full mt-3"
                     size="sm"
                     onClick={() => checkoutMutation.mutate({ plan, interval: billingInterval })}
-                    disabled={checkoutMutation.isPending}
+                    disabled={pendingPlan === plan}
                   >
                     {pendingPlan === plan ? 'Opening checkout…' : 'Upgrade'}
                   </Button>
