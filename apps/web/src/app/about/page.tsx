@@ -93,16 +93,25 @@ export default function AboutPage() {
               transform outcomes.
             </p>
             <p>
-              When he launched <strong>Agape Technology Solutions</strong>, the mission was
-              clear: bring enterprise-grade intelligence to the businesses that need it most
-              — the local restaurant that misses a lunch rush call, the salon that loses a
-              booking while blow-drying, the clinic that can&apos;t answer during a procedure.
+              Rolando also owns <strong>The Lumpia House</strong>, a successful Filipino
+              restaurant in Central Illinois. Running his own restaurant gave him a
+              front-row seat to the problem: missed calls during the lunch rush meant
+              lost catering orders, missed pickup requests, and frustrated customers who
+              simply called the next place on the list.
+            </p>
+            <p>
+              That firsthand experience as both a tech leader and a restaurant owner led
+              him to launch <strong>Agape Technology Solutions</strong> with a clear
+              mission: bring enterprise-grade intelligence to the businesses that need it
+              most — the local restaurant that misses a lunch rush call, the salon that
+              loses a booking while blow-drying, the clinic that can&apos;t answer during
+              a procedure.
             </p>
             <p>
               <strong>RingBackSMS</strong> was born from that mission. It&apos;s an AI that
               detects a missed call and responds via SMS in under 3 seconds — taking orders,
               booking appointments, and answering questions while the business owner is busy
-              doing what they do best.
+              doing what they do best. Rolando built it because he needed it himself.
             </p>
           </div>
         </section>
