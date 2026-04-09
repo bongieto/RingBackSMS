@@ -41,7 +41,7 @@ export function Logo({
       />
       <span className="flex flex-col leading-tight">
         <span>RingBack<span className={accent}>SMS</span></span>
-        <span className={cn(sz.sub, 'font-semibold tracking-[0.08em] uppercase pl-[1px]', variant === 'dark' ? 'text-slate-400' : 'text-slate-500')}>
+        <span className={cn(sz.sub, 'font-semibold tracking-[0.18em] uppercase pl-[1px]', variant === 'dark' ? 'text-slate-400' : 'text-slate-500')}>
           Missed Call Recovery System
         </span>
       </span>
