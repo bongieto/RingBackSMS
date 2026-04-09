@@ -133,7 +133,7 @@ const orgJsonLd = {
   contactPoint: {
     '@type': 'ContactPoint',
     contactType: 'customer support',
-    email: 'support@ringbacksms.com',
+    email: 'info@ringbacksms.com',
   },
 };
 
@@ -993,7 +993,7 @@ export default function HomePage() {
 
             <div className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-4">
               <a
-                href="mailto:support@ringbacksms.com?subject=Agency%20access%20request"
+                href="mailto:info@ringbacksms.com?subject=Agency%20access%20request"
                 className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-lg transition-colors"
               >
                 Request agency access <ArrowRight className="h-4 w-4" />
@@ -1140,7 +1140,7 @@ export default function HomePage() {
               <div>
                 <h4 className="text-white font-semibold mb-4">Company</h4>
                 <ul className="space-y-2 text-sm">
-                  <li><a href="mailto:support@ringbacksms.com" className="hover:text-white transition-colors">Contact Support</a></li>
+                  <li><a href="mailto:info@ringbacksms.com" className="hover:text-white transition-colors">Contact Support</a></li>
                   <li><Link href="/help" className="hover:text-white transition-colors">Help Center</Link></li>
                   <li><Link href="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link></li>
                   <li><Link href="/terms" className="hover:text-white transition-colors">Terms of Service</Link></li>

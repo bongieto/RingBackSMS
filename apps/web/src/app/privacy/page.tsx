@@ -140,7 +140,7 @@ export default function PrivacyPage() {
             </p>
             <p className="text-gray-700 mt-2">
               <strong>Agape Technology Solutions</strong><br />
-              Email: support@ringbacksms.com
+              Email: info@ringbacksms.com
             </p>
           </section>
         </div>

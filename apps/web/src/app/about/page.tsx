@@ -186,8 +186,8 @@ export default function AboutPage() {
             Have questions? Want a demo? We&apos;d love to hear from you.
           </p>
           <p className="text-slate-700">
-            <a href="mailto:support@ringbacksms.com" className="text-blue-600 hover:underline">
-              support@ringbacksms.com
+            <a href="mailto:info@ringbacksms.com" className="text-blue-600 hover:underline">
+              info@ringbacksms.com
             </a>
           </p>
           <div className="mt-6">

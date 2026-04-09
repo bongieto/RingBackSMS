@@ -62,7 +62,7 @@ export default function PartnerSettingsPage() {
           <Row label="Revenue share" value={`${data.defaultRevSharePct}%`} />
           <p className="text-xs text-slate-500">
             The platform admin controls your revenue-share percentage. Contact
-            support@ringbacksms.com to discuss a custom rate.
+            info@ringbacksms.com to discuss a custom rate.
           </p>
         </CardContent>
       </Card>

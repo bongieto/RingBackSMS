@@ -120,7 +120,7 @@ const PLANS = [
       { label: 'Cal.com booking', included: true },
     ],
     cta: 'Contact Sales',
-    href: 'mailto:support@ringbacksms.com',
+    href: 'mailto:info@ringbacksms.com',
     highlight: false,
   },
 ];

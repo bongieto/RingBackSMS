@@ -539,7 +539,7 @@ export default function HelpPage() {
             RingBackSMS supports agencies and operators managing multiple client businesses from a single login. Each client is a fully isolated organization with its own phone number, contacts, conversations, menu, settings, and Stripe subscription — no data bleeds between them.
           </p>
           <p className="text-gray-700 mb-6">
-            <strong>Agency access is gated.</strong> By default, an account can own one organization. To enable multi-client management, email <strong>support@ringbacksms.com</strong> and we&apos;ll grant agency access on your account while we finalize agency pricing.
+            <strong>Agency access is gated.</strong> By default, an account can own one organization. To enable multi-client management, email <strong>info@ringbacksms.com</strong> and we&apos;ll grant agency access on your account while we finalize agency pricing.
           </p>
 
           <SubSection title="Adding a new client">
@@ -627,7 +627,7 @@ export default function HelpPage() {
           </FAQ>
 
           <FAQ question="Can I use RingBackSMS for multiple businesses?">
-            <p>Yes, with agency access enabled. RingBackSMS supports multiple organizations per login — use the organization switcher in the sidebar to switch between businesses. Each business gets its own phone number, menu, settings, and conversations. By default an account owns one organization; email <strong>support@ringbacksms.com</strong> to enable agency access.</p>
+            <p>Yes, with agency access enabled. RingBackSMS supports multiple organizations per login — use the organization switcher in the sidebar to switch between businesses. Each business gets its own phone number, menu, settings, and conversations. By default an account owns one organization; email <strong>info@ringbacksms.com</strong> to enable agency access.</p>
           </FAQ>
 
           <FAQ question="Can agencies resell RingBackSMS to their clients?">
@@ -635,7 +635,7 @@ export default function HelpPage() {
           </FAQ>
 
           <FAQ question="How do I get agency access?">
-            <p>Email <strong>support@ringbacksms.com</strong> with a brief description of your agency and the number of clients you plan to manage. We&apos;ll enable agency access on your account while we finalize agency-tier pricing. There&apos;s no additional cost to enable the capability today.</p>
+            <p>Email <strong>info@ringbacksms.com</strong> with a brief description of your agency and the number of clients you plan to manage. We&apos;ll enable agency access on your account while we finalize agency-tier pricing. There&apos;s no additional cost to enable the capability today.</p>
           </FAQ>
 
           <FAQ question="How does billing work when I manage multiple clients?">
@@ -671,7 +671,7 @@ export default function HelpPage() {
           </FAQ>
 
           <FAQ question="How do I get support?">
-            <p>Email us at <strong>support@ringbacksms.com</strong> and we&apos;ll get back to you as soon as possible.</p>
+            <p>Email us at <strong>info@ringbacksms.com</strong> and we&apos;ll get back to you as soon as possible.</p>
           </FAQ>
 
         </Section>

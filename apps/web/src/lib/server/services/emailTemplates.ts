@@ -450,7 +450,7 @@ export function agencyRejectedEmail(name: string, reason?: string | null): { sub
       <h2 style="color: #1e293b; margin: 0 0 16px">Hi ${escapeHtml(name)},</h2>
       <p>Thank you for your interest in the RingbackSMS Partner Program. After reviewing your application, we're unable to approve it at this time.</p>
       ${reason ? `<p style="color: #64748b; font-style: italic;">${escapeHtml(reason)}</p>` : ''}
-      <p>If you have questions or want to re-apply in the future, contact us at <a href="mailto:support@ringbacksms.com">support@ringbacksms.com</a>.</p>
+      <p>If you have questions or want to re-apply in the future, contact us at <a href="mailto:info@ringbacksms.com">info@ringbacksms.com</a>.</p>
     `),
   };
 }

@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
       const orgCount = await countUserOrganizations(userId);
       if (orgCount >= 1 && !(await isAgencyUser(userId))) {
         return apiError(
-          'Multiple organizations require agency access. Contact support@ringbacksms.com to enable it on your account.',
+          'Multiple organizations require agency access. Contact info@ringbacksms.com to enable it on your account.',
           403,
         );
       }

@@ -62,7 +62,7 @@ export default function TermsPage() {
 
             <h3 className="text-lg font-medium text-gray-800 mt-4 mb-2">2.6 Support Contact</h3>
             <p className="text-gray-700 leading-relaxed">
-              For questions about messaging, contact support@ringbacksms.com.
+              For questions about messaging, contact info@ringbacksms.com.
             </p>
           </section>
 
@@ -159,7 +159,7 @@ export default function TermsPage() {
             </p>
             <p className="text-gray-700 mt-2">
               <strong>Agape Technology Solutions</strong><br />
-              Email: support@ringbacksms.com
+              Email: info@ringbacksms.com
             </p>
           </section>
         </div>
