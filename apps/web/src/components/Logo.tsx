@@ -13,9 +13,9 @@ interface LogoProps {
 }
 
 const SIZE_DIMS: Record<LogoSize, number> = {
-  sm: 36,
-  md: 44,
-  lg: 64,
+  sm: 80,
+  md: 100,
+  lg: 140,
 };
 
 /**
