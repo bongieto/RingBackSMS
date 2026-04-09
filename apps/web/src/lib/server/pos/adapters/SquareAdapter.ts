@@ -143,14 +143,23 @@ export class SquareAdapter extends BasePosAdapter {
 
     const client = buildSquareClient(tokens.accessToken);
 
-    // Fetch items and modifier lists in parallel
-    const [itemsResponse, modifierListsResponse] = await Promise.all([
+    // Fetch items, categories, and modifier lists in parallel
+    const [itemsResponse, categoriesResponse, modifierListsResponse] = await Promise.all([
       client.catalogApi.listCatalog(undefined, 'ITEM'),
+      client.catalogApi.listCatalog(undefined, 'CATEGORY'),
       client.catalogApi.listCatalog(undefined, 'MODIFIER_LIST'),
     ]);
 
     const items = itemsResponse.result.objects ?? [];
+    const categories = categoriesResponse.result.objects ?? [];
     const modifierLists = modifierListsResponse.result.objects ?? [];
+
+    // Build a lookup map: category ID → category name
+    const categoryNameById = new Map<string, string>();
+    for (const cat of categories) {
+      const name = (cat as { categoryData?: { name?: string } }).categoryData?.name;
+      if (cat.id && name) categoryNameById.set(cat.id, name);
+    }
 
     // Build a lookup map: modifier list ID → modifier list data
     const modifierListMap = new Map<string, { name: string; selectionType: string; modifiers: Array<{ id: string; name: string; priceMoney?: { amount?: bigint; currency?: string } }> }>();
@@ -177,6 +186,19 @@ export class SquareAdapter extends BasePosAdapter {
         const priceMoney = variation?.itemVariationData?.priceMoney;
         const price = priceMoney ? Number(priceMoney.amount ?? 0) / 100 : 0;
 
+        // Resolve the item's category name from Square. Square's older
+        // API stores a single categoryId on itemData; newer responses
+        // may use a `categories` array. Try both.
+        const rawItemData = item.itemData as {
+          categoryId?: string | null;
+          categories?: Array<{ id?: string }> | null;
+        };
+        const categoryId =
+          rawItemData.categoryId ?? rawItemData.categories?.[0]?.id ?? null;
+        const category = categoryId
+          ? categoryNameById.get(categoryId) ?? null
+          : null;
+
         const existing = await this.prisma.menuItem.findFirst({
           where: { tenantId, posCatalogId: item.id },
         });
@@ -185,6 +207,7 @@ export class SquareAdapter extends BasePosAdapter {
           name: item.itemData.name ?? 'Unnamed Item',
           description: item.itemData.description ?? null,
           price,
+          category,
           posCatalogId: item.id,
           posVariationId: variation?.id ?? null,
           squareCatalogId: item.id,
