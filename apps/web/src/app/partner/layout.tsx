@@ -1,6 +1,7 @@
 import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 import { AuthTokenProvider } from '@/components/providers/AuthTokenProvider';
+import { ViewSwitcher } from '@/components/layout/ViewSwitcher';
 import { isAgencyUser, isSuperAdmin } from '@/lib/server/agency';
 
 export const dynamic = 'force-dynamic';
@@ -23,9 +24,10 @@ export default async function PartnerLayout({
           <div className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-1">
             Partner
           </div>
-          <div className="text-white font-bold text-lg">
+          <div className="text-white font-bold text-lg mb-3">
             RingBack<span className="text-blue-400">SMS</span>
           </div>
+          <ViewSwitcher />
         </div>
         <nav className="flex-1 p-3 space-y-1">
           <PartnerNavLink href="/partner/overview" label="Overview" />
@@ -34,14 +36,6 @@ export default async function PartnerLayout({
           <PartnerNavLink href="/partner/payouts" label="Payouts" />
           <PartnerNavLink href="/partner/settings" label="Settings" />
         </nav>
-        <div className="p-4 border-t border-slate-800">
-          <a
-            href="/dashboard"
-            className="text-xs text-slate-500 hover:text-slate-300"
-          >
-            ← Back to Dashboard
-          </a>
-        </div>
       </aside>
       <AuthTokenProvider />
       <main className="flex-1 ml-56 p-8 min-h-screen">{children}</main>
