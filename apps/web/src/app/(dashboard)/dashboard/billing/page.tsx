@@ -55,6 +55,10 @@ export default function BillingPage() {
   const aiUsed = (analytics?.monthUsage?.AI_CALL as number) ?? 0;
   const contactCount = (analytics?.contactCount as number) ?? 0;
 
+  // Track which specific plan is currently being upgraded so only that
+  // card shows the loading state. Shared mutation.isPending would
+  // disable every Upgrade button at once.
+  const [pendingPlan, setPendingPlan] = useState<string | null>(null);
   const checkoutMutation = useMutation({
     mutationFn: ({ plan, interval }: { plan: string; interval: 'monthly' | 'annual' }) =>
       billingApi.createCheckout(
@@ -64,10 +68,16 @@ export default function BillingPage() {
         `${window.location.origin}/dashboard/billing`,
         interval
       ),
+    onMutate: ({ plan }) => {
+      setPendingPlan(plan);
+    },
     onSuccess: (data) => {
       if (data?.url) window.location.href = data.url;
     },
-    onError: (err: any) => toast.error(err?.response?.data?.error ?? 'Failed to start checkout'),
+    onError: (err: any) => {
+      setPendingPlan(null);
+      toast.error(err?.response?.data?.error ?? 'Failed to start checkout');
+    },
   });
 
   const portalMutation = useMutation({
@@ -205,7 +215,7 @@ export default function BillingPage() {
                     onClick={() => checkoutMutation.mutate({ plan, interval: billingInterval })}
                     disabled={checkoutMutation.isPending}
                   >
-                    Upgrade
+                    {pendingPlan === plan ? 'Opening checkout…' : 'Upgrade'}
                   </Button>
                 )}
                 {!isCurrent && plan === Plan.STARTER && currentPlan !== Plan.STARTER && (
