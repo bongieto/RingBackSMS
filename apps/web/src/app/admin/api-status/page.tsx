@@ -1,11 +1,31 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import { CheckCircle2, XCircle, AlertCircle, RefreshCw, Wifi } from 'lucide-react';
+
+type PosHealth = 'ok' | 'expiring' | 'expired' | 'not_set_up';
+type PosProvider = 'square' | 'clover' | 'toast' | 'shopify';
+
+interface TenantIntegration {
+  id: string;
+  name: string;
+  plan: string;
+  isActive: boolean;
+  twilioPhoneNumber: string | null;
+  twilioSubAccountSid: string | null;
+  pos: {
+    provider: PosProvider | null;
+    merchantId: string | null;
+    locationId: string | null;
+    tokenExpiresAt: string | null;
+    health: PosHealth;
+  };
+}
 
 interface ApiCheckResult {
   name: string;
@@ -165,7 +185,7 @@ export default function AdminApiStatusPage() {
 
           {/* Config-only services */}
           {configChecks.length > 0 && (
-            <div>
+            <div className="mb-8">
               <h2 className="text-xs text-slate-500 uppercase tracking-widest mb-3">Configuration Status</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {configChecks.map((r) => (
@@ -197,10 +217,191 @@ export default function AdminApiStatusPage() {
                   </Card>
                 ))}
               </div>
+              <p className="text-xs text-slate-500 mt-3">
+                Twilio, MiniMax, Stripe, Resend, Clerk and Supabase are
+                platform-wide shared credentials. See{' '}
+                <span className="text-slate-400">Tenant integrations</span>{' '}
+                below for per-tenant services like POS.
+              </p>
             </div>
           )}
+
+          {/* Per-tenant integrations */}
+          <TenantIntegrationsSection />
         </>
       )}
     </div>
+  );
+}
+
+// ── Per-tenant integrations section ─────────────────────────────────────────
+
+function TenantIntegrationsSection() {
+  const { data, isLoading } = useQuery<TenantIntegration[]>({
+    queryKey: ['admin-api-status-tenants'],
+    queryFn: () =>
+      api.get('/admin/api-status/tenants').then((r) => r.data.data),
+    staleTime: 30_000,
+  });
+
+  const [search, setSearch] = useState('');
+  const [providerFilter, setProviderFilter] = useState<'all' | PosProvider | 'none'>('all');
+  const [healthFilter, setHealthFilter] = useState<'all' | PosHealth>('all');
+
+  const rows = data ?? [];
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (q && !r.name.toLowerCase().includes(q)) return false;
+      if (providerFilter !== 'all') {
+        if (providerFilter === 'none') {
+          if (r.pos.provider) return false;
+        } else {
+          if (r.pos.provider !== providerFilter) return false;
+        }
+      }
+      if (healthFilter !== 'all' && r.pos.health !== healthFilter) return false;
+      return true;
+    });
+  }, [rows, search, providerFilter, healthFilter]);
+
+  return (
+    <div>
+      <h2 className="text-xs text-slate-500 uppercase tracking-widest mb-3">
+        Tenant Integrations
+      </h2>
+
+      <div className="flex flex-col sm:flex-row gap-2 mb-3">
+        <input
+          type="text"
+          placeholder="Search by tenant name…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500"
+        />
+        <select
+          value={providerFilter}
+          onChange={(e) => setProviderFilter(e.target.value as any)}
+          className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
+        >
+          <option value="all">All providers</option>
+          <option value="square">Square</option>
+          <option value="clover">Clover</option>
+          <option value="toast">Toast</option>
+          <option value="shopify">Shopify</option>
+          <option value="none">None</option>
+        </select>
+        <select
+          value={healthFilter}
+          onChange={(e) => setHealthFilter(e.target.value as any)}
+          className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white"
+        >
+          <option value="all">All health</option>
+          <option value="ok">OK</option>
+          <option value="expiring">Expiring</option>
+          <option value="expired">Expired</option>
+          <option value="not_set_up">Not set up</option>
+        </select>
+      </div>
+
+      <Card className="bg-slate-900 border-slate-800">
+        {isLoading ? (
+          <div className="p-8 text-center text-slate-500 text-sm">Loading…</div>
+        ) : rows.length === 0 ? (
+          <div className="p-8 text-center text-slate-500 text-sm">
+            No tenants yet.
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="p-8 text-center text-slate-500 text-sm">
+            No tenants match the current filters.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-800 text-left text-xs text-slate-500 uppercase tracking-wide">
+                  <th className="px-5 py-3">Tenant</th>
+                  <th className="px-5 py-3">Twilio phone</th>
+                  <th className="px-5 py-3">POS provider</th>
+                  <th className="px-5 py-3">POS health</th>
+                  <th className="px-5 py-3">POS merchant</th>
+                  <th className="px-5 py-3">Expires</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((t) => (
+                  <tr
+                    key={t.id}
+                    className="border-b border-slate-800 last:border-0 text-sm hover:bg-slate-800/50"
+                  >
+                    <td className="px-5 py-3">
+                      <Link
+                        href={`/admin/tenants/${t.id}`}
+                        className="text-white font-medium hover:text-blue-400"
+                      >
+                        {t.name}
+                      </Link>
+                      <div className="text-xs text-slate-500">
+                        {t.plan} · {t.isActive ? 'Active' : 'Suspended'}
+                      </div>
+                    </td>
+                    <td className="px-5 py-3 text-slate-300 font-mono text-xs">
+                      {t.twilioPhoneNumber ?? (
+                        <span className="text-slate-600">— Not set up</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3 text-slate-300">
+                      {t.pos.provider ? (
+                        <span className="capitalize">{t.pos.provider}</span>
+                      ) : (
+                        <span className="text-slate-600">—</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3">
+                      <PosHealthPill health={t.pos.health} />
+                    </td>
+                    <td className="px-5 py-3 text-slate-400 font-mono text-xs">
+                      {t.pos.merchantId ?? '—'}
+                    </td>
+                    <td className="px-5 py-3 text-xs text-slate-500">
+                      {t.pos.tokenExpiresAt
+                        ? new Date(t.pos.tokenExpiresAt).toLocaleDateString()
+                        : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function PosHealthPill({ health }: { health: PosHealth }) {
+  const map: Record<PosHealth, { cls: string; label: string }> = {
+    ok: {
+      cls: 'bg-green-900/30 text-green-400 border-green-800',
+      label: 'OK',
+    },
+    expiring: {
+      cls: 'bg-yellow-900/30 text-yellow-300 border-yellow-800',
+      label: 'Expiring',
+    },
+    expired: {
+      cls: 'bg-red-900/30 text-red-400 border-red-800',
+      label: 'Expired',
+    },
+    not_set_up: {
+      cls: 'bg-slate-800 text-slate-500 border-slate-700',
+      label: 'Not set up',
+    },
+  };
+  const { cls, label } = map[health];
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded border font-medium ${cls}`}>
+      {label}
+    </span>
   );
 }
