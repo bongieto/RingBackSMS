@@ -5,6 +5,7 @@ import { Logo } from '@/components/Logo';
 export const metadata: Metadata = {
   title: 'Privacy Policy — RingBackSMS',
   description: 'RingBackSMS privacy policy. Learn how we collect, use, and protect your data.',
+  alternates: { canonical: 'https://ringbacksms.com/privacy' },
 };
 
 export default function PrivacyPage() {

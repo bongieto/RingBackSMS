@@ -5,6 +5,7 @@ import { Logo } from '@/components/Logo';
 export const metadata: Metadata = {
   title: 'Terms and Conditions — RingBackSMS',
   description: 'RingBackSMS terms and conditions of service.',
+  alternates: { canonical: 'https://ringbacksms.com/terms' },
 };
 
 export default function TermsPage() {

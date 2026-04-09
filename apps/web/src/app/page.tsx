@@ -61,7 +61,7 @@ export const metadata: Metadata = {
     title: 'RingBackSMS — Never Lose a Customer to a Missed Call Again',
     description:
       'AI-powered SMS auto-response for missed calls. Capture every lead, take orders, book appointments automatically.',
-    url: 'https://ring-back-sms.vercel.app',
+    url: 'https://ringbacksms.com',
     siteName: 'RingBackSMS',
     type: 'website',
     locale: 'en_US',
@@ -86,7 +86,7 @@ export const metadata: Metadata = {
     follow: true,
     googleBot: { index: true, follow: true, 'max-video-preview': -1, 'max-image-preview': 'large', 'max-snippet': -1 },
   },
-  alternates: { canonical: 'https://ring-back-sms.vercel.app' },
+  alternates: { canonical: 'https://ringbacksms.com' },
 };
 
 /* ─── JSON-LD Structured Data ──────────────────────────────────────────── */
@@ -99,7 +99,7 @@ const jsonLd = {
   operatingSystem: 'Web',
   description:
     'AI-powered SMS auto-response platform that texts back missed callers instantly. Built for restaurants, salons, clinics, and service businesses.',
-  url: 'https://ring-back-sms.vercel.app',
+  url: 'https://ringbacksms.com',
   author: {
     '@type': 'Organization',
     name: 'Agape Technology Solutions',
@@ -111,10 +111,29 @@ const jsonLd = {
     priceCurrency: 'USD',
     offerCount: '4',
   },
-  aggregateRating: {
-    '@type': 'AggregateRating',
-    ratingValue: '4.9',
-    reviewCount: '127',
+};
+
+const orgJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Organization',
+  name: 'RingBackSMS',
+  url: 'https://ringbacksms.com',
+  logo: 'https://ringbacksms.com/favicon.png',
+  foundingDate: '2025',
+  founder: {
+    '@type': 'Person',
+    name: 'Rolando Cabral Jr.',
+    jobTitle: 'Founder & CEO',
+  },
+  parentOrganization: {
+    '@type': 'Organization',
+    name: 'Agape Technology Solutions',
+    url: 'https://agapehealthtech.com',
+  },
+  contactPoint: {
+    '@type': 'ContactPoint',
+    contactType: 'customer support',
+    email: 'support@ringbacksms.com',
   },
 };
 
@@ -599,6 +618,7 @@ export default function HomePage() {
       {/* JSON-LD Structured Data */}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(orgJsonLd) }} />
 
       <main className="min-h-screen bg-white">
         {/* ─── Navigation ──────────────────────────────────────────── */}

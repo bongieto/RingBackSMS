@@ -16,7 +16,7 @@ import { PricingSection } from '@/components/landing/PricingSection';
 import { IndustryJsonLd } from './IndustryJsonLd';
 import { Logo } from '@/components/Logo';
 
-const SITE_URL = 'https://ring-back-sms.vercel.app';
+const SITE_URL = 'https://ringbacksms.com';
 
 const PRICING_PLANS = [
   {

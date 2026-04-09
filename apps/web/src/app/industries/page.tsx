@@ -6,7 +6,7 @@ import { getHubs, getNichesForHub, type HubSlug } from '@/lib/industryLandingDat
 import { MobileNav } from '@/components/landing/MobileNav';
 import { Logo } from '@/components/Logo';
 
-const SITE_URL = 'https://ring-back-sms.vercel.app';
+const SITE_URL = 'https://ringbacksms.com';
 
 export const metadata: Metadata = {
   title: 'Industries We Serve — Restaurants, Services, Retail | RingBackSMS',

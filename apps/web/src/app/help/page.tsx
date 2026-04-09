@@ -24,6 +24,12 @@ import { Logo } from '@/components/Logo';
 export const metadata: Metadata = {
   title: 'Help Center — RingBackSMS',
   description: 'Learn how to set up and use RingBackSMS to never miss a customer again.',
+  alternates: { canonical: 'https://ringbacksms.com/help' },
+  openGraph: {
+    title: 'Help Center — RingBackSMS',
+    description: 'Learn how to set up and use RingBackSMS to never miss a customer again.',
+    url: 'https://ringbacksms.com/help',
+  },
 };
 
 function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {

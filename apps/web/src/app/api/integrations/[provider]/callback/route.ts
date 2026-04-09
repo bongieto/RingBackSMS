@@ -7,7 +7,7 @@ export async function GET(request: NextRequest, { params }: { params: { provider
   const code = searchParams.get('code');
   const tenantId = searchParams.get('state');
   const error = searchParams.get('error');
-  const dashboardUrl = process.env.FRONTEND_URL ?? 'https://ring-back-sms.vercel.app';
+  const dashboardUrl = process.env.FRONTEND_URL ?? 'https://ringbacksms.com';
   const { provider } = params;
 
   if (error || !code || !tenantId) {

@@ -1,6 +1,6 @@
 import { Plan } from '@ringback/shared-types';
 
-const DASHBOARD_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://ring-back-sms.vercel.app';
+const DASHBOARD_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://ringbacksms.com';
 
 const BRAND_COLOR = '#2563eb';
 const LIGHT_BG = '#f8fafc';
