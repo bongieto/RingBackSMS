@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
@@ -13,6 +14,9 @@ interface AdminUser {
   isAgency: boolean;
   orgCount: number;
   createdAt: number | string;
+  agencyId: string | null;
+  defaultRevSharePct: number | null;
+  stripeConnectOnboarded: boolean;
 }
 
 export default function AdminUsersPage() {
@@ -33,7 +37,18 @@ export default function AdminUsersPage() {
     onError: () => toast.error('Failed to update'),
   });
 
+  const revShareMutation = useMutation({
+    mutationFn: ({ id, pct }: { id: string; pct: number }) =>
+      api.patch(`/admin/users/${id}/agency`, { defaultRevSharePct: pct }).then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-users'] });
+      toast.success('Rev share updated');
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.error ?? 'Failed to update'),
+  });
+
   const users = data ?? [];
+  const [editing, setEditing] = useState<{ id: string; value: string } | null>(null);
 
   return (
     <div>
@@ -58,6 +73,8 @@ export default function AdminUsersPage() {
                   <th className="px-5 py-3">Email</th>
                   <th className="px-5 py-3 text-right">Orgs</th>
                   <th className="px-5 py-3">Agency</th>
+                  <th className="px-5 py-3">Rev share %</th>
+                  <th className="px-5 py-3">Payouts</th>
                   <th className="px-5 py-3">Joined</th>
                 </tr>
               </thead>
@@ -89,6 +106,59 @@ export default function AdminUsersPage() {
                       >
                         {u.isAgency ? 'Agency ✓' : 'Grant agency'}
                       </Button>
+                    </td>
+                    <td className="px-5 py-3 text-sm">
+                      {!u.isAgency ? (
+                        <span className="text-slate-600">—</span>
+                      ) : editing?.id === u.id ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={0.5}
+                            value={editing.value}
+                            autoFocus
+                            onChange={(e) =>
+                              setEditing({ id: u.id, value: e.target.value })
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const pct = Number(editing.value);
+                                if (!Number.isNaN(pct) && pct >= 0 && pct <= 100) {
+                                  revShareMutation.mutate({ id: u.id, pct });
+                                  setEditing(null);
+                                }
+                              } else if (e.key === 'Escape') {
+                                setEditing(null);
+                              }
+                            }}
+                            className="w-16 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white text-sm"
+                          />
+                          <span className="text-slate-400 text-xs">%</span>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() =>
+                            setEditing({
+                              id: u.id,
+                              value: String(u.defaultRevSharePct ?? 20),
+                            })
+                          }
+                          className="text-slate-200 hover:text-white hover:underline"
+                        >
+                          {u.defaultRevSharePct ?? 20}%
+                        </button>
+                      )}
+                    </td>
+                    <td className="px-5 py-3 text-xs">
+                      {!u.isAgency ? (
+                        <span className="text-slate-600">—</span>
+                      ) : u.stripeConnectOnboarded ? (
+                        <span className="text-green-400">Connected</span>
+                      ) : (
+                        <span className="text-slate-500">Not set up</span>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-xs text-slate-500">
                       {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}

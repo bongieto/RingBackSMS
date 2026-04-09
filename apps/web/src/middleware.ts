@@ -6,6 +6,7 @@ const isPublicRoute = createRouteMatcher([
   '/sign-up(.*)',
   '/api/(.*)',          // API routes handle their own auth
   '/industries(.*)',    // marketing pages
+  '/become-a-partner',  // public partner application page
   '/help',
   '/privacy',
   '/terms',

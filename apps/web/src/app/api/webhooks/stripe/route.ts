@@ -35,6 +35,57 @@ export async function POST(request: NextRequest) {
       case 'customer.subscription.deleted':
         await handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
         break;
+      case 'invoice.payment_succeeded': {
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
+        if (!customerId) break;
+        const tenant = await prisma.tenant.findUnique({
+          where: { stripeCustomerId: customerId },
+          select: { id: true, agencyId: true },
+        });
+        if (!tenant?.agencyId) break;
+
+        // Idempotent on stripeInvoiceId (unique index). Stripe retries
+        // webhooks; a duplicate insert throws P2002 which we swallow.
+        const agency = await prisma.agency.findUnique({
+          where: { id: tenant.agencyId },
+          select: { defaultRevSharePct: true },
+        });
+        if (!agency) break;
+        const pct = Number(agency.defaultRevSharePct);
+        const amountCents = invoice.amount_paid ?? 0;
+        if (amountCents <= 0 || pct <= 0) break;
+        const commissionCents = Math.floor((amountCents * pct) / 100);
+
+        try {
+          await prisma.commissionLedger.create({
+            data: {
+              agencyId: tenant.agencyId,
+              tenantId: tenant.id,
+              stripeInvoiceId: invoice.id,
+              invoiceAmountCents: amountCents,
+              commissionPct: pct,
+              commissionAmountCents: commissionCents,
+              currency: invoice.currency ?? 'usd',
+              status: 'PENDING',
+            },
+          });
+          logger.info('Agency commission accrued', {
+            agencyId: tenant.agencyId,
+            tenantId: tenant.id,
+            commissionCents,
+          });
+        } catch (err: any) {
+          if (err?.code === 'P2002') {
+            logger.info('Duplicate invoice, commission already accrued', {
+              stripeInvoiceId: invoice.id,
+            });
+          } else {
+            throw err;
+          }
+        }
+        break;
+      }
       case 'invoice.payment_failed': {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;

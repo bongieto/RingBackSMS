@@ -236,3 +236,96 @@ export function constructStripeEvent(
     process.env.STRIPE_WEBHOOK_SECRET ?? ''
   );
 }
+
+// ── Stripe Connect (agency payouts) ─────────────────────────────────────
+
+async function stripeGet(path: string): Promise<any> {
+  const res = await fetch(`https://api.stripe.com/v1${path}`, {
+    headers: { Authorization: `Bearer ${getStripeKey()}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error?.message ?? `Stripe API error: ${res.status}`);
+  return data;
+}
+
+/** Create an Express Connect account for an agency. */
+export async function createConnectExpressAccount(input: {
+  email?: string;
+  clerkUserId: string;
+  agencyId: string;
+}): Promise<string> {
+  const account = await stripePost('/accounts', {
+    type: 'express',
+    'capabilities[transfers][requested]': 'true',
+    ...(input.email ? { email: input.email } : {}),
+    'metadata[clerkUserId]': input.clerkUserId,
+    'metadata[agencyId]': input.agencyId,
+  });
+  return account.id;
+}
+
+/** Create an account onboarding link for the given Connect account. */
+export async function createConnectAccountLink(
+  accountId: string,
+  returnUrl: string,
+  refreshUrl: string
+): Promise<string> {
+  const link = await stripePost('/account_links', {
+    account: accountId,
+    return_url: returnUrl,
+    refresh_url: refreshUrl,
+    type: 'account_onboarding',
+  });
+  return link.url;
+}
+
+/** Fetch current Connect account status. */
+export async function getConnectAccount(accountId: string): Promise<{
+  detailsSubmitted: boolean;
+  payoutsEnabled: boolean;
+  chargesEnabled: boolean;
+  bankLast4?: string | null;
+}> {
+  const acct = await stripeGet(`/accounts/${accountId}`);
+  const bank = acct.external_accounts?.data?.[0];
+  return {
+    detailsSubmitted: Boolean(acct.details_submitted),
+    payoutsEnabled: Boolean(acct.payouts_enabled),
+    chargesEnabled: Boolean(acct.charges_enabled),
+    bankLast4: bank?.last4 ?? null,
+  };
+}
+
+/**
+ * Create a Stripe Transfer from the platform balance to a connected
+ * account. Used by the monthly payout cron. Idempotency key makes retries
+ * safe.
+ */
+export async function createConnectTransfer(input: {
+  destinationAccountId: string;
+  amountCents: number;
+  currency: string;
+  idempotencyKey: string;
+  metadata?: Record<string, string>;
+}): Promise<string> {
+  const body: Record<string, string> = {
+    amount: String(input.amountCents),
+    currency: input.currency,
+    destination: input.destinationAccountId,
+  };
+  for (const [k, v] of Object.entries(input.metadata ?? {})) {
+    body[`metadata[${k}]`] = v;
+  }
+  const res = await fetch(`https://api.stripe.com/v1/transfers`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${getStripeKey()}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Idempotency-Key': input.idempotencyKey,
+    },
+    body: new URLSearchParams(body).toString(),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error?.message ?? `Stripe transfer failed: ${res.status}`);
+  return data.id as string;
+}

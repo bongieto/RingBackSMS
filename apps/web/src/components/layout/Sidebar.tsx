@@ -24,6 +24,7 @@ import {
   MapPin,
   Menu,
   X,
+  Handshake,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { UserButton, OrganizationSwitcher, useUser } from '@clerk/nextjs';
@@ -112,6 +113,21 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+        {isAgency && (
+          <Link
+            href="/partner/overview"
+            onClick={onNavigate}
+            className={cn(
+              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors mb-1',
+              pathname.startsWith('/partner')
+                ? 'bg-blue-600 text-white'
+                : 'text-slate-400 hover:bg-slate-800 hover:text-white',
+            )}
+          >
+            <Handshake className="h-4 w-4 shrink-0" />
+            <span className="flex-1">Partner</span>
+          </Link>
+        )}
         {visibleItems.map((item) => {
           const Icon = item.icon;
           const label = item.labelFrom ? item.labelFrom(profile.nav) : item.label;
