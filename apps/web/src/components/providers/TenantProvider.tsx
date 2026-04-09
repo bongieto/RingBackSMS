@@ -1,7 +1,7 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import { useOrganization } from '@clerk/nextjs';
 import { Loader2 } from 'lucide-react';
 import { tenantApi } from '@/lib/api';
@@ -31,9 +31,12 @@ const TenantContext = createContext<TenantContextType>({
 export function TenantProvider({ children }: { children: React.ReactNode }) {
   const { organization, isLoaded } = useOrganization();
   const router = useRouter();
+  const pathname = usePathname();
   const [resolvedTenantId, setResolvedTenantId] = useState<string | undefined>(undefined);
   const [businessType, setBusinessType] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
+  // Track the org id we last resolved so we can reset on org switch
+  const lastOrgId = useRef<string | null>(null);
 
   const metadataTenantId = organization?.publicMetadata?.tenantId as string | undefined;
 
@@ -45,43 +48,83 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // If the org changed (user switched orgs), reset state and show
+    // the loading spinner while we resolve the new tenant. This
+    // prevents the dashboard from briefly rendering with stale data
+    // from the previous org.
+    if (lastOrgId.current && lastOrgId.current !== organization.id) {
+      setResolvedTenantId(undefined);
+      setBusinessType(undefined);
+      setIsLoading(true);
+    }
+    lastOrgId.current = organization.id;
+
     let cancelled = false;
-    tenantApi
-      .getMe()
-      .then((tenant: { id: string; businessType?: string; onboardingCompletedAt?: string | null }) => {
-        if (cancelled) return;
-        // If the tenant row exists but onboarding was never completed
-        // (e.g. the row is a stub created by the Clerk webhook), push
-        // the user through the onboarding form so they can set their
-        // business type and basic config.
-        if (!tenant.onboardingCompletedAt) {
+
+    // Small delay on org switch to let Clerk's session settle. Without
+    // this the /api/tenants/me call can fire before Clerk's server-side
+    // auth() reflects the new orgId, causing a 403 or stale tenant.
+    const delay = resolvedTenantId === undefined ? 300 : 0;
+
+    const timer = setTimeout(() => {
+      tenantApi
+        .getMe()
+        .then((tenant: { id: string; businessType?: string; onboardingCompletedAt?: string | null }) => {
+          if (cancelled) return;
+          if (!tenant.onboardingCompletedAt) {
+            setIsLoading(false);
+            router.replace('/onboarding');
+            return;
+          }
+          setResolvedTenantId(tenant.id);
+          setBusinessType(tenant.businessType);
           setIsLoading(false);
-          router.replace('/onboarding');
-          return;
-        }
-        setResolvedTenantId(tenant.id);
-        setBusinessType(tenant.businessType);
-        setIsLoading(false);
-      })
-      .catch((err: { response?: { status?: number } }) => {
-        if (cancelled) return;
-        const status = err?.response?.status;
-        if (status === 404) {
-          // No tenant for this Clerk org yet — user needs to onboard.
+        })
+        .catch((err: { response?: { status?: number } }) => {
+          if (cancelled) return;
+          const status = err?.response?.status;
+          if (status === 404) {
+            setIsLoading(false);
+            router.replace('/onboarding');
+            return;
+          }
+          if (status === 403) {
+            // Clerk session hasn't settled yet — retry once after a
+            // short delay instead of showing a broken dashboard.
+            setTimeout(() => {
+              if (cancelled) return;
+              tenantApi
+                .getMe()
+                .then((tenant: { id: string; businessType?: string; onboardingCompletedAt?: string | null }) => {
+                  if (cancelled) return;
+                  if (!tenant.onboardingCompletedAt) {
+                    setIsLoading(false);
+                    router.replace('/onboarding');
+                    return;
+                  }
+                  setResolvedTenantId(tenant.id);
+                  setBusinessType(tenant.businessType);
+                  setIsLoading(false);
+                })
+                .catch(() => {
+                  if (cancelled) return;
+                  setResolvedTenantId(metadataTenantId);
+                  setIsLoading(false);
+                });
+            }, 500);
+            return;
+          }
+          // Other transient error — fall back to metadata
+          setResolvedTenantId(metadataTenantId);
           setIsLoading(false);
-          router.replace('/onboarding');
-          return;
-        }
-        // Transient error — fall back to metadata if present, but flag
-        // that the id may be stale.
-        setResolvedTenantId(metadataTenantId);
-        setIsLoading(false);
-      });
+        });
+    }, delay);
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, [isLoaded, organization, metadataTenantId, router]);
+  }, [isLoaded, organization?.id, metadataTenantId, router]);
 
   return (
     <TenantContext.Provider value={{ tenantId: resolvedTenantId, businessType, isLoading }}>
