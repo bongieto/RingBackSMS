@@ -310,13 +310,12 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
   for (const effect of result.sideEffects) {
     if (effect.type === 'FETCH_CALCOM_SLOTS') {
       try {
-        const { decryptNullable } = await import('../encryption');
         const { listAvailableSlots } = await import('./calcomService');
-        const apiKey = decryptNullable(calConfig.calcomApiKey);
+        const hasTokens = Boolean(calConfig.calcomAccessToken && calConfig.calcomEventTypeId);
         const eventTypeId = calConfig.calcomEventTypeId;
-        if (apiKey && eventTypeId) {
+        if (hasTokens && eventTypeId) {
           const slots = await listAvailableSlots(
-            apiKey,
+            tenantId,
             eventTypeId,
             effect.payload.startUtc,
             effect.payload.endUtc,
@@ -353,13 +352,12 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       }
     } else if (effect.type === 'CREATE_CALCOM_BOOKING') {
       try {
-        const { decryptNullable } = await import('../encryption');
         const { createBooking } = await import('./calcomService');
         const { createMeeting } = await import('./schedulingService');
-        const apiKey = decryptNullable(calConfig.calcomApiKey);
+        const hasTokens = Boolean(calConfig.calcomAccessToken && calConfig.calcomEventTypeId);
         const eventTypeId = calConfig.calcomEventTypeId;
-        if (apiKey && eventTypeId) {
-          const booking = await createBooking(apiKey, {
+        if (hasTokens && eventTypeId) {
+          const booking = await createBooking(tenantId, {
             eventTypeId,
             start: effect.payload.start,
             attendeeName: effect.payload.name,

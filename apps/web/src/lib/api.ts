@@ -230,13 +230,12 @@ export const calcomApi = {
       .get('/integrations/calcom/status', { params: { tenantId } })
       .then((r) => r.data.data as {
         connected: boolean;
+        userEmail: string | null;
         eventTypeId: number | null;
         eventTypeSlug: string | null;
       }),
-  connect: (tenantId: string, apiKey: string) =>
-    webApi
-      .post('/integrations/calcom/connect', { apiKey }, { params: { tenantId } })
-      .then((r) => r.data.data as { connected: true; userName: string; email: string }),
+  oauthStartUrl: (tenantId: string) =>
+    `/api/integrations/calcom/oauth/start?tenantId=${encodeURIComponent(tenantId)}`,
   listEventTypes: (tenantId: string) =>
     webApi
       .get('/integrations/calcom/event-types', { params: { tenantId } })

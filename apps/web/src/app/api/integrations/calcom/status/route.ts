@@ -13,14 +13,16 @@ export async function GET(req: NextRequest) {
   const cfg = await prisma.tenantConfig.findUnique({
     where: { tenantId },
     select: {
-      calcomApiKey: true,
+      calcomAccessToken: true,
+      calcomUserEmail: true,
       calcomEventTypeId: true,
       calcomEventTypeSlug: true,
     },
   });
 
   return apiSuccess({
-    connected: Boolean(cfg?.calcomApiKey),
+    connected: Boolean(cfg?.calcomAccessToken),
+    userEmail: cfg?.calcomUserEmail ?? null,
     eventTypeId: cfg?.calcomEventTypeId ?? null,
     eventTypeSlug: cfg?.calcomEventTypeSlug ?? null,
   });

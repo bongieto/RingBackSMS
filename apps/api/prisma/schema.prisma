@@ -283,8 +283,12 @@ model TenantConfig {
   largeOrderExtraMinutes         Int? // null = no large-order rule
   prepTimeOverrides              Json? // Array<{ dayOfWeek, start, end, extraMinutes, label? }>
   ordersAcceptingEnabled         Boolean  @default(true)
-  // cal.com integration
-  calcomApiKey                   String? // AES-256-GCM encrypted
+  // cal.com integration (OAuth 2.0 authorization code)
+  calcomAccessToken              String? // AES-256-GCM encrypted
+  calcomRefreshToken             String? // AES-256-GCM encrypted
+  calcomTokenExpiresAt           DateTime?
+  calcomUserId                   Int?
+  calcomUserEmail                String?
   calcomEventTypeId              Int?
   calcomEventTypeSlug            String?
   createdAt                      DateTime @default(now())

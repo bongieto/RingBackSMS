@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
 import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
-import { decryptNullable } from '@/lib/server/encryption';
 import { listEventTypes } from '@/lib/server/services/calcomService';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
@@ -14,14 +13,11 @@ export async function GET(req: NextRequest) {
   if (isNextResponse(authResult)) return authResult;
 
   try {
+    const eventTypes = await listEventTypes(tenantId);
     const cfg = await prisma.tenantConfig.findUnique({
       where: { tenantId },
-      select: { calcomApiKey: true, calcomEventTypeId: true },
+      select: { calcomEventTypeId: true },
     });
-    const apiKey = decryptNullable(cfg?.calcomApiKey);
-    if (!apiKey) return apiError('cal.com is not connected', 400);
-
-    const eventTypes = await listEventTypes(apiKey);
     return apiSuccess({
       eventTypes,
       currentEventTypeId: cfg?.calcomEventTypeId ?? null,

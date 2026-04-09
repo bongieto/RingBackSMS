@@ -7,7 +7,6 @@ import { apiSuccess, apiError } from '@/lib/server/response';
 import { ValidationError } from '@/lib/server/errors';
 import { sendMeetingConfirmationEmail } from '@/lib/server/services/emailService';
 import { cancelBooking, rescheduleBooking } from '@/lib/server/services/calcomService';
-import { decryptNullable } from '@/lib/server/encryption';
 import { logger } from '@/lib/server/logger';
 
 const UpdateMeetingSchema = z.object({
@@ -77,21 +76,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     // Mirror cancel/reschedule to cal.com if this meeting came from there.
     if (existing.calcomBookingUid) {
       try {
-        const cfg = await prisma.tenantConfig.findUnique({
-          where: { tenantId: existing.tenantId },
-          select: { calcomApiKey: true },
-        });
-        const apiKey = decryptNullable(cfg?.calcomApiKey);
-        if (apiKey) {
-          if (body.status === 'CANCELLED') {
-            await cancelBooking(apiKey, existing.calcomBookingUid, body.notes);
-          } else if (body.scheduledAt) {
-            await rescheduleBooking(
-              apiKey,
-              existing.calcomBookingUid,
-              new Date(body.scheduledAt).toISOString(),
-            );
-          }
+        if (body.status === 'CANCELLED') {
+          await cancelBooking(existing.tenantId, existing.calcomBookingUid, body.notes);
+        } else if (body.scheduledAt) {
+          await rescheduleBooking(
+            existing.tenantId,
+            existing.calcomBookingUid,
+            new Date(body.scheduledAt).toISOString(),
+          );
         }
       } catch (err) {
         logger.warn('Failed to mirror meeting update to cal.com', {
@@ -132,14 +124,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   // Mirror cancellation to cal.com
   if (existing.calcomBookingUid) {
     try {
-      const cfg = await prisma.tenantConfig.findUnique({
-        where: { tenantId: existing.tenantId },
-        select: { calcomApiKey: true },
-      });
-      const apiKey = decryptNullable(cfg?.calcomApiKey);
-      if (apiKey) {
-        await cancelBooking(apiKey, existing.calcomBookingUid, 'Cancelled from RingbackSMS');
-      }
+      await cancelBooking(existing.tenantId, existing.calcomBookingUid, 'Cancelled from RingbackSMS');
     } catch (err) {
       logger.warn('Failed to mirror meeting cancel to cal.com', {
         err,

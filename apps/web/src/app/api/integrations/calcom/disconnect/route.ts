@@ -15,7 +15,11 @@ export async function POST(req: NextRequest) {
     await prisma.tenantConfig.update({
       where: { tenantId },
       data: {
-        calcomApiKey: null,
+        calcomAccessToken: null,
+        calcomRefreshToken: null,
+        calcomTokenExpiresAt: null,
+        calcomUserId: null,
+        calcomUserEmail: null,
         calcomEventTypeId: null,
         calcomEventTypeSlug: null,
       },

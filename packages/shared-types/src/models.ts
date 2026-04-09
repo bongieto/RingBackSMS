@@ -92,8 +92,12 @@ export const TenantConfigSchema = z.object({
   largeOrderExtraMinutes: z.number().int().nullable().optional(),
   prepTimeOverrides: z.unknown().nullable().optional(),
   ordersAcceptingEnabled: z.boolean().default(true),
-  // cal.com integration
-  calcomApiKey: z.string().nullable().optional(),
+  // cal.com integration (OAuth 2.0 authorization code)
+  calcomAccessToken: z.string().nullable().optional(),
+  calcomRefreshToken: z.string().nullable().optional(),
+  calcomTokenExpiresAt: z.date().nullable().optional(),
+  calcomUserId: z.number().int().nullable().optional(),
+  calcomUserEmail: z.string().nullable().optional(),
   calcomEventTypeId: z.number().int().nullable().optional(),
   calcomEventTypeSlug: z.string().nullable().optional(),
   createdAt: z.date(),

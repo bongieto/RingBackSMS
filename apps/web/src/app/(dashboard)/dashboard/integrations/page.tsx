@@ -901,8 +901,8 @@ function ApiKeyConfigForm({ provider, credentials, setCredentials, onSubmit, isP
 
 function CalcomCard({ tenantId }: { tenantId: string }) {
   const qc = useQueryClient();
+  const searchParams = useSearchParams();
   const [showHelp, setShowHelp] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState('');
   const [pendingEventTypeId, setPendingEventTypeId] = useState<number | ''>('');
 
   const { data: status, isLoading } = useQuery({
@@ -923,16 +923,18 @@ function CalcomCard({ tenantId }: { tenantId: string }) {
     qc.invalidateQueries({ queryKey: ['calcom-event-types', tenantId] });
   };
 
-  const connectMutation = useMutation({
-    mutationFn: () => calcomApi.connect(tenantId, apiKeyInput.trim()),
-    onSuccess: (data) => {
-      toast.success(`cal.com connected as ${data.userName}`);
-      setApiKeyInput('');
+  // Handle the return-trip from the cal.com OAuth flow.
+  useEffect(() => {
+    const state = searchParams.get('calcom');
+    if (state === 'connected') {
+      toast.success('cal.com connected!');
       invalidateAll();
-    },
-    onError: (err: any) =>
-      toast.error(err?.response?.data?.error ?? 'Failed to connect'),
-  });
+    } else if (state === 'error') {
+      const reason = searchParams.get('reason');
+      toast.error(`cal.com connect failed${reason ? `: ${reason}` : ''}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const configureMutation = useMutation({
     mutationFn: (args: { id: number; slug: string }) =>
@@ -973,8 +975,8 @@ function CalcomCard({ tenantId }: { tenantId: string }) {
               <CardDescription>
                 {connected
                   ? status?.eventTypeSlug
-                    ? `Connected · Event: ${status.eventTypeSlug}`
-                    : 'Connected · pick a default event type below'
+                    ? `Connected as ${status.userEmail ?? ''} · Event: ${status.eventTypeSlug}`
+                    : `Connected as ${status?.userEmail ?? ''} · pick a default event type below`
                   : 'Book meetings directly in SMS with real cal.com availability'}
               </CardDescription>
             </div>
@@ -988,36 +990,18 @@ function CalcomCard({ tenantId }: { tenantId: string }) {
       </CardHeader>
       <CardContent className="space-y-4">
         {!connected ? (
-          <div className="space-y-3">
-            <div>
-              <Label>Personal API key</Label>
-              <Input
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                placeholder="cal_live_..."
-                type="password"
-                className="mt-1"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Generate one at{' '}
-                <a
-                  href="https://app.cal.com/settings/developer/api-keys"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline"
-                >
-                  app.cal.com/settings/developer/api-keys
-                </a>
-              </p>
-            </div>
-            <Button
-              onClick={() => connectMutation.mutate()}
-              disabled={connectMutation.isPending || apiKeyInput.trim().length < 10}
-              size="sm"
-            >
-              <Link2 className="h-4 w-4 mr-2" />
-              {connectMutation.isPending ? 'Validating…' : 'Connect cal.com'}
-            </Button>
+          <div className="space-y-2">
+            <a href={calcomApi.oauthStartUrl(tenantId)}>
+              <Button size="sm">
+                <Link2 className="h-4 w-4 mr-2" />
+                Connect with cal.com
+              </Button>
+            </a>
+            <p className="text-xs text-muted-foreground">
+              You&apos;ll be redirected to cal.com to authorize RingbackSMS to read
+              your event types and create bookings. We only use your access
+              token server-side — never exposed to tenants or browsers.
+            </p>
           </div>
         ) : (
           <>
