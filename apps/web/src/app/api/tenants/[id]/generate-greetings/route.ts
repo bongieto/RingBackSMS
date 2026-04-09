@@ -220,16 +220,27 @@ ${brandBrief}`;
 
     const results = await Promise.all(SLOTS.map(generateOne));
     const generated = Object.fromEntries(results) as Record<SlotKey, string>;
+    const filled = Object.values(generated).filter((v) => v && v.length > 0);
 
     logger.info('Bulk greetings generated', {
       tenantId: params.id,
-      slots: Object.entries(generated)
-        .filter(([, v]) => v)
+      filled: filled.length,
+      total: SLOTS.length,
+      empty: Object.entries(generated)
+        .filter(([, v]) => !v)
         .map(([k]) => k),
     });
 
+    if (filled.length === 0) {
+      // Every slot came back empty — MiniMax is down, rate-limited, or
+      // the key is bad. Fail loudly instead of pretending we succeeded.
+      return apiError('AI failed to generate any greetings — check logs', 502);
+    }
+
     return apiSuccess({
       generated,
+      filled: filled.length,
+      total: SLOTS.length,
       websiteContext: websiteContext ? 'extracted' : 'none',
     });
   } catch (err: any) {

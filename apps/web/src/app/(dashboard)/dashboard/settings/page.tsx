@@ -186,7 +186,7 @@ export default function SettingsPage() {
 
   const generateAllGreetingsMutation = useMutation({
     mutationFn: () => tenantApi.generateAllGreetings(tenantId!),
-    onSuccess: (data: { generated: Record<string, string> }) => {
+    onSuccess: (data: { generated: Record<string, string>; filled?: number; total?: number }) => {
       const g = data.generated ?? {};
       setForm(f => ({
         ...f,
@@ -199,9 +199,18 @@ export default function SettingsPage() {
         voiceGreetingRapidRedial: g.voiceGreetingRapidRedial || f.voiceGreetingRapidRedial,
         voiceGreetingReturning: g.voiceGreetingReturning || f.voiceGreetingReturning,
       }));
-      toast.success('All greetings generated! Review each one and save when ready.');
+      const filled = data.filled ?? Object.values(g).filter(Boolean).length;
+      const total = data.total ?? 8;
+      if (filled < total) {
+        toast.warning(`Generated ${filled} of ${total}. Some slots failed — try again.`);
+      } else {
+        toast.success('All greetings generated! Review each one and save when ready.');
+      }
     },
-    onError: () => toast.error('Failed to generate greetings (rate-limited or service error)'),
+    onError: (err: any) =>
+      toast.error(
+        err?.response?.data?.error ?? 'Failed to generate greetings (rate-limited or service error)',
+      ),
   });
 
   const testNotificationMutation = useMutation({
