@@ -207,4 +207,19 @@ export const posApi = {
     webApi.get(`/integrations/${provider}/status`, { params: { tenantId } }).then((r) => r.data.data),
   getSyncHistory: (tenantId: string) =>
     webApi.get('/integrations/sync-history', { params: { tenantId } }).then((r) => r.data.data),
+  listLocations: (tenantId: string, provider: string) =>
+    webApi
+      .get(`/integrations/${provider}/locations`, { params: { tenantId } })
+      .then((r) => r.data.data as {
+        locations: Array<{ id: string; name: string; address: string | null }>;
+        currentLocationId: string | null;
+      }),
+  configureLocation: (tenantId: string, provider: string, locationId: string) =>
+    webApi
+      .post(
+        `/integrations/${provider}/configure-location`,
+        { locationId },
+        { params: { tenantId } },
+      )
+      .then((r) => r.data.data as { locationId: string; name: string; address: string | null }),
 };

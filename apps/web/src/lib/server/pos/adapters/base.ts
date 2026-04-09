@@ -61,6 +61,18 @@ export abstract class BasePosAdapter {
     context: Record<string, string>,
   ): boolean;
 
+  /**
+   * List locations available on the connected merchant account.
+   * Default implementation throws; adapters that support multi-location
+   * accounts override this. Return shape is intentionally minimal — id,
+   * name, and a one-line address for display.
+   */
+  async listLocations(
+    _tenantId: string,
+  ): Promise<Array<{ id: string; name: string; address: string | null }>> {
+    throw new Error(`${this.provider} does not support listLocations`);
+  }
+
   protected async loadTokens(tenantId: string): Promise<PosTokenData | null> {
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },

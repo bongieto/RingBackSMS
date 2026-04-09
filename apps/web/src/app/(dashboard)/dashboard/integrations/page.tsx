@@ -519,6 +519,31 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
     onError: () => toast.error('Failed to refresh token — try reconnecting'),
   });
 
+  // Square multi-location picker (only fetched when the user opens it
+  // and only for adapters that expose listLocations — currently Square).
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const locationsQuery = useQuery({
+    queryKey: ['pos-locations', tenantId, provider.provider],
+    queryFn: () => posApi.listLocations(tenantId, provider.provider),
+    enabled: showLocationPicker && provider.connected && provider.provider === 'square',
+    staleTime: 60_000,
+    retry: false,
+  });
+  const configureLocationMutation = useMutation({
+    mutationFn: (locationId: string) =>
+      posApi.configureLocation(tenantId, provider.provider, locationId),
+    onSuccess: (data) => {
+      toast.success(`Switched to ${data.name}`);
+      invalidate();
+      queryClient.invalidateQueries({
+        queryKey: ['pos-locations', tenantId, provider.provider],
+      });
+      setShowLocationPicker(false);
+    },
+    onError: (err: any) =>
+      toast.error(err?.response?.data?.error ?? 'Failed to change location'),
+  });
+
   // Token health
   const tokenHealth = getTokenHealth(provider.tokenExpiresAt);
 
@@ -598,6 +623,86 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
                       {reconnectMutation.isPending ? 'Refreshing...' : 'Refresh Token'}
                     </Button>
                   </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Location picker (Square only for now) */}
+            {provider.provider === 'square' && (
+              <Card className="bg-muted/50">
+                <CardContent className="pt-4 pb-4">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <div className="flex items-center gap-2">
+                      <Settings2 className="h-4 w-4 text-slate-600" />
+                      <span className="text-sm font-medium">Synced location</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowLocationPicker((v) => !v)}
+                    >
+                      {showLocationPicker ? 'Cancel' : 'Change location'}
+                    </Button>
+                  </div>
+                  {!showLocationPicker && (
+                    <p className="text-xs text-muted-foreground">
+                      {provider.locationId
+                        ? `Location id: ${provider.locationId}`
+                        : 'No location set'}
+                    </p>
+                  )}
+                  {showLocationPicker && (
+                    <div className="mt-3 space-y-2">
+                      {locationsQuery.isLoading && (
+                        <p className="text-xs text-muted-foreground">Loading locations…</p>
+                      )}
+                      {locationsQuery.isError && (
+                        <p className="text-xs text-red-600">
+                          Failed to load locations. Try reconnecting Square.
+                        </p>
+                      )}
+                      {locationsQuery.data?.locations?.length === 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          No active locations found on this Square account.
+                        </p>
+                      )}
+                      {locationsQuery.data?.locations?.map((loc) => {
+                        const isCurrent =
+                          loc.id === locationsQuery.data?.currentLocationId;
+                        return (
+                          <button
+                            key={loc.id}
+                            type="button"
+                            disabled={
+                              configureLocationMutation.isPending || isCurrent
+                            }
+                            onClick={() =>
+                              configureLocationMutation.mutate(loc.id)
+                            }
+                            className={`w-full text-left rounded-lg border px-3 py-2 text-sm transition-colors ${
+                              isCurrent
+                                ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30'
+                                : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800'
+                            } disabled:opacity-60`}
+                          >
+                            <div className="font-medium flex items-center gap-2">
+                              {loc.name}
+                              {isCurrent && (
+                                <span className="text-xs text-blue-600">
+                                  (current)
+                                </span>
+                              )}
+                            </div>
+                            {loc.address && (
+                              <div className="text-xs text-muted-foreground">
+                                {loc.address}
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}

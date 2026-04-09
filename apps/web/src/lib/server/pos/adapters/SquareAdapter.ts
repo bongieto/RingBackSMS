@@ -460,4 +460,31 @@ export class SquareAdapter extends BasePosAdapter {
     const expected = hmac.digest('base64');
     return expected === signature;
   }
+
+  async listLocations(
+    tenantId: string,
+  ): Promise<Array<{ id: string; name: string; address: string | null }>> {
+    const tokens = await this.loadTokens(tenantId);
+    if (!tokens) throw new Error('Tenant not connected to Square');
+
+    const client = buildSquareClient(tokens.accessToken);
+    const response = await client.locationsApi.listLocations();
+    const raw = response.result.locations ?? [];
+
+    return raw
+      .filter((loc) => loc.id && loc.status !== 'INACTIVE')
+      .map((loc) => {
+        const addr = loc.address;
+        const addressParts = [
+          addr?.addressLine1,
+          addr?.locality, // city
+          addr?.administrativeDistrictLevel1, // state
+        ].filter(Boolean);
+        return {
+          id: loc.id as string,
+          name: loc.name ?? 'Unnamed location',
+          address: addressParts.length > 0 ? addressParts.join(', ') : null,
+        };
+      });
+  }
 }
