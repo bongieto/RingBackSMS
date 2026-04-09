@@ -9,6 +9,89 @@ function generateOrderNumber(): string {
   return `ORD-${timestamp}-${random}`;
 }
 
+// ── Prep time calculation ─────────────────────────────────────────────────
+
+export interface PrepTimeOverride {
+  dayOfWeek: number;
+  start: string; // "HH:mm"
+  end: string;   // "HH:mm"
+  extraMinutes: number;
+  label?: string;
+}
+
+export interface PrepTimeConfig {
+  defaultPrepTimeMinutes: number | null;
+  largeOrderThresholdItems: number | null;
+  largeOrderExtraMinutes: number | null;
+  prepTimeOverrides: unknown; // Json from Prisma
+  timezone: string | null;
+}
+
+function activeOverrideExtra(
+  overrides: PrepTimeOverride[],
+  timezone: string,
+  now: Date,
+): number {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(now);
+    const wd = parts.find((p) => p.type === 'weekday')?.value ?? '';
+    const hh = parts.find((p) => p.type === 'hour')?.value ?? '00';
+    const mm = parts.find((p) => p.type === 'minute')?.value ?? '00';
+    const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const currentDay = dayMap[wd] ?? 0;
+    const currentMin = parseInt(hh, 10) * 60 + parseInt(mm, 10);
+    let total = 0;
+    for (const o of overrides) {
+      if (o.dayOfWeek !== currentDay) continue;
+      const [sH, sM] = o.start.split(':').map(Number);
+      const [eH, eM] = o.end.split(':').map(Number);
+      const sMin = sH * 60 + sM;
+      const eMin = eH * 60 + eM;
+      if (currentMin >= sMin && currentMin < eMin) total += o.extraMinutes;
+    }
+    return total;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Computes the total prep time in minutes for a new order based on the
+ * tenant's config and the order's item count. Applies the default,
+ * any currently-active override windows, and the large-order extra.
+ * Returns `null` if the tenant hasn't configured prep time at all
+ * (i.e. `defaultPrepTimeMinutes` is null) — callers should skip writing
+ * `estimatedReadyTime` in that case so we don't fabricate a ready time.
+ */
+export function calculatePrepTime(
+  config: PrepTimeConfig,
+  itemCount: number,
+  now: Date = new Date(),
+): { totalMinutes: number; breakdown: { base: number; overrideExtra: number; largeOrderExtra: number } } | null {
+  if (config.defaultPrepTimeMinutes == null) return null;
+  const base = config.defaultPrepTimeMinutes;
+  const overrides = Array.isArray(config.prepTimeOverrides)
+    ? (config.prepTimeOverrides as PrepTimeOverride[])
+    : [];
+  const overrideExtra = activeOverrideExtra(overrides, config.timezone ?? 'America/Chicago', now);
+  const largeOrderExtra =
+    config.largeOrderThresholdItems != null &&
+    itemCount >= config.largeOrderThresholdItems
+      ? config.largeOrderExtraMinutes ?? 0
+      : 0;
+  return {
+    totalMinutes: base + overrideExtra + largeOrderExtra,
+    breakdown: { base, overrideExtra, largeOrderExtra },
+  };
+}
+
 export interface CreateOrderInput {
   tenantId: string;
   conversationId: string;
@@ -29,6 +112,35 @@ export interface CreateOrderInput {
 }
 
 export async function createOrder(input: CreateOrderInput) {
+  // Compute estimated ready time from the tenant's prep-time config if set.
+  // Reads only the fields we need so this is a cheap single-row select.
+  const cfg = await prisma.tenantConfig.findUnique({
+    where: { tenantId: input.tenantId },
+    select: {
+      defaultPrepTimeMinutes: true,
+      largeOrderThresholdItems: true,
+      largeOrderExtraMinutes: true,
+      prepTimeOverrides: true,
+      timezone: true,
+    },
+  });
+  const itemCount = input.items.reduce((s, i) => s + (i.quantity ?? 1), 0);
+  const prep = cfg
+    ? calculatePrepTime(
+        {
+          defaultPrepTimeMinutes: cfg.defaultPrepTimeMinutes,
+          largeOrderThresholdItems: cfg.largeOrderThresholdItems,
+          largeOrderExtraMinutes: cfg.largeOrderExtraMinutes,
+          prepTimeOverrides: cfg.prepTimeOverrides,
+          timezone: cfg.timezone,
+        },
+        itemCount,
+      )
+    : null;
+  const estimatedReadyTime = prep
+    ? new Date(Date.now() + prep.totalMinutes * 60_000)
+    : null;
+
   const order = await prisma.order.create({
     data: {
       tenantId: input.tenantId,
@@ -39,6 +151,7 @@ export async function createOrder(input: CreateOrderInput) {
       items: input.items,
       total: input.total,
       pickupTime: input.pickupTime,
+      estimatedReadyTime,
       notes: input.notes,
       ...(input.stripePaymentId && { stripePaymentId: input.stripePaymentId }),
       ...(input.stripePaymentUrl && { stripePaymentUrl: input.stripePaymentUrl }),

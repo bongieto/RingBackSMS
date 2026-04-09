@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { tenantApi, phoneApi, notificationApi } from '@/lib/api';
+import { getProfile } from '@/lib/businessTypeProfile';
 
 interface DayScheduleEntry {
   open: string;
@@ -99,6 +100,8 @@ export default function SettingsPage() {
   const tenantId = (tenant?.id as string | undefined)
     ?? (organization?.publicMetadata?.tenantId as string | undefined);
   const config: TenantConfig | undefined = tenant?.config;
+  const businessType = (tenant as { businessType?: string } | undefined)?.businessType;
+  const profile = getProfile(businessType);
 
   const [form, setForm] = useState({
     greeting: '',
@@ -123,6 +126,17 @@ export default function SettingsPage() {
     requirePayment: false,
     dailyDigestEnabled: true,
     dailyDigestHour: 8,
+    defaultPrepTimeMinutes: null as number | null,
+    largeOrderThresholdItems: null as number | null,
+    largeOrderExtraMinutes: null as number | null,
+    prepTimeOverrides: [] as Array<{
+      dayOfWeek: number;
+      start: string;
+      end: string;
+      extraMinutes: number;
+      label?: string;
+    }>,
+    ordersAcceptingEnabled: true,
   });
 
   const [newClosedDate, setNewClosedDate] = useState('');
@@ -171,6 +185,11 @@ export default function SettingsPage() {
         requirePayment: config.requirePayment ?? false,
         dailyDigestEnabled: (config as any).dailyDigestEnabled ?? true,
         dailyDigestHour: (config as any).dailyDigestHour ?? 8,
+        defaultPrepTimeMinutes: (config as any).defaultPrepTimeMinutes ?? null,
+        largeOrderThresholdItems: (config as any).largeOrderThresholdItems ?? null,
+        largeOrderExtraMinutes: (config as any).largeOrderExtraMinutes ?? null,
+        prepTimeOverrides: ((config as any).prepTimeOverrides as any[] | null) ?? [],
+        ordersAcceptingEnabled: (config as any).ordersAcceptingEnabled ?? true,
       });
     }
   }, [config]);
@@ -252,7 +271,12 @@ export default function SettingsPage() {
         requirePayment: form.requirePayment,
         dailyDigestEnabled: form.dailyDigestEnabled,
         dailyDigestHour: form.dailyDigestHour,
-      });
+        defaultPrepTimeMinutes: form.defaultPrepTimeMinutes,
+        largeOrderThresholdItems: form.largeOrderThresholdItems,
+        largeOrderExtraMinutes: form.largeOrderExtraMinutes,
+        prepTimeOverrides: form.prepTimeOverrides,
+        ordersAcceptingEnabled: form.ordersAcceptingEnabled,
+      } as any);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tenant', tenantId] });
@@ -793,11 +817,280 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
+        {profile.nav.showPrepTime && (
+          <PrepTimeCard form={form} setForm={setForm} timezone={form.timezone} />
+        )}
+
         <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} size="lg">
           {saveMutation.isPending ? 'Saving...' : 'Save Settings'}
         </Button>
       </div>
     </div>
+  );
+}
+
+// ── Prep time card ──────────────────────────────────────────────────────────
+
+interface PrepTimeOverride {
+  dayOfWeek: number;
+  start: string;
+  end: string;
+  extraMinutes: number;
+  label?: string;
+}
+
+function isOverrideActive(
+  overrides: PrepTimeOverride[],
+  timezone: string,
+  now: Date = new Date(),
+): PrepTimeOverride | null {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(now);
+    const wd = parts.find((p) => p.type === 'weekday')?.value ?? '';
+    const hh = parts.find((p) => p.type === 'hour')?.value ?? '00';
+    const mm = parts.find((p) => p.type === 'minute')?.value ?? '00';
+    const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const currentDay = dayMap[wd] ?? 0;
+    const currentMin = parseInt(hh, 10) * 60 + parseInt(mm, 10);
+    for (const o of overrides) {
+      if (o.dayOfWeek !== currentDay) continue;
+      const [sH, sM] = o.start.split(':').map(Number);
+      const [eH, eM] = o.end.split(':').map(Number);
+      const sMin = sH * 60 + sM;
+      const eMin = eH * 60 + eM;
+      if (currentMin >= sMin && currentMin < eMin) return o;
+    }
+  } catch {}
+  return null;
+}
+
+function PrepTimeCard({
+  form,
+  setForm,
+  timezone,
+}: {
+  form: {
+    defaultPrepTimeMinutes: number | null;
+    largeOrderThresholdItems: number | null;
+    largeOrderExtraMinutes: number | null;
+    prepTimeOverrides: PrepTimeOverride[];
+    ordersAcceptingEnabled: boolean;
+  };
+  setForm: (fn: (f: any) => any) => void;
+  timezone: string;
+}) {
+  const overrides = form.prepTimeOverrides;
+  const activeOverride = isOverrideActive(overrides, timezone);
+  const base = form.defaultPrepTimeMinutes ?? 0;
+  const extra = activeOverride?.extraMinutes ?? 0;
+
+  const statusPill = !form.ordersAcceptingEnabled
+    ? { label: 'Orders paused', cls: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/40 dark:text-red-200' }
+    : activeOverride
+      ? { label: `Override active · ${base + extra} min`, cls: 'bg-amber-100 text-amber-900 border-amber-200 dark:bg-amber-900/40 dark:text-amber-100' }
+      : { label: `Normal prep time · ${base} min`, cls: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/40 dark:text-green-200' };
+
+  const addOverride = () => {
+    setForm((f) => ({
+      ...f,
+      prepTimeOverrides: [
+        ...f.prepTimeOverrides,
+        { dayOfWeek: 1, start: '17:00', end: '20:00', extraMinutes: 15 },
+      ],
+    }));
+  };
+  const updateOverride = (idx: number, patch: Partial<PrepTimeOverride>) => {
+    setForm((f) => ({
+      ...f,
+      prepTimeOverrides: f.prepTimeOverrides.map((o: PrepTimeOverride, i: number) =>
+        i === idx ? { ...o, ...patch } : o,
+      ),
+    }));
+  };
+  const removeOverride = (idx: number) => {
+    setForm((f) => ({
+      ...f,
+      prepTimeOverrides: f.prepTimeOverrides.filter((_: PrepTimeOverride, i: number) => i !== idx),
+    }));
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <span role="img" aria-label="chef">👨‍🍳</span>
+          Prep time
+        </CardTitle>
+        <CardDescription>
+          How long it takes to prepare a typical order. Used for SMS ready-time estimates.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className={`rounded-lg border px-4 py-3 text-sm font-medium ${statusPill.cls}`}>
+          {statusPill.label}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label>Default prep time</Label>
+            <div className="flex items-center gap-2 mt-1">
+              <Input
+                type="number"
+                min={0}
+                max={720}
+                value={form.defaultPrepTimeMinutes ?? ''}
+                placeholder="15"
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    defaultPrepTimeMinutes:
+                      e.target.value === '' ? null : Math.max(0, Number(e.target.value)),
+                  }))
+                }
+                className="w-32"
+              />
+              <span className="text-sm text-muted-foreground">minutes</span>
+            </div>
+          </div>
+
+          <div>
+            <Label>Large order extra time</Label>
+            <div className="flex items-center gap-2 mt-1">
+              <Input
+                type="number"
+                min={0}
+                max={720}
+                value={form.largeOrderExtraMinutes ?? ''}
+                placeholder="30"
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    largeOrderExtraMinutes:
+                      e.target.value === '' ? null : Math.max(0, Number(e.target.value)),
+                  }))
+                }
+                className="w-32"
+              />
+              <span className="text-sm text-muted-foreground">minutes</span>
+            </div>
+          </div>
+
+          <div>
+            <Label>Large order threshold</Label>
+            <div className="flex items-center gap-2 mt-1">
+              <Input
+                type="number"
+                min={1}
+                max={10000}
+                value={form.largeOrderThresholdItems ?? ''}
+                placeholder="50"
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    largeOrderThresholdItems:
+                      e.target.value === '' ? null : Math.max(1, Number(e.target.value)),
+                  }))
+                }
+                className="w-32"
+              />
+              <span className="text-sm text-muted-foreground">items</span>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <Label>Prep time overrides</Label>
+              <p className="text-xs text-muted-foreground">
+                Add extra time during busy windows (e.g. Friday dinner rush).
+              </p>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={addOverride}>
+              <Plus className="h-4 w-4 mr-1" /> Add window
+            </Button>
+          </div>
+          {overrides.length === 0 ? (
+            <p className="text-xs text-muted-foreground italic">No overrides set.</p>
+          ) : (
+            <div className="space-y-2">
+              {overrides.map((o, idx) => (
+                <div
+                  key={idx}
+                  className="flex flex-wrap items-center gap-2 rounded-lg border p-3 bg-muted/40"
+                >
+                  <select
+                    value={o.dayOfWeek}
+                    onChange={(e) => updateOverride(idx, { dayOfWeek: Number(e.target.value) })}
+                    className="h-9 rounded-md border bg-background px-2 text-sm"
+                  >
+                    {DAYS.map((d) => (
+                      <option key={d.value} value={d.value}>
+                        {d.short}
+                      </option>
+                    ))}
+                  </select>
+                  <Input
+                    type="time"
+                    value={o.start}
+                    onChange={(e) => updateOverride(idx, { start: e.target.value })}
+                    className="w-32"
+                  />
+                  <span className="text-sm text-muted-foreground">to</span>
+                  <Input
+                    type="time"
+                    value={o.end}
+                    onChange={(e) => updateOverride(idx, { end: e.target.value })}
+                    className="w-32"
+                  />
+                  <span className="text-sm text-muted-foreground">+</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={720}
+                    value={o.extraMinutes}
+                    onChange={(e) =>
+                      updateOverride(idx, { extraMinutes: Math.max(0, Number(e.target.value)) })
+                    }
+                    className="w-24"
+                  />
+                  <span className="text-sm text-muted-foreground">min</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeOverride(idx)}
+                    className="ml-auto text-red-600 hover:text-red-700"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between pt-2 border-t">
+          <div>
+            <Label>Allow order pausing</Label>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              When off, inbound SMS order requests get a &quot;we&apos;re not accepting orders right now&quot; reply.
+            </p>
+          </div>
+          <Switch
+            checked={form.ordersAcceptingEnabled}
+            onCheckedChange={(v) => setForm((f) => ({ ...f, ordersAcceptingEnabled: v }))}
+          />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

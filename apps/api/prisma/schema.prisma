@@ -277,6 +277,12 @@ model TenantConfig {
   dashboardConfirmTaskCompletion Boolean  @default(true)
   dailyDigestEnabled             Boolean  @default(true)
   dailyDigestHour                Int      @default(8)
+  // Prep time (restaurants & food trucks)
+  defaultPrepTimeMinutes         Int? // null = feature unused
+  largeOrderThresholdItems       Int? // null = no large-order rule
+  largeOrderExtraMinutes         Int? // null = no large-order rule
+  prepTimeOverrides              Json? // Array<{ dayOfWeek, start, end, extraMinutes, label? }>
+  ordersAcceptingEnabled         Boolean  @default(true)
   createdAt                      DateTime @default(now())
   updatedAt                      DateTime @updatedAt
 }
@@ -359,6 +365,7 @@ model Order {
   items            Json
   total            Decimal      @db.Decimal(10, 2)
   pickupTime       String?
+  estimatedReadyTime DateTime?
   notes            String?      @db.Text
   squareOrderId    String?
   squarePaymentId  String?

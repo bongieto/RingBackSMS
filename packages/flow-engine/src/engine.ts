@@ -11,6 +11,29 @@ export async function runFlowEngine(input: FlowInput): Promise<FlowOutput> {
 
   // If in an active flow (not complete), continue it
   if (currentState?.currentFlow && currentState.flowStep !== 'ORDER_COMPLETE' && currentState.flowStep !== 'INQUIRY_COMPLETE') {
+    // If orders got paused while the caller was mid-order, bail out
+    // cleanly so we don't silently drop their in-progress order.
+    if (
+      currentState.currentFlow === FlowType.ORDER &&
+      tenantContext.config.ordersAcceptingEnabled === false
+    ) {
+      return {
+        nextState: {
+          tenantId: tenantContext.tenantId,
+          callerPhone: input.callerPhone,
+          conversationId: currentState.conversationId ?? null,
+          currentFlow: null,
+          flowStep: null,
+          orderDraft: null,
+          lastMessageAt: Date.now(),
+          messageCount: (currentState.messageCount ?? 0) + 1,
+          dedupKey: null,
+        },
+        smsReply: `Sorry, ${tenantContext.tenantName} just paused new orders. Please try again in a bit!`,
+        sideEffects: [],
+        flowType: FlowType.FALLBACK,
+      };
+    }
     switch (currentState.currentFlow) {
       case FlowType.ORDER:
         return processOrderFlow(input);
@@ -39,6 +62,29 @@ export async function runFlowEngine(input: FlowInput): Promise<FlowOutput> {
 
   // Route to appropriate flow
   if (intentResult.intent !== 'UNCLEAR' && enabledFlowTypes.includes(intentResult.intent)) {
+    // Short-circuit: if the tenant has temporarily paused new orders,
+    // tell the caller rather than starting the order flow.
+    if (
+      intentResult.intent === FlowType.ORDER &&
+      tenantContext.config.ordersAcceptingEnabled === false
+    ) {
+      return {
+        nextState: {
+          tenantId: tenantContext.tenantId,
+          callerPhone: input.callerPhone,
+          conversationId: currentState?.conversationId ?? null,
+          currentFlow: null,
+          flowStep: null,
+          orderDraft: null,
+          lastMessageAt: Date.now(),
+          messageCount: (currentState?.messageCount ?? 0) + 1,
+          dedupKey: null,
+        },
+        smsReply: `Sorry, ${tenantContext.tenantName} is temporarily not accepting new orders right now. Please try again in a bit!`,
+        sideEffects: [],
+        flowType: FlowType.FALLBACK,
+      };
+    }
     switch (intentResult.intent) {
       case FlowType.ORDER:
         return processOrderFlow({ ...input, currentState: null });

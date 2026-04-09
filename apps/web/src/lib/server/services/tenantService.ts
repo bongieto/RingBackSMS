@@ -167,6 +167,17 @@ export async function updateTenantConfig(
     requirePayment: boolean;
     dailyDigestEnabled: boolean;
     dailyDigestHour: number;
+    defaultPrepTimeMinutes: number | null;
+    largeOrderThresholdItems: number | null;
+    largeOrderExtraMinutes: number | null;
+    prepTimeOverrides: Array<{
+      dayOfWeek: number;
+      start: string;
+      end: string;
+      extraMinutes: number;
+      label?: string;
+    }> | null;
+    ordersAcceptingEnabled: boolean;
   }>
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -34,6 +34,7 @@ export interface BusinessTypeProfile {
     showOrders: boolean;
     showMeetings: boolean;
     showLocation?: boolean;
+    showPrepTime?: boolean;
     menuLabel?: string;
   };
   dashboardCards: DashboardCardKey[];
@@ -54,7 +55,7 @@ const RESTAURANT: BusinessTypeProfile = {
   defaultGreeting: (name) =>
     `Hi! Sorry we missed your call at ${name}. Reply ORDER to place a pickup order or just tell us what you need — we'll get right back to you!`,
   defaultHours: { start: '11:00', end: '21:00', days: [1, 2, 3, 4, 5, 6] },
-  nav: { showMenu: true, showServices: false, showOrders: true, showMeetings: false },
+  nav: { showMenu: true, showServices: false, showOrders: true, showMeetings: false, showPrepTime: true },
   dashboardCards: ['missedCalls', 'conversations', 'orders', 'revenue'],
   aiPersonalityHint:
     "You're the friendly host of a casual restaurant. Help customers place pickup/delivery orders, answer menu questions, and keep replies warm and quick.",
@@ -78,7 +79,7 @@ const FOOD_TRUCK: BusinessTypeProfile = {
   defaultGreeting: (name) =>
     `Hi! Sorry we missed your call at ${name}. Text WHERE to see today's location, or ORDER to start a pickup order.`,
   defaultHours: { start: '11:00', end: '20:00', days: [1, 2, 3, 4, 5, 6] },
-  nav: { showMenu: true, showServices: false, showOrders: true, showMeetings: false, showLocation: true },
+  nav: { showMenu: true, showServices: false, showOrders: true, showMeetings: false, showLocation: true, showPrepTime: true },
   dashboardCards: ['missedCalls', 'conversations', 'orders', 'revenue'],
   aiPersonalityHint:
     "You're the friendly voice of a mobile food truck. Help customers find today's spot, place pickup orders, and answer menu questions. Keep replies warm, quick, and casual.",

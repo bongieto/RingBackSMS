@@ -44,6 +44,23 @@ export const UpdateTenantConfigRequestSchema = z.object({
   requirePayment: z.boolean().optional(),
   dailyDigestEnabled: z.boolean().optional(),
   dailyDigestHour: z.number().int().min(0).max(23).optional(),
+  // Prep time (restaurants & food trucks)
+  defaultPrepTimeMinutes: z.number().int().min(0).max(720).nullable().optional(),
+  largeOrderThresholdItems: z.number().int().min(1).max(10000).nullable().optional(),
+  largeOrderExtraMinutes: z.number().int().min(0).max(720).nullable().optional(),
+  prepTimeOverrides: z
+    .array(
+      z.object({
+        dayOfWeek: z.number().int().min(0).max(6),
+        start: z.string().regex(/^\d{2}:\d{2}$/),
+        end: z.string().regex(/^\d{2}:\d{2}$/),
+        extraMinutes: z.number().int().min(0).max(720),
+        label: z.string().max(100).optional(),
+      }),
+    )
+    .nullable()
+    .optional(),
+  ordersAcceptingEnabled: z.boolean().optional(),
 });
 
 export type UpdateTenantConfigRequest = z.infer<typeof UpdateTenantConfigRequestSchema>;

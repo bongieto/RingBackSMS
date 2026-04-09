@@ -3,6 +3,81 @@ import { FlowType, OrderStatus } from '@ringback/shared-types';
 import { CallerState, SideEffect } from '@ringback/shared-types';
 import type { MenuItem, MenuItemModifierGroup } from '@ringback/shared-types';
 
+interface PrepOverride {
+  dayOfWeek: number;
+  start: string;
+  end: string;
+  extraMinutes: number;
+}
+
+/**
+ * Mirror of calculatePrepTime in apps/web/src/lib/server/services/orderService.ts.
+ * Kept inline because the flow-engine package can't import from apps/web.
+ * Returns total prep minutes or null if prep time isn't configured.
+ */
+function calculateFlowPrepTime(
+  config: {
+    defaultPrepTimeMinutes?: number | null;
+    largeOrderThresholdItems?: number | null;
+    largeOrderExtraMinutes?: number | null;
+    prepTimeOverrides?: unknown;
+    timezone?: string;
+  },
+  itemCount: number,
+  now: Date = new Date(),
+): number | null {
+  if (config.defaultPrepTimeMinutes == null) return null;
+  const base = config.defaultPrepTimeMinutes;
+  const overrides: PrepOverride[] = Array.isArray(config.prepTimeOverrides)
+    ? (config.prepTimeOverrides as PrepOverride[])
+    : [];
+  let overrideExtra = 0;
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: config.timezone ?? 'America/Chicago',
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(now);
+    const wd = parts.find((p) => p.type === 'weekday')?.value ?? '';
+    const hh = parts.find((p) => p.type === 'hour')?.value ?? '00';
+    const mm = parts.find((p) => p.type === 'minute')?.value ?? '00';
+    const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const currentDay = dayMap[wd] ?? 0;
+    const currentMin = parseInt(hh, 10) * 60 + parseInt(mm, 10);
+    for (const o of overrides) {
+      if (o.dayOfWeek !== currentDay) continue;
+      const [sH, sM] = o.start.split(':').map(Number);
+      const [eH, eM] = o.end.split(':').map(Number);
+      const sMin = sH * 60 + sM;
+      const eMin = eH * 60 + eM;
+      if (currentMin >= sMin && currentMin < eMin) overrideExtra += o.extraMinutes;
+    }
+  } catch {}
+  const largeExtra =
+    config.largeOrderThresholdItems != null &&
+    itemCount >= config.largeOrderThresholdItems
+      ? config.largeOrderExtraMinutes ?? 0
+      : 0;
+  return base + overrideExtra + largeExtra;
+}
+
+function formatReadyTime(minutesFromNow: number, timezone: string): string {
+  const ready = new Date(Date.now() + minutesFromNow * 60_000);
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(ready);
+  } catch {
+    return ready.toLocaleTimeString();
+  }
+}
+
 function buildInitialState(input: FlowInput): CallerState {
   return {
     tenantId: input.tenantContext.tenantId,
@@ -412,9 +487,27 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       lastMessageAt: Date.now(),
     };
 
+    // Prep time estimate (restaurants & food trucks). Falls back to the
+    // legacy message when the tenant hasn't configured prep time.
+    const itemCount = orderItems.reduce((s: number, i: { quantity?: number }) => s + (i.quantity ?? 1), 0);
+    const prepMinutes = calculateFlowPrepTime(
+      {
+        defaultPrepTimeMinutes: (tenantContext.config as { defaultPrepTimeMinutes?: number | null }).defaultPrepTimeMinutes,
+        largeOrderThresholdItems: (tenantContext.config as { largeOrderThresholdItems?: number | null }).largeOrderThresholdItems,
+        largeOrderExtraMinutes: (tenantContext.config as { largeOrderExtraMinutes?: number | null }).largeOrderExtraMinutes,
+        prepTimeOverrides: (tenantContext.config as { prepTimeOverrides?: unknown }).prepTimeOverrides,
+        timezone: tenantContext.config.timezone,
+      },
+      itemCount,
+    );
+    const readyLine =
+      prepMinutes != null
+        ? ` Ready for pickup around ${formatReadyTime(prepMinutes, tenantContext.config.timezone)}.`
+        : ` Pickup time: ${pickupTime}.`;
+
     return {
       nextState,
-      smsReply: `Your order has been placed! Pickup time: ${pickupTime}. Total: $${total.toFixed(2)}. We'll have it ready for you! 🎉`,
+      smsReply: `Your order has been placed!${readyLine} Total: $${total.toFixed(2)}. We'll have it ready for you! 🎉`,
       sideEffects: [
         {
           type: 'SAVE_ORDER',

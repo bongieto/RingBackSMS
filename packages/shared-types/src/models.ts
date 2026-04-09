@@ -86,6 +86,12 @@ export const TenantConfigSchema = z.object({
   posSyncEnabled: z.boolean().default(false),
   posAutoSync: z.boolean().default(false),
   requirePayment: z.boolean().default(false),
+  // Prep time (restaurants & food trucks)
+  defaultPrepTimeMinutes: z.number().int().nullable().optional(),
+  largeOrderThresholdItems: z.number().int().nullable().optional(),
+  largeOrderExtraMinutes: z.number().int().nullable().optional(),
+  prepTimeOverrides: z.unknown().nullable().optional(),
+  ordersAcceptingEnabled: z.boolean().default(true),
   createdAt: z.date(),
   updatedAt: z.date(),
 });
