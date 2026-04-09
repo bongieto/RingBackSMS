@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
 import api from '@/lib/api';
-import { StatusPill } from '../overview/page';
+import { StatusPill } from '../_components/StatusPill';
 
 function fmtUsd(cents: number) {
   return (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
