@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Phone } from 'lucide-react';
+import Image from 'next/image';
 import { cn } from '@/lib/utils';
 
 type LogoSize = 'sm' | 'md' | 'lg';
@@ -12,10 +12,10 @@ interface LogoProps {
   className?: string;
 }
 
-const SIZE_STYLES: Record<LogoSize, { text: string; icon: string }> = {
-  sm: { text: 'text-lg', icon: 'h-5 w-5' },
-  md: { text: 'text-xl', icon: 'h-6 w-6' },
-  lg: { text: 'text-3xl', icon: 'h-8 w-8' },
+const SIZE_STYLES: Record<LogoSize, { text: string; icon: number }> = {
+  sm: { text: 'text-lg', icon: 24 },
+  md: { text: 'text-xl', icon: 28 },
+  lg: { text: 'text-3xl', icon: 36 },
 };
 
 export function Logo({
@@ -29,8 +29,15 @@ export function Logo({
   const base = variant === 'dark' ? 'text-white' : 'text-slate-900';
 
   const content = (
-    <span className={cn('inline-flex items-center gap-1.5 font-extrabold', base, sz.text, className)}>
-      <Phone className={cn(sz.icon, accent)} strokeWidth={2.5} />
+    <span className={cn('inline-flex items-center gap-2 font-extrabold', base, sz.text, className)}>
+      <Image
+        src="/favicon.png"
+        alt=""
+        width={sz.icon}
+        height={sz.icon}
+        className="object-contain"
+        unoptimized
+      />
       <span>
         RingBack<span className={accent}>SMS</span>
       </span>
