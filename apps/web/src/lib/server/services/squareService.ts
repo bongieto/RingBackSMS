@@ -4,6 +4,20 @@ import { logger } from '../logger';
 import axios from 'axios';
 import { prisma } from '../db';
 
+/** Resolve the public app origin from the first env var we find. */
+function getAppOrigin(): string {
+  const raw =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    process.env.FRONTEND_URL ??
+    process.env.BASE_URL ??
+    '';
+  return raw.replace(/\/+$/, '');
+}
+
+function getSquareRedirectUri(): string {
+  return `${getAppOrigin()}/integrations/square/callback`;
+}
+
 function getSquareEnvironment(): Environment {
   return process.env.SQUARE_ENVIRONMENT === 'production'
     ? Environment.Production
@@ -29,7 +43,7 @@ export function getOAuthUrl(tenantId: string): string {
     client_id: (process.env.SQUARE_APPLICATION_ID || process.env.SQUARE_APP_ID) ?? '',
     scope: 'MERCHANT_PROFILE_READ ITEMS_READ ITEMS_WRITE ORDERS_WRITE PAYMENTS_WRITE',
     state: tenantId,
-    redirect_uri: `${process.env.BASE_URL}/integrations/square/callback`,
+    redirect_uri: getSquareRedirectUri(),
   });
 
   return `${baseUrl}/oauth2/authorize?${params.toString()}`;
@@ -51,7 +65,7 @@ export async function exchangeOAuthCode(
       client_secret: (process.env.SQUARE_APPLICATION_SECRET || process.env.SQUARE_APP_SECRET),
       code,
       grant_type: 'authorization_code',
-      redirect_uri: `${process.env.BASE_URL}/integrations/square/callback`,
+      redirect_uri: getSquareRedirectUri(),
     },
     { headers: { 'Content-Type': 'application/json' } }
   );
