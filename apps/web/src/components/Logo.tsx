@@ -29,7 +29,7 @@ export function Logo({
   const base = variant === 'dark' ? 'text-white' : 'text-slate-900';
 
   const content = (
-    <span className={cn('inline-flex items-center gap-2 font-extrabold', base, sz.text, className)}>
+    <span className={cn('inline-flex items-center gap-1 font-extrabold', base, sz.text, className)}>
       <Image
         src="/favicon.png"
         alt=""
