@@ -4,6 +4,7 @@ import { verifyWebhookSignature } from '@/lib/server/services/calcomService';
 import { sendNotification } from '@/lib/server/services/notificationService';
 import { logger } from '@/lib/server/logger';
 import { apiSuccess, apiError } from '@/lib/server/response';
+import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/server/rateLimit';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +26,10 @@ interface CalcomWebhookPayload {
 }
 
 export async function POST(req: NextRequest) {
+  const ip = getClientIp(req.headers);
+  const rl = await checkRateLimit(`calcom-wh:${ip}`, 120, 60);
+  if (!rl.allowed) return rateLimitResponse(rl);
+
   const rawBody = await req.text();
   const sig = req.headers.get('x-cal-signature-256') ?? req.headers.get('x-cal-signature');
   if (!verifyWebhookSignature(rawBody, sig)) {

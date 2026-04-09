@@ -511,59 +511,97 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     }).catch((err) => logger.warn('Failed to create handoff task', { error: err }));
   }
 
-  // Process side effects (context passes data between effects, e.g. orderId from SAVE_ORDER to CREATE_PAYMENT_LINK)
-  const sideEffectContext: Record<string, any> = {};
-  for (const effect of result.sideEffects) {
-    await processSideEffect(effect, tenantId, conversationId as string, callerPhone, sideEffectContext);
-  }
-
-  // Send SMS reply
-  await sendSms(tenantId, callerPhone, result.smsReply);
-
-  // Record usage
-  const tenantMeta = await prisma.tenant.findUnique({
-    where: { id: tenantId },
-    select: { plan: true, stripeSubscriptionId: true },
-  });
-
-  if (tenantMeta) {
-    await incrementSmsUsage(tenantId, tenantMeta.stripeSubscriptionId, tenantMeta.plan);
-  }
-
-  logger.info('Inbound SMS processed', {
-    tenantId,
-    flowType: result.flowType,
-    sideEffects: result.sideEffects.length,
-  });
-
-  // Upsert contact record for CRM
+  // Process side effects + send SMS + record usage, wrapped in an error
+  // boundary so a crash after state is saved (line 432) doesn't silently
+  // leave the customer stuck. On failure we send a generic fallback and
+  // reset the flow to FALLBACK so the next message doesn't re-run the
+  // same failed step.
   try {
-    const orderEffects = result.sideEffects.filter((e) => e.type === 'SAVE_ORDER');
-    const orderIncrement = orderEffects.length;
-    const spentIncrement = orderEffects.reduce(
-      (sum, e) => sum + Math.round((e.payload.total ?? 0) * 100),
-      0
-    );
+    // Process side effects (context passes data between effects, e.g. orderId from SAVE_ORDER to CREATE_PAYMENT_LINK)
+    const sideEffectContext: Record<string, any> = {};
+    for (const effect of result.sideEffects) {
+      await processSideEffect(effect, tenantId, conversationId as string, callerPhone, sideEffectContext);
+    }
 
-    await prisma.contact.upsert({
-      where: { tenantId_phone: { tenantId, phone: callerPhone } },
-      create: {
-        tenantId,
-        phone: callerPhone,
-        lastContactAt: new Date(),
-        totalOrders: orderIncrement,
-        totalSpent: spentIncrement,
-      },
-      update: {
-        lastContactAt: new Date(),
-        ...(orderIncrement > 0 && {
-          totalOrders: { increment: orderIncrement },
-          totalSpent: { increment: spentIncrement },
-        }),
-      },
+    // Send SMS reply
+    await sendSms(tenantId, callerPhone, result.smsReply);
+
+    // Record usage
+    const tenantMeta = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { plan: true, stripeSubscriptionId: true },
     });
+
+    if (tenantMeta) {
+      await incrementSmsUsage(tenantId, tenantMeta.stripeSubscriptionId, tenantMeta.plan);
+    }
+
+    logger.info('Inbound SMS processed', {
+      tenantId,
+      flowType: result.flowType,
+      sideEffects: result.sideEffects.length,
+    });
+
+    // Upsert contact record for CRM
+    try {
+      const orderEffects = result.sideEffects.filter((e) => e.type === 'SAVE_ORDER');
+      const orderIncrement = orderEffects.length;
+      const spentIncrement = orderEffects.reduce(
+        (sum, e) => sum + Math.round((e.payload.total ?? 0) * 100),
+        0
+      );
+
+      await prisma.contact.upsert({
+        where: { tenantId_phone: { tenantId, phone: callerPhone } },
+        create: {
+          tenantId,
+          phone: callerPhone,
+          lastContactAt: new Date(),
+          totalOrders: orderIncrement,
+          totalSpent: spentIncrement,
+        },
+        update: {
+          lastContactAt: new Date(),
+          ...(orderIncrement > 0 && {
+            totalOrders: { increment: orderIncrement },
+            totalSpent: { increment: spentIncrement },
+          }),
+        },
+      });
+    } catch (err) {
+      logger.error('Failed to upsert contact', { tenantId, error: err });
+    }
   } catch (err) {
-    logger.error('Failed to upsert contact', { tenantId, callerPhone, error: err });
+    logger.error('processInboundSms crash after state save', { tenantId, error: err });
+    // Reset flow state so the next message doesn't re-run the crashed step.
+    try {
+      await setCallerState({
+        tenantId,
+        callerPhone,
+        conversationId: conversationId ?? null,
+        currentFlow: null,
+        flowStep: null,
+        orderDraft: null,
+        lastMessageAt: Date.now(),
+        messageCount: (currentState?.messageCount ?? 0) + 1,
+        dedupKey: messageSid,
+      });
+    } catch { /* best-effort */ }
+    // Send a generic fallback SMS so the customer isn't silently abandoned.
+    try {
+      await sendSms(
+        tenantId,
+        callerPhone,
+        `Sorry, something went wrong on our end. A team member has been notified and will follow up with you shortly.`,
+      );
+    } catch { /* best-effort */ }
+    // Notify the owner
+    await sendNotification({
+      tenantId,
+      subject: 'Flow engine error',
+      message: `An error occurred while processing a message from ${callerPhone}. The customer has been notified.`,
+      channel: 'email',
+    }).catch(() => {});
   }
 }
 

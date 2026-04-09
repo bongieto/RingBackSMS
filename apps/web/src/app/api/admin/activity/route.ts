@@ -1,12 +1,9 @@
+import { isSuperAdmin } from '@/lib/server/agency';
 import { NextRequest } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/server/db';
 import { apiSuccess, apiError } from '@/lib/server/response';
 
-function isSuperAdmin(userId: string | null): boolean {
-  const adminId = process.env.SUPER_ADMIN_CLERK_USER_ID?.trim();
-  return !!userId && !!adminId && userId === adminId;
-}
 
 export async function GET(request: NextRequest) {
   const { userId } = await auth();

@@ -93,10 +93,15 @@ export async function POST(request: NextRequest) {
     return new Response('OK', { status: 200 });
   }
 
+  // Cap transcript length to avoid blowing the AI prompt window downstream.
+  const cappedTranscript = transcriptionText.length > 3000
+    ? transcriptionText.substring(0, 3000)
+    : transcriptionText;
+
   try {
     await prisma.missedCall.update({
       where: { id: missedCall.id },
-      data: { voicemailTranscript: transcriptionText },
+      data: { voicemailTranscript: cappedTranscript },
     });
   } catch (err) {
     logger.error('Failed to save transcript', { err, callSid });

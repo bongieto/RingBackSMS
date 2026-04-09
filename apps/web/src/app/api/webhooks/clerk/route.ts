@@ -7,6 +7,7 @@ import { linkTenantToAgency } from '@/lib/server/services/agencyService';
 import { isAgencyUser } from '@/lib/server/agency';
 import { logger } from '@/lib/server/logger';
 import { apiSuccess, apiError } from '@/lib/server/response';
+import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/server/rateLimit';
 
 // Clerk webhook payload shape (minimal — we only read what we use).
 interface ClerkEvent {
@@ -20,6 +21,10 @@ interface ClerkEvent {
 }
 
 export async function POST(req: NextRequest) {
+  const ip = getClientIp(req.headers);
+  const rl = await checkRateLimit(`clerk-wh:${ip}`, 60, 60);
+  if (!rl.allowed) return rateLimitResponse(rl);
+
   const secret = process.env.CLERK_WEBHOOK_SECRET;
   if (!secret) {
     logger.error('[clerk webhook] CLERK_WEBHOOK_SECRET not configured');

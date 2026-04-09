@@ -4,8 +4,13 @@ import { prisma } from '@/lib/server/db';
 import { sendSms, getValidationToken } from '@/lib/server/services/twilioService';
 import { logger } from '@/lib/server/logger';
 import { TwilioCallStatusSchema } from '@ringback/shared-types';
+import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/server/rateLimit';
 
 export async function POST(request: NextRequest) {
+  const ip = getClientIp(request.headers);
+  const rl = await checkRateLimit(`twilio-status:${ip}`, 120, 60);
+  if (!rl.allowed) return rateLimitResponse(rl);
+
   // Parse URL-encoded Twilio body
   const text = await request.text();
   const params = new URLSearchParams(text);
@@ -25,16 +30,18 @@ export async function POST(request: NextRequest) {
 
   if (!tenant || !tenant.isActive) return new Response('OK', { status: 200 });
 
-  // Verify Twilio signature
+  // Verify Twilio signature — fail-closed if token is missing
   const authToken = getValidationToken(tenant);
-  if (authToken) {
-    const sig = request.headers.get('x-twilio-signature') ?? '';
-    const url = `${process.env.FRONTEND_URL ?? ''}/api/webhooks/twilio/call-status`;
-    const isValid = twilio.validateRequest(authToken, sig, url, body);
-    if (!isValid) {
-      logger.warn('Invalid Twilio signature', { tenantId: tenant.id });
-      return new Response('Invalid signature', { status: 403 });
-    }
+  if (!authToken) {
+    logger.warn('No Twilio auth token for signature verification', { tenantId: tenant.id });
+    return new Response('Auth token not configured', { status: 500 });
+  }
+  const sig = request.headers.get('x-twilio-signature') ?? '';
+  const url = `${process.env.FRONTEND_URL ?? ''}/api/webhooks/twilio/call-status`;
+  const isValid = twilio.validateRequest(authToken, sig, url, body);
+  if (!isValid) {
+    logger.warn('Invalid Twilio signature', { tenantId: tenant.id });
+    return new Response('Invalid signature', { status: 403 });
   }
 
   // The voice webhook now handles missed call creation and SMS sending.

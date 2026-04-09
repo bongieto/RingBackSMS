@@ -96,9 +96,12 @@ export function hashForSearch(value: string | null | undefined): string | null {
   if (value == null) return null;
   const normalized = String(value).trim().toLowerCase();
   if (normalized === '') return null;
-  const keyMaterial =
-    process.env.CONTACT_SEARCH_HMAC_KEY ||
-    `ringback-search:${process.env.ENCRYPTION_KEY ?? 'fallback'}`;
+  const keyMaterial = process.env.CONTACT_SEARCH_HMAC_KEY || process.env.ENCRYPTION_KEY;
+  if (!keyMaterial) {
+    throw new Error(
+      'CONTACT_SEARCH_HMAC_KEY or ENCRYPTION_KEY must be set for search hashing',
+    );
+  }
   return createHmac('sha256', keyMaterial).update(normalized).digest('hex');
 }
 

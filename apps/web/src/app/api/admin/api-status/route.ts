@@ -1,3 +1,4 @@
+import { isSuperAdmin } from '@/lib/server/agency';
 import { NextRequest } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/server/db';
@@ -6,10 +7,6 @@ import { apiSuccess, apiError } from '@/lib/server/response';
 // Extend timeout to 30s for this route (Vercel Pro supports up to 300s)
 export const maxDuration = 30;
 
-function isSuperAdmin(userId: string | null): boolean {
-  const adminId = process.env.SUPER_ADMIN_CLERK_USER_ID?.trim();
-  return !!userId && !!adminId && userId === adminId;
-}
 
 interface ApiCheckResult {
   name: string;
