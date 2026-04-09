@@ -35,12 +35,13 @@ export function Logo({
         alt=""
         width={sz.icon}
         height={sz.icon}
-        className="object-contain"
+        className={cn('object-contain', variant === 'dark' && 'drop-shadow-[0_0_1px_rgba(147,197,253,0.5)]')}
+        style={variant === 'dark' ? { filter: 'brightness(1.15)' } : undefined}
         unoptimized
       />
       <span className="flex flex-col leading-tight">
         <span>RingBack<span className={accent}>SMS</span></span>
-        <span className={cn(sz.sub, 'font-semibold tracking-[0.08em] uppercase', variant === 'dark' ? 'text-slate-400' : 'text-slate-500')}>
+        <span className={cn(sz.sub, 'font-semibold tracking-[0.08em] uppercase pl-[1px]', variant === 'dark' ? 'text-slate-400' : 'text-slate-500')}>
           Missed Call Recovery System
         </span>
       </span>
