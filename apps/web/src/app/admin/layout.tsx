@@ -26,7 +26,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <aside className="w-56 bg-slate-900 border-r border-slate-800 flex flex-col fixed top-0 left-0 h-screen z-30">
         <div className="p-5 border-b border-slate-800">
           <div className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-1">Platform Admin</div>
-          <div className="text-white font-bold text-lg mb-3">RingBack<span className="text-blue-400">SMS</span></div>
+          <Logo size="sm" variant="dark" href={null} className="mb-3" />
           <ViewSwitcher />
         </div>
         <nav className="flex-1 p-3 space-y-1">
