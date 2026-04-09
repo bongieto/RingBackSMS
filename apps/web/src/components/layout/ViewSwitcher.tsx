@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { LayoutDashboard, Handshake, Shield, Grid3x3, Check } from 'lucide-react';
+import { LayoutDashboard, Handshake, Shield, Grid3x3, Check, ChevronDown } from 'lucide-react';
 import api from '@/lib/api';
 
 type Scope = 'dashboard' | 'partner' | 'admin';
@@ -93,10 +93,13 @@ export function ViewSwitcher() {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-label="Switch view"
-        className="inline-flex items-center gap-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1.5 text-xs font-medium border border-slate-700"
+        className="w-full inline-flex items-center justify-between gap-2 rounded-lg bg-slate-700/80 hover:bg-slate-600 text-white px-3 py-2 text-sm font-medium border border-slate-600 shadow-sm transition-colors"
       >
-        <Grid3x3 className="h-3.5 w-3.5" />
-        <span>Switch view</span>
+        <span className="flex items-center gap-2">
+          <Grid3x3 className="h-4 w-4 text-blue-400" />
+          <span>Switch view</span>
+        </span>
+        <ChevronDown className="h-4 w-4 text-slate-400" />
       </button>
 
       {open && (
