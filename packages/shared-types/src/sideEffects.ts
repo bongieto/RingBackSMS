@@ -8,7 +8,9 @@ export type SideEffectType =
   | 'NOTIFY_OWNER'
   | 'CREATE_SQUARE_ORDER'
   | 'CREATE_POS_ORDER'
-  | 'CREATE_PAYMENT_LINK';
+  | 'CREATE_PAYMENT_LINK'
+  | 'FETCH_CALCOM_SLOTS'
+  | 'CREATE_CALCOM_BOOKING';
 
 export interface SaveOrderSideEffect {
   type: 'SAVE_ORDER';
@@ -67,10 +69,31 @@ export interface CreatePaymentLinkSideEffect {
   };
 }
 
+export interface FetchCalcomSlotsSideEffect {
+  type: 'FETCH_CALCOM_SLOTS';
+  payload: {
+    startUtc: string;
+    endUtc: string;
+    dateLabel: string;
+  };
+}
+
+export interface CreateCalcomBookingSideEffect {
+  type: 'CREATE_CALCOM_BOOKING';
+  payload: {
+    start: string;
+    name: string;
+    email: string;
+    callerPhone: string;
+  };
+}
+
 export type SideEffect =
   | SaveOrderSideEffect
   | BookMeetingSideEffect
   | NotifyOwnerSideEffect
   | CreateSquareOrderSideEffect
   | CreatePosOrderSideEffect
-  | CreatePaymentLinkSideEffect;
+  | CreatePaymentLinkSideEffect
+  | FetchCalcomSlotsSideEffect
+  | CreateCalcomBookingSideEffect;

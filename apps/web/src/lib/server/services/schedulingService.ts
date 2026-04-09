@@ -8,33 +8,58 @@ export interface CreateMeetingInput {
   tenantId: string;
   conversationId: string;
   callerPhone: string;
-  preferredTime: string | null;
+  preferredTime?: string | null;
   notes: string | null;
+  scheduledAt?: Date | null;
+  status?: MeetingStatus;
+  calcomBookingId?: string | null;
+  calcomBookingUid?: string | null;
 }
 
 export async function createMeeting(input: CreateMeetingInput) {
+  // If we don't have a conversation id (cal.com booking from a fresh
+  // number with no prior SMS), create a placeholder conversation so the
+  // Meeting row's FK is satisfied.
+  let conversationId = input.conversationId;
+  if (!conversationId) {
+    const conv = await prisma.conversation.create({
+      data: {
+        tenantId: input.tenantId,
+        callerPhone: input.callerPhone,
+        isActive: true,
+        flowType: 'MEETING',
+      },
+    });
+    conversationId = conv.id;
+  }
+
   const meeting = await prisma.meeting.create({
     data: {
       tenantId: input.tenantId,
-      conversationId: input.conversationId,
+      conversationId,
       callerPhone: input.callerPhone,
-      status: MeetingStatus.PENDING,
-      notes: input.notes ?? input.preferredTime,
+      status: input.status ?? MeetingStatus.PENDING,
+      scheduledAt: input.scheduledAt ?? null,
+      notes: input.notes ?? input.preferredTime ?? null,
+      calcomBookingId: input.calcomBookingId ?? null,
+      calcomBookingUid: input.calcomBookingUid ?? null,
     },
   });
 
   logger.info('Meeting created', { tenantId: input.tenantId, meetingId: meeting.id });
 
-  // Action item for the owner — confirm/schedule the meeting
-  await createTask({
-    tenantId: input.tenantId,
-    source: 'MEETING',
-    title: `Confirm meeting request from ${input.callerPhone}`,
-    description: input.notes ?? input.preferredTime ?? undefined,
-    priority: 'HIGH',
-    callerPhone: input.callerPhone,
-    meetingId: meeting.id,
-  }).catch((err) => logger.warn('Failed to create meeting task', { err, meetingId: meeting.id }));
+  // Action item for the owner — only for pending (non-confirmed) meetings.
+  if ((input.status ?? MeetingStatus.PENDING) === MeetingStatus.PENDING) {
+    await createTask({
+      tenantId: input.tenantId,
+      source: 'MEETING',
+      title: `Confirm meeting request from ${input.callerPhone}`,
+      description: input.notes ?? input.preferredTime ?? undefined,
+      priority: 'HIGH',
+      callerPhone: input.callerPhone,
+      meetingId: meeting.id,
+    }).catch((err) => logger.warn('Failed to create meeting task', { err, meetingId: meeting.id }));
+  }
 
   return meeting;
 }

@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { posApi, tenantApi } from '@/lib/api';
+import { posApi, tenantApi, calcomApi } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/utils';
 import {
   CheckCircle, XCircle, RefreshCw, ArrowUpDown, Link2, Unlink,
@@ -148,6 +148,9 @@ export default function IntegrationsPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* Scheduling section */}
+        {tenantId && <CalcomCard tenantId={tenantId} />}
 
         {/* Post-connect guided flow */}
         {showPostConnect && connectedProvider && (
@@ -891,5 +894,236 @@ function ApiKeyConfigForm({ provider, credentials, setCredentials, onSubmit, isP
         <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
       </div>
     </div>
+  );
+}
+
+// ── cal.com integration card ────────────────────────────────────────────────
+
+function CalcomCard({ tenantId }: { tenantId: string }) {
+  const qc = useQueryClient();
+  const [showHelp, setShowHelp] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [pendingEventTypeId, setPendingEventTypeId] = useState<number | ''>('');
+
+  const { data: status, isLoading } = useQuery({
+    queryKey: ['calcom-status', tenantId],
+    queryFn: () => calcomApi.getStatus(tenantId),
+  });
+
+  const connected = Boolean(status?.connected);
+
+  const eventTypesQuery = useQuery({
+    queryKey: ['calcom-event-types', tenantId],
+    queryFn: () => calcomApi.listEventTypes(tenantId),
+    enabled: connected,
+  });
+
+  const invalidateAll = () => {
+    qc.invalidateQueries({ queryKey: ['calcom-status', tenantId] });
+    qc.invalidateQueries({ queryKey: ['calcom-event-types', tenantId] });
+  };
+
+  const connectMutation = useMutation({
+    mutationFn: () => calcomApi.connect(tenantId, apiKeyInput.trim()),
+    onSuccess: (data) => {
+      toast.success(`cal.com connected as ${data.userName}`);
+      setApiKeyInput('');
+      invalidateAll();
+    },
+    onError: (err: any) =>
+      toast.error(err?.response?.data?.error ?? 'Failed to connect'),
+  });
+
+  const configureMutation = useMutation({
+    mutationFn: (args: { id: number; slug: string }) =>
+      calcomApi.configure(tenantId, args.id, args.slug),
+    onSuccess: (data) => {
+      toast.success(`Default event type set: ${data.eventTypeSlug}`);
+      invalidateAll();
+    },
+    onError: (err: any) =>
+      toast.error(err?.response?.data?.error ?? 'Failed to save event type'),
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: () => calcomApi.disconnect(tenantId),
+    onSuccess: () => {
+      toast.success('cal.com disconnected');
+      invalidateAll();
+    },
+    onError: () => toast.error('Failed to disconnect'),
+  });
+
+  useEffect(() => {
+    if (status?.eventTypeId != null) setPendingEventTypeId(status.eventTypeId);
+  }, [status?.eventTypeId]);
+
+  if (isLoading) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-[#111827] flex items-center justify-center text-white font-bold">
+              Cal
+            </div>
+            <div>
+              <CardTitle className="text-base">cal.com Scheduling</CardTitle>
+              <CardDescription>
+                {connected
+                  ? status?.eventTypeSlug
+                    ? `Connected · Event: ${status.eventTypeSlug}`
+                    : 'Connected · pick a default event type below'
+                  : 'Book meetings directly in SMS with real cal.com availability'}
+              </CardDescription>
+            </div>
+          </div>
+          {connected && (
+            <Badge variant="success">
+              <CheckCircle className="h-3 w-3 mr-1" /> Connected
+            </Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {!connected ? (
+          <div className="space-y-3">
+            <div>
+              <Label>Personal API key</Label>
+              <Input
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                placeholder="cal_live_..."
+                type="password"
+                className="mt-1"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Generate one at{' '}
+                <a
+                  href="https://app.cal.com/settings/developer/api-keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  app.cal.com/settings/developer/api-keys
+                </a>
+              </p>
+            </div>
+            <Button
+              onClick={() => connectMutation.mutate()}
+              disabled={connectMutation.isPending || apiKeyInput.trim().length < 10}
+              size="sm"
+            >
+              <Link2 className="h-4 w-4 mr-2" />
+              {connectMutation.isPending ? 'Validating…' : 'Connect cal.com'}
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div>
+              <Label>Default event type</Label>
+              <p className="text-xs text-muted-foreground mb-2">
+                The event type the AI will use when booking a meeting via SMS.
+              </p>
+              {eventTypesQuery.isLoading ? (
+                <p className="text-xs text-muted-foreground">Loading event types…</p>
+              ) : eventTypesQuery.data?.eventTypes?.length ? (
+                <div className="flex gap-2">
+                  <select
+                    value={pendingEventTypeId}
+                    onChange={(e) =>
+                      setPendingEventTypeId(
+                        e.target.value === '' ? '' : Number(e.target.value),
+                      )
+                    }
+                    className="flex-1 h-9 rounded-md border bg-background px-3 text-sm"
+                  >
+                    <option value="">— Pick one —</option>
+                    {eventTypesQuery.data.eventTypes.map((et) => (
+                      <option key={et.id} value={et.id}>
+                        {et.title} · {et.lengthInMinutes}m
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    size="sm"
+                    disabled={
+                      pendingEventTypeId === '' ||
+                      pendingEventTypeId === status?.eventTypeId ||
+                      configureMutation.isPending
+                    }
+                    onClick={() => {
+                      if (pendingEventTypeId === '') return;
+                      const found = eventTypesQuery.data?.eventTypes.find(
+                        (et) => et.id === pendingEventTypeId,
+                      );
+                      if (!found) return;
+                      configureMutation.mutate({
+                        id: found.id,
+                        slug: found.slug,
+                      });
+                    }}
+                  >
+                    Save
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No event types found on your cal.com account.
+                </p>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowHelp((v) => !v)}
+              className="text-xs text-blue-600 hover:underline"
+            >
+              {showHelp ? 'Hide' : 'Show'} webhook setup (for cross-channel sync)
+            </button>
+
+            {showHelp && (
+              <Card className="bg-muted/40">
+                <CardContent className="pt-4 pb-4 text-xs space-y-2">
+                  <p className="font-medium">Enable two-way sync</p>
+                  <p className="text-muted-foreground">
+                    In your cal.com dashboard, go to <strong>Webhooks</strong> and add a new endpoint:
+                  </p>
+                  <div className="font-mono bg-background border rounded p-2 break-all">
+                    https://ringbacksms.com/api/webhooks/calcom
+                  </div>
+                  <p className="text-muted-foreground">
+                    Subscribe to these events: <code>BOOKING_CREATED</code>,{' '}
+                    <code>BOOKING_RESCHEDULED</code>, <code>BOOKING_CANCELLED</code>,{' '}
+                    <code>BOOKING_REJECTED</code>.
+                  </p>
+                  <p className="text-muted-foreground">
+                    Use the webhook secret your platform admin provided. Bookings made
+                    directly in cal.com will then show up on your Meetings page.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            <div className="flex justify-end pt-2 border-t">
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => {
+                  if (confirm('Disconnect cal.com? SMS bookings will revert to link-sharing.')) {
+                    disconnectMutation.mutate();
+                  }
+                }}
+                disabled={disconnectMutation.isPending}
+              >
+                <Unlink className="h-4 w-4 mr-2" />
+                Disconnect
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }

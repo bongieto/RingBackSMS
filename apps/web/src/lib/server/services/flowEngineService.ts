@@ -301,6 +301,115 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     callerMemory,
   });
 
+  // cal.com async side effects that mutate the outgoing SMS before it
+  // ships. Handled here (not in processSideEffect) because they need to
+  // override `result.smsReply` and `result.nextState.meetingDraft`.
+  // Narrow tenant.config once for this block — we already guaranteed it's
+  // non-null at line 162 above.
+  const calConfig = tenant.config!;
+  for (const effect of result.sideEffects) {
+    if (effect.type === 'FETCH_CALCOM_SLOTS') {
+      try {
+        const { decryptNullable } = await import('../encryption');
+        const { listAvailableSlots } = await import('./calcomService');
+        const apiKey = decryptNullable(calConfig.calcomApiKey);
+        const eventTypeId = calConfig.calcomEventTypeId;
+        if (apiKey && eventTypeId) {
+          const slots = await listAvailableSlots(
+            apiKey,
+            eventTypeId,
+            effect.payload.startUtc,
+            effect.payload.endUtc,
+            calConfig.timezone ?? 'America/Chicago',
+          );
+          const top = slots.slice(0, 6);
+          if (top.length === 0) {
+            result.smsReply = `Sorry, no open slots on ${effect.payload.dateLabel}. What other day works?`;
+            // Step back so the customer can pick another day.
+            result.nextState.flowStep = 'MEETING_DATE_PROMPT';
+          } else {
+            const lines = top.map((s, i) => {
+              const t = new Intl.DateTimeFormat('en-US', {
+                timeZone: calConfig.timezone ?? 'America/Chicago',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true,
+              }).format(new Date(s.start));
+              return `${i + 1}. ${t}`;
+            });
+            result.smsReply = `Here are open slots for ${effect.payload.dateLabel}:\n${lines.join('\n')}\n\nReply with the number you want.`;
+            result.nextState.meetingDraft = {
+              ...(result.nextState.meetingDraft ?? {}),
+              slots: top.map((s) => ({ start: s.start, end: s.end })),
+            };
+          }
+        } else {
+          result.smsReply = `cal.com isn't configured for this account — please contact us directly.`;
+          result.nextState.flowStep = 'MEETING_GREETING';
+        }
+      } catch (err) {
+        logger.error('FETCH_CALCOM_SLOTS failed', { tenantId, err });
+        result.smsReply = `Sorry, I had trouble checking availability. Please try again in a moment.`;
+      }
+    } else if (effect.type === 'CREATE_CALCOM_BOOKING') {
+      try {
+        const { decryptNullable } = await import('../encryption');
+        const { createBooking } = await import('./calcomService');
+        const { createMeeting } = await import('./schedulingService');
+        const apiKey = decryptNullable(calConfig.calcomApiKey);
+        const eventTypeId = calConfig.calcomEventTypeId;
+        if (apiKey && eventTypeId) {
+          const booking = await createBooking(apiKey, {
+            eventTypeId,
+            start: effect.payload.start,
+            attendeeName: effect.payload.name,
+            attendeeEmail: effect.payload.email,
+            attendeePhone: effect.payload.callerPhone,
+            timeZone: calConfig.timezone ?? 'America/Chicago',
+            metadata: {
+              ringbackTenantId: tenantId,
+              ringbackCallerPhone: effect.payload.callerPhone,
+            },
+          });
+          // Meeting row is created here; the webhook will also see this
+          // booking and upsert onto the same row via calcomBookingUid.
+          await createMeeting({
+            tenantId,
+            conversationId: existingConversationId ?? '',
+            callerPhone: effect.payload.callerPhone,
+            scheduledAt: new Date(effect.payload.start),
+            notes: `Booked via SMS: ${effect.payload.name} <${effect.payload.email}>`,
+            calcomBookingId: String(booking.id),
+            calcomBookingUid: booking.uid,
+            status: 'CONFIRMED',
+          }).catch((err) =>
+            logger.warn('createMeeting after cal.com booking failed', { err, tenantId }),
+          );
+          const friendly = new Intl.DateTimeFormat('en-US', {
+            timeZone: calConfig.timezone ?? 'America/Chicago',
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+          }).format(new Date(effect.payload.start));
+          result.smsReply = `Booked! You're on the calendar for ${friendly}. You'll get a confirmation email with the meeting link shortly.`;
+          // Clear meeting draft
+          result.nextState.meetingDraft = null;
+        } else {
+          result.smsReply = `cal.com isn't configured — please contact us directly.`;
+        }
+      } catch (err: any) {
+        logger.error('CREATE_CALCOM_BOOKING failed', { tenantId, err: err?.message });
+        result.smsReply = `Sorry, I couldn't book that slot — it may have just been taken. Please reply with another day to try again.`;
+        // Back to date prompt
+        result.nextState.flowStep = 'MEETING_DATE_PROMPT';
+        result.nextState.meetingDraft = { ...(result.nextState.meetingDraft ?? {}), slots: undefined, pickedSlotStart: undefined };
+      }
+    }
+  }
+
   // Prepend after-hours notice if outside business hours
   if (!withinBusinessHours) {
     const hoursDisplay = getBusinessHoursDisplay({

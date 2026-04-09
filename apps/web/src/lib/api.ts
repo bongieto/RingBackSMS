@@ -223,3 +223,37 @@ export const posApi = {
       )
       .then((r) => r.data.data as { locationId: string; name: string; address: string | null }),
 };
+
+export const calcomApi = {
+  getStatus: (tenantId: string) =>
+    webApi
+      .get('/integrations/calcom/status', { params: { tenantId } })
+      .then((r) => r.data.data as {
+        connected: boolean;
+        eventTypeId: number | null;
+        eventTypeSlug: string | null;
+      }),
+  connect: (tenantId: string, apiKey: string) =>
+    webApi
+      .post('/integrations/calcom/connect', { apiKey }, { params: { tenantId } })
+      .then((r) => r.data.data as { connected: true; userName: string; email: string }),
+  listEventTypes: (tenantId: string) =>
+    webApi
+      .get('/integrations/calcom/event-types', { params: { tenantId } })
+      .then((r) => r.data.data as {
+        eventTypes: Array<{ id: number; slug: string; title: string; lengthInMinutes: number }>;
+        currentEventTypeId: number | null;
+      }),
+  configure: (tenantId: string, eventTypeId: number, eventTypeSlug: string) =>
+    webApi
+      .post(
+        '/integrations/calcom/configure',
+        { eventTypeId, eventTypeSlug },
+        { params: { tenantId } },
+      )
+      .then((r) => r.data.data as { eventTypeId: number; eventTypeSlug: string }),
+  disconnect: (tenantId: string) =>
+    webApi
+      .post('/integrations/calcom/disconnect', null, { params: { tenantId } })
+      .then((r) => r.data.data),
+};

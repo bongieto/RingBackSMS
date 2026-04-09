@@ -43,6 +43,18 @@ export const PendingCustomizationSchema = z.object({
 
 export type PendingCustomization = z.infer<typeof PendingCustomizationSchema>;
 
+export const MeetingDraftSchema = z.object({
+  slots: z
+    .array(z.object({ start: z.string(), end: z.string() }))
+    .optional(), // offered slots, customer picks by number
+  pickedSlotStart: z.string().optional(),
+  name: z.string().optional(),
+  email: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export type MeetingDraft = z.infer<typeof MeetingDraftSchema>;
+
 export const CallerStateSchema = z.object({
   tenantId: z.string().uuid(),
   callerPhone: z.string(),
@@ -50,6 +62,7 @@ export const CallerStateSchema = z.object({
   currentFlow: z.nativeEnum(FlowType).nullable(),
   flowStep: z.string().nullable(),
   orderDraft: OrderDraftSchema.nullable(),
+  meetingDraft: MeetingDraftSchema.nullable().optional(),
   paymentPending: PaymentPendingSchema.nullable().optional(),
   pendingCustomization: PendingCustomizationSchema.nullable().optional(),
   lastMessageAt: z.number(), // unix timestamp
