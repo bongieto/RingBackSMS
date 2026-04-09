@@ -2,6 +2,7 @@ import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 import { AuthTokenProvider } from '@/components/providers/AuthTokenProvider';
 import { ViewSwitcher } from '@/components/layout/ViewSwitcher';
+import { Logo } from '@/components/Logo';
 import { isAgencyUser, isSuperAdmin } from '@/lib/server/agency';
 
 export const dynamic = 'force-dynamic';
@@ -24,9 +25,7 @@ export default async function PartnerLayout({
           <div className="text-xs font-mono text-slate-500 uppercase tracking-widest mb-1">
             Partner
           </div>
-          <div className="text-white font-bold text-lg mb-3">
-            RingBack<span className="text-blue-400">SMS</span>
-          </div>
+          <Logo size="sm" variant="dark" href={null} className="mb-3" />
           <ViewSwitcher />
         </div>
         <nav className="flex-1 p-3 space-y-1">

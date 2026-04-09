@@ -14,6 +14,15 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   title: 'RingBackSMS — AI SMS for Missed Calls',
   description: 'Auto-respond to missed calls with AI-powered SMS. Never lose a customer again.',
+  icons: {
+    icon: '/logo.png',
+    apple: '/logo.png',
+  },
+  openGraph: {
+    title: 'RingBackSMS — AI SMS for Missed Calls',
+    description: 'Auto-respond to missed calls with AI-powered SMS. Never lose a customer again.',
+    images: [{ url: '/logo.png', width: 1200, height: 630 }],
+  },
   robots: {
     index: false,
     follow: false,
