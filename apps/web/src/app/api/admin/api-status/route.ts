@@ -90,12 +90,10 @@ export async function GET(_request: NextRequest) {
           { headers: { Authorization: 'Basic ' + Buffer.from(`${twilioSid}:${twilioToken}`).toString('base64') } },
         )
       : Promise.resolve(null),
-    // MiniMax AI
-    minimaxKey
-      ? fetchCheck('https://api.minimax.io/v1/models', {
-          headers: { Authorization: `Bearer ${minimaxKey}` },
-        })
-      : Promise.resolve(null),
+    // MiniMax AI — config-only check: their API doesn't expose a cheap
+    // read endpoint (no /v1/models) and the only alternative is POSTing
+    // a real chat completion which would cost money on every refresh.
+    Promise.resolve(null),
     // Stripe — plain REST, no SDK import
     stripeKey
       ? fetchCheck('https://api.stripe.com/v1/balance', {
@@ -129,9 +127,7 @@ export async function GET(_request: NextRequest) {
     {
       name: 'MiniMax AI',
       configured: !!minimaxKey,
-      status: minimaxResult ? (minimaxResult.ok ? 'ok' : 'error') : 'unconfigured',
-      latencyMs: minimaxResult?.latencyMs,
-      error: minimaxResult?.error,
+      status: minimaxKey ? 'ok' : 'unconfigured',
     },
     {
       name: 'Stripe',
