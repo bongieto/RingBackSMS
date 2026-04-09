@@ -2,18 +2,12 @@ import { NextRequest } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/server/db';
 import { apiSuccess, apiError } from '@/lib/server/response';
+import { PLAN_MRR } from '@/lib/server/planPricing';
 
 function isSuperAdmin(userId: string | null): boolean {
   const adminId = process.env.SUPER_ADMIN_CLERK_USER_ID?.trim();
   return !!userId && !!adminId && userId === adminId;
 }
-
-const PLAN_MRR: Record<string, number> = {
-  STARTER: 0,
-  GROWTH: 99,
-  SCALE: 299,
-  ENTERPRISE: 499,
-};
 
 export async function GET(_request: NextRequest) {
   const { userId } = await auth();

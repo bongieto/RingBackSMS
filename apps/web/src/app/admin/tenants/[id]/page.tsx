@@ -14,12 +14,26 @@ import { ArrowLeft, Phone, MessageSquare, ShoppingBag, Users, Trash2, Save, Sett
 const PLANS = ['STARTER', 'GROWTH', 'SCALE', 'ENTERPRISE'];
 const BUSINESS_TYPES = ['RESTAURANT', 'SERVICE', 'CONSULTANT', 'MEDICAL', 'RETAIL', 'OTHER'];
 
+interface AgencyOption {
+  id: string;
+  name: string | null;
+  clerkUserId: string;
+  defaultRevSharePct: number;
+}
+
 interface TenantDetail {
   id: string;
   name: string;
   businessType: string;
   plan: string;
   isActive: boolean;
+  agencyId: string | null;
+  agency: {
+    id: string;
+    name: string | null;
+    clerkUserId: string;
+    defaultRevSharePct: number | string;
+  } | null;
   clerkOrgId: string | null;
   twilioPhoneNumber: string | null;
   twilioSubAccountSid: string | null;
@@ -120,6 +134,16 @@ export default function AdminTenantDetailPage() {
     queryFn: () => api.get(`/admin/tenants/${id}`).then((r) => r.data.data),
     enabled: !!id,
   });
+
+  const { data: agencyOptions } = useQuery<AgencyOption[]>({
+    queryKey: ['admin-agencies'],
+    queryFn: () => api.get('/admin/agencies').then((r) => r.data.data),
+  });
+
+  const [agencySelection, setAgencySelection] = useState<string>('');
+  useEffect(() => {
+    setAgencySelection(tenant?.agencyId ?? '');
+  }, [tenant?.agencyId]);
 
   // Populate settings form when data loads
   useEffect(() => {
@@ -323,6 +347,52 @@ export default function AdminTenantDetailPage() {
                   <span className="text-slate-300 font-mono text-xs text-right break-all">{value}</span>
                 </div>
               ))}
+            </CardContent>
+          </Card>
+
+          {/* Agency link */}
+          <Card className="bg-slate-900 border-slate-800">
+            <CardHeader>
+              <CardTitle className="text-white text-sm">Agency</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              {tenant.agency ? (
+                <p className="text-slate-300">
+                  Linked to <span className="text-white font-medium">{tenant.agency.name ?? tenant.agency.clerkUserId}</span>{' '}
+                  <span className="text-slate-500">
+                    — {Number(tenant.agency.defaultRevSharePct)}% rev share
+                  </span>
+                </p>
+              ) : (
+                <p className="text-slate-500">Not linked to any agency</p>
+              )}
+              <div className="flex gap-2">
+                <select
+                  value={agencySelection}
+                  onChange={(e) => setAgencySelection(e.target.value)}
+                  className="flex-1 h-9 rounded-md border border-slate-700 bg-slate-800 text-white px-3 text-sm"
+                >
+                  <option value="">— None —</option>
+                  {(agencyOptions ?? []).map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name ?? a.clerkUserId} ({a.defaultRevSharePct}%)
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700"
+                  disabled={
+                    updateMutation.isPending ||
+                    agencySelection === (tenant.agencyId ?? '')
+                  }
+                  onClick={() =>
+                    updateMutation.mutate({ agencyId: agencySelection || null })
+                  }
+                >
+                  Save
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

@@ -19,6 +19,14 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     where: { id: params.id },
     include: {
       config: true,
+      agency: {
+        select: {
+          id: true,
+          name: true,
+          clerkUserId: true,
+          defaultRevSharePct: true,
+        },
+      },
       _count: {
         select: {
           conversations: true,
@@ -64,6 +72,7 @@ const UpdateSchema = z.object({
   plan: z.nativeEnum(Plan).optional(),
   isActive: z.boolean().optional(),
   name: z.string().min(1).optional(),
+  agencyId: z.string().uuid().nullable().optional(),
   // Config fields
   greeting: z.string().optional(),
   ownerEmail: z.string().email().nullable().optional(),
