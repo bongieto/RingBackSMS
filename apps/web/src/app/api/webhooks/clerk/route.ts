@@ -3,6 +3,8 @@ import { headers } from 'next/headers';
 import { Webhook } from 'svix';
 import { clerkClient } from '@clerk/nextjs/server';
 import { ensureTenantForClerkOrg } from '@/lib/server/services/tenantService';
+import { linkTenantToAgency } from '@/lib/server/services/agencyService';
+import { isAgencyUser } from '@/lib/server/agency';
 import { logger } from '@/lib/server/logger';
 import { apiSuccess, apiError } from '@/lib/server/response';
 
@@ -74,6 +76,17 @@ export async function POST(req: NextRequest) {
         name,
         ownerEmail,
       });
+
+      // If the Clerk user who created this org is an agency, auto-link
+      // the new tenant so future subscription invoices accrue commission.
+      if (created_by && (await isAgencyUser(created_by))) {
+        try {
+          await linkTenantToAgency(tenant.id, created_by);
+        } catch (err) {
+          logger.warn('[clerk webhook] failed to auto-link agency', { err });
+        }
+      }
+
       logger.info('[clerk webhook] organization.created processed', {
         clerkOrgId: id,
         tenantId: tenant.id,

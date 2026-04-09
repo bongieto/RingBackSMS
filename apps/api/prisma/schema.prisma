@@ -81,62 +81,157 @@ enum ContactStatus {
   INACTIVE
 }
 
+enum CommissionStatus {
+  PENDING
+  PAID
+  VOID
+}
+
+enum PayoutStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+enum AgencyApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model Tenant {
-  id                    String       @id @default(uuid())
-  name                  String
-  businessType          BusinessType
-  plan                  Plan         @default(STARTER)
-  twilioSubAccountSid   String?      @unique
-  twilioAuthToken       String?      // AES-256-GCM encrypted
-  twilioPhoneNumber     String?      @unique
-  twilioPhoneNumberSid  String?      @unique
-  stripeCustomerId      String?      @unique
-  stripeSubscriptionId  String?      @unique
-  clerkOrgId            String?      @unique
-  squareAccessToken     String?      // AES-256-GCM encrypted
-  squareRefreshToken    String?      // AES-256-GCM encrypted
-  squareLocationId      String?
-  squareMerchantId      String?
-  squareTokenExpiresAt  DateTime?
+  id                   String           @id @default(uuid())
+  name                 String
+  businessType         BusinessType
+  plan                 Plan             @default(STARTER)
+  twilioSubAccountSid  String?          @unique
+  twilioAuthToken      String? // AES-256-GCM encrypted
+  twilioPhoneNumber    String?          @unique
+  twilioPhoneNumberSid String?          @unique
+  stripeCustomerId     String?          @unique
+  stripeSubscriptionId String?          @unique
+  clerkOrgId           String?          @unique
+  squareAccessToken    String? // AES-256-GCM encrypted
+  squareRefreshToken   String? // AES-256-GCM encrypted
+  squareLocationId     String?
+  squareMerchantId     String?
+  squareTokenExpiresAt DateTime?
   // Provider-agnostic POS fields
   posProvider          PosProviderType?
-  posAccessToken       String?      // AES-256-GCM encrypted
-  posRefreshToken      String?      // AES-256-GCM encrypted
+  posAccessToken       String? // AES-256-GCM encrypted
+  posRefreshToken      String? // AES-256-GCM encrypted
   posTokenExpiresAt    DateTime?
   posLocationId        String?
   posMerchantId        String?
-  posRaw               Json?        // provider-specific metadata
-  isActive              Boolean      @default(true)
-  createdAt             DateTime     @default(now())
-  updatedAt             DateTime     @updatedAt
+  posRaw               Json? // provider-specific metadata
+  isActive             Boolean          @default(true)
+  agencyId             String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
 
-  config        TenantConfig?
-  flows         Flow[]
-  missedCalls   MissedCall[]
-  conversations Conversation[]
-  orders        Order[]
-  meetings      Meeting[]
-  menuItems     MenuItem[]
-  usageLogs     UsageLog[]
-  contacts      Contact[]
-  syncLogs      PosSyncLog[]
-  replyTemplates ReplyTemplate[]
-  tasks         Task[]
+  agency            Agency?             @relation(fields: [agencyId], references: [id])
+  config            TenantConfig?
+  flows             Flow[]
+  missedCalls       MissedCall[]
+  conversations     Conversation[]
+  orders            Order[]
+  meetings          Meeting[]
+  menuItems         MenuItem[]
+  usageLogs         UsageLog[]
+  contacts          Contact[]
+  syncLogs          PosSyncLog[]
+  replyTemplates    ReplyTemplate[]
+  tasks             Task[]
   foodTruckSchedule FoodTruckSchedule[]
+  commissions       CommissionLedger[]
 
   @@index([twilioPhoneNumber])
   @@index([clerkOrgId])
+  @@index([agencyId])
+}
+
+model Agency {
+  id                     String   @id @default(uuid())
+  clerkUserId            String   @unique
+  name                   String?
+  defaultRevSharePct     Decimal  @default(20) @db.Decimal(5, 2)
+  stripeConnectAccountId String?  @unique
+  stripeConnectOnboarded Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  tenants     Tenant[]
+  commissions CommissionLedger[]
+  payouts     Payout[]
+}
+
+model CommissionLedger {
+  id                    String           @id @default(uuid())
+  agencyId              String
+  tenantId              String
+  stripeInvoiceId       String           @unique
+  invoiceAmountCents    Int
+  commissionPct         Decimal          @db.Decimal(5, 2)
+  commissionAmountCents Int
+  currency              String           @default("usd")
+  status                CommissionStatus @default(PENDING)
+  payoutId              String?
+  accruedAt             DateTime         @default(now())
+  paidAt                DateTime?
+
+  agency Agency  @relation(fields: [agencyId], references: [id])
+  tenant Tenant  @relation(fields: [tenantId], references: [id])
+  payout Payout? @relation(fields: [payoutId], references: [id])
+
+  @@index([agencyId, status])
+  @@index([tenantId])
+}
+
+model Payout {
+  id               String       @id @default(uuid())
+  agencyId         String
+  amountCents      Int
+  currency         String       @default("usd")
+  stripeTransferId String?      @unique
+  status           PayoutStatus @default(PENDING)
+  periodStart      DateTime
+  periodEnd        DateTime
+  failureReason    String?
+  createdAt        DateTime     @default(now())
+  paidAt           DateTime?
+
+  agency      Agency             @relation(fields: [agencyId], references: [id])
+  commissions CommissionLedger[]
+
+  @@index([agencyId, status])
+}
+
+model AgencyApplication {
+  id          String                  @id @default(uuid())
+  clerkUserId String                  @unique
+  email       String
+  fullName    String
+  companyName String?
+  website     String?
+  pitch       String                  @db.Text
+  status      AgencyApplicationStatus @default(PENDING)
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  reviewNotes String?                 @db.Text
+  createdAt   DateTime                @default(now())
+
+  @@index([status])
 }
 
 model FoodTruckSchedule {
   id           String   @id @default(uuid())
   tenantId     String
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  dayOfWeek    Int      // 0=Sun..6=Sat
+  dayOfWeek    Int // 0=Sun..6=Sat
   locationName String?
   address      String
-  openTime     String   // "HH:mm"
-  closeTime    String   // "HH:mm"
+  openTime     String // "HH:mm"
+  closeTime    String // "HH:mm"
   note         String?
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
@@ -147,42 +242,42 @@ model FoodTruckSchedule {
 }
 
 model TenantConfig {
-  id                  String   @id @default(uuid())
-  tenantId            String   @unique
-  tenant              Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  greeting            String   @db.Text
-  greetingAfterHours  String?  @db.Text
-  greetingRapidRedial String?  @db.Text
-  greetingReturning   String?  @db.Text
-  voiceGreeting       String?  @db.Text
-  voiceGreetingAfterHours String? @db.Text
-  voiceGreetingRapidRedial String? @db.Text
-  voiceGreetingReturning  String? @db.Text
-  voiceType           String   @default("Polly.Joanna-Neural")
-  timezone            String   @default("America/Chicago")
-  businessHoursStart  String   @default("11:00")
-  businessHoursEnd    String   @default("20:00")
-  businessDays        Int[]
-  businessSchedule    Json?              // per-day hours: { "0": { "open": "11:00", "close": "19:30" }, ... }
-  closedDates         String[]  @default([])  // ISO date strings: ["2026-12-25"]
-  aiPersonality       String?  @db.Text
-  calcomLink          String?
-  slackWebhook        String?
-  ownerEmail          String?
-  ownerPhone          String?
-  businessAddress     String?
-  websiteUrl          String?
-  websiteContext      String?  @db.Text  // AI-extracted business context from website
-  squareSyncEnabled   Boolean  @default(false)
-  squareAutoSync      Boolean  @default(false)
-  posSyncEnabled      Boolean  @default(false)
-  posAutoSync         Boolean  @default(false)
-  requirePayment      Boolean  @default(false)
-  dashboardConfirmTaskCompletion Boolean @default(true)
-  dailyDigestEnabled  Boolean  @default(true)
-  dailyDigestHour     Int      @default(8)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                             String   @id @default(uuid())
+  tenantId                       String   @unique
+  tenant                         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  greeting                       String   @db.Text
+  greetingAfterHours             String?  @db.Text
+  greetingRapidRedial            String?  @db.Text
+  greetingReturning              String?  @db.Text
+  voiceGreeting                  String?  @db.Text
+  voiceGreetingAfterHours        String?  @db.Text
+  voiceGreetingRapidRedial       String?  @db.Text
+  voiceGreetingReturning         String?  @db.Text
+  voiceType                      String   @default("Polly.Joanna-Neural")
+  timezone                       String   @default("America/Chicago")
+  businessHoursStart             String   @default("11:00")
+  businessHoursEnd               String   @default("20:00")
+  businessDays                   Int[]
+  businessSchedule               Json? // per-day hours: { "0": { "open": "11:00", "close": "19:30" }, ... }
+  closedDates                    String[] @default([]) // ISO date strings: ["2026-12-25"]
+  aiPersonality                  String?  @db.Text
+  calcomLink                     String?
+  slackWebhook                   String?
+  ownerEmail                     String?
+  ownerPhone                     String?
+  businessAddress                String?
+  websiteUrl                     String?
+  websiteContext                 String?  @db.Text // AI-extracted business context from website
+  squareSyncEnabled              Boolean  @default(false)
+  squareAutoSync                 Boolean  @default(false)
+  posSyncEnabled                 Boolean  @default(false)
+  posAutoSync                    Boolean  @default(false)
+  requirePayment                 Boolean  @default(false)
+  dashboardConfirmTaskCompletion Boolean  @default(true)
+  dailyDigestEnabled             Boolean  @default(true)
+  dailyDigestHour                Int      @default(8)
+  createdAt                      DateTime @default(now())
+  updatedAt                      DateTime @updatedAt
 }
 
 model Flow {
@@ -230,19 +325,19 @@ model MissedCall {
 }
 
 model Conversation {
-  id             String         @id @default(uuid())
-  tenantId       String
-  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  callerPhone    String
-  missedCallId   String?
-  missedCall     MissedCall?    @relation(fields: [missedCallId], references: [id])
-  messages       Json           @default("[]")
-  flowType       FlowType?
-  handoffStatus  HandoffStatus  @default(AI)
-  handoffAt      DateTime?
-  isActive       Boolean        @default(true)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id            String        @id @default(uuid())
+  tenantId      String
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  callerPhone   String
+  missedCallId  String?
+  missedCall    MissedCall?   @relation(fields: [missedCallId], references: [id])
+  messages      Json          @default("[]")
+  flowType      FlowType?
+  handoffStatus HandoffStatus @default(AI)
+  handoffAt     DateTime?
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
   orders   Order[]
   meetings Meeting[]
@@ -252,27 +347,27 @@ model Conversation {
 }
 
 model Order {
-  id             String      @id @default(uuid())
-  tenantId       String
-  tenant         Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
-  callerPhone    String
-  orderNumber    String      @unique
-  status         OrderStatus @default(PENDING)
-  items          Json
-  total          Decimal     @db.Decimal(10, 2)
-  pickupTime     String?
-  notes          String?     @db.Text
-  squareOrderId   String?
-  squarePaymentId String?
-  posOrderId      String?
-  posPaymentId    String?
-  stripePaymentId String?
+  id               String       @id @default(uuid())
+  tenantId         String
+  tenant           Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversationId   String
+  conversation     Conversation @relation(fields: [conversationId], references: [id])
+  callerPhone      String
+  orderNumber      String       @unique
+  status           OrderStatus  @default(PENDING)
+  items            Json
+  total            Decimal      @db.Decimal(10, 2)
+  pickupTime       String?
+  notes            String?      @db.Text
+  squareOrderId    String?
+  squarePaymentId  String?
+  posOrderId       String?
+  posPaymentId     String?
+  stripePaymentId  String?
   stripePaymentUrl String?
-  paymentStatus   String?  @default("UNPAID")
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  paymentStatus    String?      @default("UNPAID")
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
   @@index([tenantId, status])
   @@index([tenantId, createdAt])
@@ -299,61 +394,61 @@ model Meeting {
 }
 
 model MenuItem {
-  id               String   @id @default(uuid())
-  tenantId         String
-  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  name             String
-  description      String?  @db.Text
-  price            Decimal  @db.Decimal(10, 2)
-  category         String?
-  imageUrl         String?
-  isAvailable       Boolean  @default(true)
+  id                String    @id @default(uuid())
+  tenantId          String
+  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name              String
+  description       String?   @db.Text
+  price             Decimal   @db.Decimal(10, 2)
+  category          String?
+  imageUrl          String?
+  isAvailable       Boolean   @default(true)
   duration          Int?
-  requiresBooking   Boolean  @default(false)
+  requiresBooking   Boolean   @default(false)
   squareCatalogId   String?
   squareVariationId String?
-  lastSyncedAt     DateTime?
-  posCatalogId        String?
-  posVariationId      String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  lastSyncedAt      DateTime?
+  posCatalogId      String?
+  posVariationId    String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  modifierGroups    MenuItemModifierGroup[]
+  modifierGroups MenuItemModifierGroup[]
 
   @@index([tenantId, isAvailable])
   @@index([tenantId, category])
 }
 
 model MenuItemModifierGroup {
-  id             String   @id @default(uuid())
-  menuItemId     String
-  menuItem       MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
-  name           String
-  selectionType  String   @default("SINGLE")
-  required       Boolean  @default(false)
-  minSelections  Int      @default(0)
-  maxSelections  Int      @default(1)
-  posGroupId     String?
-  sortOrder      Int      @default(0)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id            String   @id @default(uuid())
+  menuItemId    String
+  menuItem      MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  name          String
+  selectionType String   @default("SINGLE")
+  required      Boolean  @default(false)
+  minSelections Int      @default(0)
+  maxSelections Int      @default(1)
+  posGroupId    String?
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  modifiers      MenuItemModifier[]
+  modifiers MenuItemModifier[]
 
   @@index([menuItemId])
 }
 
 model MenuItemModifier {
-  id            String   @id @default(uuid())
+  id            String                @id @default(uuid())
   groupId       String
   group         MenuItemModifierGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
   name          String
-  priceAdjust   Decimal  @default(0) @db.Decimal(10, 2)
-  isDefault     Boolean  @default(false)
+  priceAdjust   Decimal               @default(0) @db.Decimal(10, 2)
+  isDefault     Boolean               @default(false)
   posModifierId String?
-  sortOrder     Int      @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  sortOrder     Int                   @default(0)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
 
   @@index([groupId])
 }
@@ -373,28 +468,28 @@ model UsageLog {
 }
 
 model Contact {
-  id            String        @id @default(cuid())
-  tenantId      String
-  tenant        Tenant        @relation(fields: [tenantId], references: [id])
-  phone         String
-  name          String?
-  email         String?
-  nameSearchHash  String?     // HMAC of lowercased name for SQL-level search on encrypted field
-  emailSearchHash String?     // HMAC of lowercased email for SQL-level search on encrypted field
-  notes         String?       // kept for backward compat; use contactNotes for new entries
-  status        ContactStatus @default(LEAD)
-  tags          String[]      @default([])
-  totalOrders   Int           @default(0)
-  totalSpent    Int           @default(0)  // in cents
-  lastContactAt DateTime?
+  id               String        @id @default(cuid())
+  tenantId         String
+  tenant           Tenant        @relation(fields: [tenantId], references: [id])
+  phone            String
+  name             String?
+  email            String?
+  nameSearchHash   String? // HMAC of lowercased name for SQL-level search on encrypted field
+  emailSearchHash  String? // HMAC of lowercased email for SQL-level search on encrypted field
+  notes            String? // kept for backward compat; use contactNotes for new entries
+  status           ContactStatus @default(LEAD)
+  tags             String[]      @default([])
+  totalOrders      Int           @default(0)
+  totalSpent       Int           @default(0) // in cents
+  lastContactAt    DateTime?
   stripeCustomerId String?
-  lastOrderId   String?
-  lastOrderAt   DateTime?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  lastOrderId      String?
+  lastOrderAt      DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
-  contactNotes  ContactNote[]
-  missedCalls   MissedCall[]
+  contactNotes ContactNote[]
+  missedCalls  MissedCall[]
 
   @@unique([tenantId, phone])
   @@index([tenantId])
@@ -405,19 +500,19 @@ model Contact {
 }
 
 model PosSyncLog {
-  id             String          @id @default(uuid())
+  id             String    @id @default(uuid())
   tenantId       String
-  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   provider       String
-  direction      String          // "pull" or "push"
-  totalItems     Int             @default(0)
-  newItems       Int             @default(0)
-  updatedItems   Int             @default(0)
-  unchangedItems Int             @default(0)
-  errors         Int             @default(0)
+  direction      String // "pull" or "push"
+  totalItems     Int       @default(0)
+  newItems       Int       @default(0)
+  updatedItems   Int       @default(0)
+  unchangedItems Int       @default(0)
+  errors         Int       @default(0)
   errorDetail    Json?
-  status         String          @default("running") // "running" | "completed" | "failed"
-  startedAt      DateTime        @default(now())
+  status         String    @default("running") // "running" | "completed" | "failed"
+  startedAt      DateTime  @default(now())
   completedAt    DateTime?
 
   @@index([tenantId, startedAt])
@@ -472,9 +567,9 @@ enum TaskStatus {
 }
 
 model Task {
-  id          String       @id @default(cuid())
-  tenantId    String
-  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   title       String
   description String?      @db.Text

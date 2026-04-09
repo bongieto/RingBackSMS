@@ -6,6 +6,7 @@ import { apiCreated, apiError } from '@/lib/server/response';
 import { AppError } from '@/lib/server/errors';
 import { prisma } from '@/lib/server/db';
 import { isAgencyUser, isSuperAdmin, countUserOrganizations } from '@/lib/server/agency';
+import { linkTenantToAgency } from '@/lib/server/services/agencyService';
 
 export async function POST(request: NextRequest) {
   const { userId, orgId } = await auth();
@@ -49,6 +50,15 @@ export async function POST(request: NextRequest) {
     }
 
     const tenant = await createTenant({ ...body, clerkOrgId: effectiveOrgId ?? undefined });
+    // If the creating user is an agency, auto-link the new tenant so
+    // commissions accrue to them on subscription invoices.
+    if (await isAgencyUser(userId)) {
+      try {
+        await linkTenantToAgency(tenant.id, userId);
+      } catch (e) {
+        console.warn('[POST /api/tenants] failed to auto-link agency', e);
+      }
+    }
     // Rename the Clerk org to match the new tenant name for consistency.
     if (effectiveOrgId) {
       try {
