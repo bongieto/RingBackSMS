@@ -12,7 +12,7 @@ import api from '@/lib/api';
 import { ArrowLeft, Phone, MessageSquare, ShoppingBag, Users, Trash2, Save, Settings, X } from 'lucide-react';
 
 const PLANS = ['STARTER', 'GROWTH', 'SCALE', 'ENTERPRISE'];
-const BUSINESS_TYPES = ['RESTAURANT', 'SERVICE', 'CONSULTANT', 'MEDICAL', 'RETAIL', 'OTHER'];
+const BUSINESS_TYPES = ['RESTAURANT', 'FOOD_TRUCK', 'SERVICE', 'CONSULTANT', 'MEDICAL', 'RETAIL', 'OTHER'];
 
 interface AgencyOption {
   id: string;

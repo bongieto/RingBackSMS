@@ -24,7 +24,7 @@ interface AdminTenant {
 }
 
 const PLANS = ['STARTER', 'GROWTH', 'SCALE', 'ENTERPRISE'];
-const BUSINESS_TYPES = ['RESTAURANT', 'SERVICE', 'CONSULTANT', 'MEDICAL', 'RETAIL', 'OTHER'];
+const BUSINESS_TYPES = ['RESTAURANT', 'FOOD_TRUCK', 'SERVICE', 'CONSULTANT', 'MEDICAL', 'RETAIL', 'OTHER'];
 
 const PLAN_BADGE: Record<string, string> = {
   STARTER:    'bg-slate-700 text-slate-300',
