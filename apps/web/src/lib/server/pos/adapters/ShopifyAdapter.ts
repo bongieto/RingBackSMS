@@ -265,6 +265,48 @@ export class ShopifyAdapter extends BasePosAdapter {
     };
   }
 
+  async listLocations(
+    tenantId: string,
+  ): Promise<Array<{ id: string; name: string; address: string | null }>> {
+    const tokens = await this.loadTokens(tenantId);
+    if (!tokens) throw new Error('Tenant not connected to Shopify');
+
+    const shopDomain = (tokens.raw?.shopDomain as string) ?? tokens.merchantId;
+    if (!shopDomain) throw new Error('No Shopify shop domain configured');
+
+    const response = await axios.get(
+      `https://${shopDomain}.myshopify.com/admin/api/${SHOPIFY_API_VERSION}/locations.json`,
+      {
+        headers: {
+          'X-Shopify-Access-Token': tokens.accessToken,
+          Accept: 'application/json',
+        },
+      },
+    );
+
+    const raw =
+      (response.data as { locations?: Array<Record<string, unknown>> }).locations ??
+      [];
+
+    return raw
+      .filter(
+        (loc) =>
+          loc.id != null && loc.active !== false,
+      )
+      .map((loc) => {
+        const addressParts = [
+          loc.address1 as string | undefined,
+          loc.city as string | undefined,
+          loc.province as string | undefined,
+        ].filter(Boolean) as string[];
+        return {
+          id: String(loc.id),
+          name: (loc.name as string | undefined) ?? 'Unnamed location',
+          address: addressParts.length > 0 ? addressParts.join(', ') : null,
+        };
+      });
+  }
+
   verifyWebhook(
     body: string,
     signature: string,

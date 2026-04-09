@@ -519,13 +519,16 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
     onError: () => toast.error('Failed to refresh token — try reconnecting'),
   });
 
-  // Square multi-location picker (only fetched when the user opens it
-  // and only for adapters that expose listLocations — currently Square).
+  // Multi-location picker — only for adapters that expose listLocations
+  // (Square + Shopify). Clover and Toast tie one credential to one
+  // location, so switching requires reconnecting and they stay hidden.
+  const supportsLocationPicker =
+    provider.provider === 'square' || provider.provider === 'shopify';
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const locationsQuery = useQuery({
     queryKey: ['pos-locations', tenantId, provider.provider],
     queryFn: () => posApi.listLocations(tenantId, provider.provider),
-    enabled: showLocationPicker && provider.connected && provider.provider === 'square',
+    enabled: showLocationPicker && provider.connected && supportsLocationPicker,
     staleTime: 60_000,
     retry: false,
   });
@@ -627,8 +630,8 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
               </Card>
             )}
 
-            {/* Location picker (Square only for now) */}
-            {provider.provider === 'square' && (
+            {/* Location picker (Square + Shopify) */}
+            {supportsLocationPicker && (
               <Card className="bg-muted/50">
                 <CardContent className="pt-4 pb-4">
                   <div className="flex items-center justify-between gap-3 mb-2">
