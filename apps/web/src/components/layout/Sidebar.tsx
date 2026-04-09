@@ -102,6 +102,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         <OrganizationSwitcher
           afterCreateOrganizationUrl="/onboarding"
           afterSelectOrganizationUrl="/dashboard"
+          skipInvitationScreen={true}
           appearance={{
             elements: {
               rootBox: 'w-full',
