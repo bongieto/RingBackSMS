@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { z } from 'zod';
-import { Plan } from '@prisma/client';
+import { Plan, BusinessType } from '@prisma/client';
 import { prisma } from '@/lib/server/db';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
@@ -70,6 +70,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
 
 const UpdateSchema = z.object({
   plan: z.nativeEnum(Plan).optional(),
+  businessType: z.nativeEnum(BusinessType).optional(),
   isActive: z.boolean().optional(),
   name: z.string().min(1).optional(),
   agencyId: z.string().uuid().nullable().optional(),
