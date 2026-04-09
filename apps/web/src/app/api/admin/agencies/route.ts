@@ -1,8 +1,9 @@
-import { auth } from '@clerk/nextjs/server';
+import { auth, clerkClient } from '@clerk/nextjs/server';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { isSuperAdmin } from '@/lib/server/agency';
 import { prisma } from '@/lib/server/db';
 import { PLAN_MRR } from '@/lib/server/planPricing';
+import { logger } from '@/lib/server/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +17,40 @@ export async function GET() {
   const ids = agencies.map((a) => a.id);
   if (ids.length === 0) {
     return apiSuccess([]);
+  }
+
+  // Backfill missing names from Clerk. Cheap: single getUser per agency
+  // with a null name, and we persist so future reads skip this.
+  const needsName = agencies.filter((a) => !a.name);
+  if (needsName.length > 0) {
+    try {
+      const clerk = await clerkClient();
+      await Promise.all(
+        needsName.map(async (a) => {
+          try {
+            const user = await clerk.users.getUser(a.clerkUserId);
+            const name =
+              [user.firstName, user.lastName].filter(Boolean).join(' ') ||
+              user.emailAddresses?.[0]?.emailAddress ||
+              null;
+            if (name) {
+              a.name = name;
+              await prisma.agency.update({
+                where: { id: a.id },
+                data: { name },
+              });
+            }
+          } catch (err) {
+            logger.warn('[admin/agencies] failed to backfill agency name', {
+              agencyId: a.id,
+              err,
+            });
+          }
+        }),
+      );
+    } catch (err) {
+      logger.warn('[admin/agencies] clerk client unavailable', { err });
+    }
   }
 
   // Batch: one round-trip each for tenants, commissions, payouts.
