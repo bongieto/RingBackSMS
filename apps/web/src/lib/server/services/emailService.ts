@@ -14,6 +14,7 @@ import {
   agencyApprovedEmail,
   agencyRejectedEmail,
   payoutConfirmationEmail,
+  tenantOwnerInviteEmail,
 } from './emailTemplates';
 
 let resendClient: Resend | null = null;
@@ -163,5 +164,14 @@ export async function sendPayoutEmail(
   periodLabel: string,
 ): Promise<void> {
   const { subject, html } = payoutConfirmationEmail(name, amountCents, periodLabel);
+  await sendEmail(toEmail, subject, html);
+}
+
+export async function sendTenantOwnerInviteEmail(
+  toEmail: string,
+  tenantName: string,
+  inviterName: string,
+): Promise<void> {
+  const { subject, html } = tenantOwnerInviteEmail(tenantName, inviterName);
   await sendEmail(toEmail, subject, html);
 }

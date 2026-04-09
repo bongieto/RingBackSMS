@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/nextjs';
 import { toast } from 'sonner';
 import Link from 'next/link';
-import { Phone, Sparkles, Globe, MapPin, CheckCircle, X, Copy, CalendarOff, Plus, CreditCard, Send } from 'lucide-react';
+import { Phone, Sparkles, Globe, MapPin, CheckCircle, X, Copy, CalendarOff, Plus, CreditCard, Send, Users } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ReplyTemplatesCard } from '@/components/settings/ReplyTemplatesCard';
@@ -824,8 +824,123 @@ export default function SettingsPage() {
         <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} size="lg">
           {saveMutation.isPending ? 'Saving...' : 'Save Settings'}
         </Button>
+
+        {/* Team & Invitations */}
+        {tenantId && <TeamCard tenantId={tenantId} />}
       </div>
     </div>
+  );
+}
+
+// ── Team & Invite card ──────────────────────────────────────────────────────
+
+function TeamCard({ tenantId }: { tenantId: string }) {
+  const queryClient = useQueryClient();
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState('org:admin');
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['tenant-team', tenantId],
+    queryFn: () => tenantApi.getTeam(tenantId),
+  });
+
+  const inviteMutation = useMutation({
+    mutationFn: () => tenantApi.sendInvite(tenantId, inviteEmail.trim(), inviteRole),
+    onSuccess: () => {
+      toast.success(`Invitation sent to ${inviteEmail}`);
+      setInviteEmail('');
+      queryClient.invalidateQueries({ queryKey: ['tenant-team', tenantId] });
+    },
+    onError: (err: any) =>
+      toast.error(err?.response?.data?.error ?? 'Failed to send invitation'),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Users className="h-5 w-5" />
+          Team
+        </CardTitle>
+        <CardDescription>
+          Invite the business owner or team members to manage this account.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Invite form */}
+        <div className="flex gap-2">
+          <Input
+            type="email"
+            placeholder="owner@business.com"
+            value={inviteEmail}
+            onChange={(e) => setInviteEmail(e.target.value)}
+            className="flex-1"
+          />
+          <select
+            value={inviteRole}
+            onChange={(e) => setInviteRole(e.target.value)}
+            className="h-10 rounded-md border bg-background px-3 text-sm"
+          >
+            <option value="org:admin">Admin</option>
+            <option value="org:member">Member</option>
+          </select>
+          <Button
+            onClick={() => inviteMutation.mutate()}
+            disabled={inviteMutation.isPending || !inviteEmail.trim() || !inviteEmail.includes('@')}
+            size="sm"
+          >
+            {inviteMutation.isPending ? 'Sending…' : 'Send Invite'}
+          </Button>
+        </div>
+
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading team…</p>
+        ) : (
+          <>
+            {/* Current members */}
+            {(data?.members?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Members</p>
+                <div className="space-y-2">
+                  {data?.members.map((m, i) => (
+                    <div key={m.userId ?? i} className="flex items-center justify-between text-sm border rounded-lg px-3 py-2">
+                      <div>
+                        <span className="font-medium">{m.name ?? m.email ?? 'Unknown'}</span>
+                        {m.email && m.name && (
+                          <span className="text-muted-foreground ml-2">{m.email}</span>
+                        )}
+                      </div>
+                      <span className="text-xs text-muted-foreground capitalize">
+                        {m.role?.replace('org:', '')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Pending invitations */}
+            {(data?.invitations?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Pending Invitations</p>
+                <div className="space-y-2">
+                  {data?.invitations
+                    .filter((inv) => inv.status === 'pending')
+                    .map((inv) => (
+                      <div key={inv.id} className="flex items-center justify-between text-sm border border-dashed rounded-lg px-3 py-2">
+                        <span className="text-muted-foreground">{inv.email}</span>
+                        <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded">
+                          Pending
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

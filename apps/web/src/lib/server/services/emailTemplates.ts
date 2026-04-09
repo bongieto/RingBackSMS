@@ -476,3 +476,29 @@ export function payoutConfirmationEmail(
     `),
   };
 }
+
+// ── Tenant owner invite ─────────────────────────────────────────────────────
+
+export function tenantOwnerInviteEmail(
+  tenantName: string,
+  inviterName: string,
+): { subject: string; html: string } {
+  return {
+    subject: `You've been set up on RingbackSMS — ${escapeHtml(tenantName)}`,
+    html: layout(`
+      <h2 style="color: #1e293b; margin: 0 0 16px">Welcome to RingbackSMS!</h2>
+      <p><strong>${escapeHtml(inviterName)}</strong> has set up <strong>${escapeHtml(tenantName)}</strong> on RingbackSMS — an AI-powered missed call recovery system that automatically texts back your customers when you can't pick up the phone.</p>
+      <p>Here's what's been configured for your business:</p>
+      <ul>
+        <li>AI-powered SMS auto-response for every missed call</li>
+        <li>Conversational AI that takes orders, books appointments, and answers questions</li>
+        <li>A dashboard to manage conversations, contacts, and analytics</li>
+      </ul>
+      <p>Create your account to start managing your business on RingbackSMS:</p>
+      <p style="margin-top: 20px">
+        <a href="${DASHBOARD_URL}/sign-up" style="background: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; display: inline-block; font-weight: 600;">Create Your Account</a>
+      </p>
+      <p style="color: #64748b; font-size: 13px; margin-top: 16px">You'll also receive a separate invitation email from Clerk (our authentication provider) to join the organization. Accept both to get full access.</p>
+    `),
+  };
+}

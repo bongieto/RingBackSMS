@@ -43,6 +43,13 @@ export const tenantApi = {
   getFlows: (id: string) => webApi.get(`/tenants/${id}/flows`).then((r) => r.data.data),
   updateFlow: (tenantId: string, flowId: string, data: Record<string, unknown>) =>
     webApi.patch(`/tenants/${tenantId}/flows/${flowId}`, data).then((r) => r.data.data),
+  getTeam: (id: string) =>
+    webApi.get(`/tenants/${id}/invite`).then((r) => r.data.data as {
+      members: Array<{ userId: string | null; email: string | null; name: string | null; role: string; createdAt: string }>;
+      invitations: Array<{ id: string; email: string; role: string; status: string; createdAt: string }>;
+    }),
+  sendInvite: (id: string, email: string, role: string = 'org:admin') =>
+    webApi.post(`/tenants/${id}/invite`, { email, role }).then((r) => r.data.data),
 };
 
 export const orderApi = {
