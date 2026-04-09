@@ -421,3 +421,58 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+
+// ── Agency partner emails ───────────────────────────────────────────────────
+
+export function agencyApprovedEmail(name: string): { subject: string; html: string } {
+  return {
+    subject: 'Your partner application has been approved!',
+    html: layout(`
+      <h2 style="color: #1e293b; margin: 0 0 16px">Welcome to the Partner Program, ${escapeHtml(name)}!</h2>
+      <p>Great news — your application to become a RingbackSMS partner has been approved.</p>
+      <p>Here's what to do next:</p>
+      <ol>
+        <li>Log in to <a href="${DASHBOARD_URL}/partner/settings">Partner Settings</a></li>
+        <li>Connect your bank account via Stripe to start receiving payouts</li>
+        <li>Create your first tenant and start earning revenue share</li>
+      </ol>
+      <p style="margin-top: 20px">
+        <a href="${DASHBOARD_URL}/partner/overview" style="background: ${BRAND_COLOR}; color: white; padding: 10px 24px; border-radius: 8px; text-decoration: none; display: inline-block;">Go to Partner Dashboard</a>
+      </p>
+    `),
+  };
+}
+
+export function agencyRejectedEmail(name: string, reason?: string | null): { subject: string; html: string } {
+  return {
+    subject: 'Update on your partner application',
+    html: layout(`
+      <h2 style="color: #1e293b; margin: 0 0 16px">Hi ${escapeHtml(name)},</h2>
+      <p>Thank you for your interest in the RingbackSMS Partner Program. After reviewing your application, we're unable to approve it at this time.</p>
+      ${reason ? `<p style="color: #64748b; font-style: italic;">${escapeHtml(reason)}</p>` : ''}
+      <p>If you have questions or want to re-apply in the future, contact us at <a href="mailto:support@ringbacksms.com">support@ringbacksms.com</a>.</p>
+    `),
+  };
+}
+
+export function payoutConfirmationEmail(
+  name: string,
+  amountCents: number,
+  periodLabel: string,
+): { subject: string; html: string } {
+  const amount = (amountCents / 100).toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+  });
+  return {
+    subject: `Payout sent: ${amount}`,
+    html: layout(`
+      <h2 style="color: #1e293b; margin: 0 0 16px">Payout Sent</h2>
+      <p>Hi ${escapeHtml(name)}, your payout of <strong>${amount}</strong> for ${escapeHtml(periodLabel)} has been initiated via Stripe Connect.</p>
+      <p>Funds typically arrive in your bank account within 2-5 business days.</p>
+      <p style="margin-top: 20px">
+        <a href="${DASHBOARD_URL}/partner/payouts" style="background: ${BRAND_COLOR}; color: white; padding: 10px 24px; border-radius: 8px; text-decoration: none; display: inline-block;">View Payouts</a>
+      </p>
+    `),
+  };
+}

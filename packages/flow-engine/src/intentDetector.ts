@@ -1,8 +1,5 @@
-import OpenAI from 'openai';
-import { TenantContext } from './types';
+import { TenantContext, ChatFn } from './types';
 import { FlowType } from '@ringback/shared-types';
-
-const AI_MODEL = 'MiniMax-M2.7';
 
 function stripThinkTags(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
@@ -46,7 +43,7 @@ export interface IntentResult {
 export async function detectIntent(
   message: string,
   tenantContext: TenantContext,
-  apiKey: string
+  chatFn: ChatFn,
 ): Promise<IntentResult> {
   const enabledFlowTypes = tenantContext.flows
     .filter((f) => f.isEnabled)
@@ -72,7 +69,6 @@ export async function detectIntent(
   }
 
   if (enabledFlowTypes.includes(FlowType.INQUIRY)) {
-    // Retail-style "do you have X" / "is X in stock" / "looking for X"
     const lower = message.toLowerCase();
     if (
       /\b(do you have|got any|in stock|available|looking for|how much|price of|have any)\b/.test(lower)
@@ -93,12 +89,7 @@ export async function detectIntent(
     }
   }
 
-  // Use MiniMax for ambiguous messages
-  const client = new OpenAI({
-    baseURL: 'https://api.minimax.io/v1',
-    apiKey,
-  });
-
+  // Use AI for ambiguous messages
   const flowDescriptions: Record<FlowType, string> = {
     [FlowType.ORDER]: 'placing a food or product order',
     [FlowType.MEETING]: 'scheduling a meeting, appointment, or call',
@@ -111,9 +102,7 @@ export async function detectIntent(
     .map((ft) => `- ${ft}: ${flowDescriptions[ft]}`)
     .join('\n');
 
-  const prompt = `You are an intent classifier for ${tenantContext.tenantName}, a ${tenantContext.config.timezone} business.
-
-The customer sent this SMS: "${message}"
+  const prompt = `The customer sent this SMS: "${message}"
 
 Available flows:
 ${availableFlows}
@@ -122,13 +111,14 @@ Classify the customer's intent. Respond with JSON only:
 {"intent": "<FLOW_TYPE or UNCLEAR>", "confidence": <0.0-1.0>}`;
 
   try {
-    const response = await client.chat.completions.create({
-      model: AI_MODEL,
-      max_tokens: 100,
-      messages: [{ role: 'user', content: prompt }],
+    const raw = await chatFn({
+      systemPrompt: `You are an intent classifier for ${tenantContext.tenantName}.`,
+      userMessage: prompt,
+      maxTokens: 100,
+      temperature: 0.1,
     });
 
-    const text = stripThinkTags(response.choices[0]?.message?.content ?? '');
+    const text = stripThinkTags(raw);
     const parsed = JSON.parse(text.trim()) as { intent: string; confidence: number };
 
     const intent =

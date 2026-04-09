@@ -53,7 +53,7 @@ export async function runFlowEngine(input: FlowInput): Promise<FlowOutput> {
   const intentResult = await detectIntent(
     inboundMessage,
     tenantContext,
-    input.aiApiKey
+    input.chatFn,
   );
 
   const enabledFlowTypes = tenantContext.flows

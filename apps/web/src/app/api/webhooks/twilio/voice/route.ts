@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import twilio from 'twilio';
 import { prisma } from '@/lib/server/db';
-import { sendSms } from '@/lib/server/services/twilioService';
+import { sendSmsWithRetry } from '@/lib/server/services/twilioService';
 import { logger } from '@/lib/server/logger';
 import { checkRateLimit } from '@/lib/server/rateLimit';
 import { getValidationToken } from '@/lib/server/services/twilioService';
@@ -167,11 +167,13 @@ export async function POST(request: NextRequest) {
   });
   const tier: CallerTier = callerContext?.tier ?? 'NEW';
 
-  // Create the missed call record immediately
+  // Idempotent upsert keyed on twilioCallSid — safe against Twilio
+  // retries and the voice/call-status race.
   let missedCallId: string | null = null;
   try {
-    const created = await prisma.missedCall.create({
-      data: {
+    const record = await prisma.missedCall.upsert({
+      where: { twilioCallSid: callSid },
+      create: {
         tenantId: tenant.id,
         callerPhone: from,
         twilioCallSid: callSid,
@@ -180,14 +182,12 @@ export async function POST(request: NextRequest) {
         transcriptionStatus: 'pending',
         callerTier: tier,
       },
+      update: {}, // no-op if already exists
       select: { id: true },
     });
-    missedCallId = created.id;
+    missedCallId = record.id;
   } catch (err: any) {
-    // Duplicate CallSid — call already tracked
-    if (!err.message?.includes('Unique constraint')) {
-      logger.error('Failed to create missed call record', { err, tenantId: tenant.id });
-    }
+    logger.error('Failed to upsert missed call record', { err, tenantId: tenant.id });
   }
 
   // Fire-and-forget: link to Contact (creates one if needed). Doesn't block TwiML.
@@ -241,15 +241,17 @@ export async function POST(request: NextRequest) {
     config: tenant.config,
   });
 
-  // Send the SMS greeting immediately (don't wait for voicemail)
+  // Send the SMS greeting with retry (fire-and-forget, 3 attempts max)
   if (smsGreeting) {
-    sendSms(tenant.id, from, smsGreeting)
-      .then(() =>
-        prisma.missedCall.update({
-          where: { twilioCallSid: callSid },
-          data: { smsSent: true },
-        })
-      )
+    sendSmsWithRetry(tenant.id, from, smsGreeting)
+      .then((sent) => {
+        if (sent) {
+          prisma.missedCall.update({
+            where: { twilioCallSid: callSid },
+            data: { smsSent: true },
+          }).catch(() => {});
+        }
+      })
       .catch((err) => logger.error('Failed to send SMS on voice webhook', { err, tenantId: tenant.id }));
   }
 

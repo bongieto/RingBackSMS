@@ -13,6 +13,7 @@
     "schema": "../api/prisma/schema.prisma"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.86.1",
     "@axiomhq/winston": "^1.0.0",
     "@clerk/nextjs": "^6.12.0",
     "@prisma/client": "^5.8.1",

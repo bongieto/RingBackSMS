@@ -28,12 +28,23 @@ export interface CallerMemory {
   lastConversationPreview?: string | null;
 }
 
+/** Chat completion function injected by the web layer. The flow engine
+ *  never instantiates AI clients directly — it calls through this. */
+export type ChatFn = (params: {
+  systemPrompt: string;
+  userMessage: string;
+  maxTokens?: number;
+  temperature?: number;
+}) => Promise<string>;
+
 export interface FlowInput {
   tenantContext: TenantContext;
   callerPhone: string;
   inboundMessage: string;
   currentState: CallerState | null;
-  aiApiKey: string;
+  /** @deprecated Use chatFn instead. Kept for backward compat. */
+  aiApiKey?: string;
+  chatFn: ChatFn;
   callerMemory?: CallerMemory;
 }
 

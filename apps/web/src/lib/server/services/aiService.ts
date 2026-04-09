@@ -1,24 +1,10 @@
-import OpenAI from 'openai';
+import { chatCompletion, chatClassify } from './aiClient';
 import { logger } from '../logger';
 import { prisma } from '../db';
 import { getProfile } from '@/lib/businessTypeProfile';
 
-let aiClient: OpenAI | null = null;
-
-const AI_MODEL = 'MiniMax-M2.7';
-
 function stripThinkTags(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
-}
-
-function getClient(): OpenAI {
-  if (!aiClient) {
-    aiClient = new OpenAI({
-      baseURL: 'https://api.minimax.io/v1',
-      apiKey: process.env.MINIMAX_API_KEY,
-    });
-  }
-  return aiClient;
 }
 
 export interface ClassifyIntentResult {
@@ -84,28 +70,21 @@ export async function generateReply(
   userMessage: string,
   conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>
 ): Promise<string> {
-  const client = getClient();
   const systemPrompt = await buildTenantSystemPrompt(tenantId);
 
-  const messages: OpenAI.ChatCompletionMessageParam[] = [
-    { role: 'system', content: systemPrompt },
-    ...conversationHistory.map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    })),
-    { role: 'user', content: userMessage },
-  ];
+  // Build a single user message that includes conversation context
+  const historyContext = conversationHistory.length > 0
+    ? `Previous conversation:\n${conversationHistory.map((m) => `${m.role}: ${m.content}`).join('\n')}\n\nLatest message: ${userMessage}`
+    : userMessage;
 
   try {
-    const response = await client.chat.completions.create({
-      model: AI_MODEL,
-      max_tokens: 300,
-      messages,
+    const rawText = await chatCompletion({
+      systemPrompt,
+      userMessage: historyContext,
+      maxTokens: 300,
     });
-
-    const rawText = response.choices[0]?.message?.content ?? '';
     const text = stripThinkTags(rawText);
-    logger.debug('AI reply generated', { tenantId, tokens: response.usage?.total_tokens });
+    logger.debug('AI reply generated', { tenantId });
     return text;
   } catch (error) {
     logger.error('AI reply generation failed', { error, tenantId });
@@ -129,7 +108,7 @@ const VOICEMAIL_INTENTS: VoicemailIntent[] = ['ORDER', 'BOOKING', 'QUESTION', 'C
 export async function analyzeVoicemail(transcript: string): Promise<VoicemailAnalysis> {
   if (!transcript?.trim()) return { summary: '', intent: 'OTHER' };
 
-  const prompt = `You are triaging voicemails left for a small business. Read the transcript and respond with JSON only.
+  const prompt = `Read the transcript and respond with JSON only.
 
 Transcript: "${transcript.replace(/"/g, '\\"')}"
 
@@ -141,16 +120,15 @@ Rules:
 Respond with JSON only: {"summary": "...", "intent": "..."}`;
 
   try {
-    const client = getClient();
-    const response = await client.chat.completions.create({
-      model: AI_MODEL,
-      max_tokens: 200,
-      temperature: 0.2,
-      messages: [{ role: 'user', content: prompt }],
+    const raw = await chatClassify({
+      systemPrompt: 'You are triaging voicemails left for a small business.',
+      userMessage: prompt,
+      maxTokens: 200,
     });
-    const raw = stripThinkTags(response.choices[0]?.message?.content ?? '').trim();
-    // Strip code fences if model wraps JSON
-    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+    const cleaned = stripThinkTags(raw)
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
     const parsed = JSON.parse(cleaned) as { summary?: string; intent?: string };
     const summary = (parsed.summary ?? '').slice(0, 200);
     const intent = (VOICEMAIL_INTENTS as string[]).includes(parsed.intent ?? '')
@@ -167,12 +145,10 @@ Respond with JSON only: {"summary": "...", "intent": "..."}`;
  * Classifies the intent of an inbound message for a specific tenant.
  */
 export async function classifyIntent(
-  tenantId: string,
+  _tenantId: string,
   message: string,
   availableIntents: string[]
 ): Promise<ClassifyIntentResult> {
-  const client = getClient();
-
   const prompt = `Classify this SMS message for a business. Available intents: ${availableIntents.join(', ')}, UNCLEAR.
 
 Message: "${message}"
@@ -180,14 +156,12 @@ Message: "${message}"
 Respond with JSON only: {"intent": "<INTENT>", "confidence": <0.0-1.0>, "reasoning": "<brief reason>"}`;
 
   try {
-    const response = await client.chat.completions.create({
-      model: AI_MODEL,
-      max_tokens: 150,
-      messages: [{ role: 'user', content: prompt }],
+    const raw = await chatClassify({
+      systemPrompt: 'You are an intent classifier for business SMS messages.',
+      userMessage: prompt,
+      maxTokens: 150,
     });
-
-    const rawText = response.choices[0]?.message?.content ?? '';
-    const text = stripThinkTags(rawText);
+    const text = stripThinkTags(raw);
     const parsed = JSON.parse(text.trim()) as ClassifyIntentResult;
     return parsed;
   } catch {

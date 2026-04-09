@@ -47,6 +47,7 @@ export async function GET(_request: NextRequest) {
   const twilioSid = process.env.TWILIO_MASTER_ACCOUNT_SID;
   const twilioToken = process.env.TWILIO_MASTER_AUTH_TOKEN;
   const stripeKey = process.env.STRIPE_SECRET_KEY;
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const minimaxKey = process.env.MINIMAX_API_KEY;
   const resendKey = process.env.RESEND_API_KEY;
 
@@ -122,9 +123,9 @@ export async function GET(_request: NextRequest) {
       tenantsConnected: twilioCount,
     },
     {
-      name: 'MiniMax AI',
-      configured: !!minimaxKey,
-      status: minimaxKey ? 'ok' : 'unconfigured',
+      name: 'AI (Claude + MiniMax)',
+      configured: !!(anthropicKey || minimaxKey),
+      status: anthropicKey ? 'ok' : minimaxKey ? 'ok' : 'unconfigured',
     },
     {
       name: 'Stripe',

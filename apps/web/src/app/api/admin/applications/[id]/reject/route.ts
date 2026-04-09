@@ -5,6 +5,7 @@ import { apiSuccess, apiError } from '@/lib/server/response';
 import { isSuperAdmin } from '@/lib/server/agency';
 import { prisma } from '@/lib/server/db';
 import { logger } from '@/lib/server/logger';
+import { sendAgencyRejectedEmail } from '@/lib/server/services/emailService';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,6 +49,11 @@ export async function POST(
       clerkUserId: app.clerkUserId,
       reviewedBy: userId,
     });
+
+    // Send rejection email (best-effort)
+    sendAgencyRejectedEmail(app.email, app.fullName, body.notes).catch((err) =>
+      logger.warn('Failed to send agency rejection email', { err, applicationId: app.id }),
+    );
 
     return apiSuccess({ id: app.id, status: 'REJECTED' });
   } catch (err: any) {

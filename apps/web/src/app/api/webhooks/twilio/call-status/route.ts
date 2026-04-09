@@ -66,12 +66,16 @@ export async function POST(request: NextRequest) {
       return new Response('OK', { status: 200 });
     }
 
-    // Fallback: voice webhook didn't fire, handle here
-    const missedCall = await prisma.missedCall.create({
-      data: { tenantId: tenant.id, callerPhone: From, twilioCallSid: CallSid, occurredAt: new Date(), smsSent: false },
+    // Fallback: voice webhook didn't fire, handle here (idempotent upsert)
+    const missedCall = await prisma.missedCall.upsert({
+      where: { twilioCallSid: CallSid },
+      create: { tenantId: tenant.id, callerPhone: From, twilioCallSid: CallSid, occurredAt: new Date(), smsSent: false },
+      update: {},
     });
-    await sendSms(tenant.id, From, tenant.config.greeting);
-    await prisma.missedCall.update({ where: { id: missedCall.id }, data: { smsSent: true } });
+    if (!missedCall.smsSent) {
+      await sendSms(tenant.id, From, tenant.config.greeting);
+      await prisma.missedCall.update({ where: { id: missedCall.id }, data: { smsSent: true } });
+    }
     logger.info('Missed call handled via status callback fallback', { tenantId: tenant.id, callSid: CallSid });
   } catch (err) {
     logger.error('call-status webhook error', { err, tenantId: tenant.id });

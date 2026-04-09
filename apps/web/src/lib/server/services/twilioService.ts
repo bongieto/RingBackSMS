@@ -223,6 +223,41 @@ export async function sendSms(
 }
 
 /**
+ * Fire-and-forget SMS with up to `maxRetries` attempts on transient failure.
+ * Used by the voice webhook where we can't `await` before returning TwiML.
+ */
+export async function sendSmsWithRetry(
+  tenantId: string,
+  toPhone: string,
+  body: string,
+  maxRetries = 2,
+  delayMs = 2000,
+): Promise<boolean> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      await sendSms(tenantId, toPhone, body);
+      return true;
+    } catch (err) {
+      if (attempt < maxRetries) {
+        logger.warn('[sendSmsWithRetry] attempt failed, retrying', {
+          tenantId,
+          attempt: attempt + 1,
+          maxRetries,
+          error: (err as Error).message,
+        });
+        await new Promise((r) => setTimeout(r, delayMs));
+      } else {
+        logger.error('[sendSmsWithRetry] all attempts failed', {
+          tenantId,
+          error: (err as Error).message,
+        });
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * Stores Twilio sub-account credentials encrypted on the tenant record.
  */
 export async function saveTenantTwilioCredentials(

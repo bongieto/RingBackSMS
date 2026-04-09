@@ -1,4 +1,5 @@
-import { runFlowEngine, TenantContext, detectEscalationIntent, type CallerMemory } from '@ringback/flow-engine';
+import { runFlowEngine, TenantContext, detectEscalationIntent, type CallerMemory, type ChatFn } from '@ringback/flow-engine';
+import { chatCompletion } from './aiClient';
 import { getCallerContext } from './callerContextService';
 import { FlowType, SideEffect } from '@ringback/shared-types';
 import { getCallerState, setCallerState, isDuplicate } from './stateService';
@@ -275,29 +276,18 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     };
   }
 
-  // Run flow engine. If MINIMAX_API_KEY is unset, skip the AI round-trip
-  // (which would otherwise 401) and send a safe fallback reply so the
-  // customer still hears back.
-  const aiApiKey = process.env.MINIMAX_API_KEY?.trim();
-  if (!aiApiKey) {
-    logger.error('MINIMAX_API_KEY is not configured; sending fallback reply', {
-      tenantId,
-      callerPhone,
-    });
-    const fallbackReply =
-      "Thanks for reaching out! We got your message and will get back to you shortly.";
-    await sendSms(tenantId, callerPhone, fallbackReply).catch((err) =>
-      logger.error('Failed to send fallback SMS', { err, tenantId, callerPhone })
-    );
-    return;
-  }
+  // Run flow engine with the AI client. chatCompletion handles the
+  // Claude-primary / MiniMax-backup fallback chain internally. If
+  // neither AI provider is configured it throws, which we catch in the
+  // error boundary below and send a generic fallback.
+  const chatFn: ChatFn = (params) => chatCompletion(params);
 
   const result = await runFlowEngine({
     tenantContext,
     callerPhone,
     inboundMessage,
     currentState,
-    aiApiKey,
+    chatFn,
     callerMemory,
   });
 

@@ -1,7 +1,9 @@
 import { NextRequest } from 'next/server';
+import { clerkClient } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/server/db';
 import { logger } from '@/lib/server/logger';
 import { createConnectTransfer } from '@/lib/server/services/billingService';
+import { sendPayoutEmail } from '@/lib/server/services/emailService';
 
 // $10 minimum, in cents
 const MIN_PAYOUT_CENTS = 1000;
@@ -111,6 +113,20 @@ export async function GET(request: NextRequest) {
         amountCents: total,
         transferId,
       });
+
+      // Send payout confirmation email (best-effort)
+      try {
+        const clerk = await clerkClient();
+        const user = await clerk.users.getUser(agency.clerkUserId);
+        const email = user.emailAddresses?.[0]?.emailAddress;
+        const name = [user.firstName, user.lastName].filter(Boolean).join(' ') || agency.name || 'Partner';
+        if (email) {
+          await sendPayoutEmail(email, name, total, periodKey);
+        }
+      } catch (emailErr) {
+        logger.warn('[cron/process-payouts] payout email failed', { emailErr, agencyId: agency.id });
+      }
+
       summary.push({ agencyId: agency.id, paid: total });
     } catch (err: any) {
       logger.error('[cron/process-payouts] agency failed', {

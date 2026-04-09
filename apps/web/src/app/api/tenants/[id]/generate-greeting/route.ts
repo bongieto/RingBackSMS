@@ -4,9 +4,7 @@ import { prisma } from '@/lib/server/db';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
 import { checkRateLimit, rateLimitResponse } from '@/lib/server/rateLimit';
-import OpenAI from 'openai';
-
-const AI_MODEL = 'MiniMax-M2.7';
+import { chatCompletion } from '@/lib/server/services/aiClient';
 
 function stripThinkTags(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
@@ -66,14 +64,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       }
     }
 
-    const apiKey = process.env.MINIMAX_API_KEY;
-    if (!apiKey) return apiError('AI service not configured', 500);
-
-    const client = new OpenAI({
-      baseURL: 'https://api.minimax.io/v1',
-      apiKey,
-    });
-
     const businessInfo = [
       `Business name: ${tenant.name}`,
       `Business type: ${tenant.businessType}`,
@@ -85,12 +75,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       websiteContext ? `Website info: ${websiteContext.substring(0, 2000)}` : null,
     ].filter(Boolean).join('\n');
 
-    const response = await client.chat.completions.create({
-      model: AI_MODEL,
-      max_tokens: 300,
-      messages: [{
-        role: 'user',
-        content: `Generate a friendly, professional missed-call SMS greeting for this business. The greeting should:
+    const raw = await chatCompletion({
+      systemPrompt: 'You are a professional copywriter writing SMS greetings for businesses.',
+      userMessage: `Generate a friendly, professional missed-call SMS greeting for this business. The greeting should:
 - Be 1-3 sentences (keep it concise for SMS)
 - Apologize for the missed call
 - Mention the business name
@@ -102,10 +89,10 @@ Business info:
 ${businessInfo}
 
 Return ONLY the greeting text, nothing else.`,
-      }],
+      maxTokens: 300,
     });
 
-    const greeting = stripThinkTags(response.choices[0]?.message?.content ?? '')
+    const greeting = stripThinkTags(raw)
       || `Hi! Sorry we missed your call at ${tenant.name}. Text us back and we'll help you right away!`;
 
     logger.info('Greeting auto-generated', { tenantId: params.id });

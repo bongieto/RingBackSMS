@@ -5,6 +5,7 @@ import { isSuperAdmin } from '@/lib/server/agency';
 import { prisma } from '@/lib/server/db';
 import { ensureAgencyForUser } from '@/lib/server/services/agencyService';
 import { logger } from '@/lib/server/logger';
+import { sendAgencyApprovedEmail } from '@/lib/server/services/emailService';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,6 +51,11 @@ export async function POST(
       clerkUserId: app.clerkUserId,
       reviewedBy: userId,
     });
+
+    // Send approval email (best-effort)
+    sendAgencyApprovedEmail(app.email, app.fullName).catch((err) =>
+      logger.warn('Failed to send agency approval email', { err, applicationId: app.id }),
+    );
 
     return apiSuccess({ id: app.id, status: 'APPROVED' });
   } catch (err: any) {

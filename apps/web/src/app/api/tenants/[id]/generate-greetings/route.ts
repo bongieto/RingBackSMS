@@ -4,9 +4,7 @@ import { prisma } from '@/lib/server/db';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
 import { checkRateLimit, rateLimitResponse } from '@/lib/server/rateLimit';
-import OpenAI from 'openai';
-
-const AI_MODEL = 'MiniMax-M2.7';
+import { chatCompletion } from '@/lib/server/services/aiClient';
 
 type SlotKey =
   | 'greeting'
@@ -167,14 +165,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       }
     }
 
-    const apiKey = process.env.MINIMAX_API_KEY;
-    if (!apiKey) return apiError('AI service not configured', 500);
-
-    const client = new OpenAI({
-      baseURL: 'https://api.minimax.io/v1',
-      apiKey,
-    });
-
     const brandBrief = [
       `Business name: ${tenant.name}`,
       `Business type: ${tenant.businessType}`,
@@ -201,12 +191,11 @@ BRAND BRIEF:
 ${brandBrief}`;
 
       try {
-        const response = await client.chat.completions.create({
-          model: AI_MODEL,
-          max_tokens: 200,
-          messages: [{ role: 'user', content: prompt }],
+        const raw = await chatCompletion({
+          systemPrompt: 'You are a professional copywriter writing short business greetings.',
+          userMessage: prompt,
+          maxTokens: 200,
         });
-        const raw = response.choices[0]?.message?.content ?? '';
         return [slot.key, cleanGreeting(raw, slot.maxChars)];
       } catch (err) {
         logger.warn('Slot generation failed', {

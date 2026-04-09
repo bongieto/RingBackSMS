@@ -11,6 +11,9 @@ import {
   meetingConfirmationEmail,
   meetingRequestEmail,
   dailyTaskDigestEmail,
+  agencyApprovedEmail,
+  agencyRejectedEmail,
+  payoutConfirmationEmail,
 } from './emailTemplates';
 
 let resendClient: Resend | null = null;
@@ -132,4 +135,33 @@ export async function sendMeetingRequestEmail(
   if (!email) return;
   const { subject, html } = meetingRequestEmail(name, meeting);
   await sendEmail(email, subject, html);
+}
+
+// ── Agency partner emails ───────────────────────────────────────────────────
+
+export async function sendAgencyApprovedEmail(
+  toEmail: string,
+  name: string,
+): Promise<void> {
+  const { subject, html } = agencyApprovedEmail(name);
+  await sendEmail(toEmail, subject, html);
+}
+
+export async function sendAgencyRejectedEmail(
+  toEmail: string,
+  name: string,
+  reason?: string | null,
+): Promise<void> {
+  const { subject, html } = agencyRejectedEmail(name, reason);
+  await sendEmail(toEmail, subject, html);
+}
+
+export async function sendPayoutEmail(
+  toEmail: string,
+  name: string,
+  amountCents: number,
+  periodLabel: string,
+): Promise<void> {
+  const { subject, html } = payoutConfirmationEmail(name, amountCents, periodLabel);
+  await sendEmail(toEmail, subject, html);
 }
