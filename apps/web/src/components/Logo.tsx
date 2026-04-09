@@ -12,10 +12,10 @@ interface LogoProps {
   className?: string;
 }
 
-const SIZE_STYLES: Record<LogoSize, { text: string; icon: number }> = {
-  sm: { text: 'text-lg', icon: 50 },
-  md: { text: 'text-xl', icon: 60 },
-  lg: { text: 'text-3xl', icon: 80 },
+const SIZE_STYLES: Record<LogoSize, { text: string; sub: string; icon: number }> = {
+  sm: { text: 'text-lg', sub: 'text-[7px]', icon: 50 },
+  md: { text: 'text-xl', sub: 'text-[8px]', icon: 60 },
+  lg: { text: 'text-3xl', sub: 'text-[11px]', icon: 80 },
 };
 
 export function Logo({
@@ -38,8 +38,11 @@ export function Logo({
         className="object-contain"
         unoptimized
       />
-      <span>
-        RingBack<span className={accent}>SMS</span>
+      <span className="flex flex-col leading-tight">
+        <span>RingBack<span className={accent}>SMS</span></span>
+        <span className={cn(sz.sub, 'font-semibold tracking-[0.2em] uppercase', variant === 'dark' ? 'text-slate-400' : 'text-slate-500')}>
+          Missed Call Recovery System
+        </span>
       </span>
     </span>
   );
