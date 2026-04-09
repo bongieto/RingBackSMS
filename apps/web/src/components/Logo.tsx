@@ -25,7 +25,6 @@ export function Logo({
   className,
 }: LogoProps) {
   const dims = SIZE_DIMS[size];
-  const filter = variant === 'dark' ? 'brightness(0) invert(1)' : undefined;
 
   const content = (
     <Image
@@ -34,8 +33,8 @@ export function Logo({
       width={dims.width}
       height={dims.height}
       className={cn('object-contain', className)}
-      style={filter ? { filter } : undefined}
       priority={size === 'lg'}
+      unoptimized
     />
   );
 
