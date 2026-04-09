@@ -119,9 +119,12 @@ export async function createCheckoutSession(
     'subscription_data[metadata][plan]': plan,
   };
 
-  // Add SMS price if configured
+  // Add SMS metered price only on monthly checkout. The metered price
+  // is a monthly recurring item; Stripe refuses to mix it with an
+  // annual base price in a single checkout session ("Checkout does not
+  // support multiple prices with different billing intervals").
   const smsPriceId = process.env.STRIPE_SMS_METERED_PRICE_ID?.trim();
-  if (smsPriceId) {
+  if (smsPriceId && interval === 'monthly') {
     body['line_items[1][price]'] = smsPriceId;
     body['line_items[1][quantity]'] = '1';
   }
