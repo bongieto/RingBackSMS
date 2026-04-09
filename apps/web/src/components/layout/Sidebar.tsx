@@ -100,6 +100,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       {/* Org Switcher */}
       <div className="p-4 border-b border-slate-700">
         <OrganizationSwitcher
+          afterCreateOrganizationUrl="/onboarding"
+          afterSelectOrganizationUrl="/dashboard"
           appearance={{
             elements: {
               rootBox: 'w-full',
