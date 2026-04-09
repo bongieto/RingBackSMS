@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   title: 'RingBackSMS — AI SMS for Missed Calls',
   description: 'Auto-respond to missed calls with AI-powered SMS. Never lose a customer again.',
   icons: {
-    icon: '/logo.png',
+    icon: '/favicon.svg',
     apple: '/logo.png',
   },
   openGraph: {
