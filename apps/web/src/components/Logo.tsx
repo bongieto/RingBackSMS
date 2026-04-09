@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import Image from 'next/image';
+import { Phone } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type LogoSize = 'sm' | 'md' | 'lg';
@@ -12,10 +12,10 @@ interface LogoProps {
   className?: string;
 }
 
-const SIZE_DIMS: Record<LogoSize, { width: number; height: number }> = {
-  sm: { width: 140, height: 40 },
-  md: { width: 180, height: 50 },
-  lg: { width: 260, height: 72 },
+const SIZE_STYLES: Record<LogoSize, { text: string; icon: string }> = {
+  sm: { text: 'text-lg', icon: 'h-5 w-5' },
+  md: { text: 'text-xl', icon: 'h-6 w-6' },
+  lg: { text: 'text-3xl', icon: 'h-8 w-8' },
 };
 
 export function Logo({
@@ -24,18 +24,17 @@ export function Logo({
   href = '/',
   className,
 }: LogoProps) {
-  const dims = SIZE_DIMS[size];
+  const sz = SIZE_STYLES[size];
+  const accent = variant === 'dark' ? 'text-blue-400' : 'text-blue-600';
+  const base = variant === 'dark' ? 'text-white' : 'text-slate-900';
 
   const content = (
-    <Image
-      src="/logo.png"
-      alt="RingbackSMS"
-      width={dims.width}
-      height={dims.height}
-      className={cn('object-contain', className)}
-      priority={size === 'lg'}
-      unoptimized
-    />
+    <span className={cn('inline-flex items-center gap-1.5 font-extrabold', base, sz.text, className)}>
+      <Phone className={cn(sz.icon, accent)} strokeWidth={2.5} />
+      <span>
+        RingBack<span className={accent}>SMS</span>
+      </span>
+    </span>
   );
 
   if (href === null) return content;
