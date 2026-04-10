@@ -26,9 +26,29 @@ export async function POST(request: NextRequest) {
   if (!userId) return apiError('Unauthorized', 401);
   try {
     const body = CreateTenantRequestSchema.parse(await request.json());
-    // Prefer server-side orgId (trusted), but fall back to the client-sent
-    // clerkOrgId if the Clerk session hasn't picked up the active org yet.
-    const effectiveOrgId = orgId ?? body.clerkOrgId;
+    // Prefer server-side orgId (trusted). If the Clerk session hasn't
+    // picked up the active org yet, verify the user is actually a member
+    // of the client-supplied clerkOrgId before trusting it.
+    let effectiveOrgId = orgId;
+    if (!effectiveOrgId && body.clerkOrgId) {
+      try {
+        const clerk = await clerkClient();
+        const memberships = await clerk.organizations.getOrganizationMembershipList({
+          organizationId: body.clerkOrgId,
+        });
+        const isMember = memberships.data?.some(
+          (m) => m.publicUserData?.userId === userId,
+        );
+        if (isMember) {
+          effectiveOrgId = body.clerkOrgId;
+        } else {
+          return apiError('Not a member of the specified organization', 403);
+        }
+      } catch (e) {
+        console.warn('[POST /api/tenants] failed to verify org membership', e);
+        return apiError('Unable to verify organization membership', 400);
+      }
+    }
 
     // Idempotent: if a tenant already exists for this Clerk org (e.g. a
     // stub created by the organization.created webhook), upgrade it in

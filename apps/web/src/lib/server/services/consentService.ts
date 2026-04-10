@@ -42,12 +42,24 @@ export async function isCallerSuppressed(
   return Boolean(row);
 }
 
+/**
+ * Creates a consent request, or returns the existing PENDING request if one
+ * already exists (dedup for rapid redial / concurrent calls). Returns
+ * `{ id, alreadyPending }` so the caller knows whether to skip sending SMS.
+ */
 export async function createConsentRequest(
   tenantId: string,
   callerPhone: string,
   twilioNumber: string,
   consentMessageSid?: string,
-): Promise<string> {
+): Promise<{ id: string; alreadyPending: boolean }> {
+  // Check for existing pending consent first (dedup rapid redial)
+  const existing = await prisma.smsConsentRequest.findFirst({
+    where: { tenantId, callerPhone, status: 'PENDING', expiresAt: { gt: new Date() } },
+    select: { id: true },
+  });
+  if (existing) return { id: existing.id, alreadyPending: true };
+
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   const row = await prisma.smsConsentRequest.create({
     data: {
@@ -63,7 +75,7 @@ export async function createConsentRequest(
     consentMessageSid,
     twilioNumber,
   });
-  return row.id;
+  return { id: row.id, alreadyPending: false };
 }
 
 export async function findPendingConsent(
@@ -127,6 +139,11 @@ export async function suppressCaller(
     where: { tenantId_callerPhone: { tenantId, callerPhone } },
     create: { tenantId, callerPhone, reason },
     update: { reason },
+  });
+  // Close all pending consent rows for this caller
+  await prisma.smsConsentRequest.updateMany({
+    where: { tenantId, callerPhone, status: 'PENDING' },
+    data: { status: 'DECLINED', declinedAt: new Date() },
   });
   // Mark contact as suppressed
   await prisma.contact.updateMany({

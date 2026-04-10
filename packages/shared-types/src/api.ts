@@ -57,6 +57,9 @@ export const UpdateTenantConfigRequestSchema = z.object({
     .nullable()
     .optional(),
   ordersAcceptingEnabled: z.boolean().optional(),
+  customAiInstructions: z.string().max(500).nullable().optional(),
+  followupOpener: z.string().max(500).nullable().optional(),
+  consentMessage: z.string().max(500).nullable().optional(),
 });
 
 export type UpdateTenantConfigRequest = z.infer<typeof UpdateTenantConfigRequestSchema>;

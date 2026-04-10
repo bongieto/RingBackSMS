@@ -260,7 +260,7 @@ export default function SettingsPage() {
       } as any);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tenant', tenantId] });
+      queryClient.invalidateQueries({ queryKey: ['tenant', organization?.id] });
       setShowSaved(true);
       toast.success('Settings saved!');
     },

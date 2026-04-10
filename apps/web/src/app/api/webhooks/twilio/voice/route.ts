@@ -233,11 +233,15 @@ export async function POST(request: NextRequest) {
           logger.info('Caller suppressed, skipping SMS', { tenantId: tenant.id });
           return;
         }
+        // Dedup: check if a PENDING consent already exists (rapid redial)
+        const { alreadyPending } = await createConsentRequest(tenant.id, from, to);
+        if (alreadyPending) {
+          logger.info('Consent already pending, skipping duplicate SMS', { tenantId: tenant.id });
+          return;
+        }
         // Send consent request SMS (non-commercial, TCPA-safe)
         const consentMsg = buildConsentMessage(businessName);
-        const messageSid = await sendSms(tenant.id, from, consentMsg);
-        // Record consent request for tracking
-        await createConsentRequest(tenant.id, from, to, messageSid);
+        await sendSms(tenant.id, from, consentMsg);
         await prisma.missedCall.update({
           where: { twilioCallSid: callSid },
           data: { smsSent: true },

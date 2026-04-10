@@ -12,7 +12,9 @@ import {
   isConsentAffirmative,
   findPendingConsent,
   approveConsent,
+  declineConsent,
   suppressCaller,
+  isCallerSuppressed,
 } from '@/lib/server/services/consentService';
 import { checkEscalation } from '@/lib/server/services/escalationService';
 
@@ -86,7 +88,13 @@ export async function POST(request: NextRequest) {
   if (isOptOutKeyword(normalizedBody)) {
     (async () => {
       try {
-        await suppressCaller(tenant.id, From, 'opt_out');
+        // Close any pending consent request before suppressing
+        const pending = await findPendingConsent(tenant.id, From);
+        if (pending) {
+          await declineConsent(pending.id, normalizedBody);
+        } else {
+          await suppressCaller(tenant.id, From, 'opt_out');
+        }
         await sendSms(
           tenant.id,
           From,
@@ -138,7 +146,13 @@ export async function POST(request: NextRequest) {
     return twimlResponse;
   }
 
-  // 3. No pending consent → check escalation keywords → then route to AI
+  // 3. No pending consent → verify not suppressed → check escalation → route to AI
+  const suppressed = await isCallerSuppressed(tenant.id, From);
+  if (suppressed) {
+    logger.info('Suppressed caller texted, ignoring', { tenantId: tenant.id });
+    return twimlResponse;
+  }
+
   (async () => {
     try {
       // Check escalation keywords before AI processes the message.
