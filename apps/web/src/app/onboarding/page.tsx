@@ -93,9 +93,13 @@ export default function OnboardingPage() {
         clerkOrgId: organization?.id,
       }).then(r => r.data.data),
     onSuccess: async (tenant) => {
-      // Update voice greeting if customized
+      // Update voice greeting if customized (non-fatal — can be set later in Settings)
       if (form.voiceGreeting) {
-        await webApi.patch(`/tenants/${tenant.id}/config`, { voiceGreeting: form.voiceGreeting });
+        try {
+          await webApi.patch(`/tenants/${tenant.id}/config`, { voiceGreeting: form.voiceGreeting });
+        } catch {
+          // Silently continue — tenant was created, voice greeting can be set in Settings
+        }
       }
       toast.success('Account created! Welcome to RingBackSMS 🎉');
       setStep(3);

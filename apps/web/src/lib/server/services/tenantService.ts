@@ -236,6 +236,14 @@ export async function upsertMenuItem(
   }
 ) {
   if (item.id) {
+    // Verify the item belongs to this tenant before updating
+    const existing = await prisma.menuItem.findUnique({
+      where: { id: item.id },
+      select: { tenantId: true },
+    });
+    if (!existing || existing.tenantId !== tenantId) {
+      throw new NotFoundError('Menu item');
+    }
     return prisma.menuItem.update({
       where: { id: item.id },
       data: {

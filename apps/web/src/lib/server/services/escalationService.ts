@@ -46,9 +46,11 @@ export async function checkEscalation(
   if (allKeywords.length === 0) return false;
 
   const lower = message.toLowerCase();
-  const triggerKeyword = allKeywords.find((kw) =>
-    lower.includes(kw.toLowerCase()),
-  );
+  // Use word-boundary matching to avoid false positives
+  // (e.g. "end" should not match "weekend" or "send")
+  const wordMatch = (text: string, kw: string) =>
+    new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text);
+  const triggerKeyword = allKeywords.find((kw) => wordMatch(lower, kw));
 
   if (!triggerKeyword) return false;
 

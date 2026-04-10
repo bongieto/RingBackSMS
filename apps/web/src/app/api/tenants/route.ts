@@ -151,6 +151,26 @@ export async function POST(request: NextRequest) {
     }
 
     const tenant = await createTenant({ ...body, clerkOrgId: effectiveOrgId ?? undefined });
+
+    // Wire industry template defaults (same logic as the stub-upgrade path)
+    const newTemplateKey = BUSINESS_TYPE_TO_TEMPLATE[body.businessType] ?? 'restaurant';
+    const newTemplate = await prisma.industryTemplate.findUnique({
+      where: { industryKey: newTemplateKey },
+      select: { followupOpenerDefault: true, voiceGreetingDefault: true },
+    });
+    const newConsentMsg = buildConsentMessage(body.name);
+    const newFollowupOpener = newTemplate?.followupOpenerDefault ?? `Thanks! How can ${body.name} help you today?`;
+    const newVoiceGreeting = newTemplate?.voiceGreetingDefault?.replace(/\{business_name\}/gi, body.name) ?? null;
+    await prisma.tenantConfig.update({
+      where: { tenantId: tenant.id },
+      data: {
+        industryTemplateKey: newTemplateKey,
+        consentMessage: newConsentMsg,
+        followupOpener: newFollowupOpener,
+        voiceGreeting: newVoiceGreeting,
+      },
+    });
+
     // Mark onboarding as complete — this path runs when the user
     // submitted the onboarding form for an org with no existing stub.
     await prisma.tenant.update({
