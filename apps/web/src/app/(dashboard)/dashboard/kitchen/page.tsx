@@ -106,7 +106,7 @@ export default function KitchenPage() {
     totalToday: orders.length,
     cooking: cookingOrders.length,
     overdue: overdueCount,
-    avgPrepMins,
+    avgPrepMins: null as number | null,
   };
 
   if (!tenantId) return null;
