@@ -63,8 +63,8 @@ export default function AboutPage() {
       <main className="max-w-4xl mx-auto px-6 py-16">
         {/* Hero */}
         <div className="text-center mb-16">
-          <h1 className="text-4xl font-bold text-slate-900 mb-4">
-            Built for small businesses,<br />by someone who gets it.
+          <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">
+            Built for small businesses, by someone who gets it.
           </h1>
           <p className="text-lg text-slate-600 max-w-2xl mx-auto">
             RingBackSMS is an AI-powered missed call recovery platform that
@@ -204,7 +204,7 @@ export default function AboutPage() {
 
       {/* Footer */}
       <footer className="border-t py-8">
-        <div className="max-w-5xl mx-auto px-6 flex items-center justify-between text-sm text-slate-500">
+        <div className="max-w-5xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-500">
           <Logo size="sm" variant="light" />
           <div className="flex gap-4">
             <Link href="/privacy" className="hover:text-slate-700">Privacy</Link>

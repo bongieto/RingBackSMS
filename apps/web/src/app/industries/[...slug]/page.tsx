@@ -210,7 +210,7 @@ export default function IndustryLandingPage({ params }: PageProps) {
             </div>
 
             {/* SMS mockup */}
-            <div className="mx-auto w-full max-w-sm">
+            <div className="mx-auto w-full max-w-xs sm:max-w-sm">
               <div className="bg-slate-900 rounded-[2.5rem] p-3 shadow-2xl">
                 <div className="bg-white rounded-[2rem] overflow-hidden">
                   <div className="bg-slate-100 px-4 py-3 border-b border-slate-200">

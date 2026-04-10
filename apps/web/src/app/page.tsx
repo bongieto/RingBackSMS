@@ -692,14 +692,14 @@ export default function HomePage() {
                   <SignedOut>
                     <Link
                       href="/sign-up"
-                      className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/25 text-lg"
+                      className="inline-flex items-center justify-center gap-2 px-5 py-3 sm:px-8 sm:py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/25 text-base sm:text-lg"
                     >
                       Start Free Today
                       <ArrowRight className="h-5 w-5" />
                     </Link>
                     <a
                       href="#how-it-works"
-                      className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-white text-slate-700 font-semibold rounded-xl hover:bg-slate-50 transition-colors border border-slate-200 text-lg"
+                      className="inline-flex items-center justify-center gap-2 px-5 py-3 sm:px-8 sm:py-4 bg-white text-slate-700 font-semibold rounded-xl hover:bg-slate-50 transition-colors border border-slate-200 text-base sm:text-lg"
                     >
                       See How It Works
                     </a>
@@ -707,7 +707,7 @@ export default function HomePage() {
                   <SignedIn>
                     <Link
                       href="/dashboard"
-                      className="inline-flex items-center justify-center gap-2 px-8 py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/25 text-lg"
+                      className="inline-flex items-center justify-center gap-2 px-5 py-3 sm:px-8 sm:py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/25 text-base sm:text-lg"
                     >
                       Go to Dashboard
                       <ArrowRight className="h-5 w-5" />
@@ -723,7 +723,7 @@ export default function HomePage() {
 
               {/* Right: SMS Demo Phone */}
               <div className="relative flex justify-center lg:justify-end">
-                <div className="w-[340px] bg-slate-900 rounded-[2.5rem] p-3 shadow-2xl shadow-slate-900/30">
+                <div className="w-full max-w-[340px] bg-slate-900 rounded-[2.5rem] p-3 shadow-2xl shadow-slate-900/30">
                   <div className="bg-white rounded-[2rem] overflow-hidden">
                     {/* Phone header */}
                     <div className="bg-slate-50 px-5 py-3 border-b border-slate-100">
@@ -1073,7 +1073,7 @@ export default function HomePage() {
               <SignedOut>
                 <Link
                   href="/sign-up"
-                  className="inline-flex items-center justify-center gap-2 px-10 py-4 bg-white text-blue-600 font-bold rounded-xl hover:bg-blue-50 transition-colors text-lg shadow-lg"
+                  className="inline-flex items-center justify-center gap-2 px-6 py-3 sm:px-10 sm:py-4 bg-white text-blue-600 font-bold rounded-xl hover:bg-blue-50 transition-colors text-base sm:text-lg shadow-lg"
                 >
                   Get Started Free
                   <ArrowRight className="h-5 w-5" />
@@ -1082,7 +1082,7 @@ export default function HomePage() {
               <SignedIn>
                 <Link
                   href="/dashboard"
-                  className="inline-flex items-center justify-center gap-2 px-10 py-4 bg-white text-blue-600 font-bold rounded-xl hover:bg-blue-50 transition-colors text-lg shadow-lg"
+                  className="inline-flex items-center justify-center gap-2 px-6 py-3 sm:px-10 sm:py-4 bg-white text-blue-600 font-bold rounded-xl hover:bg-blue-50 transition-colors text-base sm:text-lg shadow-lg"
                 >
                   Go to Dashboard
                   <ArrowRight className="h-5 w-5" />

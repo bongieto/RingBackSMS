@@ -88,7 +88,7 @@ export default function ConversationsPage() {
                   <Link
                     key={conv.id}
                     href={`/dashboard/conversations/${conv.id}`}
-                    className="flex items-center gap-4 p-4 hover:bg-muted/50 transition-colors"
+                    className="flex items-center gap-2 sm:gap-4 p-3 sm:p-4 hover:bg-muted/50 transition-colors"
                   >
                     <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
                       <Phone className="h-5 w-5 text-blue-500" />

@@ -804,7 +804,7 @@ function MeetingDetailPanel({
   cancelPending: boolean;
 }) {
   return (
-    <div className="fixed inset-y-0 right-0 w-full sm:w-96 bg-background border-l shadow-xl z-50 overflow-y-auto">
+    <div className="fixed inset-y-0 right-0 w-full sm:w-96 max-w-[100vw] bg-background border-l shadow-xl z-50 overflow-y-auto">
       <div className="p-6">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-lg font-semibold">Meeting Details</h2>

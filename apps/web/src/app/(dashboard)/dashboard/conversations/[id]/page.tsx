@@ -187,7 +187,7 @@ export default function ConversationDetailPage() {
                       }
                     </div>
                     <div className={cn(
-                      'max-w-[70%] space-y-1',
+                      'max-w-[85%] sm:max-w-[70%] space-y-1',
                       isAssistant ? 'items-end flex flex-col' : ''
                     )}>
                       {senderLabel && (

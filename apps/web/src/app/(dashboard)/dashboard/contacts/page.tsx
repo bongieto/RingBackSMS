@@ -358,9 +358,9 @@ export default function ContactsPage() {
                       </th>
                       <th className="px-4 py-3 font-medium">Contact</th>
                       <th className="px-4 py-3 font-medium">Status</th>
-                      <th className="px-4 py-3 font-medium">Tags</th>
-                      <th className="px-4 py-3 font-medium text-right">Spent</th>
-                      <th className="px-4 py-3 font-medium">Last Contact</th>
+                      <th className="px-4 py-3 font-medium hidden sm:table-cell">Tags</th>
+                      <th className="px-4 py-3 font-medium text-right hidden md:table-cell">Spent</th>
+                      <th className="px-4 py-3 font-medium hidden lg:table-cell">Last Contact</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -395,7 +395,7 @@ export default function ContactsPage() {
                               <span className="ml-1.5 text-xs text-red-500" title="Opted out — suppressed from SMS">⛔</span>
                             )}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 hidden sm:table-cell">
                             <div className="flex gap-1 flex-wrap">
                               {c.tags.slice(0, 2).map((t) => (
                                 <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>
@@ -403,10 +403,10 @@ export default function ContactsPage() {
                               {c.tags.length > 2 && <Badge variant="outline" className="text-xs">+{c.tags.length - 2}</Badge>}
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-right font-mono text-sm">
+                          <td className="px-4 py-3 text-right font-mono text-sm hidden md:table-cell">
                             {formatCurrency(c.totalSpent)}
                           </td>
-                          <td className="px-4 py-3 text-xs text-muted-foreground">
+                          <td className="px-4 py-3 text-xs text-muted-foreground hidden lg:table-cell">
                             {c.lastContactAt ? formatRelativeTime(c.lastContactAt) : 'Never'}
                           </td>
                         </tr>
@@ -508,8 +508,10 @@ function ContactDetailPanel({ contact, onSave, onDelete, onSendSms, isSaving }: 
   );
 
   return (
-    <div className="w-full lg:w-80 shrink-0">
-      <Card className="sticky top-4">
+    <>
+    <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => {}} />
+    <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-96 lg:relative lg:inset-auto lg:z-auto lg:w-80 shrink-0 overflow-y-auto bg-background">
+      <Card className="sticky top-4 border-0 lg:border shadow-xl lg:shadow-sm rounded-none lg:rounded-lg">
         <CardHeader className="pb-2">
           <div className="flex items-start justify-between">
             <div>
@@ -550,6 +552,7 @@ function ContactDetailPanel({ contact, onSave, onDelete, onSendSms, isSaving }: 
         </CardContent>
       </Card>
     </div>
+    </>
   );
 }
 
