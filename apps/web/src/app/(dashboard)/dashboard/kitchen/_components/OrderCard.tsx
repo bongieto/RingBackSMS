@@ -76,10 +76,27 @@ export function OrderCard({ order, tenantId }: { order: Order; tenantId: string 
   const statusMutation = useMutation({
     mutationFn: (newStatus: string) =>
       webApi.patch(`/orders/${order.id}/status`, { status: newStatus, tenantId }).then(r => r.data),
-    onSuccess: () => {
+    // Optimistic update: move the card instantly, reconcile after server responds
+    onMutate: async (newStatus) => {
+      await queryClient.cancelQueries({ queryKey: ['kitchen-orders'] });
+      const previous = queryClient.getQueryData<Order[]>(['kitchen-orders', tenantId]);
+      queryClient.setQueryData<Order[]>(['kitchen-orders', tenantId], (old) =>
+        (old ?? []).map(o =>
+          o.id === order.id ? { ...o, status: newStatus } : o
+        ).filter(o => !['COMPLETED', 'CANCELLED'].includes(o.status))
+      );
+      return { previous };
+    },
+    onError: (_err, _newStatus, context) => {
+      // Revert on failure
+      if (context?.previous) {
+        queryClient.setQueryData(['kitchen-orders', tenantId], context.previous);
+      }
+      toast.error('Failed to update order');
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['kitchen-orders'] });
     },
-    onError: () => toast.error('Failed to update order status'),
   });
 
   const action = STATUS_ACTIONS[order.status];
@@ -143,18 +160,18 @@ export function OrderCard({ order, tenantId }: { order: Order; tenantId: string 
       <div className="flex gap-2">
         {action && (
           <Button
-            className={cn('flex-1 min-h-[48px] text-base font-bold', action.color)}
+            className={cn('flex-1 min-h-[48px] text-base font-bold active:scale-95 transition-transform', action.color)}
             onClick={() => statusMutation.mutate(action.next)}
             disabled={statusMutation.isPending}
           >
-            {statusMutation.isPending ? 'Updating...' : action.label}
+            {action.label}
           </Button>
         )}
         {order.status !== 'COMPLETED' && order.status !== 'CANCELLED' && (
           <Button
             variant="outline"
             size="icon"
-            className="min-h-[48px] min-w-[48px] shrink-0"
+            className="min-h-[48px] min-w-[48px] shrink-0 active:scale-95 transition-transform"
             onClick={() => {
               if (confirm('Cancel this order?')) {
                 statusMutation.mutate('CANCELLED');
