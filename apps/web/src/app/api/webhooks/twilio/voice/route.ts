@@ -1,10 +1,15 @@
 import { NextRequest } from 'next/server';
 import twilio from 'twilio';
 import { prisma } from '@/lib/server/db';
-import { sendSmsWithRetry } from '@/lib/server/services/twilioService';
+import { sendSms, sendSmsWithRetry } from '@/lib/server/services/twilioService';
 import { logger } from '@/lib/server/logger';
 import { checkRateLimit } from '@/lib/server/rateLimit';
 import { getValidationToken } from '@/lib/server/services/twilioService';
+import {
+  isCallerSuppressed,
+  buildConsentMessage,
+  createConsentRequest,
+} from '@/lib/server/services/consentService';
 import { linkMissedCallToContact } from '@/lib/server/services/contactLinking';
 import { isWithinBusinessHours } from '@/lib/server/businessHours';
 import { getCallerContext, type CallerTier } from '@/lib/server/services/callerContextService';
@@ -241,18 +246,30 @@ export async function POST(request: NextRequest) {
     config: tenant.config,
   });
 
-  // Send the SMS greeting with retry (fire-and-forget, 3 attempts max)
+  // TCPA consent-first flow: send a consent request instead of the AI
+  // greeting. The actual greeting is sent only after the caller replies YES.
   if (smsGreeting) {
-    sendSmsWithRetry(tenant.id, from, smsGreeting)
-      .then((sent) => {
-        if (sent) {
-          prisma.missedCall.update({
-            where: { twilioCallSid: callSid },
-            data: { smsSent: true },
-          }).catch(() => {});
+    (async () => {
+      try {
+        // Check suppression list first — if caller opted out, stay silent
+        const suppressed = await isCallerSuppressed(tenant.id, from);
+        if (suppressed) {
+          logger.info('Caller suppressed, skipping SMS', { tenantId: tenant.id });
+          return;
         }
-      })
-      .catch((err) => logger.error('Failed to send SMS on voice webhook', { err, tenantId: tenant.id }));
+        // Send consent request SMS (non-commercial, TCPA-safe)
+        const consentMsg = buildConsentMessage(businessName);
+        const messageSid = await sendSms(tenant.id, from, consentMsg);
+        // Record consent request for tracking
+        await createConsentRequest(tenant.id, from, to, messageSid);
+        await prisma.missedCall.update({
+          where: { twilioCallSid: callSid },
+          data: { smsSent: true },
+        }).catch(() => {});
+      } catch (err) {
+        logger.error('Failed to send consent SMS', { err, tenantId: tenant.id });
+      }
+    })();
   }
 
   // Build TwiML response: short greeting + optional voicemail

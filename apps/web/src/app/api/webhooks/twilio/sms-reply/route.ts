@@ -2,10 +2,18 @@ import { NextRequest } from 'next/server';
 import twilio from 'twilio';
 import { prisma } from '@/lib/server/db';
 import { processInboundSms } from '@/lib/server/services/flowEngineService';
+import { sendSms } from '@/lib/server/services/twilioService';
 import { logger } from '@/lib/server/logger';
 import { checkRateLimit } from '@/lib/server/rateLimit';
 import { getValidationToken } from '@/lib/server/services/twilioService';
 import { TwilioInboundSmsSchema } from '@ringback/shared-types';
+import {
+  isOptOutKeyword,
+  isConsentAffirmative,
+  findPendingConsent,
+  approveConsent,
+  suppressCaller,
+} from '@/lib/server/services/consentService';
 
 export async function POST(request: NextRequest) {
   const text = await request.text();
@@ -30,7 +38,16 @@ export async function POST(request: NextRequest) {
   // Resolve tenant
   const tenant = await prisma.tenant.findUnique({
     where: { twilioPhoneNumber: To },
-    select: { id: true, isActive: true, twilioSubAccountSid: true, twilioAuthToken: true },
+    select: {
+      id: true,
+      isActive: true,
+      twilioSubAccountSid: true,
+      twilioAuthToken: true,
+      name: true,
+      config: {
+        select: { followupOpener: true },
+      },
+    },
   });
 
   if (!tenant || !tenant.isActive) {
@@ -56,7 +73,71 @@ export async function POST(request: NextRequest) {
     headers: { 'Content-Type': 'text/xml' }, status: 200,
   });
 
-  // Process asynchronously (fire and forget)
+  // ── TCPA Consent Gate ─────────────────────────────────────────────────────
+  // Intercept before the AI flow engine. Three checks in order:
+  // 1. STOP keywords → suppress immediately (always honored)
+  // 2. Pending consent request → check for YES/ambiguous
+  // 3. No pending consent → route to AI as normal
+
+  const normalizedBody = Body.trim();
+
+  // 1. STOP keywords — always honored, regardless of consent state
+  if (isOptOutKeyword(normalizedBody)) {
+    (async () => {
+      try {
+        await suppressCaller(tenant.id, From, 'opt_out');
+        await sendSms(
+          tenant.id,
+          From,
+          "Got it — we won't text you again. Call us anytime.",
+        );
+      } catch (err) {
+        logger.error('Opt-out handling failed', { err, tenantId: tenant.id });
+      }
+    })();
+    return twimlResponse;
+  }
+
+  // 2. Check for pending consent request
+  const pendingConsent = await findPendingConsent(tenant.id, From);
+  if (pendingConsent) {
+    if (isConsentAffirmative(normalizedBody)) {
+      // Consent granted — approve, then send the follow-up opener
+      (async () => {
+        try {
+          await approveConsent(pendingConsent.id, normalizedBody);
+          // Send the industry-specific follow-up opener (or a default)
+          const opener =
+            tenant.config?.followupOpener ??
+            `Thanks! How can ${tenant.name} help you today?`;
+          await sendSms(tenant.id, From, opener);
+        } catch (err) {
+          logger.error('Consent approval failed', { err, tenantId: tenant.id });
+        }
+      })();
+    } else if (!pendingConsent.repromptSent) {
+      // Ambiguous reply — re-prompt once
+      (async () => {
+        try {
+          await prisma.smsConsentRequest.update({
+            where: { id: pendingConsent.id },
+            data: { repromptSent: true },
+          });
+          await sendSms(
+            tenant.id,
+            From,
+            'Just reply YES to get help by text, or STOP to opt out.',
+          );
+        } catch (err) {
+          logger.error('Re-prompt failed', { err, tenantId: tenant.id });
+        }
+      })();
+    }
+    // If reprompt already sent and still ambiguous → silently ignore
+    return twimlResponse;
+  }
+
+  // 3. No pending consent → route to AI as normal (previously consented or organic)
   processInboundSms({ tenantId: tenant.id, callerPhone: From, inboundMessage: Body, messageSid: MessageSid })
     .catch((err) => logger.error('Async SMS processing error', { err, tenantId: tenant.id, messageSid: MessageSid }));
 
