@@ -37,18 +37,28 @@ const LEGACY_VOICE_UPGRADE: Record<string, string> = {
 function buildVoiceTwiml(opts: {
   businessName: string;
   voiceGreeting: string | null;
+  voiceAudioUrl: string | null;
   voiceType: string;
   recordingCallbackUrl: string;
   transcribeCallbackUrl: string;
 }): string {
-  const intro = opts.voiceGreeting?.trim()
-    || `Hi, thanks for calling ${opts.businessName}. We can help you faster by text — you'll receive a message in just a moment. If you'd prefer a callback, leave a message after the beep.`;
   const upgraded = LEGACY_VOICE_UPGRADE[opts.voiceType] ?? opts.voiceType;
   const voice = ALLOWED_VOICES.has(upgraded) ? upgraded : 'Polly.Joanna-Neural';
+
+  // If pre-generated OpenAI TTS audio exists, use <Play>; otherwise fall back to <Say>
+  let introVerb: string;
+  if (opts.voiceAudioUrl) {
+    introVerb = `<Play>${escapeXml(opts.voiceAudioUrl)}</Play>`;
+  } else {
+    const intro = opts.voiceGreeting?.trim()
+      || `Hi, thanks for calling ${opts.businessName}. We can help you faster by text — you'll receive a message in just a moment. If you'd prefer a callback, leave a message after the beep.`;
+    introVerb = `<Say voice="${voice}" language="en-US">${escapeXml(intro)}</Say>`;
+  }
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Pause length="1"/>
-  <Say voice="${voice}" language="en-US">${escapeXml(intro)}</Say>
+  ${introVerb}
   <Record maxLength="60" finishOnKey="#" playBeep="true" recordingStatusCallback="${escapeXml(opts.recordingCallbackUrl)}" recordingStatusCallbackMethod="POST" transcribe="true" transcribeCallback="${escapeXml(opts.transcribeCallbackUrl)}"/>
   <Say voice="${voice}" language="en-US">Thank you for calling. Check your texts for a message from us. Goodbye!</Say>
 </Response>`;
@@ -83,6 +93,36 @@ function selectVoiceGreeting(opts: {
   if (opts.isAfterHours) return pick(c.voiceGreetingAfterHours, c.voiceGreeting);
   if (opts.tier === 'RETURNING') return pick(c.voiceGreetingReturning, c.voiceGreeting);
   return pick(c.voiceGreeting);
+}
+
+/**
+ * Selects the pre-generated audio URL based on caller tier and after-hours.
+ * Same cascade logic as selectVoiceGreeting. Returns null if no audio exists.
+ */
+function selectVoiceAudioUrl(opts: {
+  tier: CallerTier;
+  isAfterHours: boolean;
+  config: {
+    voiceAudioUrl: string | null;
+    voiceAudioUrlAfterHours: string | null;
+    voiceAudioUrlRapidRedial: string | null;
+    voiceAudioUrlReturning: string | null;
+  } | null;
+}): string | null {
+  if (!opts.config) return null;
+  const c = opts.config;
+  const pick = (...xs: (string | null | undefined)[]): string | null => {
+    for (const x of xs) {
+      const trimmed = x?.trim();
+      if (trimmed) return trimmed;
+    }
+    return null;
+  };
+
+  if (opts.tier === 'RAPID_REDIAL') return pick(c.voiceAudioUrlRapidRedial, c.voiceAudioUrl);
+  if (opts.isAfterHours) return pick(c.voiceAudioUrlAfterHours, c.voiceAudioUrl);
+  if (opts.tier === 'RETURNING') return pick(c.voiceAudioUrlReturning, c.voiceAudioUrl);
+  return pick(c.voiceAudioUrl);
 }
 
 function escapeXml(s: string): string {
@@ -222,6 +262,12 @@ export async function POST(request: NextRequest) {
     config: tenant.config,
   });
 
+  const voiceAudioUrl = selectVoiceAudioUrl({
+    tier,
+    isAfterHours: !isOpen,
+    config: tenant.config,
+  });
+
   // TCPA consent-first flow: always send a consent request SMS (unless suppressed).
   // The AI conversation only starts after the caller replies YES.
   {
@@ -256,7 +302,8 @@ export async function POST(request: NextRequest) {
   const twiml = buildVoiceTwiml({
     businessName,
     voiceGreeting: voiceGreetingText,
-    voiceType: tenant.config?.voiceType ?? 'Polly.Joanna',
+    voiceAudioUrl,
+    voiceType: tenant.config?.voiceType ?? 'nova',
     recordingCallbackUrl: `${baseUrl}/api/webhooks/twilio/recording-callback`,
     transcribeCallbackUrl: `${baseUrl}/api/webhooks/twilio/transcription-callback`,
   });

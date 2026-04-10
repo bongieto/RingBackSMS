@@ -264,7 +264,11 @@ model TenantConfig {
   voiceGreetingAfterHours        String?   @db.Text
   voiceGreetingRapidRedial       String?   @db.Text
   voiceGreetingReturning         String?   @db.Text
-  voiceType                      String    @default("Polly.Joanna-Neural")
+  voiceAudioUrl                  String?   // public URL for default greeting audio
+  voiceAudioUrlAfterHours        String?   // public URL for after-hours greeting audio
+  voiceAudioUrlRapidRedial       String?   // public URL for rapid-redial greeting audio
+  voiceAudioUrlReturning         String?   // public URL for returning greeting audio
+  voiceType                      String    @default("nova")
   timezone                       String    @default("America/Chicago")
   businessHoursStart             String    @default("11:00")
   businessHoursEnd               String    @default("20:00")

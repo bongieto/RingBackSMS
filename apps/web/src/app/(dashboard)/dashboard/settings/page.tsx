@@ -109,7 +109,7 @@ export default function SettingsPage() {
     voiceGreetingAfterHours: '',
     voiceGreetingRapidRedial: '',
     voiceGreetingReturning: '',
-    voiceType: 'Polly.Joanna-Neural' as 'Polly.Joanna-Neural' | 'Polly.Matthew-Neural' | 'Polly.Salli-Neural' | 'Polly.Ivy-Neural',
+    voiceType: 'nova' as string,
     timezone: 'America/Chicago',
     businessSchedule: deriveScheduleFromFlat([1, 2, 3, 4, 5], '11:00', '20:00'),
     closedDates: [] as string[],
@@ -157,15 +157,7 @@ export default function SettingsPage() {
         voiceGreetingRapidRedial: (config as any).voiceGreetingRapidRedial ?? '',
         voiceGreetingReturning: (config as any).voiceGreetingReturning ?? '',
         voiceType: (() => {
-          const raw = (config as TenantConfig & { voiceType?: string }).voiceType ?? 'Polly.Joanna-Neural';
-          // Auto-upgrade legacy non-neural voice IDs to their neural variants
-          const upgradeMap: Record<string, string> = {
-            'Polly.Joanna': 'Polly.Joanna-Neural',
-            'Polly.Matthew': 'Polly.Matthew-Neural',
-            'Polly.Salli': 'Polly.Salli-Neural',
-            'Polly.Ivy': 'Polly.Ivy-Neural',
-          };
-          return (upgradeMap[raw] ?? raw) as 'Polly.Joanna-Neural' | 'Polly.Matthew-Neural' | 'Polly.Salli-Neural' | 'Polly.Ivy-Neural';
+          return (config as TenantConfig & { voiceType?: string }).voiceType ?? 'nova';
         })(),
         timezone: config.timezone ?? 'America/Chicago',
         businessSchedule: schedule,
@@ -429,14 +421,26 @@ export default function SettingsPage() {
               <select
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 value={form.voiceType}
-                onChange={(e) => setForm(f => ({ ...f, voiceType: e.target.value as typeof f.voiceType }))}
+                onChange={(e) => setForm(f => ({ ...f, voiceType: e.target.value }))}
               >
-                <option value="Polly.Joanna-Neural">Joanna (Female, warm)</option>
-                <option value="Polly.Matthew-Neural">Matthew (Male, warm)</option>
-                <option value="Polly.Salli-Neural">Salli (Female, neutral)</option>
-                <option value="Polly.Ivy-Neural">Ivy (Female, youthful)</option>
+                <optgroup label="OpenAI TTS (HD quality)">
+                  <option value="nova">Nova (Female, warm)</option>
+                  <option value="alloy">Alloy (Female, neutral)</option>
+                  <option value="shimmer">Shimmer (Female, bright)</option>
+                  <option value="echo">Echo (Male, warm)</option>
+                  <option value="fable">Fable (Male, British)</option>
+                  <option value="onyx">Onyx (Male, deep)</option>
+                </optgroup>
+                <optgroup label="Legacy (Polly)">
+                  <option value="Polly.Joanna-Neural">Joanna (Female)</option>
+                  <option value="Polly.Matthew-Neural">Matthew (Male)</option>
+                  <option value="Polly.Salli-Neural">Salli (Female)</option>
+                  <option value="Polly.Ivy-Neural">Ivy (Female)</option>
+                </optgroup>
               </select>
-              <p className="text-xs text-muted-foreground">Call your number to preview.</p>
+              <p className="text-xs text-muted-foreground">
+                OpenAI voices generate HD audio on save. Legacy voices use real-time TTS.
+              </p>
             </div>
 
             <div className="space-y-1.5 border-t pt-4">

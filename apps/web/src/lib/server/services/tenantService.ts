@@ -180,11 +180,74 @@ export async function updateTenantConfig(
     consentMessage: string | null;
   }>
 ) {
+  // Fetch current config to detect what changed (for TTS regeneration)
+  const currentConfig = await prisma.tenantConfig.findUnique({
+    where: { tenantId },
+    select: {
+      voiceType: true,
+      voiceGreeting: true,
+      voiceGreetingAfterHours: true,
+      voiceGreetingRapidRedial: true,
+      voiceGreetingReturning: true,
+    },
+  });
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return prisma.tenantConfig.update({
+  const result = await prisma.tenantConfig.update({
     where: { tenantId },
     data: updates as any,
   });
+
+  // Fire-and-forget TTS regeneration when greeting text or voice changes
+  if (currentConfig) {
+    const { isOpenAIVoice } = await import('@ringback/shared-types');
+    const newVoice = (updates.voiceType ?? currentConfig.voiceType) as string;
+
+    if (isOpenAIVoice(newVoice)) {
+      const { generateAndUploadGreetingAudio, deleteGreetingAudio, regenerateAllGreetingAudio } =
+        await import('./ttsService');
+      type OpenAIVoice = import('@ringback/shared-types').OpenAIVoice;
+
+      const voiceChanged = updates.voiceType !== undefined && updates.voiceType !== currentConfig.voiceType;
+
+      if (voiceChanged) {
+        // Voice changed — regenerate all slots
+        regenerateAllGreetingAudio(tenantId).catch((err) =>
+          logger.error('TTS regeneration (voice change) failed', { err, tenantId }),
+        );
+      } else {
+        // Check individual greeting text changes
+        const slots = [
+          { slot: 'default' as const, field: 'voiceGreeting' as const },
+          { slot: 'afterHours' as const, field: 'voiceGreetingAfterHours' as const },
+          { slot: 'rapidRedial' as const, field: 'voiceGreetingRapidRedial' as const },
+          { slot: 'returning' as const, field: 'voiceGreetingReturning' as const },
+        ];
+
+        for (const { slot, field } of slots) {
+          if (field in updates) {
+            const newText = updates[field] as string | null;
+            if (newText?.trim()) {
+              generateAndUploadGreetingAudio({
+                tenantId,
+                slot,
+                text: newText,
+                voice: newVoice as OpenAIVoice,
+              }).catch((err) =>
+                logger.error('TTS generation failed', { err, tenantId, slot }),
+              );
+            } else {
+              deleteGreetingAudio(tenantId, slot).catch((err) =>
+                logger.error('TTS deletion failed', { err, tenantId, slot }),
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return result;
 }
 
 export async function listTenants(page = 1, pageSize = 20) {

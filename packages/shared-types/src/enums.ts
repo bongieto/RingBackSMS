@@ -52,9 +52,19 @@ export enum UsageType {
   POS_ORDER = 'POS_ORDER',
 }
 
-// Accept both legacy non-neural and new neural voice IDs. The voice webhook
-// transparently upgrades legacy IDs at runtime, so existing tenant rows keep working.
+// OpenAI TTS voices (preferred — high-quality pre-generated audio)
+export const OPENAI_VOICES = [
+  'nova', 'alloy', 'onyx', 'shimmer', 'echo', 'fable',
+] as const;
+export type OpenAIVoice = typeof OPENAI_VOICES[number];
+
+export function isOpenAIVoice(voice: string): voice is OpenAIVoice {
+  return (OPENAI_VOICES as readonly string[]).includes(voice);
+}
+
+// All accepted voice types: OpenAI (preferred) + legacy Polly (backward compat)
 export const VOICE_TYPES = [
+  ...OPENAI_VOICES,
   'Polly.Joanna-Neural',
   'Polly.Matthew-Neural',
   'Polly.Salli-Neural',
