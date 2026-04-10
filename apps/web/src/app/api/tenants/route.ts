@@ -58,10 +58,11 @@ export async function POST(request: NextRequest) {
         const templateKey = BUSINESS_TYPE_TO_TEMPLATE[body.businessType] ?? 'restaurant';
         const template = await prisma.industryTemplate.findUnique({
           where: { industryKey: templateKey },
-          select: { consentMessageDefault: true, followupOpenerDefault: true },
+          select: { consentMessageDefault: true, followupOpenerDefault: true, voiceGreetingDefault: true },
         });
         const consentMsg = buildConsentMessage(body.name);
         const followupOpener = template?.followupOpenerDefault ?? `Thanks! How can ${body.name} help you today?`;
+        const voiceGreeting = template?.voiceGreetingDefault?.replace(/\{business_name\}/gi, body.name) ?? null;
 
         await prisma.tenantConfig.upsert({
           where: { tenantId: existing.id },
@@ -79,6 +80,7 @@ export async function POST(request: NextRequest) {
             ...(existingConfig?.greeting
               ? {}
               : { greeting: profile.defaultGreeting(body.name) }),
+            ...(voiceGreeting ? { voiceGreeting } : {}),
           },
           create: {
             tenantId: existing.id,
@@ -93,6 +95,7 @@ export async function POST(request: NextRequest) {
             industryTemplateKey: templateKey,
             consentMessage: consentMsg,
             followupOpener: followupOpener,
+            voiceGreeting: voiceGreeting,
           },
         });
         // Enable the default flows for this business type (idempotent).

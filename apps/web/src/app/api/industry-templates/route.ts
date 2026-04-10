@@ -10,6 +10,7 @@ export async function GET() {
       industryLabel: true,
       capabilityList: true,
       followupOpenerDefault: true,
+      voiceGreetingDefault: true,
     },
     orderBy: { industryLabel: 'asc' },
   });

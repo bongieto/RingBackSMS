@@ -640,6 +640,7 @@ model IndustryTemplate {
   industryLabel         String
   consentMessageDefault String   @db.Text
   followupOpenerDefault String   @db.Text
+  voiceGreetingDefault  String?  @db.Text
   aiSystemPrompt        String   @db.Text
   capabilityList        String[] @default([])
   escalationKeywords    String[] @default([])

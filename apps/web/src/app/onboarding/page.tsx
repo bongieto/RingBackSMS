@@ -31,6 +31,7 @@ interface IndustryTemplate {
   industryLabel: string;
   capabilityList: string[];
   followupOpenerDefault: string;
+  voiceGreetingDefault: string | null;
 }
 
 const STEPS = [
@@ -231,7 +232,14 @@ export default function OnboardingPage() {
         )}
 
         {/* Step 2: Voice Greeting */}
-        {step === 2 && (
+        {step === 2 && (() => {
+          const selectedBt = BUSINESS_TYPES.find(b => b.value === form.businessType);
+          const tpl = selectedBt?.templateKey ? templateMap.get(selectedBt.templateKey) : null;
+          const defaultVoiceGreeting = tpl?.voiceGreetingDefault
+            ? tpl.voiceGreetingDefault.replace(/\{business_name\}/gi, form.name || '{business name}')
+            : `Hi, you've reached ${form.name || 'us'}! We'll text you back in just a moment, or feel free to leave a voicemail and we'll get right back to you.`;
+
+          return (
           <Card>
             <CardHeader>
               <CardTitle>Set your voice greeting</CardTitle>
@@ -248,14 +256,18 @@ export default function OnboardingPage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label>Voice Greeting (optional)</Label>
+                <Label>Voice Greeting</Label>
+                <div className="p-3 bg-muted rounded-lg text-sm text-muted-foreground">
+                  <p className="font-medium text-foreground mb-1">🔊 Preview</p>
+                  <p>{form.voiceGreeting || defaultVoiceGreeting}</p>
+                </div>
                 <textarea
                   className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[100px] resize-y"
                   value={form.voiceGreeting}
                   onChange={e => setForm(f => ({ ...f, voiceGreeting: e.target.value }))}
-                  placeholder={`Hi, you've reached ${form.name || 'us'}! We'll text you back in just a moment, or feel free to leave a voicemail and we'll get right back to you.`}
+                  placeholder={defaultVoiceGreeting}
                 />
-                <p className="text-xs text-muted-foreground">Spoken aloud via text-to-speech. Leave blank for a default greeting.</p>
+                <p className="text-xs text-muted-foreground">Edit to customize, or leave blank to use the suggested greeting above.</p>
               </div>
 
               <div className="flex gap-3">
@@ -276,7 +288,8 @@ export default function OnboardingPage() {
               </div>
             </CardContent>
           </Card>
-        )}
+          );
+        })()}
 
         {/* Step 3: Done */}
         {step === 3 && (
