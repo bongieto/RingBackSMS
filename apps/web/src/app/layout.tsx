@@ -14,6 +14,7 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   title: 'RingBackSMS — AI SMS for Missed Calls',
   description: 'Auto-respond to missed calls with AI-powered SMS. Never lose a customer again.',
+  manifest: '/manifest.json',
   icons: {
     icon: '/favicon.png',
     apple: '/favicon.png',
@@ -35,6 +36,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <ClerkProvider>
       <html lang="en" suppressHydrationWarning>
+        <head>
+          <meta name="apple-mobile-web-app-capable" content="yes" />
+          <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+          <meta name="theme-color" content="#0f172a" />
+        </head>
         <body className={inter.className}>
           <QueryProvider>
             {children}

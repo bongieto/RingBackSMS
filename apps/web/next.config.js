@@ -45,4 +45,15 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+// Wrap with Sentry for error monitoring (no-op if SENTRY_DSN is not set)
+const { withSentryConfig } = require('@sentry/nextjs');
+
+module.exports = withSentryConfig(nextConfig, {
+  // Suppress Sentry source map upload warnings when no auth token is set
+  silent: true,
+  // Don't widen the Next.js build output
+  widenClientFileUpload: false,
+  // Disable source map upload (enable when SENTRY_AUTH_TOKEN is configured)
+  disableServerWebpackPlugin: !process.env.SENTRY_AUTH_TOKEN,
+  disableClientWebpackPlugin: !process.env.SENTRY_AUTH_TOKEN,
+});

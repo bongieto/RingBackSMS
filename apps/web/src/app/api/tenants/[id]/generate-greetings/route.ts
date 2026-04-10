@@ -78,11 +78,44 @@ function cleanGreeting(text: string, maxChars: number): string {
   return cleaned;
 }
 
+function isSafeUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    // Only allow HTTPS
+    if (parsed.protocol !== 'https:') return false;
+    const hostname = parsed.hostname.toLowerCase();
+    // Block internal/reserved IPs and hostnames
+    if (
+      hostname === 'localhost' ||
+      hostname.endsWith('.local') ||
+      hostname.endsWith('.internal') ||
+      /^127\./.test(hostname) ||
+      /^10\./.test(hostname) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname) ||
+      /^192\.168\./.test(hostname) ||
+      /^169\.254\./.test(hostname) ||
+      /^0\./.test(hostname) ||
+      hostname === '[::1]' ||
+      hostname.startsWith('fc') || hostname.startsWith('fd') || hostname.startsWith('fe80')
+    ) return false;
+    // Block cloud metadata endpoints
+    if (hostname === 'metadata.google.internal') return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function fetchWebsiteContext(url: string): Promise<string | null> {
+  if (!isSafeUrl(url)) {
+    logger.warn('SSRF blocked: unsafe URL', { url });
+    return null;
+  }
   try {
     const response = await fetch(url, {
       headers: { 'User-Agent': 'RingbackSMS/1.0 (Business Context Extractor)' },
       signal: AbortSignal.timeout(10000),
+      redirect: 'error', // Don't follow redirects to internal URLs
     });
     if (!response.ok) return null;
     const html = await response.text();

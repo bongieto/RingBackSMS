@@ -772,6 +772,7 @@ function AiMessagingCard({ tenantId, businessName, followupOpener, initialCustom
   useEffect(() => {
     if (initialCustomAiInstructions != null) {
       setCustomAiInstructions(initialCustomAiInstructions);
+      setDirty(false); // Reset dirty flag when external data syncs in
     }
   }, [initialCustomAiInstructions]);
 

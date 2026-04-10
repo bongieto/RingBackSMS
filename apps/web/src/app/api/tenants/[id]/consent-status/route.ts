@@ -19,10 +19,22 @@ export async function GET(
   const authResult = await verifyTenantAccess(params.id);
   if (isNextResponse(authResult)) return authResult;
 
-  // Get the latest consent request per caller phone
+  // Optional phone filter (conversations page sends specific phones it needs)
+  const phonesParam = new URL(req.url).searchParams.get('phones');
+  const phoneFilter = phonesParam
+    ? phonesParam.split(',').map(p => p.trim()).filter(Boolean)
+    : null;
+
+  // Get the latest consent request per caller phone.
+  // Capped at 2000 rows for safety; filter to actionable statuses only.
   const requests = await prisma.smsConsentRequest.findMany({
-    where: { tenantId: params.id },
+    where: {
+      tenantId: params.id,
+      status: { in: ['PENDING', 'CONSENTED', 'DECLINED'] },
+      ...(phoneFilter ? { callerPhone: { in: phoneFilter } } : {}),
+    },
     orderBy: { createdAt: 'desc' },
+    take: 2000,
     select: {
       callerPhone: true,
       status: true,

@@ -29,6 +29,16 @@ export async function POST(request: NextRequest) {
 
   const { MessageSid, From, Body, To } = parseResult.data;
 
+  // Pre-verify Twilio signature with master auth token BEFORE DB lookup.
+  // Prevents unauthenticated actors from probing registered numbers.
+  const masterToken = process.env.TWILIO_MASTER_AUTH_TOKEN;
+  const sig = request.headers.get('x-twilio-signature') ?? '';
+  const webhookUrl = `${process.env.FRONTEND_URL ?? ''}/api/webhooks/twilio/sms-reply`;
+  if (masterToken && !twilio.validateRequest(masterToken, sig, webhookUrl, body)) {
+    logger.warn('Invalid Twilio signature on SMS webhook (master pre-check)');
+    return new Response('Invalid signature', { status: 403 });
+  }
+
   // Rate limit: 60 SMS per minute per sender phone (abuse/loop protection)
   const rl = await checkRateLimit(`twilio-sms:${From}`, 60, 60);
   if (!rl.allowed) {
@@ -59,16 +69,13 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // Verify signature — fail-closed if token is missing
-  const authToken = getValidationToken(tenant);
-  if (!authToken) {
-    logger.error('Missing Twilio auth token, cannot validate signature', { tenantId: tenant.id });
-    return new Response('Configuration error', { status: 500 });
-  }
-  const sig = request.headers.get('x-twilio-signature') ?? '';
-  const url = `${process.env.FRONTEND_URL ?? ''}/api/webhooks/twilio/sms-reply`;
-  if (!twilio.validateRequest(authToken, sig, url, body)) {
-    return new Response('Invalid signature', { status: 403 });
+  // Re-verify with sub-account token if tenant has one
+  if (tenant.twilioSubAccountSid && tenant.twilioAuthToken) {
+    const subToken = getValidationToken(tenant);
+    if (subToken && !twilio.validateRequest(subToken, sig, webhookUrl, body)) {
+      logger.warn('Invalid Twilio signature on SMS webhook (sub-account)', { tenantId: tenant.id });
+      return new Response('Invalid signature', { status: 403 });
+    }
   }
 
   // Respond immediately to Twilio to avoid timeout
