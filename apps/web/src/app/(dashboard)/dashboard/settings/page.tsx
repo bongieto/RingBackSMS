@@ -137,6 +137,8 @@ export default function SettingsPage() {
       label?: string;
     }>,
     ordersAcceptingEnabled: true,
+    customAiInstructions: '' as string | null,
+    followupOpener: '' as string | null,
   });
 
   const [newClosedDate, setNewClosedDate] = useState('');
@@ -190,6 +192,8 @@ export default function SettingsPage() {
         largeOrderExtraMinutes: (config as any).largeOrderExtraMinutes ?? null,
         prepTimeOverrides: ((config as any).prepTimeOverrides as any[] | null) ?? [],
         ordersAcceptingEnabled: (config as any).ordersAcceptingEnabled ?? true,
+        customAiInstructions: (config as any).customAiInstructions ?? '',
+        followupOpener: (config as any).followupOpener ?? '',
       });
     }
   }, [config]);
@@ -276,6 +280,7 @@ export default function SettingsPage() {
         largeOrderExtraMinutes: form.largeOrderExtraMinutes,
         prepTimeOverrides: form.prepTimeOverrides,
         ordersAcceptingEnabled: form.ordersAcceptingEnabled,
+        customAiInstructions: form.customAiInstructions || null,
       } as any);
     },
     onSuccess: () => {
@@ -825,10 +830,71 @@ export default function SettingsPage() {
           {saveMutation.isPending ? 'Saving...' : 'Save Settings'}
         </Button>
 
+        {/* AI & Messaging */}
+        {tenantId && <AiMessagingCard tenantId={tenantId} businessName={(tenant as any)?.name ?? ''} />}
+
         {/* Team & Invitations */}
         {tenantId && <TeamCard tenantId={tenantId} />}
       </div>
     </div>
+  );
+}
+
+// ── AI & Messaging card ─────────────────────────────────────────────────────
+
+function AiMessagingCard({ tenantId, businessName }: { tenantId: string; businessName: string }) {
+  const consentPreview = `Hey! ${businessName || '{business_name}'} here — we just missed your call and we're sorry about that! I can help you via text if you want. Reply YES to go ahead or STOP to opt out. Msg & data rates may apply.`;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Send className="h-5 w-5" />
+          SMS Compliance
+        </CardTitle>
+        <CardDescription>
+          TCPA-compliant consent-first messaging. Every missed call sends a consent request before the AI engages.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div>
+          <Label>Consent request message (sent on every missed call)</Label>
+          <div className="mt-2 p-3 bg-muted rounded-lg text-sm">
+            {consentPreview}
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            {consentPreview.length} / 160 characters · This message is standardized for compliance and cannot be edited.
+          </p>
+        </div>
+
+        <div>
+          <Label>Follow-up opener (sent after customer replies YES)</Label>
+          <div className="mt-2 p-3 bg-muted rounded-lg text-sm">
+            {form.followupOpener || `Thanks! How can ${businessName} help you today?`}
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            This message starts the AI conversation after consent is given.
+          </p>
+        </div>
+
+        <div>
+          <Label>Custom AI instructions</Label>
+          <textarea
+            value={form.customAiInstructions ?? ''}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, customAiInstructions: e.target.value.slice(0, 500) }))
+            }
+            rows={3}
+            maxLength={500}
+            className="w-full mt-1 p-2 border rounded-lg text-sm bg-background"
+            placeholder={`e.g. "We close early on Sundays at 3pm"\n"Always mention our loyalty program after an order"\n"Never quote prices — always say 'prices vary, ask us'"`}
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            {(form.customAiInstructions ?? '').length} / 500 characters · These rules are appended to the AI's system prompt.
+          </p>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

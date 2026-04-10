@@ -1,4 +1,5 @@
 import { chatCompletion, chatClassify } from './aiClient';
+import { buildSystemPrompt } from './promptBuilder';
 import { logger } from '../logger';
 import { prisma } from '../db';
 import { getProfile } from '@/lib/businessTypeProfile';
@@ -70,7 +71,9 @@ export async function generateReply(
   userMessage: string,
   conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>
 ): Promise<string> {
-  const systemPrompt = await buildTenantSystemPrompt(tenantId);
+  // Use the new industry-aware prompt builder (falls back to legacy if
+  // no industry template is configured for this tenant).
+  const systemPrompt = await buildSystemPrompt(tenantId);
 
   // Build a single user message that includes conversation context
   const historyContext = conversationHistory.length > 0

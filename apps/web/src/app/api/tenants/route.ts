@@ -9,6 +9,17 @@ import { isAgencyUser, isSuperAdmin, countUserOrganizations } from '@/lib/server
 import { linkTenantToAgency } from '@/lib/server/services/agencyService';
 import { getProfile } from '@/lib/businessTypeProfile';
 import { FlowType } from '@ringback/shared-types';
+import { buildConsentMessage } from '@/lib/server/services/consentService';
+
+const BUSINESS_TYPE_TO_TEMPLATE: Record<string, string> = {
+  RESTAURANT: 'restaurant',
+  FOOD_TRUCK: 'food_truck',
+  SERVICE: 'salon',
+  CONSULTANT: 'consultant',
+  MEDICAL: 'medical',
+  RETAIL: 'retail',
+  OTHER: 'restaurant', // fallback
+};
 
 export async function POST(request: NextRequest) {
   const { userId, orgId } = await auth();
@@ -43,6 +54,15 @@ export async function POST(request: NextRequest) {
           where: { tenantId: existing.id },
           select: { greeting: true },
         });
+        // Resolve the industry template for this business type
+        const templateKey = BUSINESS_TYPE_TO_TEMPLATE[body.businessType] ?? 'restaurant';
+        const template = await prisma.industryTemplate.findUnique({
+          where: { industryKey: templateKey },
+          select: { consentMessageDefault: true, followupOpenerDefault: true },
+        });
+        const consentMsg = buildConsentMessage(body.name);
+        const followupOpener = template?.followupOpenerDefault ?? `Thanks! How can ${body.name} help you today?`;
+
         await prisma.tenantConfig.upsert({
           where: { tenantId: existing.id },
           update: {
@@ -53,6 +73,9 @@ export async function POST(request: NextRequest) {
             businessHoursEnd: profile.defaultHours.end,
             ownerEmail: body.ownerEmail ?? undefined,
             ownerPhone: body.ownerPhone ?? undefined,
+            industryTemplateKey: templateKey,
+            consentMessage: consentMsg,
+            followupOpener: followupOpener,
             ...(existingConfig?.greeting
               ? {}
               : { greeting: profile.defaultGreeting(body.name) }),
@@ -67,6 +90,9 @@ export async function POST(request: NextRequest) {
             businessHoursEnd: profile.defaultHours.end,
             ownerEmail: body.ownerEmail,
             ownerPhone: body.ownerPhone,
+            industryTemplateKey: templateKey,
+            consentMessage: consentMsg,
+            followupOpener: followupOpener,
           },
         });
         // Enable the default flows for this business type (idempotent).

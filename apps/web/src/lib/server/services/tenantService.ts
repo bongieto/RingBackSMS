@@ -178,6 +178,10 @@ export async function updateTenantConfig(
       label?: string;
     }> | null;
     ordersAcceptingEnabled: boolean;
+    customAiInstructions: string | null;
+    followupOpener: string | null;
+    industryTemplateKey: string | null;
+    consentMessage: string | null;
   }>
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
