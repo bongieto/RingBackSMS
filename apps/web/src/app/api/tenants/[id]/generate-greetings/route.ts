@@ -7,10 +7,6 @@ import { checkRateLimit, rateLimitResponse } from '@/lib/server/rateLimit';
 import { chatCompletion } from '@/lib/server/services/aiClient';
 
 type SlotKey =
-  | 'greeting'
-  | 'greetingAfterHours'
-  | 'greetingRapidRedial'
-  | 'greetingReturning'
   | 'voiceGreeting'
   | 'voiceGreetingAfterHours'
   | 'voiceGreetingRapidRedial'
@@ -25,38 +21,6 @@ interface SlotSpec {
 }
 
 const SLOTS: SlotSpec[] = [
-  {
-    key: 'greeting',
-    channel: 'sms',
-    tier: 'default',
-    maxChars: 140,
-    intent:
-      'First-touch SMS sent right after a missed call. Friendly intro, mention business name, invite the caller to text back what they need. Include a clear next-step call to action.',
-  },
-  {
-    key: 'greetingAfterHours',
-    channel: 'sms',
-    tier: 'afterHours',
-    maxChars: 140,
-    intent:
-      'Sent when the call comes in outside business hours. Acknowledge we are closed, set a clear next-day expectation, invite them to text their request so we can respond first thing.',
-  },
-  {
-    key: 'greetingRapidRedial',
-    channel: 'sms',
-    tier: 'rapidRedial',
-    maxChars: 100,
-    intent:
-      'Sent when the same caller rings 2+ times within 5 minutes. Urgent, reassuring acknowledgment that we see them and the owner has been alerted. Do NOT repeat the standard greeting.',
-  },
-  {
-    key: 'greetingReturning',
-    channel: 'sms',
-    tier: 'returning',
-    maxChars: 140,
-    intent:
-      'Sent when the caller has a prior order or is marked Customer/VIP. Warm welcome-back tone, hint at the option to reorder or pick up where they left off.',
-  },
   {
     key: 'voiceGreeting',
     channel: 'voice',
@@ -140,7 +104,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const authResult = await verifyTenantAccess(params.id);
   if (isNextResponse(authResult)) return authResult;
 
-  // Bulk endpoint = 8 model calls per request. Limit 5/hour per tenant.
+  // Bulk endpoint = 4 model calls per request. Limit 5/hour per tenant.
   const rl = await checkRateLimit(`gen-greetings-bulk:${params.id}`, 5, 3600);
   if (!rl.allowed) return rateLimitResponse(rl);
 

@@ -55,24 +55,21 @@ function buildVoiceTwiml(opts: {
 }
 
 /**
- * Selects the SMS + voice greeting text based on caller tier and after-hours
- * status. Falls back gracefully: rapid-redial → after-hours → returning → default.
+ * Selects the voice greeting text (TTS) based on caller tier and after-hours
+ * status. Falls back gracefully: tier-specific → default.
+ * SMS greetings are no longer used — the TCPA consent message is sent instead.
  */
-function selectGreeting(opts: {
+function selectVoiceGreeting(opts: {
   tier: CallerTier;
   isAfterHours: boolean;
   config: {
-    greeting: string;
-    greetingAfterHours: string | null;
-    greetingRapidRedial: string | null;
-    greetingReturning: string | null;
     voiceGreeting: string | null;
     voiceGreetingAfterHours: string | null;
     voiceGreetingRapidRedial: string | null;
     voiceGreetingReturning: string | null;
   } | null;
-}): { sms: string | null; voice: string | null } {
-  if (!opts.config) return { sms: null, voice: null };
+}): string | null {
+  if (!opts.config) return null;
   const c = opts.config;
   const pick = (...xs: (string | null | undefined)[]): string | null => {
     for (const x of xs) {
@@ -82,31 +79,10 @@ function selectGreeting(opts: {
     return null;
   };
 
-  if (opts.tier === 'RAPID_REDIAL') {
-    return {
-      sms: pick(c.greetingRapidRedial, c.greeting),
-      voice: pick(c.voiceGreetingRapidRedial, c.voiceGreeting),
-    };
-  }
-
-  if (opts.isAfterHours) {
-    return {
-      sms: pick(c.greetingAfterHours, c.greeting),
-      voice: pick(c.voiceGreetingAfterHours, c.voiceGreeting),
-    };
-  }
-
-  if (opts.tier === 'RETURNING') {
-    return {
-      sms: pick(c.greetingReturning, c.greeting),
-      voice: pick(c.voiceGreetingReturning, c.voiceGreeting),
-    };
-  }
-
-  return {
-    sms: pick(c.greeting),
-    voice: pick(c.voiceGreeting),
-  };
+  if (opts.tier === 'RAPID_REDIAL') return pick(c.voiceGreetingRapidRedial, c.voiceGreeting);
+  if (opts.isAfterHours) return pick(c.voiceGreetingAfterHours, c.voiceGreeting);
+  if (opts.tier === 'RETURNING') return pick(c.voiceGreetingReturning, c.voiceGreeting);
+  return pick(c.voiceGreeting);
 }
 
 function escapeXml(s: string): string {
@@ -240,15 +216,15 @@ export async function POST(request: NextRequest) {
       })
     : true;
 
-  const { sms: smsGreeting, voice: voiceGreetingText } = selectGreeting({
+  const voiceGreetingText = selectVoiceGreeting({
     tier,
     isAfterHours: !isOpen,
     config: tenant.config,
   });
 
-  // TCPA consent-first flow: send a consent request instead of the AI
-  // greeting. The actual greeting is sent only after the caller replies YES.
-  if (smsGreeting) {
+  // TCPA consent-first flow: always send a consent request SMS (unless suppressed).
+  // The AI conversation only starts after the caller replies YES.
+  {
     (async () => {
       try {
         // Check suppression list first — if caller opted out, stay silent

@@ -58,10 +58,7 @@ export type BusinessSchedule = z.infer<typeof BusinessScheduleSchema>;
 export const TenantConfigSchema = z.object({
   id: z.string().uuid(),
   tenantId: z.string().uuid(),
-  greeting: z.string(),
-  greetingAfterHours: z.string().nullable().optional(),
-  greetingRapidRedial: z.string().nullable().optional(),
-  greetingReturning: z.string().nullable().optional(),
+  greeting: z.string(), // legacy — kept in DB but no longer sent as SMS (consent message replaced it)
   voiceGreeting: z.string().nullable(),
   voiceGreetingAfterHours: z.string().nullable().optional(),
   voiceGreetingRapidRedial: z.string().nullable().optional(),

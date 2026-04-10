@@ -31,8 +31,6 @@ export const tenantApi = {
   getMe: () => webApi.get('/tenants/me').then((r) => r.data.data),
   updateConfig: (id: string, data: Record<string, unknown>) =>
     webApi.patch(`/tenants/${id}/config`, data).then((r) => r.data.data),
-  generateGreeting: (id: string) =>
-    webApi.post(`/tenants/${id}/generate-greeting`).then((r) => r.data.data),
   generateAllGreetings: (id: string) =>
     webApi.post(`/tenants/${id}/generate-greetings`).then((r) => r.data.data),
   getMenu: (id: string) => webApi.get(`/tenants/${id}/menu`).then((r) => r.data.data),

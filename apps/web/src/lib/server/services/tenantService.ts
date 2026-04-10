@@ -140,10 +140,6 @@ export async function getTenantByClerkOrg(clerkOrgId: string) {
 export async function updateTenantConfig(
   tenantId: string,
   updates: Partial<{
-    greeting: string;
-    greetingAfterHours: string | null;
-    greetingRapidRedial: string | null;
-    greetingReturning: string | null;
     voiceGreeting: string | null;
     voiceGreetingAfterHours: string | null;
     voiceGreetingRapidRedial: string | null;

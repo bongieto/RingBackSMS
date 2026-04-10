@@ -26,7 +26,6 @@ type BusinessSchedule = Record<string, DayScheduleEntry>;
 
 interface TenantConfig {
   id: string;
-  greeting: string;
   timezone: string;
   businessHoursStart: string;
   businessHoursEnd: string;
@@ -106,10 +105,6 @@ export default function SettingsPage() {
   const profile = getProfile(businessType);
 
   const [form, setForm] = useState({
-    greeting: '',
-    greetingAfterHours: '',
-    greetingRapidRedial: '',
-    greetingReturning: '',
     voiceGreeting: '',
     voiceGreetingAfterHours: '',
     voiceGreetingRapidRedial: '',
@@ -157,10 +152,6 @@ export default function SettingsPage() {
           );
 
       setForm({
-        greeting: config.greeting ?? '',
-        greetingAfterHours: (config as any).greetingAfterHours ?? '',
-        greetingRapidRedial: (config as any).greetingRapidRedial ?? '',
-        greetingReturning: (config as any).greetingReturning ?? '',
         voiceGreeting: (config as TenantConfig & { voiceGreeting?: string | null }).voiceGreeting ?? '',
         voiceGreetingAfterHours: (config as any).voiceGreetingAfterHours ?? '',
         voiceGreetingRapidRedial: (config as any).voiceGreetingRapidRedial ?? '',
@@ -200,36 +191,23 @@ export default function SettingsPage() {
     }
   }, [config]);
 
-  const generateGreetingMutation = useMutation({
-    mutationFn: () => tenantApi.generateGreeting(tenantId!),
-    onSuccess: (data: { greeting: string }) => {
-      setForm(f => ({ ...f, greeting: data.greeting }));
-      toast.success('Greeting generated! Review and save when ready.');
-    },
-    onError: () => toast.error('Failed to generate greeting'),
-  });
-
   const generateAllGreetingsMutation = useMutation({
     mutationFn: () => tenantApi.generateAllGreetings(tenantId!),
     onSuccess: (data: { generated: Record<string, string>; filled?: number; total?: number }) => {
       const g = data.generated ?? {};
       setForm(f => ({
         ...f,
-        greeting: g.greeting || f.greeting,
-        greetingAfterHours: g.greetingAfterHours || f.greetingAfterHours,
-        greetingRapidRedial: g.greetingRapidRedial || f.greetingRapidRedial,
-        greetingReturning: g.greetingReturning || f.greetingReturning,
         voiceGreeting: g.voiceGreeting || f.voiceGreeting,
         voiceGreetingAfterHours: g.voiceGreetingAfterHours || f.voiceGreetingAfterHours,
         voiceGreetingRapidRedial: g.voiceGreetingRapidRedial || f.voiceGreetingRapidRedial,
         voiceGreetingReturning: g.voiceGreetingReturning || f.voiceGreetingReturning,
       }));
       const filled = data.filled ?? Object.values(g).filter(Boolean).length;
-      const total = data.total ?? 8;
+      const total = data.total ?? 4;
       if (filled < total) {
         toast.warning(`Generated ${filled} of ${total}. Some slots failed — try again.`);
       } else {
-        toast.success('All greetings generated! Review each one and save when ready.');
+        toast.success('All voice greetings generated! Review each one and save when ready.');
       }
     },
     onError: (err: any) =>
@@ -251,10 +229,6 @@ export default function SettingsPage() {
     mutationFn: () => {
       const flat = deriveFlatFromSchedule(form.businessSchedule);
       return tenantApi.updateConfig(tenantId!, {
-        greeting: form.greeting,
-        greetingAfterHours: form.greetingAfterHours || null,
-        greetingRapidRedial: form.greetingRapidRedial || null,
-        greetingReturning: form.greetingReturning || null,
         voiceGreeting: form.voiceGreeting || null,
         voiceGreetingAfterHours: form.voiceGreetingAfterHours || null,
         voiceGreetingRapidRedial: form.voiceGreetingRapidRedial || null,
@@ -409,19 +383,19 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* Greeting */}
+        {/* Voice Greetings */}
         <Card>
           <CardHeader>
-            <CardTitle>Missed Call Greeting</CardTitle>
-            <CardDescription>This SMS is sent immediately when a call is missed</CardDescription>
+            <CardTitle>Voice Greetings</CardTitle>
+            <CardDescription>What callers hear via text-to-speech before voicemail</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 flex items-start gap-3">
               <Sparkles className="h-4 w-4 mt-0.5 flex-shrink-0" />
               <div className="flex-1">
-                <p className="font-medium">Let AI write all 8 greetings for you</p>
+                <p className="font-medium">Let AI write all 4 voice greetings for you</p>
                 <p className="text-xs text-blue-800 mt-0.5">
-                  Set your brand voice in <span className="font-medium">AI Personality</span> below, then click Generate. AI optimizes for SMS length and tier-specific tone. You can edit anything before saving.
+                  Set your brand voice in <span className="font-medium">AI Personality</span> below, then click Generate. AI optimizes for natural spoken cadence. You can edit anything before saving.
                 </p>
               </div>
               <Button
@@ -435,28 +409,8 @@ export default function SettingsPage() {
                 {generateAllGreetingsMutation.isPending ? 'Generating…' : 'Generate all'}
               </Button>
             </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label>Greeting Message</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => generateGreetingMutation.mutate()}
-                  disabled={generateGreetingMutation.isPending || !tenantId}
-                >
-                  <Sparkles className="h-3.5 w-3.5 mr-1.5" />
-                  {generateGreetingMutation.isPending ? 'Generating...' : 'Auto-Generate'}
-                </Button>
-              </div>
-              <textarea
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[100px] resize-y"
-                {...field('greeting')}
-                placeholder="Hi! Sorry we missed your call..."
-              />
-            </div>
 
-            <div className="space-y-1.5 border-t pt-4">
+            <div className="space-y-1.5">
               <Label>Voice Greeting (what callers hear)</Label>
               <textarea
                 className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[80px] resize-y"
@@ -486,19 +440,6 @@ export default function SettingsPage() {
             </div>
 
             <div className="space-y-1.5 border-t pt-4">
-              <Label>After-hours SMS greeting (optional)</Label>
-              <textarea
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[80px] resize-y"
-                value={form.greetingAfterHours}
-                onChange={(e) => setForm(f => ({ ...f, greetingAfterHours: e.target.value }))}
-                placeholder="Thanks for calling! We're closed right now but we'll get back to you first thing in the morning."
-              />
-              <p className="text-xs text-muted-foreground">
-                Sent when calls arrive outside your business hours. Leave blank to use the regular greeting.
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
               <Label>After-hours voice greeting (optional)</Label>
               <textarea
                 className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[80px] resize-y"
@@ -513,19 +454,6 @@ export default function SettingsPage() {
             </div>
 
             <div className="space-y-1.5 border-t pt-4">
-              <Label>Rapid-redial SMS greeting (optional)</Label>
-              <textarea
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[80px] resize-y"
-                value={form.greetingRapidRedial}
-                onChange={(e) => setForm(f => ({ ...f, greetingRapidRedial: e.target.value }))}
-                placeholder="Hey, we see you called back — we got your first message. Someone will be with you shortly. What do you need help with?"
-              />
-              <p className="text-xs text-muted-foreground">
-                Sent when the same caller rings you 2+ times within 5 minutes. Acknowledges them instead of repeating the standard greeting. Leave blank to use the regular greeting.
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
               <Label>Rapid-redial voice greeting (optional)</Label>
               <textarea
                 className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[60px] resize-y"
@@ -540,19 +468,6 @@ export default function SettingsPage() {
             </div>
 
             <div className="space-y-1.5 border-t pt-4">
-              <Label>Returning-customer SMS greeting (optional)</Label>
-              <textarea
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[80px] resize-y"
-                value={form.greetingReturning}
-                onChange={(e) => setForm(f => ({ ...f, greetingReturning: e.target.value }))}
-                placeholder="Welcome back! Want to reorder your usual, or try something new? Reply ORDER to get started."
-              />
-              <p className="text-xs text-muted-foreground">
-                Sent when the caller has a prior order or is marked Customer/VIP. Leave blank to use the regular greeting.
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
               <Label>Returning-customer voice greeting (optional)</Label>
               <textarea
                 className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[60px] resize-y"

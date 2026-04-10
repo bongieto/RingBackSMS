@@ -57,7 +57,7 @@ export default function OnboardingPage() {
     businessType: '',
     ownerEmail: user?.emailAddresses[0]?.emailAddress ?? '',
     ownerPhone: '',
-    greeting: '',
+    voiceGreeting: '',
     timezone: 'America/Chicago',
   });
 
@@ -92,9 +92,9 @@ export default function OnboardingPage() {
         clerkOrgId: organization?.id,
       }).then(r => r.data.data),
     onSuccess: async (tenant) => {
-      // Update greeting if customized
-      if (form.greeting) {
-        await webApi.patch(`/tenants/${tenant.id}/config`, { greeting: form.greeting });
+      // Update voice greeting if customized
+      if (form.voiceGreeting) {
+        await webApi.patch(`/tenants/${tenant.id}/config`, { voiceGreeting: form.voiceGreeting });
       }
       toast.success('Account created! Welcome to RingBackSMS 🎉');
       setStep(3);
@@ -103,7 +103,6 @@ export default function OnboardingPage() {
   });
 
   const profile = getProfile(form.businessType as BusinessType);
-  const defaultGreeting = form.name ? profile.defaultGreeting(form.name) : '';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center p-4">
@@ -231,28 +230,32 @@ export default function OnboardingPage() {
           </Card>
         )}
 
-        {/* Step 2: Greeting */}
+        {/* Step 2: Voice Greeting */}
         {step === 2 && (
           <Card>
             <CardHeader>
-              <CardTitle>Set your missed-call greeting</CardTitle>
-              <CardDescription>This SMS is sent automatically when a call is missed</CardDescription>
+              <CardTitle>Set your voice greeting</CardTitle>
+              <CardDescription>This is what callers hear via text-to-speech before voicemail</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="p-3 bg-muted rounded-lg text-sm text-muted-foreground">
-                <p className="font-medium text-foreground mb-1">Preview</p>
-                <p>{form.greeting || defaultGreeting || 'Your greeting will appear here...'}</p>
+              {/* Consent SMS preview (read-only) */}
+              <div className="p-3 bg-green-50 border border-green-100 rounded-lg text-sm">
+                <p className="font-medium text-green-800 mb-1">📱 Your first SMS to callers (automatic)</p>
+                <p className="text-green-700 text-xs">
+                  {`Hey! ${form.name || '{business name}'} here — we just missed your call and we're sorry about that! I can help you via text if you want. Reply YES to go ahead or STOP to opt out. Msg & data rates may apply.`}
+                </p>
+                <p className="text-[10px] text-green-600 mt-1">This message is standardized for TCPA compliance and cannot be edited.</p>
               </div>
 
               <div className="space-y-1.5">
-                <Label>Custom Greeting (optional)</Label>
+                <Label>Voice Greeting (optional)</Label>
                 <textarea
                   className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[100px] resize-y"
-                  value={form.greeting}
-                  onChange={e => setForm(f => ({ ...f, greeting: e.target.value }))}
-                  placeholder={defaultGreeting}
+                  value={form.voiceGreeting}
+                  onChange={e => setForm(f => ({ ...f, voiceGreeting: e.target.value }))}
+                  placeholder={`Hi, you've reached ${form.name || 'us'}! We'll text you back in just a moment, or feel free to leave a voicemail and we'll get right back to you.`}
                 />
-                <p className="text-xs text-muted-foreground">Leave blank to use the suggested greeting above</p>
+                <p className="text-xs text-muted-foreground">Spoken aloud via text-to-speech. Leave blank for a default greeting.</p>
               </div>
 
               <div className="flex gap-3">
