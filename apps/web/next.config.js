@@ -43,6 +43,16 @@ const nextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: 'ring-back-sms.vercel.app' }],
+        destination: 'https://ringbacksms.com/:path*',
+        permanent: true,
+      },
+    ];
+  },
 };
 
 // Wrap with Sentry for error monitoring (no-op if SENTRY_DSN is not set)
