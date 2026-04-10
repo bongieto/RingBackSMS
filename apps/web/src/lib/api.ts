@@ -52,21 +52,21 @@ export const tenantApi = {
 
 export const orderApi = {
   list: (tenantId: string, params?: Record<string, unknown>) =>
-    api.get('/orders', { params: { tenantId, ...params } }).then((r) => r.data),
+    webApi.get('/orders', { params: { tenantId, ...params } }).then((r) => r.data),
   get: (id: string, tenantId: string) =>
-    api.get(`/orders/${id}`, { params: { tenantId } }).then((r) => r.data.data),
+    webApi.get(`/orders/${id}`, { params: { tenantId } }).then((r) => r.data.data),
   updateStatus: (id: string, status: string, tenantId: string) =>
-    api.patch(`/orders/${id}/status`, { status, tenantId }).then((r) => r.data.data),
+    webApi.patch(`/orders/${id}/status`, { status, tenantId }).then((r) => r.data.data),
 };
 
 export const conversationApi = {
   list: (tenantId: string, params?: Record<string, unknown>) =>
-    api.get('/conversations', { params: { tenantId, ...params } }).then((r) => r.data),
-  get: (id: string) => api.get(`/conversations/${id}`).then((r) => r.data.data),
+    webApi.get('/conversations', { params: { tenantId, ...params } }).then((r) => r.data),
+  get: (id: string) => webApi.get(`/conversations/${id}`).then((r) => r.data.data),
   reply: (id: string, message: string) =>
-    api.post(`/conversations/${id}/reply`, { message }).then((r) => r.data.data),
+    webApi.post(`/conversations/${id}/reply`, { message }).then((r) => r.data.data),
   setHandoff: (id: string, status: 'AI' | 'HUMAN') =>
-    api.post(`/conversations/${id}/handoff`, { status }).then((r) => r.data.data),
+    webApi.post(`/conversations/${id}/handoff`, { status }).then((r) => r.data.data),
 };
 
 export const analyticsApi = {
@@ -106,38 +106,38 @@ export const phoneApi = {
 
 export const meetingApi = {
   list: (tenantId: string, params?: Record<string, unknown>) =>
-    api.get('/meetings', { params: { tenantId, ...params } }).then((r) => r.data),
-  get: (id: string) => api.get(`/meetings/${id}`).then((r) => r.data.data),
+    webApi.get('/meetings', { params: { tenantId, ...params } }).then((r) => r.data),
+  get: (id: string) => webApi.get(`/meetings/${id}`).then((r) => r.data.data),
   update: (id: string, data: Record<string, unknown>) =>
-    api.patch(`/meetings/${id}`, data).then((r) => r.data.data),
+    webApi.patch(`/meetings/${id}`, data).then((r) => r.data.data),
   cancel: (id: string) =>
-    api.delete(`/meetings/${id}`).then((r) => r.data.data),
+    webApi.delete(`/meetings/${id}`).then((r) => r.data.data),
   create: (data: Record<string, unknown>) =>
-    api.post('/meetings', data).then((r) => r.data.data),
+    webApi.post('/meetings', data).then((r) => r.data.data),
 };
 
 export const contactApi = {
   list: (tenantId: string, params?: Record<string, unknown>) =>
-    api.get('/contacts', { params: { tenantId, ...params } }).then((r) => r.data),
-  get: (id: string) => api.get(`/contacts/${id}`).then((r) => r.data.data),
+    webApi.get('/contacts', { params: { tenantId, ...params } }).then((r) => r.data),
+  get: (id: string) => webApi.get(`/contacts/${id}`).then((r) => r.data.data),
   create: (data: Record<string, unknown>) =>
-    api.post('/contacts', data).then((r) => r.data.data),
+    webApi.post('/contacts', data).then((r) => r.data.data),
   update: (id: string, data: Record<string, unknown>) =>
-    api.patch(`/contacts/${id}`, data).then((r) => r.data.data),
+    webApi.patch(`/contacts/${id}`, data).then((r) => r.data.data),
   delete: (id: string) =>
-    api.delete(`/contacts/${id}`).then((r) => r.data),
+    webApi.delete(`/contacts/${id}`).then((r) => r.data),
   getActivity: (id: string) =>
-    api.get(`/contacts/${id}/activity`).then((r) => r.data.data),
+    webApi.get(`/contacts/${id}/activity`).then((r) => r.data.data),
   getNotes: (id: string) =>
-    api.get(`/contacts/${id}/notes`).then((r) => r.data.data),
+    webApi.get(`/contacts/${id}/notes`).then((r) => r.data.data),
   addNote: (id: string, body: string) =>
-    api.post(`/contacts/${id}/notes`, { body }).then((r) => r.data.data),
+    webApi.post(`/contacts/${id}/notes`, { body }).then((r) => r.data.data),
   deleteNote: (id: string, noteId: string) =>
-    api.delete(`/contacts/${id}/notes/${noteId}`).then((r) => r.data),
+    webApi.delete(`/contacts/${id}/notes/${noteId}`).then((r) => r.data),
   sendSms: (id: string, message: string) =>
-    api.post(`/contacts/${id}/sms`, { message }).then((r) => r.data.data),
+    webApi.post(`/contacts/${id}/sms`, { message }).then((r) => r.data.data),
   export: (tenantId: string) =>
-    api.get('/contacts/export', { params: { tenantId }, responseType: 'blob' as const }).then((r) => r.data),
+    webApi.get('/contacts/export', { params: { tenantId }, responseType: 'blob' as const }).then((r) => r.data),
   bulk: (tenantId: string, contactIds: string[], action: 'tag' | 'status' | 'delete', value?: string) =>
     webApi.post('/contacts/bulk', { tenantId, contactIds, action, value }).then((r) => r.data.data),
 };
