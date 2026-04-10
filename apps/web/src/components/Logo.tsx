@@ -39,10 +39,10 @@ export function Logo({
         style={variant === 'dark' ? { filter: 'brightness(1.15)' } : undefined}
         unoptimized
       />
-      <span className="flex flex-col leading-tight">
+      <span className="flex flex-col leading-tight w-fit">
         <span>RingBack<span className={accent}>SMS</span></span>
-        <span className={cn(sz.sub, 'font-semibold tracking-[0.18em] uppercase pl-[1px]', variant === 'dark' ? 'text-slate-400' : 'text-slate-500')}>
-          Missed Call Recovery System
+        <span className={cn(sz.sub, 'font-semibold pl-[1px] whitespace-nowrap w-full text-justify', variant === 'dark' ? 'text-slate-400' : 'text-slate-500')} style={{ textAlignLast: 'justify' }}>
+          MISSED CALL RECOVERY SYSTEM
         </span>
       </span>
     </span>
