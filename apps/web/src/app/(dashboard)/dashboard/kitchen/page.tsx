@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ChefHat } from 'lucide-react';
 import { useTenantId } from '@/components/providers/TenantProvider';
 import { Header } from '@/components/layout/Header';
-import { orderApi } from '@/lib/api';
+import { webApi } from '@/lib/api';
 import { OrderCard } from './_components/OrderCard';
 import { KitchenHeader } from './_components/KitchenHeader';
 
@@ -61,12 +61,12 @@ export default function KitchenPage() {
     queryFn: async () => {
       const results = await Promise.all(
         ACTIVE_STATUSES.map(status =>
-          orderApi.list(tenantId!, { status, pageSize: 50 })
-            .then((r: { data: Order[] }) => r.data ?? [])
+          webApi.get('/orders', { params: { tenantId, status, pageSize: 50 } })
+            .then(r => (r.data.data ?? []) as Order[])
             .catch(() => [] as Order[])
         )
       );
-      return results.flat() as Order[];
+      return results.flat();
     },
     enabled: !!tenantId,
     refetchInterval: 10000,

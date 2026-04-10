@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { Clock, Phone, X, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { orderApi } from '@/lib/api';
+import { webApi } from '@/lib/api';
 
 interface OrderItem {
   name: string;
@@ -74,7 +74,8 @@ export function OrderCard({ order, tenantId }: { order: Order; tenantId: string 
   }, [order.createdAt, order.estimatedReadyTime]);
 
   const statusMutation = useMutation({
-    mutationFn: (newStatus: string) => orderApi.updateStatus(order.id, newStatus, tenantId),
+    mutationFn: (newStatus: string) =>
+      webApi.patch(`/orders/${order.id}/status`, { status: newStatus, tenantId }).then(r => r.data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['kitchen-orders'] });
     },
