@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useOrganization, useUser } from '@clerk/nextjs';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Building2, Phone, MessageSquare, Check, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -17,14 +17,21 @@ import { getProfile } from '@/lib/businessTypeProfile';
 import type { BusinessType } from '@ringback/shared-types';
 
 const BUSINESS_TYPES = [
-  { value: 'RESTAURANT', label: 'Restaurant / Food', emoji: '🍜' },
-  { value: 'FOOD_TRUCK', label: 'Food Truck', emoji: '🚚' },
-  { value: 'SERVICE', label: 'Service Business', emoji: '🔧' },
-  { value: 'CONSULTANT', label: 'Consultant', emoji: '💼' },
-  { value: 'MEDICAL', label: 'Medical / Health', emoji: '🏥' },
-  { value: 'RETAIL', label: 'Retail', emoji: '🛍️' },
-  { value: 'OTHER', label: 'Other', emoji: '✨' },
+  { value: 'RESTAURANT', label: 'Restaurant / Food', emoji: '🍜', templateKey: 'restaurant' },
+  { value: 'FOOD_TRUCK', label: 'Food Truck', emoji: '🚚', templateKey: 'food_truck' },
+  { value: 'SERVICE', label: 'Service Business', emoji: '🔧', templateKey: 'salon' },
+  { value: 'CONSULTANT', label: 'Consultant', emoji: '💼', templateKey: 'consultant' },
+  { value: 'MEDICAL', label: 'Medical / Health', emoji: '🏥', templateKey: 'medical' },
+  { value: 'RETAIL', label: 'Retail', emoji: '🛍️', templateKey: 'retail' },
+  { value: 'OTHER', label: 'Other', emoji: '✨', templateKey: null },
 ];
+
+interface IndustryTemplate {
+  industryKey: string;
+  industryLabel: string;
+  capabilityList: string[];
+  followupOpenerDefault: string;
+}
 
 const STEPS = [
   { id: 1, title: 'Business Info', icon: Building2 },
@@ -53,6 +60,18 @@ export default function OnboardingPage() {
     greeting: '',
     timezone: 'America/Chicago',
   });
+
+  // Fetch industry templates for capability pills on business type cards
+  const { data: templates } = useQuery<IndustryTemplate[]>({
+    queryKey: ['industry-templates'],
+    queryFn: () => webApi.get('/industry-templates').then(r => r.data.data),
+    staleTime: Infinity,
+  });
+
+  // Build a lookup map: templateKey → template
+  const templateMap = new Map(
+    (templates ?? []).map(t => [t.industryKey, t])
+  );
 
   // Preselect business type from ?industry= query param (set by industry landing pages).
   useEffect(() => {
@@ -133,22 +152,52 @@ export default function OnboardingPage() {
               <div className="space-y-1.5">
                 <Label>Business Type *</Label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {BUSINESS_TYPES.map(bt => (
-                    <button
-                      key={bt.value}
-                      onClick={() => setForm(f => ({ ...f, businessType: bt.value }))}
-                      className={cn(
-                        'flex flex-col items-center gap-1 p-3 rounded-lg border-2 text-sm transition-colors',
-                        form.businessType === bt.value
-                          ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-border hover:border-blue-200 hover:bg-muted/50'
-                      )}
-                    >
-                      <span className="text-xl">{bt.emoji}</span>
-                      <span className="font-medium text-xs text-center">{bt.label}</span>
-                    </button>
-                  ))}
+                  {BUSINESS_TYPES.map(bt => {
+                    const tpl = bt.templateKey ? templateMap.get(bt.templateKey) : null;
+                    const caps = tpl?.capabilityList?.slice(0, 3) ?? [];
+                    const isSelected = form.businessType === bt.value;
+                    return (
+                      <button
+                        key={bt.value}
+                        onClick={() => setForm(f => ({ ...f, businessType: bt.value }))}
+                        className={cn(
+                          'flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 text-sm transition-colors text-left',
+                          isSelected
+                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                            : 'border-border hover:border-blue-200 hover:bg-muted/50'
+                        )}
+                      >
+                        <span className="text-2xl">{bt.emoji}</span>
+                        <span className="font-medium text-xs text-center">{bt.label}</span>
+                        {caps.length > 0 && (
+                          <div className="flex flex-wrap justify-center gap-1 mt-0.5">
+                            {caps.map(c => (
+                              <span key={c} className={cn(
+                                'text-[10px] px-1.5 py-0.5 rounded-full',
+                                isSelected ? 'bg-blue-100 text-blue-600' : 'bg-muted text-muted-foreground'
+                              )}>{c}</span>
+                            ))}
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
+                {/* Follow-up opener preview when a type with a template is selected */}
+                {form.businessType && (() => {
+                  const selectedBt = BUSINESS_TYPES.find(b => b.value === form.businessType);
+                  const tpl = selectedBt?.templateKey ? templateMap.get(selectedBt.templateKey) : null;
+                  if (!tpl) return null;
+                  const opener = form.name
+                    ? tpl.followupOpenerDefault.replace(/\{business_name\}/gi, form.name)
+                    : tpl.followupOpenerDefault;
+                  return (
+                    <div className="mt-2 p-2.5 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-700">
+                      <span className="font-medium">AI follow-up opener:</span>{' '}
+                      <span className="italic">&ldquo;{opener}&rdquo;</span>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

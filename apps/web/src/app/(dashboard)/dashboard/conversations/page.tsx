@@ -9,7 +9,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { conversationApi } from '@/lib/api';
+import { conversationApi, webApi } from '@/lib/api';
 import { formatRelativeTime, maskPhone } from '@/lib/utils';
 import Link from 'next/link';
 
@@ -35,6 +35,17 @@ export default function ConversationsPage() {
   const conversations = data?.data ?? [];
   const total = data?.pagination?.total ?? 0;
   const totalPages = data?.pagination?.totalPages ?? 1;
+
+  // Batch-fetch consent statuses for all visible conversations
+  const { data: consentStatuses } = useQuery<Record<string, string>>({
+    queryKey: ['consent-statuses', tenantId],
+    queryFn: () =>
+      webApi
+        .get(`/tenants/${tenantId}/consent-status`)
+        .then((r) => r.data.data as Record<string, string>),
+    enabled: !!tenantId,
+    staleTime: 30_000,
+  });
 
   const filtered = conversations.filter((c: { callerPhone: string }) =>
     c.callerPhone.includes(search)
@@ -98,6 +109,13 @@ export default function ConversationsPage() {
                         {conv.isActive && (
                           <span className="h-2 w-2 rounded-full bg-green-500 inline-block" />
                         )}
+                        {(() => {
+                          const cs = consentStatuses?.[conv.callerPhone];
+                          if (cs === 'PENDING') return <Badge variant="outline" className="text-xs text-yellow-600">⏳ Pending</Badge>;
+                          if (cs === 'CONSENTED') return <Badge variant="outline" className="text-xs text-green-600">✓ Consented</Badge>;
+                          if (cs === 'DECLINED') return <Badge variant="outline" className="text-xs text-red-600">✗ Declined</Badge>;
+                          return null;
+                        })()}
                       </div>
                       <p className="text-xs text-muted-foreground truncate">
                         {lastMsg?.content ?? 'No messages'}

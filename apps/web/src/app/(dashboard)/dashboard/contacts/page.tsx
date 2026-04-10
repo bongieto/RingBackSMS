@@ -39,6 +39,7 @@ interface Contact {
   updatedAt: string;
   conversationCount?: number;
   orderCount?: number;
+  suppressed?: boolean;
 }
 
 interface ContactNote {
@@ -390,6 +391,9 @@ export default function ContactsPage() {
                             <span className={cn('text-xs font-medium px-2 py-0.5 rounded-full border', statusCfg.color)}>
                               {statusCfg.label}
                             </span>
+                            {c.suppressed && (
+                              <span className="ml-1.5 text-xs text-red-500" title="Opted out — suppressed from SMS">⛔</span>
+                            )}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex gap-1 flex-wrap">

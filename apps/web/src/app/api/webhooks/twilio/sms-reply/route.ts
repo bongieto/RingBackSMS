@@ -14,6 +14,7 @@ import {
   approveConsent,
   suppressCaller,
 } from '@/lib/server/services/consentService';
+import { checkEscalation } from '@/lib/server/services/escalationService';
 
 export async function POST(request: NextRequest) {
   const text = await request.text();
@@ -137,9 +138,26 @@ export async function POST(request: NextRequest) {
     return twimlResponse;
   }
 
-  // 3. No pending consent → route to AI as normal (previously consented or organic)
-  processInboundSms({ tenantId: tenant.id, callerPhone: From, inboundMessage: Body, messageSid: MessageSid })
-    .catch((err) => logger.error('Async SMS processing error', { err, tenantId: tenant.id, messageSid: MessageSid }));
+  // 3. No pending consent → check escalation keywords → then route to AI
+  (async () => {
+    try {
+      // Check escalation keywords before AI processes the message.
+      // If triggered, the escalation service sends a holding message
+      // and notifies the tenant — we skip the AI flow entirely.
+      const escalated = await checkEscalation(tenant.id, From, Body);
+      if (escalated) return;
+
+      // Route to AI flow engine
+      await processInboundSms({
+        tenantId: tenant.id,
+        callerPhone: From,
+        inboundMessage: Body,
+        messageSid: MessageSid,
+      });
+    } catch (err) {
+      logger.error('Async SMS processing error', { err, tenantId: tenant.id, messageSid: MessageSid });
+    }
+  })();
 
   return twimlResponse;
 }

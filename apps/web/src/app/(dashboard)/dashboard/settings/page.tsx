@@ -43,6 +43,8 @@ interface TenantConfig {
   requirePayment?: boolean;
   dailyDigestEnabled?: boolean;
   dailyDigestHour?: number;
+  followupOpener?: string | null;
+  customAiInstructions?: string | null;
 }
 
 const TIMEZONES = [
@@ -831,7 +833,7 @@ export default function SettingsPage() {
         </Button>
 
         {/* AI & Messaging */}
-        {tenantId && <AiMessagingCard tenantId={tenantId} businessName={(tenant as any)?.name ?? ''} />}
+        {tenantId && <AiMessagingCard tenantId={tenantId} businessName={(tenant as any)?.name ?? ''} followupOpener={config?.followupOpener ?? null} initialCustomAiInstructions={config?.customAiInstructions ?? null} />}
 
         {/* Team & Invitations */}
         {tenantId && <TeamCard tenantId={tenantId} />}
@@ -842,8 +844,27 @@ export default function SettingsPage() {
 
 // ── AI & Messaging card ─────────────────────────────────────────────────────
 
-function AiMessagingCard({ tenantId, businessName }: { tenantId: string; businessName: string }) {
+function AiMessagingCard({ tenantId, businessName, followupOpener, initialCustomAiInstructions }: { tenantId: string; businessName: string; followupOpener: string | null; initialCustomAiInstructions: string | null }) {
   const consentPreview = `Hey! ${businessName || '{business_name}'} here — we just missed your call and we're sorry about that! I can help you via text if you want. Reply YES to go ahead or STOP to opt out. Msg & data rates may apply.`;
+
+  const [customAiInstructions, setCustomAiInstructions] = useState(initialCustomAiInstructions ?? '');
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (initialCustomAiInstructions != null) {
+      setCustomAiInstructions(initialCustomAiInstructions);
+    }
+  }, [initialCustomAiInstructions]);
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      tenantApi.updateConfig(tenantId, { customAiInstructions }),
+    onSuccess: () => {
+      toast.success('AI instructions saved');
+      setDirty(false);
+    },
+    onError: () => toast.error('Failed to save'),
+  });
 
   return (
     <Card>
@@ -870,7 +891,7 @@ function AiMessagingCard({ tenantId, businessName }: { tenantId: string; busines
         <div>
           <Label>Follow-up opener (sent after customer replies YES)</Label>
           <div className="mt-2 p-3 bg-muted rounded-lg text-sm">
-            {form.followupOpener || `Thanks! How can ${businessName} help you today?`}
+            {followupOpener || `Thanks! How can ${businessName} help you today?`}
           </div>
           <p className="text-xs text-muted-foreground mt-1">
             This message starts the AI conversation after consent is given.
@@ -880,18 +901,29 @@ function AiMessagingCard({ tenantId, businessName }: { tenantId: string; busines
         <div>
           <Label>Custom AI instructions</Label>
           <textarea
-            value={form.customAiInstructions ?? ''}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, customAiInstructions: e.target.value.slice(0, 500) }))
-            }
+            value={customAiInstructions}
+            onChange={(e) => {
+              setCustomAiInstructions(e.target.value.slice(0, 500));
+              setDirty(true);
+            }}
             rows={3}
             maxLength={500}
             className="w-full mt-1 p-2 border rounded-lg text-sm bg-background"
             placeholder={`e.g. "We close early on Sundays at 3pm"\n"Always mention our loyalty program after an order"\n"Never quote prices — always say 'prices vary, ask us'"`}
           />
           <p className="text-xs text-muted-foreground mt-1">
-            {(form.customAiInstructions ?? '').length} / 500 characters · These rules are appended to the AI's system prompt.
+            {customAiInstructions.length} / 500 characters · These rules are appended to the AI&apos;s system prompt.
           </p>
+          {dirty && (
+            <Button
+              size="sm"
+              className="mt-2"
+              onClick={() => saveMutation.mutate()}
+              disabled={saveMutation.isPending}
+            >
+              {saveMutation.isPending ? 'Saving…' : 'Save Instructions'}
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>
