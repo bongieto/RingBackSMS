@@ -29,7 +29,7 @@ interface Order {
   createdAt: string;
 }
 
-const ACTIVE_STATUSES = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY'];
+const ACTIVE_STATUSES = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'COMPLETED'];
 
 export default function KitchenPage() {
   const { tenantId } = useTenantId();
@@ -95,17 +95,15 @@ export default function KitchenPage() {
   const newOrders = orders.filter(o => o.status === 'PENDING' || o.status === 'CONFIRMED');
   const cookingOrders = orders.filter(o => o.status === 'PREPARING');
   const readyOrders = orders.filter(o => o.status === 'READY');
+  const doneOrders = orders.filter(o => o.status === 'COMPLETED');
 
   // Stats
   const overdueCount = orders.filter(o =>
     o.estimatedReadyTime && new Date(o.estimatedReadyTime).getTime() < Date.now() && o.status === 'PREPARING'
   ).length;
 
-  const completedToday = 0; // Would need a separate query for completed today count
-  const avgPrepMins = null; // Would need historical data
-
   const stats = {
-    totalToday: orders.length + completedToday,
+    totalToday: orders.length,
     cooking: cookingOrders.length,
     overdue: overdueCount,
     avgPrepMins,
@@ -137,7 +135,7 @@ export default function KitchenPage() {
           </p>
         </div>
       ) : (
-        <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-4 -mx-4 px-4 lg:mx-0 lg:px-0 lg:grid lg:grid-cols-3 lg:overflow-visible">
+        <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-4 -mx-4 px-4 lg:mx-0 lg:px-0 lg:grid lg:grid-cols-4 lg:overflow-visible">
           {/* New Orders */}
           <div className="min-w-[85vw] sm:min-w-[60vw] lg:min-w-0 snap-center">
             <div className="flex items-center gap-2 mb-3 px-1">
@@ -193,6 +191,26 @@ export default function KitchenPage() {
               {readyOrders.length === 0 && (
                 <div className="text-center py-8 text-sm text-muted-foreground border-2 border-dashed rounded-xl">
                   No orders ready
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Done */}
+          <div className="min-w-[85vw] sm:min-w-[60vw] lg:min-w-0 snap-center">
+            <div className="flex items-center gap-2 mb-3 px-1">
+              <div className="h-3 w-3 rounded-full bg-slate-400" />
+              <h2 className="font-bold text-sm uppercase tracking-wide text-slate-700">
+                Done <span className="text-slate-500">({doneOrders.length})</span>
+              </h2>
+            </div>
+            <div className="space-y-3">
+              {doneOrders.map(order => (
+                <OrderCard key={order.id} order={order} tenantId={tenantId} />
+              ))}
+              {doneOrders.length === 0 && (
+                <div className="text-center py-8 text-sm text-muted-foreground border-2 border-dashed rounded-xl">
+                  No completed orders
                 </div>
               )}
             </div>

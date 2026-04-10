@@ -83,7 +83,7 @@ export function OrderCard({ order, tenantId }: { order: Order; tenantId: string 
       queryClient.setQueryData<Order[]>(['kitchen-orders', tenantId], (old) =>
         (old ?? []).map(o =>
           o.id === order.id ? { ...o, status: newStatus } : o
-        ).filter(o => !['COMPLETED', 'CANCELLED'].includes(o.status))
+        ).filter(o => o.status !== 'CANCELLED')
       );
       return { previous };
     },
