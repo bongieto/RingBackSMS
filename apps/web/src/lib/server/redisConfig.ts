@@ -12,7 +12,9 @@ import type { RedisOptions } from 'ioredis';
 export function buildRedisOptions(urlStr?: string): RedisOptions {
   const url = urlStr ?? process.env.REDIS_URL ?? 'redis://localhost:6379';
   try {
-    const u = new URL(url);
+    // Strip whitespace that sometimes sneaks in when pasting into Vercel
+    const cleaned = url.trim();
+    const u = new URL(cleaned);
     const opts: RedisOptions = {
       host: u.hostname,
       port: u.port ? Number(u.port) : 6379,
@@ -33,5 +35,35 @@ export function buildRedisOptions(urlStr?: string): RedisOptions {
       maxRetriesPerRequest: 3,
       lazyConnect: true,
     };
+  }
+}
+
+/**
+ * Debug-only helper that returns metadata about the Redis URL without
+ * leaking the password. Used by the admin health check.
+ */
+export function describeRedisUrl(): {
+  set: boolean;
+  parsed: boolean;
+  host?: string;
+  port?: number;
+  protocol?: string;
+  hasPassword?: boolean;
+  parseError?: string;
+} {
+  const raw = process.env.REDIS_URL;
+  if (!raw) return { set: false, parsed: false };
+  try {
+    const u = new URL(raw.trim());
+    return {
+      set: true,
+      parsed: true,
+      host: u.hostname,
+      port: u.port ? Number(u.port) : 6379,
+      protocol: u.protocol,
+      hasPassword: !!u.password,
+    };
+  } catch (err) {
+    return { set: true, parsed: false, parseError: (err as Error).message };
   }
 }

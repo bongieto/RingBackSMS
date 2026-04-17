@@ -4,7 +4,7 @@ import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/server/db';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { Redis } from 'ioredis';
-import { buildRedisOptions } from '@/lib/server/redisConfig';
+import { buildRedisOptions, describeRedisUrl } from '@/lib/server/redisConfig';
 
 // Extend timeout to 30s for this route (Vercel Pro supports up to 300s)
 export const maxDuration = 30;
@@ -80,12 +80,18 @@ export async function GET(_request: NextRequest) {
     // Redis ping — short-lived client to avoid holding a connection
     (async () => {
       const start = Date.now();
-      if (!process.env.REDIS_URL) {
-        return { ok: false, latencyMs: 0, error: 'REDIS_URL not set', unconfigured: true };
+      const urlInfo = describeRedisUrl();
+      if (!urlInfo.set) {
+        return { ok: false, latencyMs: 0, error: 'REDIS_URL env var not set', unconfigured: true };
       }
-      // Connect eagerly (override lazyConnect) and wait for the 'ready'
-      // event before sending PING. The offline queue stays on so the
-      // command can queue briefly during handshake.
+      if (!urlInfo.parsed) {
+        return {
+          ok: false,
+          latencyMs: 0,
+          error: `REDIS_URL is malformed (cannot be parsed as URL): ${urlInfo.parseError ?? 'unknown'}`,
+        };
+      }
+      // Connect eagerly (override lazyConnect) and wait for 'ready'
       const probe = new Redis({
         ...buildRedisOptions(),
         lazyConnect: false,
@@ -101,7 +107,14 @@ export async function GET(_request: NextRequest) {
         const reply = await probe.ping();
         return { ok: reply === 'PONG', latencyMs: Date.now() - start };
       } catch (e: any) {
-        return { ok: false, latencyMs: Date.now() - start, error: e.message };
+        // Include URL metadata so admin can see if the URL is pointing
+        // at the right host (without leaking the password).
+        const hostInfo = `${urlInfo.protocol}//${urlInfo.host}:${urlInfo.port} (password: ${urlInfo.hasPassword ? 'yes' : 'no'})`;
+        return {
+          ok: false,
+          latencyMs: Date.now() - start,
+          error: `${e.message} [REDIS_URL → ${hostInfo}]`,
+        };
       } finally {
         probe.disconnect();
       }
