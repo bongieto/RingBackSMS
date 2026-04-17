@@ -140,6 +140,53 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       };
     }
 
+    // If the customer's very first message already looks like an order
+    // (e.g. "2 lumpia, 1 pancit"), skip the greeting and jump straight to
+    // item parsing. Also covers the case where Redis state was lost
+    // mid-conversation and the next message comes in with no state.
+    if (upperMsg !== 'ORDER' && upperMsg !== 'ORDERING' && upperMsg !== 'BUY') {
+      const directItems = parseOrderItems(inboundMessage, menuItems);
+      if (directItems.length > 0) {
+        const draftItems = directItems.map((item) => ({
+          menuItemId: item.menuItemId,
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price,
+          selectedModifiers: [] as Array<{ groupName: string; modifierName: string; priceAdjust: number }>,
+        }));
+
+        // Check for required modifier groups before confirming
+        const customization = findNextCustomization(draftItems, menuItems, 0, 0);
+        if (customization) {
+          const { itemIndex, groupIndex, group, itemName } = customization;
+          return {
+            nextState: {
+              ...nextState,
+              flowStep: 'ITEM_CUSTOMIZATION',
+              orderDraft: { items: draftItems },
+              pendingCustomization: { itemIndex, groupIndex },
+            },
+            smsReply: buildCustomizationPrompt(itemName, group),
+            sideEffects: [],
+            flowType: FlowType.ORDER,
+          };
+        }
+
+        const total = directItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const orderSummary = buildOrderSummary(draftItems);
+        return {
+          nextState: {
+            ...nextState,
+            flowStep: 'ORDER_CONFIRM',
+            orderDraft: { items: draftItems },
+          },
+          smsReply: `Your order:\n${orderSummary}\nTotal: $${total.toFixed(2)}\n\nReply YES to confirm or NO to start over.`,
+          sideEffects: [],
+          flowType: FlowType.ORDER,
+        };
+      }
+    }
+
     // Returning customer with a reusable last order → offer SAME shortcut
     if (hasReorder) {
       const summary = buildReorderSummary(reorderItems);

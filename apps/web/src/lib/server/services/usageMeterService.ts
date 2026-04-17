@@ -6,15 +6,16 @@ import { Plan } from '@ringback/shared-types';
 import { logger } from '../logger';
 import { PlanLimitError } from '../errors';
 import { prisma } from '../db';
+import { buildRedisOptions } from '../redisConfig';
 
 let redisClient: Redis | null = null;
 let stripeClient: Stripe | null = null;
 
 function getRedis(): Redis {
   if (!redisClient) {
-    redisClient = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
-      maxRetriesPerRequest: 3,
-      lazyConnect: true,
+    redisClient = new Redis(buildRedisOptions());
+    redisClient.on('error', (err) => {
+      logger.warn('Usage meter Redis error', { error: (err as Error).message });
     });
   }
   return redisClient;

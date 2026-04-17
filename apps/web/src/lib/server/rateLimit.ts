@@ -1,6 +1,7 @@
 import { Redis } from 'ioredis';
 import { NextResponse } from 'next/server';
 import { logger } from './logger';
+import { buildRedisOptions } from './redisConfig';
 
 /**
  * Redis-backed sliding-window rate limiter for Next.js route handlers.
@@ -14,9 +15,8 @@ let redisClient: Redis | null = null;
 
 function getRedis(): Redis {
   if (!redisClient) {
-    redisClient = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
-      maxRetriesPerRequest: 3,
-      lazyConnect: true,
+    redisClient = new Redis({
+      ...buildRedisOptions(),
       enableOfflineQueue: false,
     });
     redisClient.on('error', (err) => {

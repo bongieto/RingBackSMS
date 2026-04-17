@@ -1,6 +1,7 @@
 import { Redis } from 'ioredis';
 import { CallerState, CallerStateSchema } from '@ringback/shared-types';
 import { logger } from '../logger';
+import { buildRedisOptions } from '../redisConfig';
 
 const STATE_TTL_SECONDS = 60 * 60 * 24; // 24 hours
 const DEDUP_TTL_SECONDS = 60 * 5; // 5 minutes
@@ -9,9 +10,11 @@ let redisClient: Redis | null = null;
 
 function getRedis(): Redis {
   if (!redisClient) {
-    redisClient = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
-      maxRetriesPerRequest: 3,
-      lazyConnect: true,
+    redisClient = new Redis(buildRedisOptions());
+    // Attach an error handler so ioredis reconnection errors don't surface
+    // as "unhandled error event" warnings in the log stream.
+    redisClient.on('error', (err) => {
+      logger.warn('Redis client error (will retry)', { err: err.message });
     });
   }
   return redisClient;
