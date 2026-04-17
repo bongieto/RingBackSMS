@@ -17,6 +17,10 @@ import {
   isCallerSuppressed,
 } from '@/lib/server/services/consentService';
 import { checkEscalation } from '@/lib/server/services/escalationService';
+import { waitUntil } from '@/lib/server/waitUntil';
+
+// Give the handler 30s so background AI + SMS work can finish on Vercel
+export const maxDuration = 30;
 
 export async function POST(request: NextRequest) {
   const text = await request.text();
@@ -93,24 +97,26 @@ export async function POST(request: NextRequest) {
 
   // 1. STOP keywords — always honored, regardless of consent state
   if (isOptOutKeyword(normalizedBody)) {
-    (async () => {
-      try {
-        // Close any pending consent request before suppressing
-        const pending = await findPendingConsent(tenant.id, From);
-        if (pending) {
-          await declineConsent(pending.id, normalizedBody);
-        } else {
-          await suppressCaller(tenant.id, From, 'opt_out');
+    waitUntil(
+      (async () => {
+        try {
+          // Close any pending consent request before suppressing
+          const pending = await findPendingConsent(tenant.id, From);
+          if (pending) {
+            await declineConsent(pending.id, normalizedBody);
+          } else {
+            await suppressCaller(tenant.id, From, 'opt_out');
+          }
+          await sendSms(
+            tenant.id,
+            From,
+            "Got it — we won't text you again. Call us anytime.",
+          );
+        } catch (err) {
+          logger.error('Opt-out handling failed', { err, tenantId: tenant.id });
         }
-        await sendSms(
-          tenant.id,
-          From,
-          "Got it — we won't text you again. Call us anytime.",
-        );
-      } catch (err) {
-        logger.error('Opt-out handling failed', { err, tenantId: tenant.id });
-      }
-    })();
+      })()
+    );
     return twimlResponse;
   }
 
@@ -119,35 +125,39 @@ export async function POST(request: NextRequest) {
   if (pendingConsent) {
     if (isConsentAffirmative(normalizedBody)) {
       // Consent granted — approve, then send the follow-up opener
-      (async () => {
-        try {
-          await approveConsent(pendingConsent.id, normalizedBody);
-          // Send the industry-specific follow-up opener (or a default)
-          const opener =
-            tenant.config?.followupOpener ??
-            `Thanks! How can ${tenant.name} help you today?`;
-          await sendSms(tenant.id, From, opener);
-        } catch (err) {
-          logger.error('Consent approval failed', { err, tenantId: tenant.id });
-        }
-      })();
+      waitUntil(
+        (async () => {
+          try {
+            await approveConsent(pendingConsent.id, normalizedBody);
+            // Send the industry-specific follow-up opener (or a default)
+            const opener =
+              tenant.config?.followupOpener ??
+              `Thanks! How can ${tenant.name} help you today?`;
+            await sendSms(tenant.id, From, opener);
+          } catch (err) {
+            logger.error('Consent approval failed', { err, tenantId: tenant.id });
+          }
+        })()
+      );
     } else if (!pendingConsent.repromptSent) {
       // Ambiguous reply — re-prompt once
-      (async () => {
-        try {
-          await prisma.smsConsentRequest.update({
-            where: { id: pendingConsent.id },
-            data: { repromptSent: true },
-          });
-          await sendSms(
-            tenant.id,
-            From,
-            'Just reply YES to get help by text, or STOP to opt out.',
-          );
-        } catch (err) {
-          logger.error('Re-prompt failed', { err, tenantId: tenant.id });
-        }
-      })();
+      waitUntil(
+        (async () => {
+          try {
+            await prisma.smsConsentRequest.update({
+              where: { id: pendingConsent.id },
+              data: { repromptSent: true },
+            });
+            await sendSms(
+              tenant.id,
+              From,
+              'Just reply YES to get help by text, or STOP to opt out.',
+            );
+          } catch (err) {
+            logger.error('Re-prompt failed', { err, tenantId: tenant.id });
+          }
+        })()
+      );
     }
     // If reprompt already sent and still ambiguous → silently ignore
     return twimlResponse;
@@ -160,25 +170,27 @@ export async function POST(request: NextRequest) {
     return twimlResponse;
   }
 
-  (async () => {
-    try {
-      // Check escalation keywords before AI processes the message.
-      // If triggered, the escalation service sends a holding message
-      // and notifies the tenant — we skip the AI flow entirely.
-      const escalated = await checkEscalation(tenant.id, From, Body);
-      if (escalated) return;
+  waitUntil(
+    (async () => {
+      try {
+        // Check escalation keywords before AI processes the message.
+        // If triggered, the escalation service sends a holding message
+        // and notifies the tenant — we skip the AI flow entirely.
+        const escalated = await checkEscalation(tenant.id, From, Body);
+        if (escalated) return;
 
-      // Route to AI flow engine
-      await processInboundSms({
-        tenantId: tenant.id,
-        callerPhone: From,
-        inboundMessage: Body,
-        messageSid: MessageSid,
-      });
-    } catch (err) {
-      logger.error('Async SMS processing error', { err, tenantId: tenant.id, messageSid: MessageSid });
-    }
-  })();
+        // Route to AI flow engine
+        await processInboundSms({
+          tenantId: tenant.id,
+          callerPhone: From,
+          inboundMessage: Body,
+          messageSid: MessageSid,
+        });
+      } catch (err) {
+        logger.error('Async SMS processing error', { err, tenantId: tenant.id, messageSid: MessageSid });
+      }
+    })()
+  );
 
   return twimlResponse;
 }

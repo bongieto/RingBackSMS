@@ -8,6 +8,7 @@ import { logger } from '@/lib/server/logger';
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { AppError } from '@/lib/server/errors';
+import { waitUntil } from '@/lib/server/waitUntil';
 
 const STATUS_TRANSITIONS: Record<string, OrderStatus[]> = {
   PENDING: [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
@@ -55,27 +56,29 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const updated = await updateOrderStatus(params.id, tenantId, status);
 
     // Fire-and-forget: send customer SMS notification on status change
-    (async () => {
-      try {
-        const tenant = await prisma.tenant.findUnique({
-          where: { id: tenantId },
-          select: { name: true, config: { select: { defaultPrepTimeMinutes: true } } },
-        });
-        if (!tenant) return;
-        const sms = buildStatusSms(
-          status,
-          order.orderNumber,
-          tenant.name,
-          tenant.config?.defaultPrepTimeMinutes ?? null,
-        );
-        if (sms) {
-          await sendSms(tenantId, order.callerPhone, sms);
-          logger.info('Order status SMS sent', { tenantId, orderId: order.id, status });
+    waitUntil(
+      (async () => {
+        try {
+          const tenant = await prisma.tenant.findUnique({
+            where: { id: tenantId },
+            select: { name: true, config: { select: { defaultPrepTimeMinutes: true } } },
+          });
+          if (!tenant) return;
+          const sms = buildStatusSms(
+            status,
+            order.orderNumber,
+            tenant.name,
+            tenant.config?.defaultPrepTimeMinutes ?? null,
+          );
+          if (sms) {
+            await sendSms(tenantId, order.callerPhone, sms);
+            logger.info('Order status SMS sent', { tenantId, orderId: order.id, status });
+          }
+        } catch (err) {
+          logger.error('Failed to send order status SMS', { err, tenantId, orderId: order.id });
         }
-      } catch (err) {
-        logger.error('Failed to send order status SMS', { err, tenantId, orderId: order.id });
-      }
-    })();
+      })()
+    );
 
     return apiSuccess(updated);
   } catch (err) {
