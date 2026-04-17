@@ -3,6 +3,8 @@ import { NextRequest } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/server/db';
 import { apiSuccess, apiError } from '@/lib/server/response';
+import { Redis } from 'ioredis';
+import { buildRedisOptions } from '@/lib/server/redisConfig';
 
 // Extend timeout to 30s for this route (Vercel Pro supports up to 300s)
 export const maxDuration = 30;
@@ -53,6 +55,7 @@ export async function GET(_request: NextRequest) {
 
   const [
     dbResult,
+    redisResult,
     twilioCount,
     stripeCount,
     squareCount,
@@ -72,6 +75,27 @@ export async function GET(_request: NextRequest) {
         return { ok: true, latencyMs: Date.now() - start };
       } catch (e: any) {
         return { ok: false, latencyMs: Date.now() - start, error: e.message };
+      }
+    })(),
+    // Redis ping — short-lived client to avoid holding a connection
+    (async () => {
+      const start = Date.now();
+      if (!process.env.REDIS_URL) {
+        return { ok: false, latencyMs: 0, error: 'REDIS_URL not set', unconfigured: true };
+      }
+      const probe = new Redis({
+        ...buildRedisOptions(),
+        maxRetriesPerRequest: 1,
+        connectTimeout: 3000,
+        enableOfflineQueue: false,
+      });
+      try {
+        const reply = await probe.ping();
+        return { ok: reply === 'PONG', latencyMs: Date.now() - start };
+      } catch (e: any) {
+        return { ok: false, latencyMs: Date.now() - start, error: e.message };
+      } finally {
+        probe.disconnect();
       }
     })(),
     // Tenant counts
@@ -113,6 +137,13 @@ export async function GET(_request: NextRequest) {
       status: dbResult.ok ? 'ok' : 'error',
       latencyMs: dbResult.latencyMs,
       error: dbResult.error,
+    },
+    {
+      name: 'Redis (caller state / rate limit)',
+      configured: !!process.env.REDIS_URL,
+      status: !process.env.REDIS_URL ? 'unconfigured' : redisResult.ok ? 'ok' : 'error',
+      latencyMs: redisResult.latencyMs,
+      error: redisResult.error,
     },
     {
       name: 'Twilio',
