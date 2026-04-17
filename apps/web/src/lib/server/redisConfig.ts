@@ -9,11 +9,23 @@ import type { RedisOptions } from 'ioredis';
  * Shared across stateService, rateLimit, and usageMeterService so the
  * exact same connection options are used everywhere.
  */
+/**
+ * Clean an env-var-sourced URL. Handles two common paste mistakes:
+ * 1. Leading/trailing whitespace
+ * 2. Surrounding quotes ("rediss://..." or 'rediss://...')
+ */
+function cleanUrl(raw: string): string {
+  let s = raw.trim();
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1).trim();
+  }
+  return s;
+}
+
 export function buildRedisOptions(urlStr?: string): RedisOptions {
   const url = urlStr ?? process.env.REDIS_URL ?? 'redis://localhost:6379';
   try {
-    // Strip whitespace that sometimes sneaks in when pasting into Vercel
-    const cleaned = url.trim();
+    const cleaned = cleanUrl(url);
     const u = new URL(cleaned);
     const opts: RedisOptions = {
       host: u.hostname,
@@ -54,7 +66,7 @@ export function describeRedisUrl(): {
   const raw = process.env.REDIS_URL;
   if (!raw) return { set: false, parsed: false };
   try {
-    const u = new URL(raw.trim());
+    const u = new URL(cleanUrl(raw));
     return {
       set: true,
       parsed: true,
