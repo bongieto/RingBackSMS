@@ -49,28 +49,45 @@ export async function incrementSmsUsage(
   stripeSubscriptionId: string | null,
   plan: string
 ): Promise<void> {
-  const redis = getRedis();
   const month = new Date().toISOString().slice(0, 7);
   const key = `usage:${tenantId}:sms:${month}`;
 
-  const newCount = await redis.incr(key);
-  if (newCount === 1) {
-    await redis.expireat(key, getEndOfMonthTimestamp());
+  // Best-effort Redis counter — if Redis is unavailable, we fall back to
+  // the DB-only path. Usage metering MUST NOT block the customer-facing
+  // SMS flow (a broken Redis used to surface to the user as a generic
+  // "something went wrong" reply).
+  let newCount = 0;
+  try {
+    const redis = getRedis();
+    newCount = await redis.incr(key);
+    if (newCount === 1) {
+      await redis.expireat(key, getEndOfMonthTimestamp());
+    }
+  } catch (err) {
+    logger.error('SMS usage Redis increment failed, continuing without overage check', {
+      err,
+      tenantId,
+    });
   }
 
-  // Write usage log
-  await prisma.usageLog.create({
-    data: {
-      tenantId,
-      type: UsageType.SMS_SENT,
-      metadata: { month, count: newCount },
-    },
-  });
+  // Write usage log (best-effort — never block SMS on analytics writes)
+  try {
+    await prisma.usageLog.create({
+      data: {
+        tenantId,
+        type: UsageType.SMS_SENT,
+        metadata: { month, count: newCount },
+      },
+    });
+  } catch (err) {
+    logger.error('SMS usage log write failed', { err, tenantId });
+  }
 
   const planLimits = PLAN_LIMITS[plan as Plan];
   if (!planLimits) return;
 
-  // Report overage to Stripe metered billing
+  // Report overage to Stripe metered billing (only when Redis counter is
+  // trustworthy — skip if Redis failed above)
   if (
     newCount > planLimits.smsPerMonth &&
     stripeSubscriptionId &&

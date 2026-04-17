@@ -113,6 +113,23 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       flowStep: 'MENU_DISPLAY',
     };
 
+    // Customer texted MENU as the very first message → jump straight to
+    // the web menu URL instead of showing the "what can I get you" prompt.
+    if (upperMsg === 'MENU') {
+      const menuUrl = tenantContext.tenantSlug
+        ? `https://ringbacksms.com/m/${tenantContext.tenantSlug}`
+        : null;
+      const reply = menuUrl
+        ? `Here's our menu: ${menuUrl} — text your order back when ready!`
+        : `Tell me what you'd like and I'll look it up!`;
+      return {
+        nextState,
+        smsReply: reply,
+        sideEffects: [],
+        flowType: FlowType.ORDER,
+      };
+    }
+
     // If there's no menu at all, fall back to the old message
     if (menuItems.length === 0) {
       return {
