@@ -180,11 +180,30 @@ describe('Flow Engine', () => {
 
   // ── ORDER Flow ───────────────────────────────────────────────────────────
   describe('ORDER Flow', () => {
-    it('shows menu on ORDER keyword', async () => {
+    it('prompts for order on ORDER keyword (no menu dump)', async () => {
       const result = await runFlowEngine(baseInput);
       expect(result.flowType).toBe(FlowType.ORDER);
-      expect(result.smsReply).toContain('menu');
+      // New behavior: short prompt + MENU hint, not a full menu dump
+      expect(result.smsReply.toLowerCase()).toContain('what can i get you');
+      expect(result.smsReply).toContain('MENU');
+      // And it should NOT include the entire item list in the SMS
+      expect(result.smsReply).not.toContain('Pancit Bihon');
       expect(result.nextState.flowStep).toBeTruthy();
+    });
+
+    it('sends web menu URL when customer texts MENU', async () => {
+      const stateAfterGreeting = (await runFlowEngine(baseInput)).nextState;
+      const ctxWithSlug = {
+        ...mockTenantContext,
+        tenantSlug: 'test-restaurant',
+      };
+      const result = await runFlowEngine({
+        ...baseInput,
+        tenantContext: ctxWithSlug,
+        inboundMessage: 'MENU',
+        currentState: stateAfterGreeting,
+      });
+      expect(result.smsReply).toContain('ringbacksms.com/m/test-restaurant');
     });
 
     it('parses "1x2" item selection', async () => {

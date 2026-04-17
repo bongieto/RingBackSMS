@@ -15,6 +15,7 @@ import { logger } from '../logger';
 import { isWithinBusinessHours, getBusinessHoursDisplay } from '../businessHours';
 import { prisma } from '../db';
 import { encryptMessages, decryptMessages } from '../encryption';
+import { ensureTenantSlug } from '../slugify';
 import { Prisma } from '@prisma/client';
 
 export interface ProcessInboundSmsInput {
@@ -173,9 +174,14 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     return;
   }
 
+  // Lazily backfill slug for tenants that pre-date the slug feature
+  const tenantSlug = tenant.slug ?? (await ensureTenantSlug(tenant.id).catch(() => null));
+
   const tenantContext: TenantContext = {
     tenantId: tenant.id,
     tenantName: tenant.name,
+    tenantSlug,
+    tenantPhoneNumber: tenant.twilioPhoneNumber,
     config: {
       ...tenant.config,
       businessDays: tenant.config.businessDays as number[],

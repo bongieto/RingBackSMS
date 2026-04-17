@@ -109,6 +109,7 @@ enum AgencyApplicationStatus {
 model Tenant {
   id                    String           @id @default(uuid())
   name                  String
+  slug                  String?          @unique // URL-safe public identifier for menu page (ringbacksms.com/m/{slug})
   businessType          BusinessType
   plan                  Plan             @default(STARTER)
   twilioSubAccountSid   String?          @unique

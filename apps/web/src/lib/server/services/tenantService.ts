@@ -6,6 +6,7 @@ import { NotFoundError } from '../errors';
 import { prisma } from '../db';
 import { createStripeCustomer } from './billingService';
 import { getProfile } from '@/lib/businessTypeProfile';
+import { generateUniqueTenantSlug } from '../slugify';
 
 export interface CreateTenantInput {
   name: string;
@@ -19,10 +20,12 @@ export interface CreateTenantInput {
 
 export async function createTenant(input: CreateTenantInput) {
   const profile = getProfile(input.businessType);
+  const slug = await generateUniqueTenantSlug(input.name);
 
   const tenant = await prisma.tenant.create({
     data: {
       name: input.name,
+      slug,
       businessType: input.businessType,
       plan: input.plan ?? Plan.STARTER,
       clerkOrgId: input.clerkOrgId,

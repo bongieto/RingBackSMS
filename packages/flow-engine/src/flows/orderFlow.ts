@@ -108,23 +108,20 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
 
   // ── GREETING → MENU_DISPLAY (or reorder prompt) ─────────────────────────
   if (step === 'GREETING' || !currentState || currentState.currentFlow !== FlowType.ORDER) {
-    const menuText = menuItems
-      .map((item, i) => {
-        let line = `${i + 1}. ${item.name} - $${item.price.toFixed(2)}`;
-        if (item.duration) line += ` (${item.duration} min)`;
-        return line;
-      })
-      .join('\n');
-
-    const menuDisplay =
-      menuItems.length > 0
-        ? `Here's our menu:\n${menuText}\n\nReply with item numbers and quantities (e.g., "1x2, 3x1") or item names.`
-        : 'Our menu is being updated. Please call us directly to place an order.';
-
     const nextState: CallerState = {
       ...buildInitialState(input),
       flowStep: 'MENU_DISPLAY',
     };
+
+    // If there's no menu at all, fall back to the old message
+    if (menuItems.length === 0) {
+      return {
+        nextState,
+        smsReply: `Thanks for reaching out to ${tenantContext.tenantName}! Our menu is being updated. Please call us directly to place an order.`,
+        sideEffects: [],
+        flowType: FlowType.ORDER,
+      };
+    }
 
     // Returning customer with a reusable last order → offer SAME shortcut
     if (hasReorder) {
@@ -134,15 +131,18 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       const greet = firstName ? `Welcome back, ${firstName}!` : 'Welcome back!';
       return {
         nextState,
-        smsReply: `${greet} Last time you ordered:\n${summary}\nTotal: $${total.toFixed(2)}\n\nReply SAME to reorder, or MENU to see the full menu.`,
+        smsReply: `${greet} Last time you ordered:\n${summary}\nTotal: $${total.toFixed(2)}\n\nReply SAME to reorder, tell me what you want, or text MENU for the full list.`,
         sideEffects: [],
         flowType: FlowType.ORDER,
       };
     }
 
+    // New order — ask what they want instead of dumping the full menu.
+    // Dumping a long menu via SMS fails on restaurants with 30+ items.
+    // Customers who want to browse can text MENU for the web link.
     return {
       nextState,
-      smsReply: `Thanks for ordering with ${tenantContext.tenantName}! ${menuDisplay}`,
+      smsReply: `OK, what can I get you from ${tenantContext.tenantName}? Tell me your order (like "2 lumpia, 1 pancit") or text MENU for our full list.`,
       sideEffects: [],
       flowType: FlowType.ORDER,
     };
@@ -178,18 +178,18 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       };
     }
 
-    // MENU shortcut: user declined the reorder offer, show full menu
-    if (upperMsg === 'MENU' && hasReorder) {
-      const menuText = menuItems
-        .map((item, i) => {
-          let line = `${i + 1}. ${item.name} - $${item.price.toFixed(2)}`;
-          if (item.duration) line += ` (${item.duration} min)`;
-          return line;
-        })
-        .join('\n');
+    // MENU shortcut: send the web menu URL instead of dumping the full menu
+    // as SMS (which would exceed carrier length limits for many restaurants).
+    if (upperMsg === 'MENU') {
+      const menuUrl = tenantContext.tenantSlug
+        ? `https://ringbacksms.com/m/${tenantContext.tenantSlug}`
+        : null;
+      const reply = menuUrl
+        ? `Here's our menu: ${menuUrl} — text your order back when ready!`
+        : 'Our menu page is being set up. Tell me what you want and I\'ll look it up!';
       return {
         nextState: { ...currentState, lastMessageAt: Date.now() },
-        smsReply: `Here's our menu:\n${menuText}\n\nReply with item numbers and quantities (e.g., "1x2, 3x1") or item names.`,
+        smsReply: reply,
         sideEffects: [],
         flowType: FlowType.ORDER,
       };

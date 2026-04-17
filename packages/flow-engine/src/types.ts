@@ -4,6 +4,10 @@ import { FlowType } from '@ringback/shared-types';
 export interface TenantContext {
   tenantId: string;
   tenantName: string;
+  /** URL-safe public slug for menu page, e.g. "the-lumpia-house" */
+  tenantSlug?: string | null;
+  /** E.164 Twilio number callers text — used to prefill "text to order" CTAs */
+  tenantPhoneNumber?: string | null;
   config: TenantConfig;
   flows: Flow[];
   menuItems: MenuItem[];
