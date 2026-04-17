@@ -83,16 +83,21 @@ export async function GET(_request: NextRequest) {
       if (!process.env.REDIS_URL) {
         return { ok: false, latencyMs: 0, error: 'REDIS_URL not set', unconfigured: true };
       }
-      // Explicit connect (lazyConnect is on by default) then PING. We
-      // allow the offline queue so the PING can wait for the TCP handshake
-      // rather than rejecting with "Stream isn't writeable".
+      // Connect eagerly (override lazyConnect) and wait for the 'ready'
+      // event before sending PING. The offline queue stays on so the
+      // command can queue briefly during handshake.
       const probe = new Redis({
         ...buildRedisOptions(),
+        lazyConnect: false,
         maxRetriesPerRequest: 1,
-        connectTimeout: 3000,
+        connectTimeout: 5000,
       });
       try {
-        await probe.connect();
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('Connection timeout after 5s')), 5000);
+          probe.once('ready', () => { clearTimeout(timer); resolve(); });
+          probe.once('error', (err) => { clearTimeout(timer); reject(err); });
+        });
         const reply = await probe.ping();
         return { ok: reply === 'PONG', latencyMs: Date.now() - start };
       } catch (e: any) {
