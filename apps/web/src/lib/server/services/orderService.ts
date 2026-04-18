@@ -118,6 +118,10 @@ export interface CreateOrderInput {
   feeAmount?: number;
   pickupTime: string | null;
   notes: string | null;
+  /** Customer-provided name captured during the order. Shown on kitchen
+   *  ticket and the READY SMS. Also backfilled onto the Contact row when
+   *  the existing Contact has no name yet. */
+  customerName?: string | null;
   stripePaymentId?: string;
   stripePaymentUrl?: string;
   paymentStatus?: string;
@@ -174,6 +178,7 @@ export async function createOrder(input: CreateOrderInput) {
       subtotal: input.subtotal ?? input.total,
       taxAmount: input.taxAmount ?? 0,
       feeAmount: input.feeAmount ?? 0,
+      customerName: input.customerName ?? null,
       pickupTime: input.pickupTime,
       estimatedReadyTime,
       notes: input.notes,
@@ -192,6 +197,9 @@ export async function createOrder(input: CreateOrderInput) {
 
   // Denormalize onto Contact so getCallerContext can read lastOrder cheaply
   // and the dashboard can show lifetime totals without aggregating Orders.
+  // Also backfill Contact.name + search hash from the captured customer
+  // name — only if the Contact doesn't already have one (don't clobber
+  // manually-edited data).
   try {
     const totalCents = Math.round(Number(order.total) * 100);
     await prisma.contact.updateMany({
@@ -204,6 +212,22 @@ export async function createOrder(input: CreateOrderInput) {
         lastContactAt: new Date(),
       },
     });
+    if (input.customerName && input.customerName.trim().length > 0) {
+      const existing = await prisma.contact.findFirst({
+        where: { tenantId: input.tenantId, phone: input.callerPhone },
+        select: { id: true, name: true },
+      });
+      if (existing && !existing.name) {
+        const { encryptNullable, hashForSearch } = await import('../encryption');
+        await prisma.contact.update({
+          where: { id: existing.id },
+          data: {
+            name: encryptNullable(input.customerName),
+            nameSearchHash: hashForSearch(input.customerName, input.tenantId),
+          },
+        });
+      }
+    }
   } catch (err) {
     logger.warn('Failed to denormalize order onto Contact', { err, orderId: order.id });
   }
@@ -226,6 +250,7 @@ export async function createOrder(input: CreateOrderInput) {
       totalCents: paidViaStripe ? totalCents : undefined,
       externalSource: paidViaStripe ? 'Stripe' : undefined,
       externalSourceId: paidViaStripe ? input.stripePaymentId : undefined,
+      customerName: input.customerName ?? null,
     }).catch((err) =>
       logger.error('POS push failed (non-fatal)', { err, orderId: order.id }),
     ),
@@ -249,6 +274,7 @@ async function pushOrderToPos(
     totalCents?: number;
     externalSource?: string;
     externalSourceId?: string;
+    customerName?: string | null;
   },
 ): Promise<void> {
   const tenant = await prisma.tenant.findUnique({
@@ -297,6 +323,7 @@ async function pushOrderToPos(
     totalCents: payment?.totalCents,
     externalSource: payment?.externalSource,
     externalSourceId: payment?.externalSourceId,
+    customerName: payment?.customerName ?? null,
   });
 
   await prisma.order.update({

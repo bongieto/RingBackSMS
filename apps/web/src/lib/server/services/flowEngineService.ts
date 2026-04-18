@@ -729,6 +729,7 @@ async function processSideEffect(
         feeAmount: effect.payload.feeAmount,
         pickupTime: effect.payload.pickupTime,
         notes: effect.payload.notes,
+        customerName: effect.payload.customerName,
       });
       context.orderId = order.id;
       context.orderNumber = order.orderNumber;

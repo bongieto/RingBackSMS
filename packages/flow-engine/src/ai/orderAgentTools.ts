@@ -130,6 +130,21 @@ export const ORDER_AGENT_TOOLS: ToolSchema[] = [
       required: ['question', 'missing_field'],
     },
   },
+  {
+    name: 'set_customer_name',
+    description:
+      "Capture the customer's name (usually first name) for the order. Call this any time the customer tells you their name, e.g. 'for Maria' or 'Rolando here'. The name appears on the kitchen ticket, the READY SMS, and the receipt.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: "The customer's name as they gave it. First name only is fine.",
+        },
+      },
+      required: ['name'],
+    },
+  },
 ];
 
 // ── Zod input validators ──────────────────────────────────────────────────────
@@ -166,6 +181,10 @@ export const AskClarificationInput = z.object({
   missing_field: z.string().min(1).max(80),
 });
 
+export const SetCustomerNameInput = z.object({
+  name: z.string().trim().min(1).max(80),
+});
+
 // ── Tool execution result ─────────────────────────────────────────────────────
 
 export type ToolResult =
@@ -174,6 +193,7 @@ export type ToolResult =
   | { ok: true; kind: 'cancel' }
   | { ok: true; kind: 'menu_link' }
   | { ok: true; kind: 'clarification'; question: string; field: string }
+  | { ok: true; kind: 'customer_name'; name: string }
   | { ok: false; error: string };
 
 // ── Handlers: operate on a cloned OrderDraft ──────────────────────────────────
@@ -323,6 +343,14 @@ export function handleAskClarification(raw: unknown): ToolResult {
     question: parsed.data.question,
     field: parsed.data.missing_field,
   };
+}
+
+export function handleSetCustomerName(raw: unknown):
+  | { ok: true; kind: 'customer_name'; name: string }
+  | { ok: false; error: string } {
+  const parsed = SetCustomerNameInput.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: 'invalid set_customer_name input' };
+  return { ok: true, kind: 'customer_name', name: parsed.data.name };
 }
 
 /** Compute order subtotal including modifier price adjustments. */

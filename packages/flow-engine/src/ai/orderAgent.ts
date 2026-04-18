@@ -9,6 +9,7 @@ import {
   handleAddItems,
   handleAskClarification,
   handleRemoveItem,
+  handleSetCustomerName,
   handleSetOrderNotes,
   handleSetPickupTime,
   handleUpdateQuantity,
@@ -43,6 +44,7 @@ function buildBaseState(input: FlowInput, draft: OrderDraft, overrides: Partial<
     paymentPending: prev?.paymentPending ?? null,
     pendingCustomization: prev?.pendingCustomization ?? null,
     pendingClarification: overrides.pendingClarification ?? null,
+    customerName: overrides.customerName !== undefined ? overrides.customerName : prev?.customerName ?? null,
     lastMessageAt: Date.now(),
     messageCount: (prev?.messageCount ?? 0) + 1,
     dedupKey: null,
@@ -105,6 +107,8 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
     let wantsCancel = false;
     let wantsMenuLink = false;
     let clarification: { question: string; field: string } | null = null;
+    let capturedName: string | null =
+      (currentState?.customerName as string | null | undefined) ?? null;
     const toolErrors: string[] = [];
     let anyMutation = false;
 
@@ -143,6 +147,16 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           wantsMenuLink = true;
           result = { ok: true, kind: 'menu_link' };
           break;
+        case 'set_customer_name': {
+          const r = handleSetCustomerName(call.input);
+          if (r.ok && r.kind === 'customer_name') {
+            capturedName = r.name;
+            result = { ok: true, kind: 'customer_name', name: r.name };
+          } else {
+            result = r;
+          }
+          break;
+        }
         case 'ask_clarification':
           result = handleAskClarification(call.input);
           if (result.ok && result.kind === 'clarification') {
@@ -160,7 +174,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
     if (wantsCancel) {
       const reply = (aiResponse.text || 'Order canceled. Text us again anytime!').slice(0, 320);
       return {
-        nextState: buildBaseState(input, { items: [] }, { flowStep: 'ORDER_COMPLETE' }),
+        nextState: buildBaseState(input, { items: [] }, { flowStep: 'ORDER_COMPLETE', customerName: capturedName }),
         smsReply: reply,
         sideEffects: [],
         flowType: FlowType.ORDER,
@@ -175,7 +189,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         : null;
       const reply = (aiResponse.text && menuUrl ? `${aiResponse.text}\n${menuUrl}` : menuUrl ?? aiResponse.text ?? 'Menu link coming shortly.').slice(0, 320);
       return {
-        nextState: buildBaseState(input, draft, { flowStep: currentState?.flowStep ?? 'MENU_DISPLAY' }),
+        nextState: buildBaseState(input, draft, { flowStep: currentState?.flowStep ?? 'MENU_DISPLAY', customerName: capturedName }),
         smsReply: reply,
         sideEffects: [],
         flowType: FlowType.ORDER,
@@ -189,6 +203,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         return {
           nextState: buildBaseState(input, draft, {
             flowStep: 'PICKUP_TIME',
+            customerName: capturedName,
             pendingClarification: {
               field: 'pickup_time',
               question: 'What time would you like to pick up?',
@@ -272,8 +287,12 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           aiResponse.text && !/placed|ready for you/i.test(aiResponse.text)
             ? aiResponse.text
             : `${queuePhrase}${etaPhrase}${totalLine} You'll get a payment link shortly — your order is confirmed once paid.`;
+        const ownerNameLine = capturedName ? `\nName: ${capturedName}` : '';
         return {
-          nextState: buildBaseState(input, draft, { flowStep: 'AWAITING_PAYMENT' }),
+          nextState: buildBaseState(input, draft, {
+            flowStep: 'AWAITING_PAYMENT',
+            customerName: capturedName,
+          }),
           smsReply: paymentReply.slice(0, 320),
           sideEffects: [
             {
@@ -286,13 +305,14 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
                 feeAmount: totals.fee,
                 pickupTime: draft.pickupTime,
                 notes: draft.notes ?? null,
+                customerName: capturedName,
               },
             },
             {
               type: 'NOTIFY_OWNER',
               payload: {
                 subject: `Pending Order from ${input.callerPhone}`,
-                message: `New order pending payment!\n${buildOwnerOrderSummary(draft.items)}\nTotal: $${total.toFixed(2)}\nPickup: ${draft.pickupTime}`,
+                message: `New order pending payment!${ownerNameLine}\n${buildOwnerOrderSummary(draft.items)}\nTotal: $${total.toFixed(2)}\nPickup: ${draft.pickupTime}`,
                 channel: 'sms',
               },
             },
@@ -307,8 +327,12 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         aiResponse.text ||
         `Your order has been placed! ${queuePhrase}${etaPhrase}${totalLine} We'll text you when it's ready!`;
 
+      const ownerNameLine = capturedName ? `\nName: ${capturedName}` : '';
       return {
-        nextState: buildBaseState(input, draft, { flowStep: 'ORDER_COMPLETE' }),
+        nextState: buildBaseState(input, draft, {
+          flowStep: 'ORDER_COMPLETE',
+          customerName: capturedName,
+        }),
         smsReply: baseReply.slice(0, 320),
         sideEffects: [
           {
@@ -321,13 +345,14 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
               subtotal: totals.subtotal,
               taxAmount: totals.tax,
               feeAmount: totals.fee,
+              customerName: capturedName,
             },
           },
           {
             type: 'NOTIFY_OWNER',
             payload: {
               subject: `New Order from ${input.callerPhone}`,
-              message: `New order received!\n${buildOwnerOrderSummary(draft.items)}\nTotal: $${total.toFixed(2)}\nPickup: ${draft.pickupTime}`,
+              message: `New order received!${ownerNameLine}\n${buildOwnerOrderSummary(draft.items)}\nTotal: $${total.toFixed(2)}\nPickup: ${draft.pickupTime}`,
               channel: 'sms',
             },
           },
@@ -379,6 +404,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
     return {
       nextState: buildBaseState(input, draft, {
         flowStep: nextStep,
+        customerName: capturedName,
         pendingClarification: clarification
           ? { field: clarification.field, question: clarification.question, askedAt: Date.now() }
           : null,

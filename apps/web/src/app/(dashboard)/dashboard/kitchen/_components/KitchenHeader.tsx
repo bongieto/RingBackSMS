@@ -1,6 +1,6 @@
 'use client';
 
-import { Flame, Clock, AlertTriangle, Volume2, VolumeX } from 'lucide-react';
+import { Flame, Clock, AlertTriangle, Volume2, VolumeX, Ban } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface KitchenStats {
@@ -14,10 +14,12 @@ export function KitchenHeader({
   stats,
   soundEnabled,
   onToggleSound,
+  on86Click,
 }: {
   stats: KitchenStats;
   soundEnabled: boolean;
   onToggleSound: () => void;
+  on86Click: () => void;
 }) {
   return (
     <div className="flex items-center justify-between bg-slate-900 text-white rounded-xl px-4 py-3 mb-4">
@@ -42,14 +44,26 @@ export function KitchenHeader({
           {stats.totalToday} orders today
         </div>
       </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="text-white hover:bg-slate-800 shrink-0"
-        onClick={onToggleSound}
-      >
-        {soundEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
-      </Button>
+      <div className="flex items-center gap-1 shrink-0">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-white hover:bg-slate-800"
+          onClick={on86Click}
+        >
+          <Ban className="h-4 w-4 mr-1.5" />
+          <span className="hidden sm:inline">86 an item</span>
+          <span className="sm:hidden">86</span>
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-white hover:bg-slate-800"
+          onClick={onToggleSound}
+        >
+          {soundEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+        </Button>
+      </div>
     </div>
   );
 }

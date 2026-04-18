@@ -24,18 +24,23 @@ function buildStatusSms(
   orderNumber: string,
   businessName: string,
   prepMins: number | null,
+  customerName: string | null,
 ): string | null {
+  // Pull just the first name so "Rolando Cabral" becomes "Rolando" — keeps
+  // SMS copy conversational and under the 160-char GSM limit.
+  const firstName = customerName?.trim().split(/\s+/)[0];
+  const greet = firstName ? `Hi ${firstName}! ` : '';
   switch (status) {
     case OrderStatus.CONFIRMED:
       return prepMins
-        ? `${businessName} got your order #${orderNumber}! Estimated ready in ~${prepMins} min.`
-        : `${businessName} got your order #${orderNumber}! We'll let you know when it's ready.`;
+        ? `${greet}${businessName} got your order #${orderNumber}. Estimated ready in ~${prepMins} min.`
+        : `${greet}${businessName} got your order #${orderNumber}. We'll let you know when it's ready.`;
     case OrderStatus.PREPARING:
-      return `${businessName} is preparing your order #${orderNumber} now!`;
+      return `${greet}${businessName} is preparing your order #${orderNumber} now!`;
     case OrderStatus.READY:
-      return `Your order #${orderNumber} from ${businessName} is READY for pickup!`;
+      return `${greet}Your order #${orderNumber} from ${businessName} is READY for pickup!`;
     case OrderStatus.CANCELLED:
-      return `Sorry, your order #${orderNumber} from ${businessName} has been cancelled. Please call us if you have questions.`;
+      return `${greet}Sorry — your order #${orderNumber} from ${businessName} has been cancelled. Please call us if you have questions.`;
     default:
       return null;
   }
@@ -69,6 +74,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
             order.orderNumber,
             tenant.name,
             tenant.config?.defaultPrepTimeMinutes ?? null,
+            order.customerName ?? null,
           );
           if (sms) {
             await sendSms(tenantId, order.callerPhone, sms);

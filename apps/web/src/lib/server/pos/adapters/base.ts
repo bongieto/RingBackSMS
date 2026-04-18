@@ -63,6 +63,9 @@ export abstract class BasePosAdapter {
       externalSource?: string;
       /** Opaque id from the external processor (e.g. Stripe payment_intent). */
       externalSourceId?: string;
+      /** Customer name (optional). Included on the external-tender note so
+       *  kitchen staff can tie the Square order to a name. */
+      customerName?: string | null;
     },
   ): Promise<PosOrderResult>;
   abstract verifyWebhook(

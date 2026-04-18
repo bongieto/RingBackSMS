@@ -20,6 +20,7 @@ interface Order {
   orderNumber: string;
   status: string;
   callerPhone: string;
+  customerName?: string | null;
   items: OrderItem[];
   total: number | string;
   pickupTime: string | null;
@@ -111,8 +112,13 @@ export function OrderCard({ order, tenantId }: { order: Order; tenantId: string 
     )}>
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
-        <span className="font-bold text-sm text-slate-900">#{order.orderNumber}</span>
-        <span className="text-xs text-muted-foreground flex items-center gap-1">
+        <div className="flex items-baseline gap-2 min-w-0">
+          <span className="font-bold text-sm text-slate-900">#{order.orderNumber}</span>
+          {order.customerName && (
+            <span className="text-sm font-semibold text-slate-700 truncate">{order.customerName}</span>
+          )}
+        </div>
+        <span className="text-xs text-muted-foreground flex items-center gap-1 shrink-0">
           <Clock className="h-3 w-3" />
           {elapsed}
         </span>

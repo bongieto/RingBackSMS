@@ -80,6 +80,10 @@ export const CallerStateSchema = z.object({
   pendingCustomization: PendingCustomizationSchema.nullable().optional(),
   // Only set when the ORDER agent is waiting on a clarifying answer
   pendingClarification: PendingClarificationSchema.nullable().optional(),
+  // Customer-provided name for the current order (shown on kitchen ticket,
+  // READY SMS, and receipt). Cached here within the session; also
+  // denormalized onto Order + Contact on save.
+  customerName: z.string().max(80).nullable().optional(),
   lastMessageAt: z.number(), // unix timestamp
   messageCount: z.number().int().default(0),
   dedupKey: z.string().nullable(), // last Twilio MessageSid to prevent duplicates

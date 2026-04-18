@@ -219,6 +219,8 @@ export async function POST(request: NextRequest) {
               feeAmount: feeMeta ?? 0,
               pickupTime,
               notes,
+              customerName:
+                (callerState as { customerName?: string | null }).customerName ?? null,
               stripePaymentId: paymentIntentId,
               paymentStatus: 'PAID',
             });

@@ -24,6 +24,9 @@ export interface SaveOrderSideEffect {
     subtotal?: number;
     taxAmount?: number;
     feeAmount?: number;
+    /** Customer's given name captured during the order (e.g. "Rolando").
+     *  Shown on kitchen tickets and the READY SMS. */
+    customerName?: string | null;
   };
 }
 
@@ -74,6 +77,7 @@ export interface CreatePaymentLinkSideEffect {
     subtotal?: number;
     taxAmount?: number;
     feeAmount?: number;
+    customerName?: string | null;
   };
 }
 

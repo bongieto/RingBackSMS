@@ -401,6 +401,7 @@ export class SquareAdapter extends BasePosAdapter {
       totalCents?: number;
       externalSource?: string;
       externalSourceId?: string;
+      customerName?: string | null;
     },
   ): Promise<PosOrderResult> {
     const tokens = await this.loadTokens(tenantId);
@@ -445,9 +446,13 @@ export class SquareAdapter extends BasePosAdapter {
             source: metadata.externalSource ?? 'External',
             ...(metadata.externalSourceId && { sourceId: metadata.externalSourceId }),
           },
-          note: metadata.externalSource
-            ? `Paid via ${metadata.externalSource} (RingbackSMS)`
-            : 'Paid externally (RingbackSMS)',
+          note: (() => {
+            const base = metadata.externalSource
+              ? `Paid via ${metadata.externalSource} (RingbackSMS)`
+              : 'Paid externally (RingbackSMS)';
+            const name = metadata.customerName?.trim();
+            return name ? `${base} — ${name}` : base;
+          })(),
         });
         logger.info('Square external payment recorded', {
           tenantId,

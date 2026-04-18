@@ -8,6 +8,7 @@ import { Header } from '@/components/layout/Header';
 import { webApi } from '@/lib/api';
 import { OrderCard } from './_components/OrderCard';
 import { KitchenHeader } from './_components/KitchenHeader';
+import { EightySixDrawer } from './_components/EightySixDrawer';
 
 interface OrderItem {
   name: string;
@@ -21,6 +22,7 @@ interface Order {
   orderNumber: string;
   status: string;
   callerPhone: string;
+  customerName?: string | null;
   items: OrderItem[];
   total: number | string;
   pickupTime: string | null;
@@ -37,6 +39,7 @@ export default function KitchenPage() {
     if (typeof window === 'undefined') return true;
     return localStorage.getItem('kds-sound') !== 'off';
   });
+  const [eightySixOpen, setEightySixOpen] = useState(false);
   const prevOrderIdsRef = useRef<Set<string>>(new Set());
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -74,7 +77,24 @@ export default function KitchenPage() {
 
   const orders = data ?? [];
 
-  // Detect new orders and play chime
+  // Request Notification permission once on mount. Some browsers only
+  // honor requests from a user gesture — this attempt is harmless if it
+  // returns 'default' silently.
+  useEffect(() => {
+    if (
+      typeof window !== 'undefined' &&
+      'Notification' in window &&
+      window.Notification.permission === 'default'
+    ) {
+      // Fire-and-forget; ignored if the browser rejects.
+      window.Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
+  // Detect new orders and play chime + push a browser notification when
+  // the tab is backgrounded. Vibration on mobile. Audio + vibration
+  // require the sound toggle; notifications bypass it (they're the
+  // silent fallback for operators who muted the tab).
   useEffect(() => {
     if (!orders.length) return;
     const currentIds = new Set(orders.map(o => o.id));
@@ -82,10 +102,37 @@ export default function KitchenPage() {
 
     if (prevIds.size > 0) {
       const newOrders = orders.filter(o => !prevIds.has(o.id) && (o.status === 'PENDING' || o.status === 'CONFIRMED'));
-      if (newOrders.length > 0 && soundEnabled) {
-        audioRef.current?.play().catch(() => {});
-        // Haptic feedback on mobile
-        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      if (newOrders.length > 0) {
+        if (soundEnabled) {
+          audioRef.current?.play().catch(() => {});
+          if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        }
+        // Browser notification — most useful when the KDS is in a
+        // background tab and staff needs to see that something changed.
+        if (
+          typeof window !== 'undefined' &&
+          'Notification' in window &&
+          window.Notification.permission === 'granted' &&
+          document.visibilityState === 'hidden'
+        ) {
+          const first = newOrders[0];
+          const title = newOrders.length === 1
+            ? `New order #${first.orderNumber ?? ''}`
+            : `${newOrders.length} new orders`;
+          const body = newOrders.length === 1
+            ? `${first.callerPhone ?? ''} — tap to open`
+            : 'Open the KDS to see them';
+          try {
+            const notif = new window.Notification(title, { body, tag: 'kds-new-order' });
+            notif.onclick = () => {
+              window.focus();
+              notif.close();
+            };
+          } catch {
+            // Silently ignore — some browsers throw if the tab isn't
+            // allowed to create notifications.
+          }
+        }
       }
     }
     prevOrderIdsRef.current = currentIds;
@@ -122,7 +169,16 @@ export default function KitchenPage() {
         stats={stats}
         soundEnabled={soundEnabled}
         onToggleSound={toggleSound}
+        on86Click={() => setEightySixOpen(true)}
       />
+
+      {tenantId && (
+        <EightySixDrawer
+          tenantId={tenantId}
+          open={eightySixOpen}
+          onClose={() => setEightySixOpen(false)}
+        />
+      )}
 
       {isLoading ? (
         <div className="text-center py-20 text-muted-foreground">Loading orders...</div>
