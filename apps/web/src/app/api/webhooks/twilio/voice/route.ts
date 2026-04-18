@@ -283,51 +283,48 @@ export async function POST(request: NextRequest) {
     config: tenant.config,
   });
 
-  // TCPA consent-first flow: always send a consent request SMS (unless suppressed).
-  // The AI conversation only starts after the caller replies YES.
-  waitUntil(
-    (async () => {
-      logger.info('[consent-sms] start', { tenantId: tenant.id, from });
-      try {
-        // Check suppression list first — if caller opted out, stay silent
-        const suppressed = await isCallerSuppressed(tenant.id, from);
-        if (suppressed) {
-          logger.info('[consent-sms] skip: caller suppressed', { tenantId: tenant.id });
-          return;
-        }
-        // Dedup: check if a PENDING consent already exists (rapid redial)
-        const { id: consentRequestId, alreadyPending } = await createConsentRequest(tenant.id, from, to);
-        if (alreadyPending) {
-          logger.info('[consent-sms] skip: consent already pending', { tenantId: tenant.id, consentRequestId });
-          return;
-        }
-        logger.info('[consent-sms] calling twilio sendSms', { tenantId: tenant.id, consentRequestId });
-        // Send consent request SMS (non-commercial, TCPA-safe)
-        const consentMsg = buildConsentMessage(businessName);
-        const messageSid = await sendSms(tenant.id, from, consentMsg);
-        logger.info('[consent-sms] twilio accepted', { tenantId: tenant.id, consentRequestId, messageSid });
-        // Store the SID on the consent request so we can correlate later
-        await prisma.smsConsentRequest.update({
-          where: { id: consentRequestId },
-          data: { consentMessageSid: messageSid },
-        }).catch((err) => logger.warn('[consent-sms] failed to store messageSid', { err }));
-        await prisma.missedCall.update({
-          where: { twilioCallSid: callSid },
-          data: { smsSent: true },
-        }).catch(() => {});
-      } catch (err: any) {
-        // Surface Twilio error codes so we can see what's actually rejected
-        logger.error('[consent-sms] FAILED', {
-          tenantId: tenant.id,
-          from,
-          errCode: err?.code,
-          errStatus: err?.status,
-          errMoreInfo: err?.moreInfo,
-          message: err?.message,
-        });
-      }
-    })()
-  );
+  // TCPA consent-first flow — send consent request SMS. Using console.log
+  // directly (not Winston) because Vercel's serverless log pipeline seems to
+  // be dropping Winston JSON output. console.* is always captured verbatim.
+  console.log('[consent-sms] start', JSON.stringify({ tenantId: tenant.id, from }));
+
+  const consentPromise = (async () => {
+    try {
+      const suppressed = await isCallerSuppressed(tenant.id, from);
+      console.log('[consent-sms] suppressed-check', JSON.stringify({ suppressed }));
+      if (suppressed) return;
+
+      const { id: consentRequestId, alreadyPending } = await createConsentRequest(tenant.id, from, to);
+      console.log('[consent-sms] create-result', JSON.stringify({ consentRequestId, alreadyPending }));
+      if (alreadyPending) return;
+
+      const consentMsg = buildConsentMessage(businessName);
+      console.log('[consent-sms] calling-twilio');
+      const messageSid = await sendSms(tenant.id, from, consentMsg);
+      console.log('[consent-sms] twilio-accepted', JSON.stringify({ messageSid }));
+
+      await prisma.smsConsentRequest.update({
+        where: { id: consentRequestId },
+        data: { consentMessageSid: messageSid },
+      }).catch(() => {});
+      await prisma.missedCall.update({
+        where: { twilioCallSid: callSid },
+        data: { smsSent: true },
+      }).catch(() => {});
+    } catch (err: any) {
+      // Raw console.error so Vercel definitely captures it
+      console.error('[consent-sms] FAILED', JSON.stringify({
+        errCode: err?.code,
+        errStatus: err?.status,
+        errMoreInfo: err?.moreInfo,
+        message: err?.message,
+        name: err?.name,
+      }));
+    }
+  })();
+
+  // Keep the function alive past response return (Vercel)
+  waitUntil(consentPromise);
 
   // Build TwiML response: short greeting + optional voicemail
   const twiml = buildVoiceTwiml({
