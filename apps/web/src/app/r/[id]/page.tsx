@@ -36,6 +36,7 @@ async function loadOrder(orderId: string) {
       subtotal: true,
       taxAmount: true,
       feeAmount: true,
+      tipAmount: true,
       total: true,
       pickupTime: true,
       paymentStatus: true,
@@ -71,6 +72,7 @@ export default async function ReceiptPage({ params }: { params: { id: string } }
   const subtotal = order.subtotal != null ? Number(order.subtotal) : null;
   const tax = order.taxAmount != null ? Number(order.taxAmount) : null;
   const fee = order.feeAmount != null ? Number(order.feeAmount) : null;
+  const tip = order.tipAmount != null ? Number(order.tipAmount) : null;
   const total = Number(order.total);
   const when = formatDateTime(order.createdAt, order.tenant.config?.timezone ?? null);
   const paid = order.paymentStatus === 'PAID';
@@ -156,6 +158,12 @@ export default async function ReceiptPage({ params }: { params: { id: string } }
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Processing</span>
                 <span className="font-mono">${fee.toFixed(2)}</span>
+              </div>
+            )}
+            {tip != null && tip > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Tip</span>
+                <span className="font-mono">${tip.toFixed(2)}</span>
               </div>
             )}
             <div className="flex justify-between font-bold text-base border-t pt-2 mt-1">

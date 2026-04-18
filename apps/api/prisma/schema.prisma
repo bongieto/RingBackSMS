@@ -402,7 +402,8 @@ model Order {
   subtotal           Decimal?     @db.Decimal(10, 2) // items-only subtotal before tax/fee
   taxAmount          Decimal?     @db.Decimal(10, 2) // sales tax applied
   feeAmount          Decimal?     @db.Decimal(10, 2) // processing fee passed to customer (if enabled)
-  total              Decimal      @db.Decimal(10, 2) // final amount customer pays (subtotal + tax + fee)
+  tipAmount          Decimal?     @db.Decimal(10, 2) // customer-selected tip at checkout
+  total              Decimal      @db.Decimal(10, 2) // final amount customer pays (subtotal + tax + fee + tip)
   pickupTime         String?
   estimatedReadyTime DateTime?
   notes              String?      @db.Text
@@ -411,6 +412,7 @@ model Order {
   posOrderId         String?
   posPaymentId       String?
   stripePaymentId    String?
+  stripeRefundId     String?
   stripePaymentUrl   String?
   paymentStatus      String?      @default("UNPAID")
   createdAt          DateTime     @default(now())

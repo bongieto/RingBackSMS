@@ -23,6 +23,9 @@ export async function createOrderPaymentSession(params: {
   subtotal?: number;
   taxAmount?: number;
   feeAmount?: number;
+  /** Customer-selected tip (dollars). Added as its own line item and
+   *  stamped into metadata so the webhook can persist it to Order.tipAmount. */
+  tipAmount?: number;
   callerPhone: string;
   pickupTime?: string | null;
   notes?: string | null;
@@ -72,6 +75,17 @@ export async function createOrderPaymentSession(params: {
       quantity: 1,
     });
   }
+  if (params.tipAmount && params.tipAmount > 0) {
+    lineItems.push({
+      price_data: {
+        currency: 'usd',
+        product_data: { name: 'Tip' },
+        unit_amount: Math.round(params.tipAmount * 100),
+      },
+      quantity: 1,
+    });
+    metadata.tipAmount = params.tipAmount.toFixed(2);
+  }
 
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
@@ -89,4 +103,29 @@ export async function createOrderPaymentSession(params: {
   });
 
   return { sessionId: session.id, url: session.url! };
+}
+
+/**
+ * Issue a full refund on a Stripe payment associated with an order. Works
+ * against either a payment_intent id or a checkout session id — we detect
+ * which was stored on Order.stripePaymentId. Returns the refund id so the
+ * caller can persist it. Throws if Stripe rejects (amount already refunded,
+ * payment not found, etc.); caller decides how to surface to the operator.
+ */
+export async function refundOrderPayment(stripePaymentId: string): Promise<string> {
+  const stripe = getStripe();
+
+  // stripePaymentId may be either `pi_*` (payment intent) or `cs_*`
+  // (checkout session). Resolve to a payment_intent for the refund.
+  let paymentIntentId = stripePaymentId;
+  if (stripePaymentId.startsWith('cs_')) {
+    const session = await stripe.checkout.sessions.retrieve(stripePaymentId);
+    const pi = typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id;
+    if (!pi) throw new Error('Checkout session has no payment_intent to refund');
+    paymentIntentId = pi;
+  }
+
+  const refund = await stripe.refunds.create({ payment_intent: paymentIntentId });
+  logger.info('Stripe refund issued', { paymentIntentId, refundId: refund.id, amount: refund.amount });
+  return refund.id;
 }

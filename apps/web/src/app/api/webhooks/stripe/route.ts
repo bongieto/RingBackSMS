@@ -176,10 +176,20 @@ export async function POST(request: NextRequest) {
         }
 
         if (orderId && tenantId) {
-          // Pay-after-order flow: order already exists, just mark as paid
+          // Pay-after-order flow: order already exists, just mark as paid.
+          // If the /pay interstitial set a tip, metadata.tipAmount is the
+          // authoritative value — persist it here so reports and receipts
+          // reflect exactly what the customer paid.
+          const tipFromMeta = session.metadata?.tipAmount
+            ? Number(session.metadata.tipAmount)
+            : null;
           await prisma.order.update({
             where: { id: orderId },
-            data: { paymentStatus: 'PAID', stripePaymentId: paymentIntentId },
+            data: {
+              paymentStatus: 'PAID',
+              stripePaymentId: paymentIntentId,
+              ...(tipFromMeta != null && tipFromMeta > 0 ? { tipAmount: tipFromMeta } : {}),
+            },
           });
           logger.info('Order payment completed', { orderId, tenantId });
           if (callerPhone) {

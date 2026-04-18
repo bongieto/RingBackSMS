@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { OrderStatus } from '@prisma/client';
 import { getOrderById, updateOrderStatus } from '@/lib/server/services/orderService';
+import { refundOrderPayment } from '@/lib/server/services/paymentService';
 import { sendSms } from '@/lib/server/services/twilioService';
 import { prisma } from '@/lib/server/db';
 import { logger } from '@/lib/server/logger';
@@ -67,6 +68,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (!allowed.includes(status)) return apiError(`Cannot transition from ${order.status} to ${status}`, 400);
     const updated = await updateOrderStatus(params.id, tenantId, status);
 
+    // If the operator cancelled a paid order, auto-issue a Stripe refund.
+    // We fire this inside waitUntil so the KDS request returns fast; the
+    // customer gets a follow-up SMS once the refund lands. Non-fatal — if
+    // Stripe rejects (already refunded, expired, etc.) we log and leave
+    // the operator to retry manually from the Stripe dashboard.
+    const shouldRefund =
+      status === OrderStatus.CANCELLED &&
+      order.paymentStatus === 'PAID' &&
+      !!order.stripePaymentId &&
+      !order.stripeRefundId;
+
     // Fire-and-forget: send customer SMS notification on status change
     waitUntil(
       (async () => {
@@ -93,6 +105,34 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         }
       })()
     );
+
+    if (shouldRefund && order.stripePaymentId) {
+      const stripePaymentId = order.stripePaymentId;
+      waitUntil(
+        (async () => {
+          try {
+            const refundId = await refundOrderPayment(stripePaymentId);
+            await prisma.order.update({
+              where: { id: order.id },
+              data: { stripeRefundId: refundId, paymentStatus: 'REFUNDED' },
+            });
+            await sendSms(
+              tenantId,
+              order.callerPhone,
+              `A refund has been issued for order #${order.orderNumber}. It may take 5-10 days to appear on your card.`,
+            );
+            logger.info('Order refund issued', { tenantId, orderId: order.id, refundId });
+          } catch (err: any) {
+            logger.error('Order refund failed', {
+              err: err?.message,
+              tenantId,
+              orderId: order.id,
+              stripePaymentId,
+            });
+          }
+        })()
+      );
+    }
 
     return apiSuccess(updated);
   } catch (err) {

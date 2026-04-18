@@ -860,8 +860,12 @@ async function processSideEffect(
           }
         }
 
-        // Send payment link as follow-up SMS
-        await sendSms(tenantId, callerPhone, `Pay securely here: ${url}`);
+        // For pay-after-order, route through our tip-jar interstitial so
+        // the customer picks a tip before Stripe. Payment-first keeps the
+        // direct Stripe URL — there's no Order row yet to hang /pay off of.
+        const appBase = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://ringbacksms.com').replace(/\/+$/, '');
+        const payLink = context.orderId ? `${appBase}/pay/${context.orderId}` : url;
+        await sendSms(tenantId, callerPhone, `Pay securely here: ${payLink}`);
         logger.info('Payment link sent', { tenantId, orderId: context.orderId ?? 'pending', sessionId });
       } catch (err) {
         logger.error('CREATE_PAYMENT_LINK failed', { tenantId, error: err });
