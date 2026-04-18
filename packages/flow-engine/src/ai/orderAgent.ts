@@ -265,10 +265,24 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       return processOrderFlow(input);
     }
 
-    const reply =
-      (aiResponse.text ||
-        clarification?.question ||
-        (draft.items.length ? 'Got it.' : 'How can I help with your order?')).slice(0, 320);
+    // If Claude returned tool calls without accompanying text (common when
+    // stop_reason === 'tool_use'), build a deterministic summary so we
+    // never reply with bare "Got it."
+    function buildFallbackReply(): string {
+      if (clarification?.question) return clarification.question;
+      if (!draft.items.length) return 'How can I help with your order?';
+      const summary = draft.items
+        .map((i) => `${i.quantity}× ${i.name}`)
+        .join(', ');
+      const total = computeTotal(draft).toFixed(2);
+      const needsPickup = !draft.pickupTime;
+      const next = needsPickup
+        ? 'What time would you like to pick up?'
+        : 'Anything else, or ready to confirm?';
+      return `Added: ${summary}. Total $${total}. ${next}`;
+    }
+
+    const reply = (aiResponse.text || buildFallbackReply()).slice(0, 320);
 
     const nextStep =
       clarification

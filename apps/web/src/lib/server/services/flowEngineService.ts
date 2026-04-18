@@ -435,8 +435,11 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     }
   }
 
-  // Prepend after-hours notice if outside business hours
-  if (!withinBusinessHours) {
+  // Prepend after-hours notice ONLY on the first message of a new
+  // conversation. Repeating it on every turn spams the customer (and
+  // confuses the AI agent when it's mid-flow).
+  const isFirstTurn = !existingConversationId;
+  if (!withinBusinessHours && isFirstTurn) {
     const hoursDisplay = getBusinessHoursDisplay({
       businessHoursStart: tenant.config.businessHoursStart,
       businessHoursEnd: tenant.config.businessHoursEnd,
