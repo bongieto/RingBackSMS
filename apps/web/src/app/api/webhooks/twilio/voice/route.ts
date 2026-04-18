@@ -287,28 +287,44 @@ export async function POST(request: NextRequest) {
   // The AI conversation only starts after the caller replies YES.
   waitUntil(
     (async () => {
+      logger.info('[consent-sms] start', { tenantId: tenant.id, from });
       try {
         // Check suppression list first — if caller opted out, stay silent
         const suppressed = await isCallerSuppressed(tenant.id, from);
         if (suppressed) {
-          logger.info('Caller suppressed, skipping SMS', { tenantId: tenant.id });
+          logger.info('[consent-sms] skip: caller suppressed', { tenantId: tenant.id });
           return;
         }
         // Dedup: check if a PENDING consent already exists (rapid redial)
-        const { alreadyPending } = await createConsentRequest(tenant.id, from, to);
+        const { id: consentRequestId, alreadyPending } = await createConsentRequest(tenant.id, from, to);
         if (alreadyPending) {
-          logger.info('Consent already pending, skipping duplicate SMS', { tenantId: tenant.id });
+          logger.info('[consent-sms] skip: consent already pending', { tenantId: tenant.id, consentRequestId });
           return;
         }
+        logger.info('[consent-sms] calling twilio sendSms', { tenantId: tenant.id, consentRequestId });
         // Send consent request SMS (non-commercial, TCPA-safe)
         const consentMsg = buildConsentMessage(businessName);
-        await sendSms(tenant.id, from, consentMsg);
+        const messageSid = await sendSms(tenant.id, from, consentMsg);
+        logger.info('[consent-sms] twilio accepted', { tenantId: tenant.id, consentRequestId, messageSid });
+        // Store the SID on the consent request so we can correlate later
+        await prisma.smsConsentRequest.update({
+          where: { id: consentRequestId },
+          data: { consentMessageSid: messageSid },
+        }).catch((err) => logger.warn('[consent-sms] failed to store messageSid', { err }));
         await prisma.missedCall.update({
           where: { twilioCallSid: callSid },
           data: { smsSent: true },
         }).catch(() => {});
-      } catch (err) {
-        logger.error('Failed to send consent SMS', { err, tenantId: tenant.id });
+      } catch (err: any) {
+        // Surface Twilio error codes so we can see what's actually rejected
+        logger.error('[consent-sms] FAILED', {
+          tenantId: tenant.id,
+          from,
+          errCode: err?.code,
+          errStatus: err?.status,
+          errMoreInfo: err?.moreInfo,
+          message: err?.message,
+        });
       }
     })()
   );
