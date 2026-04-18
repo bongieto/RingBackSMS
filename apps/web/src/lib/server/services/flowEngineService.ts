@@ -12,7 +12,7 @@ import { matchesLocationKeyword, buildLocationReply } from './foodTruckLocationS
 import { createOrderPaymentSession } from './paymentService';
 import { incrementSmsUsage } from './usageMeterService';
 import { logger } from '../logger';
-import { isWithinBusinessHours, getBusinessHoursDisplay, getNextOpenDisplay } from '../businessHours';
+import { isWithinBusinessHours, getBusinessHoursDisplay, getNextOpenDisplay, getTodayHoursDisplay } from '../businessHours';
 import { getActiveOrderCount } from './queueService';
 import { prisma } from '../db';
 import { encryptMessages, decryptMessages } from '../encryption';
@@ -253,7 +253,8 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
   tenantContext.hoursInfo = {
     openNow: withinBusinessHours,
     nextOpenDisplay: withinBusinessHours ? null : getNextOpenDisplay(hoursConfig),
-    todayHoursDisplay: getBusinessHoursDisplay(hoursConfig),
+    todayHoursDisplay: getTodayHoursDisplay(hoursConfig),
+    weeklyHoursDisplay: getBusinessHoursDisplay(hoursConfig),
   };
 
   // If we're closed AND the tenant has opted out of accepting closed-hour

@@ -16,8 +16,9 @@ export interface TenantContext {
    *  closed rather than dead-ending the conversation. */
   hoursInfo?: {
     openNow: boolean;
-    nextOpenDisplay: string | null; // e.g. "tomorrow 11:00 AM" or "Sun 11:00 AM"
-    todayHoursDisplay: string;      // e.g. "Mon-Fri 11:00 AM - 9:00 PM"
+    nextOpenDisplay: string | null;   // e.g. "tomorrow 11:00 AM" or "Sun 11:00 AM"
+    todayHoursDisplay: string;        // e.g. "11:00 AM - 9:00 PM" — TODAY only
+    weeklyHoursDisplay: string;       // e.g. "Sun 11-8pm, Tue-Sat 11-9pm" — full week for ops context
   };
 }
 

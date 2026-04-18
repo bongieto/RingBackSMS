@@ -172,6 +172,53 @@ function formatTime(time: string): string {
 }
 
 /**
+ * Return today's hours (in the tenant's timezone) as a single compact
+ * string like "11:00 AM - 9:00 PM", or "Closed" if we're not open today.
+ * This is narrower than getBusinessHoursDisplay (which returns the whole
+ * week) — the AI agent was paraphrasing the weekly display and picking
+ * the wrong close time. Feeding just today's hours removes ambiguity.
+ */
+export function getTodayHoursDisplay(
+  config: BusinessHoursConfig,
+  now: Date = new Date(),
+): string {
+  const tz = config.timezone ?? 'America/Chicago';
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    weekday: 'short',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = fmt.formatToParts(now);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  const weekdayMap: Record<string, number> = {
+    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+  };
+  const dow = weekdayMap[get('weekday')] ?? 0;
+  const ymd = `${get('year')}-${get('month')}-${get('day')}`;
+
+  // Closed for a specific calendar date
+  if (config.closedDates?.includes(ymd)) return 'Closed today';
+
+  const { businessSchedule, businessHoursStart, businessHoursEnd, businessDays } = config;
+
+  // Per-day schedule wins when present
+  if (businessSchedule && Object.keys(businessSchedule).length > 0) {
+    const today = businessSchedule[String(dow)];
+    if (!today) return 'Closed today';
+    return `${formatTime(today.open)} - ${formatTime(today.close)}`;
+  }
+
+  // Flat-fields fallback
+  if (!businessHoursStart || !businessHoursEnd) return 'Always open';
+  if (businessDays && businessDays.length > 0 && !businessDays.includes(dow)) {
+    return 'Closed today';
+  }
+  return `${formatTime(businessHoursStart)} - ${formatTime(businessHoursEnd)}`;
+}
+
+/**
  * Return a human-readable description of the tenant's next open slot
  * starting from `now` (in the tenant's timezone). Walks forward up to 7
  * days honoring closedDates, businessSchedule and businessDays. Returns

@@ -58,8 +58,8 @@ export function buildOrderAgentSystemPrompt(args: BuildAgentPromptArgs): string 
   const hours = tenantContext.hoursInfo;
   const hoursBlock = hours
     ? hours.openNow
-      ? `We're OPEN right now. Today's hours: ${hours.todayHoursDisplay}.`
-      : `We're CURRENTLY CLOSED. Next opening: ${hours.nextOpenDisplay ?? 'unknown'}. Today's hours: ${hours.todayHoursDisplay}. It's fine to take this order — the pickup time MUST be on or after the next opening. Never promise a pickup while we're closed.`
+      ? `We're OPEN right now. Today's hours (verbatim — never paraphrase): ${hours.todayHoursDisplay}. Weekly schedule for context: ${hours.weeklyHoursDisplay}.`
+      : `We're CURRENTLY CLOSED. Next opening (verbatim): ${hours.nextOpenDisplay ?? 'unknown'}. Today we were ${hours.todayHoursDisplay === 'Closed today' ? 'closed' : `open ${hours.todayHoursDisplay}`}. Weekly schedule for context: ${hours.weeklyHoursDisplay}. It's fine to take this order — the pickup time MUST be on or after the next opening. Never promise a pickup while we're closed.`
     : '';
 
   return `You are the SMS ordering assistant for ${tenantContext.tenantName}.
@@ -99,6 +99,7 @@ ${formatMenu(filteredMenu)}
 
 # Rules
 1. Never invent menu items or ids.
+1b. Never invent business hours or close times. If you quote hours, copy them VERBATIM from the Hours block above — don't paraphrase, don't summarize across days.
 2. Prices are authoritative from the menu; don't recompute — but DO state totals in your reply.
 3. Your reply text must fit in one SMS (≤ 320 chars).
 4. **First move for a brand-new order** (cart is empty AND no pickup time set):
