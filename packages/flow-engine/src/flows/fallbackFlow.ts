@@ -112,6 +112,15 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
     ? '\nThe customer JUST completed an order — most messages right now are polite chit-chat ("ok", "see you", "thanks man"), questions ABOUT the existing order, or random non-requests. Treat casual messages as casual. Do NOT try to upsell or re-prompt for a new order.'
     : '';
 
+  // Tenant owner's custom instructions apply across ALL AI-generated
+  // replies, not just the order agent. Appended last so they can
+  // override-ish / layer on top of the base rules above.
+  const customInstr = (tenantContext.config as { customAiInstructions?: string | null }).customAiInstructions;
+  const customBlock =
+    customInstr && customInstr.trim().length > 0
+      ? `\n\n# Tenant-specific instructions from the owner\n${customInstr.trim()}`
+      : '';
+
   const systemPrompt = `You are texting on behalf of ${tenantContext.tenantName}. Be ${personality}.
 
 # Output rules
@@ -123,7 +132,7 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
 - Never repeat the customer's message back to them.${postOrderHint}
 
 # Capabilities and context
-${capabilities}${businessAddress}${websiteContext}${catalogContext}${callerContextBlock}`;
+${capabilities}${businessAddress}${websiteContext}${catalogContext}${callerContextBlock}${customBlock}`;
 
   const nextState: CallerState = {
     tenantId: tenantContext.tenantId,
