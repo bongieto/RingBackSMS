@@ -240,17 +240,44 @@ export function handleAddItems(
       if (!r.ok) return r;
       selectedModifiers = r.mods;
     }
-    draft.items.push({
-      menuItemId: menuItem.id,
-      name: menuItem.name,
-      quantity: req.quantity,
-      price: menuItem.price,
-      selectedModifiers,
-      confirmed: false,
-      notes: req.notes,
-    });
+
+    // Consolidate: if a line for this exact menu_item + modifiers + notes
+    // already exists, bump its quantity instead of pushing a duplicate line.
+    const existing = draft.items.find(
+      (line) =>
+        line.menuItemId === menuItem.id &&
+        (line.notes ?? '') === (req.notes ?? '') &&
+        modifiersEqual(line.selectedModifiers, selectedModifiers),
+    );
+    if (existing) {
+      existing.quantity += req.quantity;
+      existing.confirmed = false;
+    } else {
+      draft.items.push({
+        menuItemId: menuItem.id,
+        name: menuItem.name,
+        quantity: req.quantity,
+        price: menuItem.price,
+        selectedModifiers,
+        confirmed: false,
+        notes: req.notes,
+      });
+    }
   }
   return { ok: true, kind: 'mutated' };
+}
+
+function modifiersEqual(
+  a: SelectedModifier[] | undefined,
+  b: SelectedModifier[] | undefined,
+): boolean {
+  const aa = a ?? [];
+  const bb = b ?? [];
+  if (aa.length !== bb.length) return false;
+  const key = (m: SelectedModifier) => `${m.groupName}::${m.modifierName}`;
+  const sa = aa.map(key).sort();
+  const sb = bb.map(key).sort();
+  return sa.every((v, i) => v === sb[i]);
 }
 
 export function handleRemoveItem(draft: OrderDraft, raw: unknown): ToolResult {
