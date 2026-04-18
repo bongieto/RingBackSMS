@@ -296,19 +296,30 @@ export function handleAddItems(
 
   const personName = opts?.personName?.trim() || undefined;
 
+  // Be permissive: if ONE line in the batch has a bad modifier or an
+  // unknown menu_item_id, keep the valid ones and surface the bad ones
+  // via skipped[]. Previously this short-circuited at the first failure,
+  // silently dropping every subsequent item in the batch — customers
+  // would text "A, B, C" and only get "A" back with no explanation.
+  const skipped: string[] = [];
   for (const req of parsed.data.items) {
     const menuItem = findMenuItem(menu, req.menu_item_id);
     if (!menuItem) {
-      return {
-        ok: false,
-        error: `menu_item_id "${req.menu_item_id}" not found or unavailable`,
-      };
+      skipped.push(`item id ${req.menu_item_id} not on menu`);
+      continue;
     }
     let selectedModifiers: SelectedModifier[] | undefined;
     if (req.modifiers && req.modifiers.length > 0) {
       const r = resolveModifiers(menuItem, req.modifiers);
-      if (!r.ok) return r;
-      selectedModifiers = r.mods;
+      if (!r.ok) {
+        // Degrade gracefully: add the item without modifiers and remember
+        // to clarify later. A bare Cornsilog is more useful than a
+        // dropped Cornsilog.
+        skipped.push(`${menuItem.name}: ${r.error}`);
+        selectedModifiers = undefined;
+      } else {
+        selectedModifiers = r.mods;
+      }
     }
 
     // Consolidate: if a line for this exact menu_item + modifiers + notes
@@ -337,7 +348,18 @@ export function handleAddItems(
       });
     }
   }
-  return { ok: true, kind: 'mutated' };
+  // Something was added → success, even if some lines were skipped. The
+  // reply wording can acknowledge the skips; we don't need the agent to
+  // treat this as a failure.
+  const added = parsed.data.items.length - skipped.length;
+  if (added <= 0) {
+    return { ok: false, error: skipped.join('; ') || 'no items added' };
+  }
+  return {
+    ok: true,
+    kind: 'mutated',
+    message: skipped.length > 0 ? `skipped: ${skipped.join('; ')}` : undefined,
+  };
 }
 
 export function handleAddItemsForPerson(
