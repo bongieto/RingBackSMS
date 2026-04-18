@@ -12,19 +12,30 @@ export function formatCurrency(cents: number): string {
   }).format(cents / 100);
 }
 
-export function formatDate(date: string | Date): string {
+export function formatDate(date: string | Date | null | undefined): string {
+  if (date == null) return '';
+  const d = date instanceof Date ? date : new Date(date);
+  // `pickupTime` is stored as raw user text ("6:30pm", "asap") and isn't
+  // a parseable datetime. Return the original string instead of crashing.
+  if (Number.isNaN(d.getTime())) {
+    return typeof date === 'string' ? date : '';
+  }
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
-  }).format(new Date(date));
+  }).format(d);
 }
 
-export function formatRelativeTime(date: string | Date): string {
+export function formatRelativeTime(date: string | Date | null | undefined): string {
+  if (date == null) return '';
+  const then = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(then.getTime())) {
+    return typeof date === 'string' ? date : '';
+  }
   const now = new Date();
-  const then = new Date(date);
   const diffMs = now.getTime() - then.getTime();
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMins / 60);
