@@ -1,5 +1,6 @@
 import { posRegistry } from './registry';
 import { logger } from '../logger';
+import { prisma } from '../db';
 
 interface WebhookEvent {
   type?: string;
@@ -29,8 +30,11 @@ export async function handlePosWebhookEvent(
   try {
     const adapter = posRegistry.get(provider);
 
-    // Determine tenant from event payload (provider-specific)
-    const tenantId = extractTenantId(provider, event);
+    // Determine tenant from event payload (provider-specific).
+    // Square/Clover send their own merchant_id; we have to look up our
+    // Tenant row that's linked to that external id. Other providers
+    // might carry our tenant id directly — delegate to the resolver.
+    const tenantId = await resolveTenantId(provider, event);
 
     if (!tenantId) {
       logger.warn('Could not determine tenant from webhook event', {
@@ -85,25 +89,57 @@ export async function handlePosWebhookEvent(
 }
 
 /**
- * Extracts the tenant ID from a webhook event payload.
- * Each provider encodes merchant/tenant info differently.
+ * Resolve our RingbackSMS `Tenant.id` from a webhook event. Providers
+ * identify themselves by their own merchant id (Square / Clover),
+ * restaurant GUID (Toast), or shop domain (Shopify) — we store those
+ * on the Tenant row during OAuth, so a lookup here maps them back.
+ *
+ * Returns null when no matching tenant exists (event fires for an
+ * account we don't know about — should not happen in practice but
+ * we log and skip rather than crash).
  */
-function extractTenantId(
+async function resolveTenantId(
   provider: string,
   event: WebhookEvent,
-): string | null {
+): Promise<string | null> {
   switch (provider) {
-    case 'square':
-      return (event.merchant_id as string) ?? null;
-    case 'clover':
-      return (event.merchant_id as string) ?? null;
-    case 'toast':
-      return (event.restaurantGuid as string) ?? null;
+    case 'square': {
+      const merchantId = event.merchant_id as string | undefined;
+      if (!merchantId) return null;
+      const tenant = await prisma.tenant.findFirst({
+        where: { squareMerchantId: merchantId },
+        select: { id: true },
+      });
+      return tenant?.id ?? null;
+    }
+    case 'clover': {
+      const merchantId = event.merchant_id as string | undefined;
+      if (!merchantId) return null;
+      const tenant = await prisma.tenant.findFirst({
+        where: { posMerchantId: merchantId, posProvider: 'clover' },
+        select: { id: true },
+      });
+      return tenant?.id ?? null;
+    }
+    case 'toast': {
+      const guid = event.restaurantGuid as string | undefined;
+      if (!guid) return null;
+      const tenant = await prisma.tenant.findFirst({
+        where: { posMerchantId: guid, posProvider: 'toast' },
+        select: { id: true },
+      });
+      return tenant?.id ?? null;
+    }
     case 'shopify': {
       const domain =
-        (event.domain as string) ??
-        ((event as Record<string, unknown>)['x-shopify-shop-domain'] as string);
-      return domain ?? null;
+        (event.domain as string | undefined) ??
+        ((event as Record<string, unknown>)['x-shopify-shop-domain'] as string | undefined);
+      if (!domain) return null;
+      const tenant = await prisma.tenant.findFirst({
+        where: { posMerchantId: domain, posProvider: 'shopify' },
+        select: { id: true },
+      });
+      return tenant?.id ?? null;
     }
     default:
       return null;
