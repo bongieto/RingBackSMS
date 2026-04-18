@@ -18,7 +18,10 @@ export async function GET() {
     if (err instanceof NotFoundError) {
       return apiSuccess({ open: 0, urgent: 0 });
     }
+    // Log the underlying error server-side but return a generic message
+    // so we never leak Prisma/DB details (table names, query structure) to
+    // unauthenticated callers.
     console.error('[GET /api/tasks/count] failed', err);
-    return apiError(err?.message ?? 'Failed to count tasks', 500);
+    return apiError('Failed to count tasks', 500);
   }
 }

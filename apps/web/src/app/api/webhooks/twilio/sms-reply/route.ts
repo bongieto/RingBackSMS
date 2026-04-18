@@ -35,10 +35,15 @@ export async function POST(request: NextRequest) {
 
   // Pre-verify Twilio signature with master auth token BEFORE DB lookup.
   // Prevents unauthenticated actors from probing registered numbers.
-  const masterToken = process.env.TWILIO_MASTER_AUTH_TOKEN;
+  // Fail-closed: missing master token = misconfiguration, never skip the check.
+  const masterToken = process.env.TWILIO_MASTER_AUTH_TOKEN?.trim();
+  if (!masterToken) {
+    logger.error('TWILIO_MASTER_AUTH_TOKEN not configured — refusing webhook');
+    return new Response('Webhook not configured', { status: 500 });
+  }
   const sig = request.headers.get('x-twilio-signature') ?? '';
   const webhookUrl = `${process.env.FRONTEND_URL ?? ''}/api/webhooks/twilio/sms-reply`;
-  if (masterToken && !twilio.validateRequest(masterToken, sig, webhookUrl, body)) {
+  if (!twilio.validateRequest(masterToken, sig, webhookUrl, body)) {
     logger.warn('Invalid Twilio signature on SMS webhook (master pre-check)');
     return new Response('Invalid signature', { status: 403 });
   }
@@ -73,10 +78,16 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // Re-verify with sub-account token if tenant has one
+  // Re-verify with sub-account token if tenant has one. Fail-closed: if
+  // the tenant is configured with a sub-account but the decrypted token
+  // is unavailable, refuse rather than silently skipping the check.
   if (tenant.twilioSubAccountSid && tenant.twilioAuthToken) {
     const subToken = getValidationToken(tenant);
-    if (subToken && !twilio.validateRequest(subToken, sig, webhookUrl, body)) {
+    if (!subToken) {
+      logger.error('Sub-account Twilio token could not be resolved', { tenantId: tenant.id });
+      return new Response('Tenant auth token misconfigured', { status: 500 });
+    }
+    if (!twilio.validateRequest(subToken, sig, webhookUrl, body)) {
       logger.warn('Invalid Twilio signature on SMS webhook (sub-account)', { tenantId: tenant.id });
       return new Response('Invalid signature', { status: 403 });
     }

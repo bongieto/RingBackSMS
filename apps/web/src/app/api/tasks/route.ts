@@ -26,7 +26,8 @@ export async function GET(req: NextRequest) {
     });
     return apiSuccess(tasks);
   } catch (err: any) {
-    return apiError(err.message ?? 'Failed to list tasks', 500);
+    console.error('[GET /api/tasks] failed', err);
+    return apiError('Failed to list tasks', 500);
   }
 }
 
@@ -48,6 +49,7 @@ export async function POST(req: NextRequest) {
     });
     return apiSuccess(task);
   } catch (err: any) {
-    return apiError(err.message ?? 'Failed to create task', 500);
+    console.error('[POST /api/tasks] failed', err);
+    return apiError('Failed to create task', 500);
   }
 }

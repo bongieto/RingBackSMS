@@ -89,11 +89,20 @@ export function decryptMaybePlaintext(value: string | null | undefined): string 
  * Deterministic HMAC-SHA256 of a normalized value, used to make encrypted
  * columns searchable at the SQL level (exact match only). Not reversible.
  *
+ * `tenantId` is mixed into the HMAC input so the same PII value (e.g.
+ * "john@example.com") hashes differently across tenants. Without this,
+ * a DB exfiltration would let an attacker correlate the same person
+ * across multiple tenants via equal hashes.
+ *
  * Uses CONTACT_SEARCH_HMAC_KEY if set; otherwise derives a stable key from
  * ENCRYPTION_KEY so dev environments keep working without extra config.
  */
-export function hashForSearch(value: string | null | undefined): string | null {
+export function hashForSearch(
+  value: string | null | undefined,
+  tenantId: string,
+): string | null {
   if (value == null) return null;
+  if (!tenantId) throw new Error('hashForSearch requires a tenantId');
   const normalized = String(value).trim().toLowerCase();
   if (normalized === '') return null;
   const keyMaterial = process.env.CONTACT_SEARCH_HMAC_KEY || process.env.ENCRYPTION_KEY;
@@ -102,7 +111,11 @@ export function hashForSearch(value: string | null | undefined): string | null {
       'CONTACT_SEARCH_HMAC_KEY or ENCRYPTION_KEY must be set for search hashing',
     );
   }
-  return createHmac('sha256', keyMaterial).update(normalized).digest('hex');
+  // Scope input as `${tenantId}:${value}`. Two tenants with the same PII
+  // produce distinct hashes and the stored table can't be correlated.
+  return createHmac('sha256', keyMaterial)
+    .update(`${tenantId}:${normalized}`)
+    .digest('hex');
 }
 
 /**

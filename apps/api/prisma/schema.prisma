@@ -718,6 +718,19 @@ model EscalationEvent {
   @@index([tenantId, createdAt])
 }
 
+/// Idempotency log for provider webhook events. One row per provider event
+/// id after it's been handled; subsequent deliveries short-circuit without
+/// re-running side effects. Used to protect against Stripe replay + manual
+/// "Resend" from the Dashboard.
+model WebhookEventLog {
+  id          String   @id                      // provider event id (e.g. "evt_1Abc...")
+  provider    String                             // 'stripe' | 'calcom' | ...
+  eventType   String
+  processedAt DateTime @default(now())
+
+  @@index([processedAt])
+}
+
 /// Per-call AI token usage. One row per Claude / MiniMax / OpenAI request
 /// so we can bill tenants by real usage and debug cost spikes.
 model AiUsageLog {

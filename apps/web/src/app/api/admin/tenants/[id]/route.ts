@@ -6,6 +6,7 @@ import { Plan, BusinessType } from '@prisma/client';
 import { prisma } from '@/lib/server/db';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
+import { sanitizeTenantResponse } from '@/lib/server/services/tenantService';
 
 
 export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
@@ -56,7 +57,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
   });
 
   // Remove sensitive encrypted fields from response
-  const { squareAccessToken, squareRefreshToken, posAccessToken, posRefreshToken, twilioAuthToken, ...safeTenant } = tenant as any;
+  const safeTenant = sanitizeTenantResponse(tenant as any);
 
   return apiSuccess({
     ...safeTenant,
@@ -125,7 +126,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     changes: body,
   });
 
-  return apiSuccess(tenant);
+  return apiSuccess(sanitizeTenantResponse(tenant));
 }
 
 export async function DELETE(_request: NextRequest, { params }: { params: { id: string } }) {

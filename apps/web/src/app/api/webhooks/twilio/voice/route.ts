@@ -150,11 +150,15 @@ export async function POST(request: NextRequest) {
 
   // Pre-verify Twilio signature with master auth token BEFORE any DB lookup.
   // This prevents unauthenticated actors from probing which phone numbers
-  // have tenants. Sub-account tenants are re-verified after lookup.
-  const masterToken = process.env.TWILIO_MASTER_AUTH_TOKEN;
+  // have tenants. Fail-closed: missing master token = refuse webhook.
+  const masterToken = process.env.TWILIO_MASTER_AUTH_TOKEN?.trim();
+  if (!masterToken) {
+    logger.error('TWILIO_MASTER_AUTH_TOKEN not configured — refusing webhook');
+    return new Response('Webhook not configured', { status: 500 });
+  }
   const sig = request.headers.get('x-twilio-signature') ?? '';
   const webhookUrl = `${process.env.FRONTEND_URL ?? ''}/api/webhooks/twilio/voice`;
-  if (masterToken && !twilio.validateRequest(masterToken, sig, webhookUrl, body)) {
+  if (!twilio.validateRequest(masterToken, sig, webhookUrl, body)) {
     logger.warn('Invalid Twilio signature on voice webhook (master pre-check)');
     return new Response('Invalid signature', { status: 403 });
   }
@@ -180,10 +184,15 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // Re-verify with sub-account token if tenant has one (belt-and-suspenders)
+  // Re-verify with sub-account token if tenant has one (belt-and-suspenders).
+  // Fail-closed on unresolvable token.
   if (tenant.twilioSubAccountSid && tenant.twilioAuthToken) {
     const subToken = getValidationToken(tenant);
-    if (subToken && !twilio.validateRequest(subToken, sig, webhookUrl, body)) {
+    if (!subToken) {
+      logger.error('Sub-account Twilio token could not be resolved', { tenantId: tenant.id });
+      return new Response('Tenant auth token misconfigured', { status: 500 });
+    }
+    if (!twilio.validateRequest(subToken, sig, webhookUrl, body)) {
       logger.warn('Invalid Twilio signature on voice webhook (sub-account)', { tenantId: tenant.id });
       return new Response('Invalid signature', { status: 403 });
     }

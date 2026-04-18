@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { auth, clerkClient } from '@clerk/nextjs/server';
-import { createTenant } from '@/lib/server/services/tenantService';
+import { createTenant, sanitizeTenantResponse } from '@/lib/server/services/tenantService';
 import { CreateTenantRequestSchema } from '@ringback/shared-types';
 import { apiCreated, apiError } from '@/lib/server/response';
 import { AppError } from '@/lib/server/errors';
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
         } catch (e) {
           console.warn('[POST /api/tenants] failed to rename Clerk org', e);
         }
-        return apiCreated(updated);
+        return apiCreated(sanitizeTenantResponse(updated));
       }
     }
 
@@ -195,7 +195,7 @@ export async function POST(request: NextRequest) {
         console.warn('[POST /api/tenants] failed to rename Clerk org', e);
       }
     }
-    return apiCreated(tenant);
+    return apiCreated(sanitizeTenantResponse(tenant));
   } catch (err) {
     if (err instanceof AppError) return apiError(err.message, err.statusCode);
     console.error('[POST /api/tenants] failed', err);

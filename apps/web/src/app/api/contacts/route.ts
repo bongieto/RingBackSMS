@@ -45,15 +45,16 @@ export async function GET(request: NextRequest) {
     ...(status && { status }),
   };
 
+  const searchHash = hashForSearch(search, tenantId);
   const where: Prisma.ContactWhereInput = search
     ? {
         ...baseWhere,
         OR: [
           { phone: { contains: search } },
-          ...(hashForSearch(search)
+          ...(searchHash
             ? [
-                { nameSearchHash: hashForSearch(search)! },
-                { emailSearchHash: hashForSearch(search)! },
+                { nameSearchHash: searchHash },
+                { emailSearchHash: searchHash },
               ]
             : []),
         ],
@@ -85,8 +86,8 @@ export async function POST(req: NextRequest) {
         phone: body.phone,
         name: encryptNullable(body.name ?? null),
         email: encryptNullable(body.email || null),
-        nameSearchHash: hashForSearch(body.name ?? null),
-        emailSearchHash: hashForSearch(body.email || null),
+        nameSearchHash: hashForSearch(body.name ?? null, body.tenantId),
+        emailSearchHash: hashForSearch(body.email || null, body.tenantId),
         notes: body.notes ?? null,
         tags: body.tags ?? [],
         status: body.status ?? ContactStatus.LEAD,

@@ -454,11 +454,22 @@ export class SquareAdapter extends BasePosAdapter {
   ): boolean {
     const crypto = require('crypto') as typeof import('crypto');
     const sigKey = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY ?? '';
+    // Fail-closed if misconfigured so we never accept a webhook without a key.
+    if (!sigKey) return false;
     const notificationUrl = context.notificationUrl ?? '';
     const hmac = crypto.createHmac('sha256', sigKey);
     hmac.update(notificationUrl + body);
     const expected = hmac.digest('base64');
-    return expected === signature;
+    // Constant-time compare — naive `===` is variable-time and vulnerable
+    // to byte-by-byte timing recovery of the expected HMAC.
+    try {
+      const a = Buffer.from(expected);
+      const b = Buffer.from(signature);
+      if (a.length !== b.length) return false;
+      return crypto.timingSafeEqual(a, b);
+    } catch {
+      return false;
+    }
   }
 
   async listLocations(

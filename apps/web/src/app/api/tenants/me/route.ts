@@ -2,6 +2,7 @@ import { auth, clerkClient, currentUser } from '@clerk/nextjs/server';
 import {
   getTenantByClerkOrg,
   ensureTenantForClerkOrg,
+  sanitizeTenantResponse,
 } from '@/lib/server/services/tenantService';
 import { prisma } from '@/lib/server/db';
 import { NotFoundError } from '@/lib/server/errors';
@@ -27,6 +28,18 @@ export async function GET() {
         ? await prisma.tenant.findUnique({ where: { id: metaTenantId } })
         : null;
 
+      // SECURITY GUARD: never adopt a tenant that's already linked to a
+      // DIFFERENT Clerk org — that would be a tenant takeover. Only adopt
+      // if candidate.clerkOrgId is null OR already matches this session.
+      if (candidate && candidate.clerkOrgId && candidate.clerkOrgId !== orgId) {
+        console.warn('[GET /api/tenants/me] refusing to adopt tenant linked to another org', {
+          candidateTenantId: candidate.id,
+          candidateLinkedOrg: candidate.clerkOrgId,
+          requestingOrg: orgId,
+        });
+        candidate = null;
+      }
+
       // Secondary heal: match by signed-in user's email against
       // TenantConfig.ownerEmail. Handles cases where onboarding wrote a
       // clerkOrgId that differs from the current session's orgId (e.g. the
@@ -41,6 +54,17 @@ export async function GET() {
           });
           if (cfg) {
             candidate = await prisma.tenant.findUnique({ where: { id: cfg.tenantId } });
+            // Same guard: don't hijack an email-matched tenant that's
+            // already linked to someone else's Clerk org.
+            if (candidate && candidate.clerkOrgId && candidate.clerkOrgId !== orgId) {
+              console.warn('[GET /api/tenants/me] email match rejected: tenant already linked to another org', {
+                candidateTenantId: candidate.id,
+                candidateLinkedOrg: candidate.clerkOrgId,
+                requestingOrg: orgId,
+                email,
+              });
+              candidate = null;
+            }
           }
         }
       }
@@ -83,7 +107,7 @@ export async function GET() {
       // Non-critical: metadata backfill failed, tenant still works
     }
 
-    return apiSuccess(tenant);
+    return apiSuccess(sanitizeTenantResponse(tenant));
   } catch (err) {
     if (err instanceof NotFoundError) return apiError('Tenant not found', 404);
     console.error('[GET /api/tenants/me] failed', err);

@@ -232,12 +232,15 @@ export function constructStripeEvent(
   payload: Buffer,
   signature: string
 ): Stripe.Event {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
+  // Fail-closed on misconfiguration. Stripe's SDK also rejects empty
+  // secrets, but an explicit check makes the failure mode unambiguous
+  // in logs rather than bubbling up as a Stripe SDK error.
+  if (!secret) {
+    throw new Error('STRIPE_WEBHOOK_SECRET not configured — refusing webhook');
+  }
   const stripe = new Stripe(getStripeKey(), { apiVersion: '2023-10-16' });
-  return stripe.webhooks.constructEvent(
-    payload,
-    signature,
-    process.env.STRIPE_WEBHOOK_SECRET ?? ''
-  );
+  return stripe.webhooks.constructEvent(payload, signature, secret);
 }
 
 // ── Stripe Connect (agency payouts) ─────────────────────────────────────

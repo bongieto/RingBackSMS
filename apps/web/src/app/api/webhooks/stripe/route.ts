@@ -26,6 +26,27 @@ export async function POST(request: NextRequest) {
     return new Response('Webhook signature verification failed', { status: 400 });
   }
 
+  // Idempotency: Stripe guarantees at-least-once delivery, and their
+  // Dashboard has a manual "Resend" button. Replaying a checkout event
+  // without dedup would create duplicate Order rows + re-send "Payment
+  // received!" SMS. Check a processed-events log before handling.
+  try {
+    await prisma.webhookEventLog.create({
+      data: { id: event.id, provider: 'stripe', eventType: event.type },
+    });
+  } catch (err: any) {
+    // P2002 = unique constraint violation → we've processed this event already
+    if (err?.code === 'P2002') {
+      logger.info('Duplicate Stripe webhook event, skipping', { eventId: event.id, type: event.type });
+      return new Response(JSON.stringify({ received: true, duplicate: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    // Any other DB error: log but continue (better to process than lose events)
+    logger.warn('WebhookEventLog insert failed, proceeding anyway', { eventId: event.id, err: err?.message });
+  }
+
   try {
     switch (event.type) {
       case 'customer.subscription.updated':
@@ -133,11 +154,11 @@ export async function POST(request: NextRequest) {
               } = {};
               if (!existing.name && customerName) {
                 patch.name = encryptNullable(customerName);
-                patch.nameSearchHash = hashForSearch(customerName);
+                patch.nameSearchHash = hashForSearch(customerName, tenantId);
               }
               if (!existing.email && customerEmail) {
                 patch.email = encryptNullable(customerEmail);
-                patch.emailSearchHash = hashForSearch(customerEmail);
+                patch.emailSearchHash = hashForSearch(customerEmail, tenantId);
               }
               if (!existing.stripeCustomerId && stripeCustomerId) patch.stripeCustomerId = stripeCustomerId;
               if (Object.keys(patch).length > 0) {

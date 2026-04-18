@@ -140,6 +140,37 @@ export async function getTenantByClerkOrg(clerkOrgId: string) {
   return tenant;
 }
 
+/**
+ * Strip credential fields from a tenant row before shipping it in an
+ * API response. The dashboard never needs these client-side, and even
+ * though they're AES-256-GCM encrypted at rest, we don't want ciphertext
+ * sitting in browser caches / DevTools / Sentry traces — if the key ever
+ * leaks, every cached response becomes a decryption target.
+ *
+ * The admin GET route (apps/web/src/app/api/admin/tenants/[id]/route.ts:59)
+ * already does this inline — this helper is the canonical version.
+ */
+export function sanitizeTenantResponse<T extends Record<string, unknown>>(tenant: T): Omit<T,
+  | 'twilioAuthToken'
+  | 'squareAccessToken'
+  | 'squareRefreshToken'
+  | 'posAccessToken'
+  | 'posRefreshToken'
+  | 'posRaw'
+> {
+  const {
+    twilioAuthToken: _t,
+    squareAccessToken: _s1,
+    squareRefreshToken: _s2,
+    posAccessToken: _p1,
+    posRefreshToken: _p2,
+    posRaw: _p3,
+    ...safe
+  } = tenant as any;
+  void _t; void _s1; void _s2; void _p1; void _p2; void _p3;
+  return safe;
+}
+
 export async function updateTenantConfig(
   tenantId: string,
   updates: Partial<{

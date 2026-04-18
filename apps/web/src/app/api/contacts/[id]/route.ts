@@ -44,11 +44,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       data: {
         ...(body.name !== undefined && {
           name: encryptNullable(body.name || null),
-          nameSearchHash: hashForSearch(body.name || null),
+          nameSearchHash: hashForSearch(body.name || null, existing.tenantId),
         }),
         ...(body.email !== undefined && {
           email: encryptNullable(body.email || null),
-          emailSearchHash: hashForSearch(body.email || null),
+          emailSearchHash: hashForSearch(body.email || null, existing.tenantId),
         }),
         ...(body.notes !== undefined && { notes: body.notes || null }),
         ...(body.tags !== undefined && { tags: body.tags }),
