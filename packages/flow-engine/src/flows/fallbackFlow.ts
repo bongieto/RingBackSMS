@@ -107,59 +107,57 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
     }
   }
 
-  const systemPrompt = `You are a helpful SMS assistant for ${tenantContext.tenantName}.
-Be ${personality}. Keep responses under 160 characters when possible (SMS limit).
-${capabilities}${businessAddress}${websiteContext}${catalogContext}${callerContextBlock}
-If asked about ordering food, direct them to reply ORDER.
-If asked about scheduling, direct them to reply MEETING.
-When asked about services or products, reference the available list above.
-Never share internal business details. Be warm and helpful.`;
+  const justCompletedOrder = currentState?.flowStep === 'ORDER_COMPLETE';
+  const postOrderHint = justCompletedOrder
+    ? '\nThe customer JUST completed an order — most messages right now are polite chit-chat ("ok", "see you", "thanks man"), questions ABOUT the existing order, or random non-requests. Treat casual messages as casual. Do NOT try to upsell or re-prompt for a new order.'
+    : '';
+
+  const systemPrompt = `You are texting on behalf of ${tenantContext.tenantName}. Be ${personality}.
+
+# Output rules
+- Reply in ONE short sentence, under 120 characters.
+- If the customer is just chit-chatting, acknowledging, emoji-ing, or sending noise with nothing actionable, reply warmly in 2–6 words (e.g. "No problem!", "Sounds good!", "Haha no worries", "Appreciate it!") OR output exactly the single token \`<silence>\` when a reply would feel forced.
+- If the customer is ACTIVELY asking something, answer briefly. Only mention ORDER / MEETING / etc. when they clearly ask about starting one — never as a forced CTA.
+- Never invent prices, hours, menu items, or policies not in the context below.
+- Never mention you're an AI, an assistant, or explain your reasoning.
+- Never repeat the customer's message back to them.${postOrderHint}
+
+# Capabilities and context
+${capabilities}${businessAddress}${websiteContext}${catalogContext}${callerContextBlock}`;
+
+  const nextState: CallerState = {
+    tenantId: tenantContext.tenantId,
+    callerPhone: input.callerPhone,
+    conversationId: currentState?.conversationId ?? null,
+    currentFlow: FlowType.FALLBACK,
+    flowStep: 'FALLBACK',
+    orderDraft: currentState?.orderDraft ?? null,
+    lastMessageAt: Date.now(),
+    messageCount: (currentState?.messageCount ?? 0) + 1,
+    dedupKey: null,
+  };
 
   try {
     const raw = await chatFn({
       systemPrompt,
       userMessage: inboundMessage,
-      maxTokens: 200,
-      temperature: 0.7,
+      maxTokens: 80,
+      temperature: 0.6,
     });
-    const replyText = stripThinkTags(raw) || 'How can I help you today?';
+    let replyText = stripThinkTags(raw).replace(/^["']|["']$/g, '').trim();
 
-    const nextState: CallerState = {
-      tenantId: tenantContext.tenantId,
-      callerPhone: input.callerPhone,
-      conversationId: currentState?.conversationId ?? null,
-      currentFlow: FlowType.FALLBACK,
-      flowStep: 'FALLBACK',
-      orderDraft: null,
-      lastMessageAt: Date.now(),
-      messageCount: (currentState?.messageCount ?? 0) + 1,
-      dedupKey: null,
-    };
+    // Silence sentinel or empty → don't send anything.
+    if (replyText === '<silence>' || replyText === '') {
+      return { nextState, smsReply: '', sideEffects: [], flowType: FlowType.FALLBACK };
+    }
 
-    return {
-      nextState,
-      smsReply: replyText,
-      sideEffects: [],
-      flowType: FlowType.FALLBACK,
-    };
+    // Cap length just in case the model ignores instructions.
+    if (replyText.length > 320) replyText = replyText.slice(0, 317) + '…';
+
+    return { nextState, smsReply: replyText, sideEffects: [], flowType: FlowType.FALLBACK };
   } catch {
-    const nextState: CallerState = {
-      tenantId: tenantContext.tenantId,
-      callerPhone: input.callerPhone,
-      conversationId: currentState?.conversationId ?? null,
-      currentFlow: FlowType.FALLBACK,
-      flowStep: 'FALLBACK',
-      orderDraft: null,
-      lastMessageAt: Date.now(),
-      messageCount: (currentState?.messageCount ?? 0) + 1,
-      dedupKey: null,
-    };
-
-    return {
-      nextState,
-      smsReply: `Thanks for reaching out to ${tenantContext.tenantName}! We'll get back to you shortly.`,
-      sideEffects: [],
-      flowType: FlowType.FALLBACK,
-    };
+    // AI provider failure: stay silent rather than send a generic apology.
+    // The caller's next message will retry. Better than spamming "we'll get back".
+    return { nextState, smsReply: '', sideEffects: [], flowType: FlowType.FALLBACK };
   }
 }
