@@ -419,7 +419,13 @@ export class SquareAdapter extends BasePosAdapter {
   async createOrder(
     tenantId: string,
     items: PosOrderItem[],
-    metadata: { locationId: string; idempotencyKey: string },
+    metadata: {
+      locationId: string;
+      idempotencyKey: string;
+      totalCents?: number;
+      externalSource?: string;
+      externalSourceId?: string;
+    },
   ): Promise<PosOrderResult> {
     const tokens = await this.loadTokens(tenantId);
     if (!tokens) throw new Error('Tenant not connected to Square');
@@ -439,8 +445,51 @@ export class SquareAdapter extends BasePosAdapter {
 
     const squareOrderId = response.result.order?.id;
     if (!squareOrderId) throw new Error('Square order creation failed');
-
     logger.info('Square order created', { tenantId, squareOrderId });
+
+    // If we know the total the customer paid outside of Square (e.g. via
+    // Stripe), record a matching Payment with an EXTERNAL tender. This
+    // closes the Square order out so it stops showing as OPEN in the
+    // kitchen UI. The tender is tagged `OTHER` + source="Stripe" so
+    // Square's standard sales reports can be filtered to exclude it and
+    // avoid double-counting with Stripe's own reports.
+    if (metadata.totalCents && metadata.totalCents > 0) {
+      try {
+        const paymentResponse = await client.paymentsApi.createPayment({
+          sourceId: 'EXTERNAL',
+          idempotencyKey: `${metadata.idempotencyKey}-pay`,
+          amountMoney: {
+            amount: BigInt(metadata.totalCents),
+            currency: 'USD',
+          },
+          orderId: squareOrderId,
+          locationId: metadata.locationId,
+          externalDetails: {
+            type: 'OTHER',
+            source: metadata.externalSource ?? 'External',
+            ...(metadata.externalSourceId && { sourceId: metadata.externalSourceId }),
+          },
+          note: metadata.externalSource
+            ? `Paid via ${metadata.externalSource} (RingbackSMS)`
+            : 'Paid externally (RingbackSMS)',
+        });
+        logger.info('Square external payment recorded', {
+          tenantId,
+          squareOrderId,
+          paymentId: paymentResponse.result.payment?.id,
+          totalCents: metadata.totalCents,
+        });
+      } catch (err: any) {
+        // Non-fatal: the order still exists in Square for prep, it just
+        // stays in OPEN/unpaid state until someone closes it manually.
+        logger.warn('Square external payment failed (order still created)', {
+          tenantId,
+          squareOrderId,
+          error: err?.message,
+        });
+      }
+    }
+
     return {
       externalOrderId: squareOrderId,
       raw: response.result as unknown as Record<string, unknown>,

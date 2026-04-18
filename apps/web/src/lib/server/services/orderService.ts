@@ -215,8 +215,18 @@ export async function createOrder(input: CreateOrderInput) {
   // flows through createOrder, so hooking here covers them all. We wrap in
   // waitUntil so the POS API call survives Vercel's request teardown
   // without blocking the caller's response latency.
+  //
+  // If the order was already paid externally (e.g. Stripe), we also pass
+  // totalCents + externalSource so the adapter records an external-tender
+  // Payment — otherwise the order would sit OPEN in Square forever.
+  const totalCents = Math.round(Number(input.total) * 100);
+  const paidViaStripe = input.paymentStatus === 'PAID' && !!input.stripePaymentId;
   waitUntil(
-    pushOrderToPos(order.id, input.tenantId, input.conversationId, input.items).catch((err) =>
+    pushOrderToPos(order.id, input.tenantId, input.conversationId, input.items, {
+      totalCents: paidViaStripe ? totalCents : undefined,
+      externalSource: paidViaStripe ? 'Stripe' : undefined,
+      externalSourceId: paidViaStripe ? input.stripePaymentId : undefined,
+    }).catch((err) =>
       logger.error('POS push failed (non-fatal)', { err, orderId: order.id }),
     ),
   );
@@ -235,6 +245,11 @@ async function pushOrderToPos(
   tenantId: string,
   conversationId: string,
   items: CreateOrderInput['items'],
+  payment?: {
+    totalCents?: number;
+    externalSource?: string;
+    externalSourceId?: string;
+  },
 ): Promise<void> {
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
@@ -279,6 +294,9 @@ async function pushOrderToPos(
   const result = await adapter.createOrder(tenantId, posItems, {
     locationId: tenant.posLocationId,
     idempotencyKey: `ringback-${conversationId}-${orderId}`,
+    totalCents: payment?.totalCents,
+    externalSource: payment?.externalSource,
+    externalSourceId: payment?.externalSourceId,
   });
 
   await prisma.order.update({

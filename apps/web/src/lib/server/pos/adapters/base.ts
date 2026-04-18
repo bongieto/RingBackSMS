@@ -53,7 +53,18 @@ export abstract class BasePosAdapter {
   abstract createOrder(
     tenantId: string,
     items: PosOrderItem[],
-    metadata: { locationId: string; idempotencyKey: string },
+    metadata: {
+      locationId: string;
+      idempotencyKey: string;
+      /** Optional: if provided, adapters that support external-tender
+       *  payments (e.g. Square) will create a matching Payment to mark
+       *  the order as paid. Amount is the final total the customer paid. */
+      totalCents?: number;
+      /** Label for the external payment source, e.g. "Stripe". */
+      externalSource?: string;
+      /** Opaque id from the external processor (e.g. Stripe payment_intent). */
+      externalSourceId?: string;
+    },
   ): Promise<PosOrderResult>;
   abstract verifyWebhook(
     body: string,
