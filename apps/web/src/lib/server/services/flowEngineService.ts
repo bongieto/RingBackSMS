@@ -1,5 +1,5 @@
-import { runFlowEngine, TenantContext, detectEscalationIntent, type CallerMemory, type ChatFn } from '@ringback/flow-engine';
-import { chatCompletion } from './aiClient';
+import { runFlowEngine, TenantContext, detectEscalationIntent, type CallerMemory, type ChatFn, type ChatWithToolsFn } from '@ringback/flow-engine';
+import { chatCompletion, chatWithTools } from './aiClient';
 import { getCallerContext } from './callerContextService';
 import { FlowType, SideEffect } from '@ringback/shared-types';
 import { getCallerState, setCallerState, isDuplicate } from './stateService';
@@ -291,6 +291,31 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
   // neither AI provider is configured it throws, which we catch in the
   // error boundary below and send a generic fallback.
   const chatFn: ChatFn = (params) => chatCompletion(params);
+  const chatWithToolsFn: ChatWithToolsFn = (params) => chatWithTools(params);
+
+  // Fetch a short conversation history only when we'll use the AI agent,
+  // so we don't pay the decrypt cost for every tenant.
+  let recentMessages: Array<{ role: 'user' | 'assistant'; content: string }> | undefined;
+  if (
+    (tenantContext.config as { aiOrderAgentEnabled?: boolean }).aiOrderAgentEnabled &&
+    existingConversationId
+  ) {
+    try {
+      const conv = await prisma.conversation.findUnique({
+        where: { id: existingConversationId },
+        select: { messages: true },
+      });
+      if (conv) {
+        const msgs = decryptMessages(conv.messages) as Array<{ role: string; content: string }>;
+        recentMessages = msgs
+          .filter((m) => m.role === 'user' || m.role === 'assistant')
+          .slice(-6)
+          .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+      }
+    } catch (err) {
+      logger.warn('Failed to load recent messages for AI agent', { err });
+    }
+  }
 
   const result = await runFlowEngine({
     tenantContext,
@@ -298,6 +323,8 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     inboundMessage,
     currentState,
     chatFn,
+    chatWithToolsFn,
+    recentMessages,
     callerMemory,
   });
 

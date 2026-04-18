@@ -145,3 +145,201 @@ export async function chatClassify(
     maxTokens: params.maxTokens ?? 100,
   });
 }
+
+// ── Tool-use (AI agent) ───────────────────────────────────────────────────────
+
+export interface ToolSchema {
+  name: string;
+  description: string;
+  // Anthropic-format JSON Schema for the tool's input parameters.
+  input_schema: {
+    type: 'object';
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+}
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+export interface ChatWithToolsParams {
+  systemPrompt: string;
+  userMessage: string;
+  messageHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  tools: ToolSchema[];
+  maxTokens?: number;
+  temperature?: number;
+}
+
+export interface ChatWithToolsResult {
+  text: string;
+  toolCalls: ToolCall[];
+  stopReason: string | null;
+  provider: 'claude' | 'minimax';
+}
+
+/**
+ * Claude-first tool-use chat. Returns the assistant's text reply AND any
+ * tool_use blocks it emitted, so the caller can execute validated handlers
+ * against its own domain. Falls back to MiniMax (OpenAI-compatible) if Claude
+ * fails entirely; the tool schemas are translated to OpenAI function format.
+ */
+export async function chatWithTools(
+  params: ChatWithToolsParams,
+): Promise<ChatWithToolsResult> {
+  const {
+    systemPrompt,
+    userMessage,
+    messageHistory = [],
+    tools,
+    maxTokens = 1024,
+    temperature = 0.3,
+  } = params;
+
+  // ── Claude ──
+  const claude = getAnthropicClient();
+  if (claude) {
+    try {
+      const start = Date.now();
+      const messages: Anthropic.Messages.MessageParam[] = [
+        ...messageHistory.map((m) => ({
+          role: m.role,
+          content: m.content,
+        })),
+        { role: 'user' as const, content: userMessage },
+      ];
+      const response = await claude.messages.create(
+        {
+          model: CLAUDE_MODEL,
+          max_tokens: maxTokens,
+          system: systemPrompt,
+          messages,
+          temperature,
+          tools: tools as unknown as Anthropic.Messages.Tool[],
+        },
+        { signal: AbortSignal.timeout(TIMEOUT_MS) },
+      );
+
+      let text = '';
+      const toolCalls: ToolCall[] = [];
+      for (const block of response.content) {
+        if (block.type === 'text') {
+          text += block.text;
+        } else if (block.type === 'tool_use') {
+          toolCalls.push({
+            id: block.id,
+            name: block.name,
+            input: (block.input ?? {}) as Record<string, unknown>,
+          });
+        }
+      }
+
+      logger.info('[ai] claude tool-use', {
+        model: CLAUDE_MODEL,
+        latencyMs: Date.now() - start,
+        tokens: response.usage?.output_tokens,
+        toolCalls: toolCalls.length,
+        stopReason: response.stop_reason,
+      });
+
+      return {
+        text: text.trim(),
+        toolCalls,
+        stopReason: response.stop_reason,
+        provider: 'claude',
+      };
+    } catch (err: any) {
+      logger.warn('[ai] claude tool-use failed, falling back to minimax', {
+        error: err?.message,
+        status: err?.status,
+      });
+    }
+  }
+
+  // ── MiniMax fallback (OpenAI-compatible function calling) ──
+  const minimax = getMinimaxClient();
+  if (minimax) {
+    try {
+      const start = Date.now();
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+      const openAiTools = tools.map((t) => ({
+        type: 'function' as const,
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.input_schema,
+        },
+      }));
+
+      const response = await minimax.chat.completions.create(
+        {
+          model: MINIMAX_MODEL,
+          max_tokens: maxTokens,
+          temperature,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...messageHistory.map((m) => ({
+              role: m.role,
+              content: m.content,
+            })),
+            { role: 'user', content: userMessage },
+          ],
+          tools: openAiTools,
+        },
+        { signal: controller.signal },
+      );
+      clearTimeout(timer);
+
+      const choice = response.choices[0];
+      const text = choice?.message?.content ?? '';
+      const toolCalls: ToolCall[] = (choice?.message?.tool_calls ?? [])
+        .filter((tc: any) => tc.type === 'function')
+        .map((tc: any) => {
+          let input: Record<string, unknown> = {};
+          try {
+            input = JSON.parse(tc.function.arguments || '{}');
+          } catch {
+            input = {};
+          }
+          return {
+            id: tc.id,
+            name: tc.function.name,
+            input,
+          };
+        });
+
+      logger.info('[ai] minimax tool-use', {
+        model: MINIMAX_MODEL,
+        latencyMs: Date.now() - start,
+        toolCalls: toolCalls.length,
+        stopReason: choice?.finish_reason ?? null,
+      });
+
+      return {
+        text: text.trim(),
+        toolCalls,
+        stopReason: choice?.finish_reason ?? null,
+        provider: 'minimax',
+      };
+    } catch (err: any) {
+      logger.error('[ai] minimax tool-use also failed', {
+        error: err?.message,
+      });
+      throw new Error(
+        `AI tool-use unavailable: Claude failed, MiniMax failed (${err?.message})`,
+      );
+    }
+  }
+
+  if (!claude && !minimax) {
+    throw new Error(
+      'No AI provider configured (set ANTHROPIC_API_KEY or MINIMAX_API_KEY)',
+    );
+  }
+  throw new Error('AI tool-use failed on all configured providers');
+}

@@ -19,6 +19,10 @@ export const OrderDraftSchema = z.object({
       quantity: z.number().int().positive(),
       price: z.number(),
       selectedModifiers: z.array(SelectedModifierSchema).optional(),
+      // ai-agent: whether the customer has explicitly acknowledged this line
+      confirmed: z.boolean().optional(),
+      // free-form per-item notes collected by the AI agent (e.g. "no onions")
+      notes: z.string().optional(),
     })
   ),
   pickupTime: z.string().optional(),
@@ -55,6 +59,15 @@ export const MeetingDraftSchema = z.object({
 
 export type MeetingDraft = z.infer<typeof MeetingDraftSchema>;
 
+/** What the AI agent is waiting on the customer to answer next. */
+export const PendingClarificationSchema = z.object({
+  field: z.string(),            // e.g. "pickup_time", "side_for_combo_1"
+  question: z.string(),         // the exact wording Claude asked
+  askedAt: z.number(),          // unix ms
+});
+
+export type PendingClarification = z.infer<typeof PendingClarificationSchema>;
+
 export const CallerStateSchema = z.object({
   tenantId: z.string().uuid(),
   callerPhone: z.string(),
@@ -65,6 +78,8 @@ export const CallerStateSchema = z.object({
   meetingDraft: MeetingDraftSchema.nullable().optional(),
   paymentPending: PaymentPendingSchema.nullable().optional(),
   pendingCustomization: PendingCustomizationSchema.nullable().optional(),
+  // Only set when the ORDER agent is waiting on a clarifying answer
+  pendingClarification: PendingClarificationSchema.nullable().optional(),
   lastMessageAt: z.number(), // unix timestamp
   messageCount: z.number().int().default(0),
   dedupKey: z.string().nullable(), // last Twilio MessageSid to prevent duplicates

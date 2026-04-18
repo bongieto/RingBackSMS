@@ -41,6 +41,37 @@ export type ChatFn = (params: {
   temperature?: number;
 }) => Promise<string>;
 
+/** Tool-use chat function for the AI ORDER agent. Returns text + any tool
+ *  calls the model emitted. Optional — only needed when
+ *  `tenantContext.config.aiOrderAgentEnabled` is true. */
+export interface AgentToolCall {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+export interface AgentToolSchema {
+  name: string;
+  description: string;
+  input_schema: {
+    type: 'object';
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+}
+export type ChatWithToolsFn = (params: {
+  systemPrompt: string;
+  userMessage: string;
+  messageHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  tools: AgentToolSchema[];
+  maxTokens?: number;
+  temperature?: number;
+}) => Promise<{
+  text: string;
+  toolCalls: AgentToolCall[];
+  stopReason: string | null;
+  provider: 'claude' | 'minimax';
+}>;
+
 export interface FlowInput {
   tenantContext: TenantContext;
   callerPhone: string;
@@ -49,6 +80,10 @@ export interface FlowInput {
   /** @deprecated Use chatFn instead. Kept for backward compat. */
   aiApiKey?: string;
   chatFn: ChatFn;
+  /** Optional tool-use chat fn for the AI ORDER agent. */
+  chatWithToolsFn?: ChatWithToolsFn;
+  /** Recent conversation messages (most recent last), passed into AI agent. */
+  recentMessages?: Array<{ role: 'user' | 'assistant'; content: string }>;
   callerMemory?: CallerMemory;
 }
 

@@ -298,6 +298,7 @@ model TenantConfig {
   largeOrderExtraMinutes         Int? // null = no large-order rule
   prepTimeOverrides              Json? // Array<{ dayOfWeek, start, end, extraMinutes, label? }>
   ordersAcceptingEnabled         Boolean   @default(true)
+  aiOrderAgentEnabled            Boolean   @default(false) // per-tenant rollout of the AI-native ORDER flow (items 1-7)
   // cal.com integration (OAuth 2.0 authorization code)
   calcomAccessToken              String? // AES-256-GCM encrypted
   calcomRefreshToken             String? // AES-256-GCM encrypted

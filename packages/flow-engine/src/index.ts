@@ -1,3 +1,14 @@
 export { runFlowEngine } from './engine';
 export { detectEscalationIntent } from './intentDetector';
-export type { TenantContext, FlowInput, FlowOutput, FlowStep, CallerMemory, ChatFn } from './types';
+export { runOrderAgent } from './ai/orderAgent';
+export type {
+  TenantContext,
+  FlowInput,
+  FlowOutput,
+  FlowStep,
+  CallerMemory,
+  ChatFn,
+  ChatWithToolsFn,
+  AgentToolCall,
+  AgentToolSchema,
+} from './types';

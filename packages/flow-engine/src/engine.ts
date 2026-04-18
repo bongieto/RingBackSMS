@@ -4,7 +4,16 @@ import { processOrderFlow } from './flows/orderFlow';
 import { processMeetingFlow } from './flows/meetingFlow';
 import { processFallbackFlow } from './flows/fallbackFlow';
 import { processInquiryFlow } from './flows/inquiryFlow';
+import { runOrderAgent } from './ai/orderAgent';
 import { FlowType } from '@ringback/shared-types';
+
+function routeOrder(input: FlowInput): Promise<FlowOutput> {
+  const cfg = input.tenantContext.config as { aiOrderAgentEnabled?: boolean };
+  if (cfg.aiOrderAgentEnabled && input.chatWithToolsFn) {
+    return runOrderAgent(input);
+  }
+  return processOrderFlow(input);
+}
 
 export async function runFlowEngine(input: FlowInput): Promise<FlowOutput> {
   const { currentState, tenantContext, inboundMessage } = input;
@@ -36,7 +45,7 @@ export async function runFlowEngine(input: FlowInput): Promise<FlowOutput> {
     }
     switch (currentState.currentFlow) {
       case FlowType.ORDER:
-        return processOrderFlow(input);
+        return routeOrder(input);
       case FlowType.MEETING:
         return processMeetingFlow(input);
       case FlowType.INQUIRY:
@@ -59,6 +68,19 @@ export async function runFlowEngine(input: FlowInput): Promise<FlowOutput> {
   const enabledFlowTypes = tenantContext.flows
     .filter((f) => f.isEnabled)
     .map((f) => f.type);
+
+  // Confidence gate: low-confidence intents (not UNCLEAR, but unsure) route
+  // to FALLBACK so the fallback flow can ask a clarifying question rather
+  // than pushing the caller into the wrong flow. Only applies when we're
+  // NOT already mid-flow (continuing-flow case skips detectIntent entirely).
+  const CONFIDENCE_THRESHOLD = 0.75;
+  if (
+    intentResult.intent !== 'UNCLEAR' &&
+    intentResult.confidence < CONFIDENCE_THRESHOLD &&
+    enabledFlowTypes.includes(FlowType.FALLBACK)
+  ) {
+    return processFallbackFlow(input);
+  }
 
   // Route to appropriate flow
   if (intentResult.intent !== 'UNCLEAR' && enabledFlowTypes.includes(intentResult.intent)) {
@@ -87,7 +109,7 @@ export async function runFlowEngine(input: FlowInput): Promise<FlowOutput> {
     }
     switch (intentResult.intent) {
       case FlowType.ORDER:
-        return processOrderFlow({ ...input, currentState: null });
+        return routeOrder({ ...input, currentState: null });
       case FlowType.MEETING:
         return processMeetingFlow({ ...input, currentState: null });
       case FlowType.INQUIRY:
