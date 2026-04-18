@@ -47,5 +47,7 @@ export interface MenuItem {
   imageUrl?: string | null;
   isAvailable: boolean;
   requiresBooking?: boolean;
+  squareCatalogId?: string | null;
+  posCatalogId?: string | null;
   modifierGroups?: ModifierGroup[];
 }

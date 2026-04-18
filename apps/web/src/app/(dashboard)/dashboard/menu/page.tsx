@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Header } from '@/components/layout/Header';
 import { useTenantId } from '@/components/providers/TenantProvider';
 import { Tabs, TabList, TabTrigger, TabPanel } from '@/components/ui/tabs';
@@ -9,12 +10,17 @@ import { CategoriesTab } from './_components/CategoriesTab';
 import { ItemsTab } from './_components/ItemsTab';
 import { OptionGroupsTab } from './_components/OptionGroupsTab';
 import { OptionsTab } from './_components/OptionsTab';
+import { ImportTab } from './_components/ImportTab';
 
-type Tab = 'menus' | 'categories' | 'items' | 'option-groups' | 'options';
+type Tab = 'menus' | 'categories' | 'items' | 'import' | 'option-groups' | 'options';
+const TABS: Tab[] = ['menus', 'categories', 'items', 'import', 'option-groups', 'options'];
 
 export default function MenuPage() {
   const { tenantId } = useTenantId();
-  const [active, setActive] = useState<Tab>('items');
+  const searchParams = useSearchParams();
+  const paramTab = searchParams.get('tab') as Tab | null;
+  const initial: Tab = paramTab && TABS.includes(paramTab) ? paramTab : 'items';
+  const [active, setActive] = useState<Tab>(initial);
 
   if (!tenantId) {
     return (
@@ -33,6 +39,7 @@ export default function MenuPage() {
           <TabTrigger value="menus">Menus</TabTrigger>
           <TabTrigger value="categories">Categories</TabTrigger>
           <TabTrigger value="items">Items</TabTrigger>
+          <TabTrigger value="import">Import</TabTrigger>
           <TabTrigger value="option-groups">Option groups</TabTrigger>
           <TabTrigger value="options">Options</TabTrigger>
         </TabList>
@@ -45,6 +52,9 @@ export default function MenuPage() {
         </TabPanel>
         <TabPanel value="items">
           <ItemsTab tenantId={tenantId} />
+        </TabPanel>
+        <TabPanel value="import">
+          <ImportTab tenantId={tenantId} />
         </TabPanel>
         <TabPanel value="option-groups">
           <OptionGroupsTab tenantId={tenantId} />

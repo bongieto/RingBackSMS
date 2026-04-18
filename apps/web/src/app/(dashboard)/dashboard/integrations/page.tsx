@@ -504,7 +504,16 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
       const msg = data?.newItems != null
         ? `Pulled ${data.synced} items from ${provider.displayName} (${data.newItems} new, ${data.updated} updated, ${data.unchanged} unchanged)`
         : `Synced ${data?.synced ?? 0} items from ${provider.displayName}`;
-      toast.success(msg);
+      // New items land with isAvailable=false — operator has to add them
+      // to the menu from Menu → Import. Link there from the success toast.
+      toast.success(msg, {
+        action: {
+          label: 'Review in Menu → Import',
+          onClick: () => {
+            window.location.href = '/dashboard/menu?tab=import';
+          },
+        },
+      });
       invalidate();
     },
     onError: () => toast.error('Sync failed'),

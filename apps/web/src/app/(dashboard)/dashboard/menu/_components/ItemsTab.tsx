@@ -18,6 +18,7 @@ export function ItemsTab({ tenantId }: { tenantId: string }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [filterCategoryId, setFilterCategoryId] = useState<string>('');
+  const [showDisabled, setShowDisabled] = useState(false);
   const [editing, setEditing] = useState<MenuItem | null>(null);
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -35,15 +36,25 @@ export function ItemsTab({ tenantId }: { tenantId: string }) {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    // Items tab is the curated menu view:
+    //  - manual items (no Square link) always show, regardless of availability
+    //    so operators can re-enable something they temporarily turned off.
+    //  - Square-synced items only show when they're enabled — disabled ones
+    //    live in the Import tab awaiting re-review.
+    //  - "Show disabled" checkbox bypasses this so operators can still audit
+    //    everything if they want.
+    const isCurated = (i: MenuItem) =>
+      i.isAvailable || !(i.squareCatalogId ?? i.posCatalogId);
     return items
       .filter((i) => !i.requiresBooking)
+      .filter((i) => showDisabled || isCurated(i))
       .filter((i) => !filterCategoryId || i.categoryId === filterCategoryId)
       .filter((i) =>
         !q ||
         i.name.toLowerCase().includes(q) ||
         (i.description ?? '').toLowerCase().includes(q),
       );
-  }, [items, search, filterCategoryId]);
+  }, [items, search, filterCategoryId, showDisabled]);
 
   const toggleMutation = useMutation({
     mutationFn: ({ item, isAvailable }: { item: MenuItem; isAvailable: boolean }) =>
@@ -115,6 +126,15 @@ export function ItemsTab({ tenantId }: { tenantId: string }) {
             </option>
           ))}
         </select>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground whitespace-nowrap">
+          <input
+            type="checkbox"
+            checked={showDisabled}
+            onChange={(e) => setShowDisabled(e.target.checked)}
+            className="h-4 w-4"
+          />
+          Show disabled
+        </label>
         <div className="flex-1" />
         <Button
           onClick={() => {
