@@ -25,6 +25,8 @@ import {
   Menu,
   X,
   ChefHat,
+  DollarSign,
+  Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { UserButton, OrganizationSwitcher, useUser } from '@clerk/nextjs';
@@ -52,6 +54,8 @@ const navItems: NavItem[] = [
   { href: '/dashboard/kitchen', label: 'Kitchen', icon: ChefHat, show: (n) => n.showOrders },
   { href: '/dashboard/meetings', label: 'Meetings', icon: Calendar, show: (n) => n.showMeetings },
   { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3 },
+  { href: '/dashboard/revenue', label: 'Revenue', icon: DollarSign, show: (n) => n.showOrders },
+  { href: '/dashboard/ai-usage', label: 'AI usage', icon: Sparkles },
   {
     href: '/dashboard/menu',
     label: 'Menu',
