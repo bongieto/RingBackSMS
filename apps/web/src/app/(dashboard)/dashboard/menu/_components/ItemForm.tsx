@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { tenantApi } from '@/lib/api';
 import type { MenuCategory, MenuItem } from './types';
+import { InlineOptionGroups } from './InlineOptionGroups';
 
 export function ItemForm({
   tenantId,
@@ -138,25 +139,17 @@ export function ItemForm({
           <Switch checked={isAvailable} onCheckedChange={setIsAvailable} />
         </div>
 
-        {item && (item.modifierGroups?.length ?? 0) > 0 && (
-          <div className="border-t pt-3">
-            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-              Attached option groups
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {item.modifierGroups!.map((g) => (
-                <span
-                  key={g.id}
-                  className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground"
-                >
-                  {g.name} ({g.modifiers?.length ?? 0})
-                </span>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              Manage option groups in the Option groups tab.
-            </p>
-          </div>
+        {item && (
+          <InlineOptionGroups
+            tenantId={tenantId}
+            itemId={item.id}
+            groups={item.modifierGroups ?? []}
+          />
+        )}
+        {!item && (
+          <p className="text-xs text-muted-foreground italic">
+            Save the item first to add option groups (Fries Flavor, Size, etc.).
+          </p>
         )}
 
         <div className="flex gap-2 pt-2">
