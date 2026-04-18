@@ -136,6 +136,8 @@ export default function SettingsPage() {
     ordersAcceptingEnabled: true,
     customAiInstructions: '' as string | null,
     followupOpener: '' as string | null,
+    salesTaxRate: null as number | null,
+    passStripeFeesToCustomer: false,
   });
 
   const [newClosedDate, setNewClosedDate] = useState('');
@@ -179,6 +181,9 @@ export default function SettingsPage() {
         ordersAcceptingEnabled: (config as any).ordersAcceptingEnabled ?? true,
         customAiInstructions: (config as any).customAiInstructions ?? '',
         followupOpener: (config as any).followupOpener ?? '',
+        salesTaxRate:
+          (config as any).salesTaxRate != null ? Number((config as any).salesTaxRate) : null,
+        passStripeFeesToCustomer: (config as any).passStripeFeesToCustomer ?? false,
       });
     }
   }, [config]);
@@ -249,6 +254,8 @@ export default function SettingsPage() {
         prepTimeOverrides: form.prepTimeOverrides,
         ordersAcceptingEnabled: form.ordersAcceptingEnabled,
         customAiInstructions: form.customAiInstructions || null,
+        salesTaxRate: form.salesTaxRate,
+        passStripeFeesToCustomer: form.passStripeFeesToCustomer,
       } as any);
     },
     onSuccess: () => {
@@ -738,6 +745,46 @@ export default function SettingsPage() {
               <Switch
                 checked={form.requirePayment}
                 onCheckedChange={(v) => setForm(f => ({ ...f, requirePayment: v }))}
+              />
+            </div>
+
+            <div className="border-t pt-4 space-y-2">
+              <Label htmlFor="salesTaxRate">Sales tax rate (%)</Label>
+              <p className="text-xs text-muted-foreground">
+                Applied to every order as a separate &quot;Sales tax&quot; line item. Leave blank to skip tax. Chicago prepared-food ≈ 10.75%; set what your local jurisdiction requires.
+              </p>
+              <Input
+                id="salesTaxRate"
+                type="number"
+                step="0.01"
+                min="0"
+                max="50"
+                placeholder="e.g. 9.75"
+                className="max-w-xs"
+                value={form.salesTaxRate != null ? (form.salesTaxRate * 100).toFixed(2) : ''}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  if (raw === '') {
+                    setForm((f) => ({ ...f, salesTaxRate: null }));
+                    return;
+                  }
+                  const pct = Number(raw);
+                  if (!Number.isFinite(pct) || pct < 0 || pct > 50) return;
+                  setForm((f) => ({ ...f, salesTaxRate: Math.round(pct * 10000) / 1000000 }));
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between border-t pt-4">
+              <div className="pr-4">
+                <Label>Pass Stripe processing fees to customer</Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Adds a &quot;Processing fee&quot; line item (2.9% + $0.30) so your net = subtotal + tax. Disclose this on your menu page to stay clear.
+                </p>
+              </div>
+              <Switch
+                checked={form.passStripeFeesToCustomer}
+                onCheckedChange={(v) => setForm((f) => ({ ...f, passStripeFeesToCustomer: v }))}
               />
             </div>
           </CardContent>

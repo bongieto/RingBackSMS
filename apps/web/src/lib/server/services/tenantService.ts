@@ -181,6 +181,8 @@ export async function updateTenantConfig(
     followupOpener: string | null;
     industryTemplateKey: string | null;
     consentMessage: string | null;
+    salesTaxRate: number | null;
+    passStripeFeesToCustomer: boolean;
   }>
 ) {
   // Fetch current config to detect what changed (for TTS regeneration)

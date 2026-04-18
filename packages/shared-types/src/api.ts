@@ -60,6 +60,9 @@ export const UpdateTenantConfigRequestSchema = z.object({
   customAiInstructions: z.string().max(500).nullable().optional(),
   followupOpener: z.string().max(500).nullable().optional(),
   consentMessage: z.string().max(500).nullable().optional(),
+  // Pricing / pass-through
+  salesTaxRate: z.number().min(0).max(0.5).nullable().optional(), // 0–50% sanity cap
+  passStripeFeesToCustomer: z.boolean().optional(),
 });
 
 export type UpdateTenantConfigRequest = z.infer<typeof UpdateTenantConfigRequestSchema>;
