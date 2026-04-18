@@ -305,7 +305,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       for (const line of draft.items) line.confirmed = true;
       const baseReply =
         aiResponse.text ||
-        `Your order has been placed! ${queuePhrase}${etaPhrase}${totalLine}`;
+        `Your order has been placed! ${queuePhrase}${etaPhrase}${totalLine} We'll text you when it's ready!`;
 
       return {
         nextState: buildBaseState(input, draft, { flowStep: 'ORDER_COMPLETE' }),

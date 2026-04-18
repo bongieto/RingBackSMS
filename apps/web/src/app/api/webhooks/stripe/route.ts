@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
           logger.info('Order payment completed', { orderId, tenantId });
           if (callerPhone) {
             const order = await prisma.order.findUnique({ where: { id: orderId }, select: { orderNumber: true } });
-            sendSms(tenantId, callerPhone, `Payment received for order #${order?.orderNumber ?? ''}. Thank you!`).catch((err) =>
+            sendSms(tenantId, callerPhone, `Payment received for order #${order?.orderNumber ?? ''}. Thank you! We'll text you when it's ready for pickup.`).catch((err) =>
               logger.error('Failed to send payment confirmation SMS', { err, orderId })
             );
           }
@@ -233,7 +233,7 @@ export async function POST(request: NextRequest) {
             });
 
             logger.info('Payment-first order created', { orderId: order.id, tenantId });
-            sendSms(tenantId, callerPhone, `Payment received! Order #${order.orderNumber} confirmed. Pickup: ${pickupTime}. See you soon!`).catch((err) =>
+            sendSms(tenantId, callerPhone, `Payment received! Order #${order.orderNumber} confirmed. Pickup: ${pickupTime}. We'll text you when it's ready!`).catch((err) =>
               logger.error('Failed to send payment confirmation SMS', { err, tenantId })
             );
           } else {
