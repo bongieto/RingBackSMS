@@ -208,14 +208,17 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         selectedModifiers: i.selectedModifiers,
       }));
 
-      const baseReply =
-        aiResponse.text ||
-        `Your order has been placed! Total: $${total.toFixed(2)}. We'll have it ready for you!`;
-
       if (tenantContext.config.requirePayment) {
+        // DON'T tell the customer the order is placed — payment hasn't
+        // happened yet. The Stripe webhook fires the "order placed"
+        // confirmation after checkout.session.completed.
+        const paymentReply =
+          aiResponse.text && !/placed|ready for you/i.test(aiResponse.text)
+            ? aiResponse.text
+            : `Total: $${total.toFixed(2)}. You'll get a payment link shortly — your order will be confirmed once paid.`;
         return {
           nextState: buildBaseState(input, draft, { flowStep: 'AWAITING_PAYMENT' }),
-          smsReply: baseReply.slice(0, 320),
+          smsReply: paymentReply.slice(0, 320),
           sideEffects: [
             {
               type: 'CREATE_PAYMENT_LINK',
@@ -236,6 +239,9 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
 
       // Mark lines confirmed
       for (const line of draft.items) line.confirmed = true;
+      const baseReply =
+        aiResponse.text ||
+        `Your order has been placed! Total: $${total.toFixed(2)}. We'll have it ready for you!`;
 
       return {
         nextState: buildBaseState(input, draft, { flowStep: 'ORDER_COMPLETE' }),
