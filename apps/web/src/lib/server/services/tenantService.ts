@@ -308,7 +308,7 @@ export async function listTenants(page = 1, pageSize = 20) {
 }
 
 export async function getTenantMenuItems(tenantId: string) {
-  return prisma.menuItem.findMany({
+  const rows = await prisma.menuItem.findMany({
     where: { tenantId },
     orderBy: [{ category: 'asc' }, { name: 'asc' }],
     include: {
@@ -319,6 +319,20 @@ export async function getTenantMenuItems(tenantId: string) {
       },
     },
   });
+  // Prisma Decimal → JSON serializes as a string, but dashboard components
+  // do `item.price.toFixed(2)` etc. Coerce to plain numbers here so the
+  // client never has to guess the shape.
+  return rows.map((r) => ({
+    ...r,
+    price: Number(r.price),
+    modifierGroups: r.modifierGroups.map((g) => ({
+      ...g,
+      modifiers: g.modifiers.map((m) => ({
+        ...m,
+        priceAdjust: Number(m.priceAdjust),
+      })),
+    })),
+  }));
 }
 
 /**

@@ -51,7 +51,7 @@ export function ItemsTab({ tenantId }: { tenantId: string }) {
         id: item.id,
         name: item.name,
         description: item.description ?? undefined,
-        price: item.price,
+        price: Number(item.price),
         categoryId: item.categoryId,
         imageUrl: item.imageUrl ?? undefined,
         isAvailable,
@@ -184,7 +184,7 @@ export function ItemsTab({ tenantId }: { tenantId: string }) {
                     ))}
                   </div>
                 </div>
-                <div className="text-sm whitespace-nowrap">${item.price.toFixed(2)}</div>
+                <div className="text-sm whitespace-nowrap">${Number(item.price).toFixed(2)}</div>
                 <Switch
                   checked={item.isAvailable}
                   onCheckedChange={(v) => toggleMutation.mutate({ item, isAvailable: v })}

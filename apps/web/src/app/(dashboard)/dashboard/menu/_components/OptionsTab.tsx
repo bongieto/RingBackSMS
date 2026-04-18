@@ -93,7 +93,7 @@ export function OptionsTab({ tenantId }: { tenantId: string }) {
                   </div>
                 </div>
                 <div className="text-sm whitespace-nowrap">
-                  {o.priceAdjust > 0 ? '+' : ''}${o.priceAdjust.toFixed(2)}
+                  {Number(o.priceAdjust) > 0 ? '+' : ''}${Number(o.priceAdjust).toFixed(2)}
                 </div>
                 <div className="flex items-center gap-1">
                   <Button
