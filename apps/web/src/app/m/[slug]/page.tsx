@@ -70,10 +70,31 @@ export async function generateMetadata(
   { params }: { params: { slug: string } },
 ): Promise<Metadata> {
   const tenant = await loadTenantMenu(params.slug);
-  if (!tenant) return { title: 'Menu — RingBackSMS' };
+  if (!tenant) {
+    return {
+      title: 'Menu',
+      openGraph: { title: 'Menu', siteName: 'Menu' },
+    };
+  }
+  const title = `Menu — ${tenant.name}`;
+  const description = `Browse the menu for ${tenant.name} and text your order directly.`;
   return {
-    title: `${tenant.name} — Menu`,
-    description: `See the menu for ${tenant.name} and text your order directly.`,
+    title,
+    description,
+    // iMessage / SMS rich-link previews read Open Graph tags. Setting
+    // `siteName` to "Menu" makes the preview card show "Menu" instead of
+    // the bare domain (ringbacksms.com), which confuses customers.
+    openGraph: {
+      title,
+      description,
+      siteName: 'Menu',
+      type: 'website',
+    },
+    twitter: {
+      card: 'summary',
+      title,
+      description,
+    },
     robots: { index: false, follow: false },
   };
 }
