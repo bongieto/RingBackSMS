@@ -343,6 +343,29 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       }
     }
 
+    // Language: use the stored Contact.preferredLanguage when set. Otherwise
+    // run the cheap marker heuristic on this inbound message; on a hit
+    // we'll persist it below so subsequent turns stay in that language.
+    let preferredLanguage: string | null = (callerContext.contact as { preferredLanguage?: string | null } | null)?.preferredLanguage ?? null;
+    if (!preferredLanguage) {
+      const { detectLanguage } = await import('@ringback/flow-engine');
+      const detected = detectLanguage(inboundMessage, null);
+      if (detected) {
+        preferredLanguage = detected;
+        // Fire-and-forget backfill so subsequent turns pick it up. Skip
+        // when we don't have a contact row yet — happens before first
+        // consent capture — since upsert-by-phone is its own dance.
+        if (callerContext.contact?.id) {
+          prisma.contact
+            .update({
+              where: { id: callerContext.contact.id },
+              data: { preferredLanguage: detected },
+            })
+            .catch(() => {});
+        }
+      }
+    }
+
     callerMemory = {
       contactName,
       contactStatus: callerContext.contact?.status ?? null,
@@ -350,6 +373,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       lastOrderSummary,
       lastOrderItems,
       lastConversationPreview: callerContext.lastConversation?.lastMessagePreview ?? null,
+      preferredLanguage,
     };
   }
 

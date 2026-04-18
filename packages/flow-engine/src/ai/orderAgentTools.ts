@@ -54,6 +54,42 @@ export const ORDER_AGENT_TOOLS: ToolSchema[] = [
     },
   },
   {
+    name: 'add_items_for_person',
+    description:
+      'Same as add_items, but tags every line with a person name. Use when the customer says things like "Maria wants a burger" or "For Dad, get the pancit". The kitchen ticket groups the order by person so prep staff can bag them separately.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        person_name: { type: 'string', description: 'Who these items are for (e.g. "Maria", "Dad", "kids").' },
+        items: {
+          type: 'array',
+          description: 'Items for this person',
+          items: {
+            type: 'object',
+            properties: {
+              menu_item_id: { type: 'string' },
+              quantity: { type: 'integer', minimum: 1, maximum: 20 },
+              modifiers: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    group_name: { type: 'string' },
+                    modifier_name: { type: 'string' },
+                  },
+                  required: ['group_name', 'modifier_name'],
+                },
+              },
+              notes: { type: 'string' },
+            },
+            required: ['menu_item_id', 'quantity'],
+          },
+        },
+      },
+      required: ['person_name', 'items'],
+    },
+  },
+  {
     name: 'remove_item',
     description: 'Remove all entries for a menu item from the cart.',
     input_schema: {
@@ -175,6 +211,10 @@ export const AddItemsInput = z.object({
     .min(1),
 });
 
+export const AddItemsForPersonInput = AddItemsInput.extend({
+  person_name: z.string().trim().min(1).max(40),
+});
+
 export const RemoveItemInput = z.object({ menu_item_id: z.string() });
 export const UpdateQuantityInput = z.object({
   menu_item_id: z.string(),
@@ -249,9 +289,12 @@ export function handleAddItems(
   draft: OrderDraft,
   menu: MenuItem[],
   raw: unknown,
+  opts?: { personName?: string },
 ): ToolResult {
   const parsed = AddItemsInput.safeParse(raw);
   if (!parsed.success) return { ok: false, error: 'invalid add_items input' };
+
+  const personName = opts?.personName?.trim() || undefined;
 
   for (const req of parsed.data.items) {
     const menuItem = findMenuItem(menu, req.menu_item_id);
@@ -269,11 +312,13 @@ export function handleAddItems(
     }
 
     // Consolidate: if a line for this exact menu_item + modifiers + notes
-    // already exists, bump its quantity instead of pushing a duplicate line.
+    // + person already exists, bump its quantity. Different people keep
+    // separate lines so the kitchen ticket can group by person.
     const existing = draft.items.find(
       (line) =>
         line.menuItemId === menuItem.id &&
         (line.notes ?? '') === (req.notes ?? '') &&
+        (line.personName ?? '') === (personName ?? '') &&
         modifiersEqual(line.selectedModifiers, selectedModifiers),
     );
     if (existing) {
@@ -288,10 +333,21 @@ export function handleAddItems(
         selectedModifiers,
         confirmed: false,
         notes: req.notes,
+        personName,
       });
     }
   }
   return { ok: true, kind: 'mutated' };
+}
+
+export function handleAddItemsForPerson(
+  draft: OrderDraft,
+  menu: MenuItem[],
+  raw: unknown,
+): ToolResult {
+  const parsed = AddItemsForPersonInput.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: 'invalid add_items_for_person input' };
+  return handleAddItems(draft, menu, { items: parsed.data.items }, { personName: parsed.data.person_name });
 }
 
 function modifiersEqual(

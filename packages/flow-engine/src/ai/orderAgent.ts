@@ -7,6 +7,7 @@ import {
   computeTotal,
   computeOrderTotals,
   handleAddItems,
+  handleAddItemsForPerson,
   handleAskClarification,
   handleRemoveItem,
   handleReorderLast,
@@ -118,6 +119,9 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       switch (call.name) {
         case 'add_items':
           result = handleAddItems(draft, tenantContext.menuItems, call.input);
+          break;
+        case 'add_items_for_person':
+          result = handleAddItemsForPerson(draft, tenantContext.menuItems, call.input);
           break;
         case 'remove_item':
           result = handleRemoveItem(draft, call.input);

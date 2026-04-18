@@ -23,6 +23,8 @@ export const OrderDraftSchema = z.object({
       confirmed: z.boolean().optional(),
       // free-form per-item notes collected by the AI agent (e.g. "no onions")
       notes: z.string().optional(),
+      // Group-order person tag — when set, kitchen ticket groups by name.
+      personName: z.string().max(40).optional(),
     })
   ),
   pickupTime: z.string().optional(),

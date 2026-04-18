@@ -64,6 +64,7 @@ export interface ReceiptInput {
     quantity: number;
     selectedModifiers?: Array<{ groupName: string; modifierName: string }>;
     notes?: string | null;
+    personName?: string | null;
   }>;
   pickupTime?: string | null;
   notes?: string | null;
@@ -88,14 +89,30 @@ export function renderOrderTicket(input: ReceiptInput): Uint8Array {
   if (input.pickupTime) parts.push(line(`Pickup: ${input.pickupTime}`));
   parts.push(hr());
 
+  // Group-order printing: if any line carries a personName, emit a
+  // sub-header per person so prep staff can bag separately. Untagged
+  // lines land in a default "ORDER" bucket.
+  const byPerson = new Map<string, typeof input.items>();
   for (const item of input.items) {
-    parts.push(BOLD_ON, line(`${item.quantity}x ${item.name}`), BOLD_OFF);
-    if (item.selectedModifiers?.length) {
-      for (const m of item.selectedModifiers) {
-        parts.push(line(`   - ${m.groupName}: ${m.modifierName}`));
-      }
+    const key = item.personName?.trim() || '';
+    if (!byPerson.has(key)) byPerson.set(key, []);
+    byPerson.get(key)!.push(item);
+  }
+  const hasMultiplePeople = byPerson.size > 1 || (byPerson.size === 1 && Array.from(byPerson.keys())[0] !== '');
+  for (const [person, items] of byPerson) {
+    if (hasMultiplePeople) {
+      parts.push(hr('-'));
+      parts.push(ALIGN_CENTER, BOLD_ON, line(person || 'ORDER'), BOLD_OFF, ALIGN_LEFT);
     }
-    if (item.notes) parts.push(line(`   ! ${item.notes}`));
+    for (const item of items) {
+      parts.push(BOLD_ON, line(`${item.quantity}x ${item.name}`), BOLD_OFF);
+      if (item.selectedModifiers?.length) {
+        for (const m of item.selectedModifiers) {
+          parts.push(line(`   - ${m.groupName}: ${m.modifierName}`));
+        }
+      }
+      if (item.notes) parts.push(line(`   ! ${item.notes}`));
+    }
   }
 
   if (input.notes) {

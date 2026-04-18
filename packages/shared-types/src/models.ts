@@ -168,6 +168,9 @@ export const OrderItemSchema = z.object({
   quantity: z.number().int().positive(),
   price: z.number().nonnegative(),
   notes: z.string().optional(),
+  // Optional group-order tag. When set, this line belongs to the named
+  // person ("Maria", "Dad") and the kitchen ticket groups by person.
+  personName: z.string().max(40).optional(),
 });
 
 export type OrderItem = z.infer<typeof OrderItemSchema>;

@@ -1,6 +1,7 @@
 import type { MenuItem, OrderDraft } from '@ringback/shared-types';
 import type { TenantContext, CallerMemory } from '../types';
 import { formatCart } from './orderAgentTools';
+import { languageLabel } from './languageDetect';
 
 function formatMenu(menu: MenuItem[]): string {
   if (menu.length === 0) return '(no menu items available)';
@@ -72,7 +73,12 @@ export function buildOrderAgentSystemPrompt(args: BuildAgentPromptArgs): string 
       : `We're CURRENTLY CLOSED. Next opening (verbatim): ${hours.nextOpenDisplay ?? 'unknown'}. Today we were ${hours.todayHoursDisplay === 'Closed today' ? 'closed' : `open ${hours.todayHoursDisplay}`}. Weekly schedule for context: ${hours.weeklyHoursDisplay}. It's fine to take this order — the pickup time MUST be on or after the next opening. Never promise a pickup while we're closed.`
     : '';
 
-  return `You are the SMS ordering assistant for ${tenantContext.tenantName}.
+  const langLabel = languageLabel(memory?.preferredLanguage);
+  const languageLine = langLabel
+    ? `\n# Language\nThe customer's preferred language is ${langLabel}. Reply in ${langLabel}. Never switch to English unless they explicitly ask in English.`
+    : '';
+
+  return `You are the SMS ordering assistant for ${tenantContext.tenantName}.${languageLine}
 
 Your job: understand the customer's natural-language order, call the right tools to update their cart, and reply with a short, friendly SMS (≤ 1 message, ≤ 320 chars).
 

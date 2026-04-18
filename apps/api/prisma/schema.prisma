@@ -501,6 +501,29 @@ model SmsCampaignRecipient {
   @@index([campaignId, status])
 }
 
+/// Customer-authored recurring order. A lightweight scheduled-job table —
+/// the daily cron picks rows where `nextRunAt <= now AND active=true`,
+/// creates a fresh Order from `itemsJson`, and SMS-confirms the customer
+/// 1 hour before the scheduled pickup. Customer can reply STOP to set
+/// active=false (handled by the suppression + an operator UI later).
+model RecurringOrder {
+  id          String   @id @default(uuid())
+  tenantId    String
+  callerPhone String
+  label       String?  // "Friday lunch usual"
+  cadence     String   // cron-style: "0 12 * * 5" or a friendly like "every Friday 12:00"
+  itemsJson   Json
+  pickupTime  String?  // "12:00 PM"
+  nextRunAt   DateTime
+  lastRunAt   DateTime?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, active, nextRunAt])
+  @@index([callerPhone])
+}
+
 /// Post-pickup review. SMS ends after order goes COMPLETED; customer
 /// replies 1-5 and we persist a row. One review per order.
 model OrderReview {
@@ -650,6 +673,7 @@ model Contact {
   lastOrderAt      DateTime?
   suppressed       Boolean       @default(false)
   loyaltyPoints    Int           @default(0)
+  preferredLanguage String?      // BCP-47 tag like "en", "es", "tl"; null = auto-detect
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
