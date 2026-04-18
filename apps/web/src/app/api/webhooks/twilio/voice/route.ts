@@ -9,6 +9,7 @@ import {
   isCallerSuppressed,
   buildConsentMessage,
   createConsentRequest,
+  logConsentEvent,
 } from '@/lib/server/services/consentService';
 import { linkMissedCallToContact } from '@/lib/server/services/contactLinking';
 import { isWithinBusinessHours } from '@/lib/server/businessHours';
@@ -312,7 +313,8 @@ export async function POST(request: NextRequest) {
         data: { smsSent: true },
       }).catch(() => {});
     } catch (err: any) {
-      // Raw console.error so Vercel definitely captures it
+      // Write error details to the DB so we can actually see them
+      // (Vercel's log viewer hides console output).
       console.error('[consent-sms] FAILED', JSON.stringify({
         errCode: err?.code,
         errStatus: err?.status,
@@ -320,6 +322,13 @@ export async function POST(request: NextRequest) {
         message: err?.message,
         name: err?.name,
       }));
+      await logConsentEvent(tenant.id, from, 'sms_send_failed', {
+        errorCode: err?.code ?? null,
+        errorStatus: err?.status ?? null,
+        errorMoreInfo: err?.moreInfo ?? null,
+        errorMessage: err?.message ?? String(err),
+        errorName: err?.name ?? null,
+      }).catch(() => {});
     }
   })();
 
