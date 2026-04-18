@@ -352,69 +352,10 @@ export class SquareAdapter extends BasePosAdapter {
     }
   }
 
-  async pushCatalogToPOS(tenantId: string): Promise<number> {
-    const tokens = await this.loadTokens(tenantId);
-    if (!tokens) throw new Error('Tenant not connected to Square');
-
-    const client = buildSquareClient(tokens.accessToken);
-
-    const menuItems = await this.prisma.menuItem.findMany({
-      where: { tenantId, posCatalogId: null },
-    });
-
-    let pushedCount = 0;
-
-    for (const item of menuItems) {
-      const idempotencyKey = `ringback-${item.id}`;
-
-      const response = await client.catalogApi.upsertCatalogObject({
-        idempotencyKey,
-        object: {
-          type: 'ITEM',
-          id: `#${item.id}`,
-          itemData: {
-            name: item.name,
-            description: item.description ?? undefined,
-            variations: [
-              {
-                type: 'ITEM_VARIATION',
-                id: `#${item.id}-variation`,
-                itemVariationData: {
-                  name: 'Regular',
-                  pricingType: 'FIXED_PRICING',
-                  priceMoney: {
-                    amount: BigInt(Math.round(Number(item.price) * 100)),
-                    currency: 'USD',
-                  },
-                },
-              },
-            ],
-          },
-        },
-      });
-
-      const createdObject = response.result.catalogObject;
-      if (createdObject?.id) {
-        const variationId =
-          createdObject.itemData?.variations?.[0]?.id ?? null;
-        await this.prisma.menuItem.update({
-          where: { id: item.id },
-          data: {
-            posCatalogId: createdObject.id,
-            posVariationId: variationId,
-            // Backward compatibility
-            squareCatalogId: createdObject.id,
-            squareVariationId: variationId,
-            lastSyncedAt: new Date(),
-          },
-        });
-        pushedCount++;
-      }
-    }
-
-    logger.info('Catalog pushed to Square', { tenantId, count: pushedCount });
-    return pushedCount;
-  }
+  // Push-to-POS removed: the POS is now the authoritative source of menu
+  // data (Pull-only). If we ever need to push RingbackSMS-authored items
+  // back out we can re-add, but that direction caused operator confusion
+  // about which system owns the catalog.
 
   async createOrder(
     tenantId: string,

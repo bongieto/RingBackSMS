@@ -49,7 +49,6 @@ export abstract class BasePosAdapter {
   abstract exchangeCode(tenantId: string, code: string): Promise<void>;
   abstract refreshToken(tenantId: string): Promise<void>;
   abstract syncCatalogFromPOS(tenantId: string): Promise<SyncResult>;
-  abstract pushCatalogToPOS(tenantId: string): Promise<number>;
   abstract createOrder(
     tenantId: string,
     items: PosOrderItem[],

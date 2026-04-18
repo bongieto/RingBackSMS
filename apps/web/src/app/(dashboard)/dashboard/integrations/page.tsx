@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { posApi, tenantApi, calcomApi } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/utils';
 import {
-  CheckCircle, XCircle, RefreshCw, ArrowUpDown, Link2, Unlink,
+  CheckCircle, XCircle, RefreshCw, Link2, Unlink,
   ShoppingBag, Store, UtensilsCrossed, Lock, ArrowRight, Settings2,
   Download, Upload, Clock, AlertTriangle, ChevronRight, Zap, ArrowLeft,
 } from 'lucide-react';
@@ -510,12 +510,6 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
     onError: () => toast.error('Sync failed'),
   });
 
-  const pushMutation = useMutation({
-    mutationFn: () => posApi.pushCatalog(tenantId, provider.provider),
-    onSuccess: (data) => { toast.success(`Pushed ${data?.pushed ?? 0} items to ${provider.displayName}`); invalidate(); },
-    onError: () => toast.error('Push failed'),
-  });
-
   const reconnectMutation = useMutation({
     mutationFn: () => posApi.refreshToken(tenantId, provider.provider),
     onSuccess: () => { invalidate(); toast.success('Token refreshed!'); },
@@ -714,7 +708,7 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
             )}
 
             {/* Sync actions */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3">
               <Card className="bg-muted/50">
                 <CardContent className="pt-4 pb-4">
                   <div className="flex items-center gap-2 mb-2">
@@ -737,27 +731,6 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
                 </CardContent>
               </Card>
 
-              <Card className="bg-muted/50">
-                <CardContent className="pt-4 pb-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Upload className="h-4 w-4 text-green-600" />
-                    <span className="text-sm font-medium">Push Menu to POS</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    Push your RingBackSMS menu items to {provider.displayName}
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => pushMutation.mutate()}
-                    disabled={pushMutation.isPending}
-                  >
-                    <ArrowUpDown className="h-4 w-4 mr-2" />
-                    {pushMutation.isPending ? 'Pushing...' : 'Push to POS'}
-                  </Button>
-                </CardContent>
-              </Card>
             </div>
 
             {/* Order placement info */}

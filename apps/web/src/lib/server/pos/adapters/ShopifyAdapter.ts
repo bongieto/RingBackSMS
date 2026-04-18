@@ -151,73 +151,7 @@ export class ShopifyAdapter extends BasePosAdapter {
     return result;
   }
 
-  async pushCatalogToPOS(tenantId: string): Promise<number> {
-    const tokens = await this.loadTokens(tenantId);
-    if (!tokens) throw new Error('Tenant not connected to Shopify');
-
-    const shopDomain = (tokens.raw?.shopDomain as string) ?? tokens.merchantId;
-    if (!shopDomain) throw new Error('No Shopify shop domain configured');
-
-    const menuItems = await this.prisma.menuItem.findMany({
-      where: { tenantId, posCatalogId: null },
-    });
-
-    let pushedCount = 0;
-
-    for (const item of menuItems) {
-      try {
-        const response = await axios.post(
-          `https://${shopDomain}.myshopify.com/admin/api/${SHOPIFY_API_VERSION}/products.json`,
-          {
-            product: {
-              title: item.name,
-              body_html: item.description ?? '',
-              variants: [
-                {
-                  price: String(Number(item.price)),
-                  inventory_management: null,
-                },
-              ],
-            },
-          },
-          {
-            headers: {
-              'X-Shopify-Access-Token': tokens.accessToken,
-              'Content-Type': 'application/json',
-            },
-          },
-        );
-
-        const created = (
-          response.data as { product: { id?: number; variants?: Array<{ id?: number }> } }
-        ).product;
-
-        if (created?.id) {
-          const variantId = created.variants?.[0]?.id
-            ? String(created.variants[0].id)
-            : null;
-          await this.prisma.menuItem.update({
-            where: { id: item.id },
-            data: {
-              posCatalogId: String(created.id),
-              posVariationId: variantId,
-              lastSyncedAt: new Date(),
-            },
-          });
-          pushedCount++;
-        }
-      } catch (err) {
-        logger.warn('Failed to push item to Shopify', {
-          tenantId,
-          itemId: item.id,
-          error: (err as Error).message,
-        });
-      }
-    }
-
-    logger.info('Catalog pushed to Shopify', { tenantId, count: pushedCount });
-    return pushedCount;
-  }
+  // Push-to-POS removed — POS is authoritative source (Pull-only).
 
   async createOrder(
     tenantId: string,

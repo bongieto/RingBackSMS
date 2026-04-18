@@ -173,60 +173,7 @@ export class ToastAdapter extends BasePosAdapter {
     return result;
   }
 
-  async pushCatalogToPOS(tenantId: string): Promise<number> {
-    const tokens = await this.loadTokens(tenantId);
-    if (!tokens) throw new Error('Tenant not connected to Toast');
-
-    const restaurantGuid = tokens.merchantId;
-    if (!restaurantGuid) throw new Error('No Toast restaurant GUID configured');
-
-    const menuItems = await this.prisma.menuItem.findMany({
-      where: { tenantId, posCatalogId: null },
-    });
-
-    let pushedCount = 0;
-
-    for (const item of menuItems) {
-      try {
-        const response = await axios.post(
-          `${TOAST_API_BASE}/menus/v2/menus/items`,
-          {
-            name: item.name,
-            description: item.description ?? undefined,
-            price: Number(item.price),
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${tokens.accessToken}`,
-              'Toast-Restaurant-External-ID': restaurantGuid,
-              'Content-Type': 'application/json',
-            },
-          },
-        );
-
-        const created = response.data as { guid?: string };
-        if (created.guid) {
-          await this.prisma.menuItem.update({
-            where: { id: item.id },
-            data: {
-              posCatalogId: created.guid,
-              lastSyncedAt: new Date(),
-            },
-          });
-          pushedCount++;
-        }
-      } catch (err) {
-        logger.warn('Failed to push item to Toast', {
-          tenantId,
-          itemId: item.id,
-          error: (err as Error).message,
-        });
-      }
-    }
-
-    logger.info('Catalog pushed to Toast', { tenantId, count: pushedCount });
-    return pushedCount;
-  }
+  // Push-to-POS removed — POS is authoritative source (Pull-only).
 
   async createOrder(
     tenantId: string,

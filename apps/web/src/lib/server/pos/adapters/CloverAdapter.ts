@@ -123,51 +123,7 @@ export class CloverAdapter extends BasePosAdapter {
     return result;
   }
 
-  async pushCatalogToPOS(tenantId: string): Promise<number> {
-    const tokens = await this.loadTokens(tenantId);
-    if (!tokens) throw new Error('Tenant not connected to Clover');
-    if (!tokens.merchantId) throw new Error('No Clover merchant ID configured');
-
-    const apiBase = getCloverApiBaseUrl();
-
-    const menuItems = await this.prisma.menuItem.findMany({
-      where: { tenantId, posCatalogId: null },
-    });
-
-    let pushedCount = 0;
-
-    for (const item of menuItems) {
-      const response = await axios.post(
-        `${apiBase}/v3/merchants/${tokens.merchantId}/items`,
-        {
-          name: item.name,
-          alternateName: item.description ?? undefined,
-          price: Math.round(Number(item.price) * 100),
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${tokens.accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        },
-      );
-
-      const created = response.data as { id?: string };
-      if (created.id) {
-        await this.prisma.menuItem.update({
-          where: { id: item.id },
-          data: {
-            posCatalogId: created.id,
-            lastSyncedAt: new Date(),
-          },
-        });
-        pushedCount++;
-      }
-    }
-
-    logger.info('Catalog pushed to Clover', { tenantId, count: pushedCount });
-    return pushedCount;
-  }
+  // Push-to-POS removed — POS is authoritative source (Pull-only).
 
   async createOrder(
     tenantId: string,

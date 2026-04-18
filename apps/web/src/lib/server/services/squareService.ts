@@ -213,73 +213,7 @@ export async function syncCatalogFromSquare(tenantId: string): Promise<number> {
   return syncedCount;
 }
 
-/**
- * Pushes local MenuItems to Square catalog.
- */
-export async function pushCatalogToSquare(tenantId: string): Promise<number> {
-  const tenant = await prisma.tenant.findUnique({
-    where: { id: tenantId },
-    select: { squareAccessToken: true },
-  });
-
-  if (!tenant?.squareAccessToken) throw new Error('Tenant not connected to Square');
-
-  const accessToken = decrypt(tenant.squareAccessToken);
-  const client = buildSquareClient(accessToken);
-
-  const menuItems = await prisma.menuItem.findMany({
-    where: { tenantId, squareCatalogId: null },
-  });
-
-  let pushedCount = 0;
-
-  for (const item of menuItems) {
-    const idempotencyKey = `ringback-${item.id}`;
-
-    const response = await client.catalogApi.upsertCatalogObject({
-      idempotencyKey,
-      object: {
-        type: 'ITEM',
-        id: `#${item.id}`,
-        itemData: {
-          name: item.name,
-          description: item.description ?? undefined,
-          variations: [
-            {
-              type: 'ITEM_VARIATION',
-              id: `#${item.id}-variation`,
-              itemVariationData: {
-                name: 'Regular',
-                pricingType: 'FIXED_PRICING',
-                priceMoney: {
-                  amount: BigInt(Math.round(Number(item.price) * 100)),
-                  currency: 'USD',
-                },
-              },
-            },
-          ],
-        },
-      },
-    });
-
-    const createdObject = response.result.catalogObject;
-    if (createdObject?.id) {
-      const variationId = createdObject.itemData?.variations?.[0]?.id ?? null;
-      await prisma.menuItem.update({
-        where: { id: item.id },
-        data: {
-          squareCatalogId: createdObject.id,
-          squareVariationId: variationId,
-          lastSyncedAt: new Date(),
-        },
-      });
-      pushedCount++;
-    }
-  }
-
-  logger.info('Catalog pushed to Square', { tenantId, count: pushedCount });
-  return pushedCount;
-}
+// Push-to-Square removed — POS is the authoritative source of menu data.
 
 // ── Orders ────────────────────────────────────────────────────────────────────
 
