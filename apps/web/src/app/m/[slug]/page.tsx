@@ -37,6 +37,9 @@ interface TenantMenu {
   id: string;
   name: string;
   phoneNumber: string | null;
+  brandColor: string | null;
+  brandLogoUrl: string | null;
+  hidePoweredBy: boolean;
   items: MenuItem[];
 }
 
@@ -48,6 +51,9 @@ async function loadTenantMenu(slug: string): Promise<TenantMenu | null> {
       name: true,
       twilioPhoneNumber: true,
       isActive: true,
+      config: {
+        select: { brandColor: true, brandLogoUrl: true, hidePoweredBy: true },
+      },
       menuItems: {
         // Items pass the item-level filter here; the category filter
         // runs post-query because Prisma can't express `OR` across a
@@ -94,6 +100,9 @@ async function loadTenantMenu(slug: string): Promise<TenantMenu | null> {
     id: tenant.id,
     name: tenant.name,
     phoneNumber: tenant.twilioPhoneNumber,
+    brandColor: tenant.config?.brandColor ?? null,
+    brandLogoUrl: tenant.config?.brandLogoUrl ?? null,
+    hidePoweredBy: tenant.config?.hidePoweredBy ?? false,
     items: tenant.menuItems
       // Hide items whose category has been marked unavailable — gives
       // operators a "mute this whole section" switch without having to
@@ -170,6 +179,9 @@ export default async function PublicMenuPage({ params }: { params: { slug: strin
       tenantName={tenant.name}
       phoneNumber={tenant.phoneNumber}
       items={tenant.items}
+      brandColor={tenant.brandColor}
+      brandLogoUrl={tenant.brandLogoUrl}
+      hidePoweredBy={tenant.hidePoweredBy}
     />
   );
 }

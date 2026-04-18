@@ -159,6 +159,7 @@ model Tenant {
   commissions        CommissionLedger[]
   members            TenantMember[]
   smsCampaigns       SmsCampaign[]
+  locations          TenantLocation[]
 
   @@index([twilioPhoneNumber])
   @@index([clerkOrgId])
@@ -322,6 +323,10 @@ model TenantConfig {
   customEscalationKeywords       String[]  @default([])
   lastOrdersGraceMinutes         Int       @default(15) // minutes before close after which we refuse new pickups
   cloudPrntToken                 String?   // tenant-unique token a Star CloudPRNT printer polls our endpoint with
+  // White-label — applied on /m /o /r /pay public pages
+  brandColor                     String?   // hex like "#E03A2F"; null = default blue
+  brandLogoUrl                   String?
+  hidePoweredBy                  Boolean   @default(false) // premium tier removes the RingbackSMS attribution
   createdAt                      DateTime  @default(now())
   updatedAt                      DateTime  @updatedAt
 }
@@ -420,6 +425,7 @@ model Order {
   stripePaymentUrl   String?
   paymentStatus      String?      @default("UNPAID")
   printedAt          DateTime?    // set by the CloudPRNT POST callback after a successful print
+  locationId         String?      // TenantLocation.id — nullable until multi-location is fully wired
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
@@ -453,6 +459,28 @@ enum TenantMemberRole {
   KITCHEN
   VIEWER
   MEMBER
+}
+
+/// Physical location / storefront under a tenant. For v1 every tenant
+/// gets exactly one Location row (backfilled from existing Tenant data)
+/// and the rest of the system ignores it. Sets the groundwork for
+/// operators like McInasal (two trucks, one login) without disturbing
+/// current single-location flows.
+model TenantLocation {
+  id               String   @id @default(uuid())
+  tenantId         String
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name             String   // "Food truck A", "Uptown", etc.
+  address          String?
+  phone            String?
+  squareLocationId String?
+  timezone         String?
+  isActive         Boolean  @default(true)
+  sortOrder        Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([tenantId, isActive])
 }
 
 /// Outbound SMS marketing campaign. We queue recipients in a separate

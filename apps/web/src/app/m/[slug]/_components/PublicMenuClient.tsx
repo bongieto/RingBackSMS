@@ -36,6 +36,9 @@ interface Props {
   tenantName: string;
   phoneNumber: string | null;
   items: MenuItem[];
+  brandColor?: string | null;
+  brandLogoUrl?: string | null;
+  hidePoweredBy?: boolean;
 }
 
 /**
@@ -51,7 +54,11 @@ interface Props {
  * selection. If a customer wants two configurations, they can text the
  * business directly.
  */
-export function PublicMenuClient({ tenantName, phoneNumber, items }: Props) {
+export function PublicMenuClient({ tenantName, phoneNumber, items, brandColor, brandLogoUrl, hidePoweredBy }: Props) {
+  const brandStyle = brandColor
+    ? ({ '--brand': brandColor } as React.CSSProperties)
+    : undefined;
+  const brandBg = brandColor ? { backgroundColor: brandColor } : undefined;
   interface CartLine {
     quantity: number;
     selectedModifiers: Array<{ groupId: string; modifierId: string }>;
@@ -219,13 +226,19 @@ export function PublicMenuClient({ tenantName, phoneNumber, items }: Props) {
   const hasMenu = items.length > 0;
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50" style={brandStyle}>
       {/* Header */}
       <header className="bg-white border-b sticky top-0 z-30 shadow-sm">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-lg font-bold text-slate-900 truncate">{tenantName}</h1>
-            <p className="text-xs text-muted-foreground">Text to order</p>
+          <div className="min-w-0 flex items-center gap-3">
+            {brandLogoUrl && (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={brandLogoUrl} alt="" className="h-10 w-10 rounded-lg object-cover shrink-0" />
+            )}
+            <div className="min-w-0">
+              <h1 className="text-lg font-bold text-slate-900 truncate">{tenantName}</h1>
+              <p className="text-xs text-muted-foreground">Text to order</p>
+            </div>
           </div>
           {phoneNumber && (
             <a
@@ -451,15 +464,18 @@ export function PublicMenuClient({ tenantName, phoneNumber, items }: Props) {
           <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-3">
             <a
               href={smsHref}
+              style={brandBg}
               className="flex-1 inline-flex items-center justify-center gap-2 h-12 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 active:scale-95 transition-transform shadow-lg shadow-blue-600/25"
             >
               <MessageSquare className="h-5 w-5" />
               {totalQty > 0 ? `Text order (${totalQty})` : 'Text to order'}
             </a>
           </div>
-          <p className="text-center text-[10px] text-slate-400 pb-2 px-4">
-            Powered by <Link href="/" className="hover:underline">RingBackSMS</Link>
-          </p>
+          {!hidePoweredBy && (
+            <p className="text-center text-[10px] text-slate-400 pb-2 px-4">
+              Powered by <Link href="/" className="hover:underline">RingBackSMS</Link>
+            </p>
+          )}
         </div>
       )}
     </div>
