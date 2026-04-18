@@ -287,7 +287,9 @@ describe('runOrderAgent', () => {
     });
     const result = await runOrderAgent(input);
     expect(result.smsReply).toMatch(/3 orders ahead/i);
-    expect(result.smsReply).toMatch(/ready around/i);
+    // Customer gave a concrete pickup time ("6:30pm") so the reply should
+    // echo it back rather than a computed "ready around HH:MM".
+    expect(result.smsReply).toMatch(/ready for 6:30pm/i);
   });
 
   test('confirm reply omits "orders ahead" when queue is 0', async () => {

@@ -226,7 +226,18 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         itemCount,
         queueCount,
       );
-      const readyAt =
+      // Decide what "ready time" phrasing to use.
+      // - If the customer said ASAP / now / no time → compute ETA from prep.
+      // - If they scheduled a concrete time (contains a digit, "am", "pm",
+      //   or words like "tomorrow", "tonight") → echo their pickupTime so
+      //   we don't contradict them with a now-based ETA.
+      const pickupStr = (draft.pickupTime ?? '').trim();
+      const pickupLooksConcrete =
+        pickupStr.length > 0 &&
+        !/^(asap|now|immediately|whenever|any ?time|soon)$/i.test(pickupStr) &&
+        /\d|am\b|pm\b|noon|midnight|tomorrow|tonight|morning|afternoon|evening/i.test(pickupStr);
+
+      const computedReadyAt =
         prepMinutes != null
           ? formatReadyTime(prepMinutes, tenantContext.config.timezone)
           : null;
@@ -234,7 +245,11 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         queueCount >= 1
           ? `${queueCount} order${queueCount === 1 ? '' : 's'} ahead — `
           : '';
-      const etaPhrase = readyAt ? `ready around ${readyAt}. ` : '';
+      const etaPhrase = pickupLooksConcrete
+        ? `ready for ${pickupStr} pickup. `
+        : computedReadyAt
+          ? `ready around ${computedReadyAt}. `
+          : '';
 
       if (tenantContext.config.requirePayment) {
         // DON'T tell the customer the order is placed — payment hasn't
