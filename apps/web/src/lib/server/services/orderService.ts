@@ -1,4 +1,5 @@
 import { OrderStatus } from '@prisma/client';
+import { waitUntil } from '@vercel/functions';
 import { logger } from '../logger';
 import { prisma } from '../db';
 import { autoCompleteTasksForEntity } from './taskService';
@@ -207,7 +208,93 @@ export async function createOrder(input: CreateOrderInput) {
     logger.warn('Failed to denormalize order onto Contact', { err, orderId: order.id });
   }
 
+  // Fire-and-forget: push the order to the tenant's POS (Square / Clover /
+  // Shopify / Toast). The /dashboard/integrations UI promises "Orders will
+  // be automatically sent to Square" — this is where that promise lives.
+  // Every order-creation path (agent, regex, Stripe webhook, dashboard)
+  // flows through createOrder, so hooking here covers them all. We wrap in
+  // waitUntil so the POS API call survives Vercel's request teardown
+  // without blocking the caller's response latency.
+  waitUntil(
+    pushOrderToPos(order.id, input.tenantId, input.conversationId, input.items).catch((err) =>
+      logger.error('POS push failed (non-fatal)', { err, orderId: order.id }),
+    ),
+  );
+
   return order;
+}
+
+/**
+ * Push a freshly-created order to the tenant's POS via its adapter and
+ * record the external order id on the Order row. Non-fatal: we log on
+ * failure so the customer still gets their SMS confirmation even if
+ * Square is temporarily unreachable.
+ */
+async function pushOrderToPos(
+  orderId: string,
+  tenantId: string,
+  conversationId: string,
+  items: CreateOrderInput['items'],
+): Promise<void> {
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { posProvider: true, posLocationId: true },
+  });
+  if (!tenant?.posProvider || !tenant.posLocationId) {
+    // Tenant not connected to a POS — nothing to do.
+    return;
+  }
+
+  // Items need a variation id for the POS. Fetch the matching MenuItem
+  // rows to look up squareVariationId / posVariationId; our order items
+  // carry menuItemId but not the external ids.
+  const menuItemIds = items
+    .map((i) => (i as { menuItemId?: string }).menuItemId)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0);
+  if (menuItemIds.length === 0) return;
+
+  const menuRows = await prisma.menuItem.findMany({
+    where: { tenantId, id: { in: menuItemIds } },
+    select: { id: true, posVariationId: true, squareVariationId: true },
+  });
+  const byId = new Map(menuRows.map((m) => [m.id, m]));
+
+  const posItems = items
+    .map((i) => {
+      const ref = byId.get((i as { menuItemId: string }).menuItemId);
+      const variationId = ref?.posVariationId ?? ref?.squareVariationId;
+      if (!variationId) return null;
+      return { externalVariationId: variationId, quantity: i.quantity };
+    })
+    .filter((x): x is { externalVariationId: string; quantity: number } => x !== null);
+
+  if (posItems.length === 0) {
+    logger.warn('POS push skipped: no items have variation ids', { orderId, tenantId });
+    return;
+  }
+
+  const { posRegistry } = await import('../pos/registry');
+  const adapter = posRegistry.get(tenant.posProvider);
+
+  const result = await adapter.createOrder(tenantId, posItems, {
+    locationId: tenant.posLocationId,
+    idempotencyKey: `ringback-${conversationId}-${orderId}`,
+  });
+
+  await prisma.order.update({
+    where: { id: orderId },
+    data: {
+      squareOrderId: tenant.posProvider === 'square' ? result.externalOrderId : undefined,
+      posOrderId: result.externalOrderId,
+    },
+  });
+
+  logger.info('Order pushed to POS', {
+    orderId,
+    tenantId,
+    provider: tenant.posProvider,
+    externalOrderId: result.externalOrderId,
+  });
 }
 
 export async function updateOrderStatus(
