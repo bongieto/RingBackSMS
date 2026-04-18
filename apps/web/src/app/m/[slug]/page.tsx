@@ -5,6 +5,23 @@ import { PublicMenuClient } from './_components/PublicMenuClient';
 
 export const dynamic = 'force-dynamic';
 
+interface ModifierOption {
+  id: string;
+  name: string;
+  priceAdjust: number;
+  isDefault: boolean;
+}
+
+interface ModifierGroup {
+  id: string;
+  name: string;
+  selectionType: 'SINGLE' | 'MULTIPLE';
+  required: boolean;
+  minSelections: number;
+  maxSelections: number;
+  modifiers: ModifierOption[];
+}
+
 interface MenuItem {
   id: string;
   name: string;
@@ -13,6 +30,7 @@ interface MenuItem {
   category: string | null;
   imageUrl: string | null;
   duration: number | null;
+  modifierGroups: ModifierGroup[];
 }
 
 interface TenantMenu {
@@ -45,6 +63,26 @@ async function loadTenantMenu(slug: string): Promise<TenantMenu | null> {
           imageUrl: true,
           duration: true,
           categoryRef: { select: { isAvailable: true } },
+          modifierGroups: {
+            orderBy: { sortOrder: 'asc' },
+            select: {
+              id: true,
+              name: true,
+              selectionType: true,
+              required: true,
+              minSelections: true,
+              maxSelections: true,
+              modifiers: {
+                orderBy: { sortOrder: 'asc' },
+                select: {
+                  id: true,
+                  name: true,
+                  priceAdjust: true,
+                  isDefault: true,
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -69,6 +107,20 @@ async function loadTenantMenu(slug: string): Promise<TenantMenu | null> {
         category: m.category,
         imageUrl: m.imageUrl,
         duration: m.duration,
+        modifierGroups: m.modifierGroups.map((g) => ({
+          id: g.id,
+          name: g.name,
+          selectionType: (g.selectionType === 'MULTIPLE' ? 'MULTIPLE' : 'SINGLE') as 'SINGLE' | 'MULTIPLE',
+          required: g.required,
+          minSelections: g.minSelections,
+          maxSelections: g.maxSelections,
+          modifiers: g.modifiers.map((mod) => ({
+            id: mod.id,
+            name: mod.name,
+            priceAdjust: Number(mod.priceAdjust),
+            isDefault: mod.isDefault,
+          })),
+        })),
       })),
   };
 }
