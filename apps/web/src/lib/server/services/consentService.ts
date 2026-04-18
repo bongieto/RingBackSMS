@@ -9,10 +9,32 @@ const CONSENT_WORDS = new Set([
   'YES PLEASE', 'PLEASE', 'HELP', 'GO AHEAD',
 ]);
 
-const STOP_WORDS = new Set([
-  'STOP', 'CANCEL', 'UNSUBSCRIBE', 'QUIT', 'END',
-  'NO', 'NOPE', 'NOT NOW', 'DONT TEXT ME',
-  "DON'T TEXT ME", 'LEAVE ME ALONE',
+/**
+ * STRICT opt-out keywords — treated as "unsubscribe forever" in all contexts
+ * (including mid-conversation). This list matches the US wireless-carrier
+ * universal opt-out set. Twilio's Advanced Opt-Out intercepts all of these
+ * at the network level before they reach our webhook, so this is a belt-and-
+ * suspenders safety net for non-US / edge cases.
+ *
+ * NOTE: We deliberately exclude `NO`, `NOPE`, `NOT NOW`, etc. — those are
+ * ambiguous mid-conversation (e.g. "NO don't confirm that order") and
+ * historically caused accidental opt-outs. They're still honored as a
+ * consent decline when the customer has a PENDING consent request (see
+ * DECLINE_WORDS below).
+ */
+const STRICT_OPT_OUT_WORDS = new Set([
+  'STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'QUIT', 'END',
+  'DONT TEXT ME', "DON'T TEXT ME", 'LEAVE ME ALONE',
+]);
+
+/**
+ * Words that signal "I don't want to opt in" — only applied when the
+ * caller has a PENDING consent request. A standalone "NO" in a later
+ * conversation means something else (usually "no, I don't want that item").
+ */
+const DECLINE_WORDS = new Set([
+  ...STRICT_OPT_OUT_WORDS,
+  'NO', 'NOPE', 'NAH', 'NOT NOW',
 ]);
 
 // ── Public API ─────────────────────────────────────────────────────────────
@@ -26,9 +48,22 @@ export function isConsentAffirmative(body: string): boolean {
   return CONSENT_WORDS.has(normalized);
 }
 
+/**
+ * Strict opt-out check — always honored regardless of conversation context.
+ * Use this to decide whether to add the caller to the suppression list.
+ */
 export function isOptOutKeyword(body: string): boolean {
   const normalized = body.trim().toUpperCase();
-  return STOP_WORDS.has(normalized);
+  return STRICT_OPT_OUT_WORDS.has(normalized);
+}
+
+/**
+ * Consent-decline check — only call this when the caller has a PENDING
+ * consent request. Matches a broader set of "no" responses.
+ */
+export function isConsentDecline(body: string): boolean {
+  const normalized = body.trim().toUpperCase();
+  return DECLINE_WORDS.has(normalized);
 }
 
 export async function isCallerSuppressed(
