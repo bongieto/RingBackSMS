@@ -9,6 +9,7 @@ export async function listOptionGroups(tenantId: string) {
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     include: {
       menuItem: { select: { id: true, name: true, tenantId: true } },
+      modifiers: { orderBy: { sortOrder: 'asc' } },
       _count: { select: { modifiers: true } },
     },
   });
@@ -24,6 +25,18 @@ export async function listOptionGroups(tenantId: string) {
     sortOrder: g.sortOrder,
     posGroupId: g.posGroupId,
     optionCount: g._count.modifiers,
+    // Inline the modifiers so the dashboard can clone a group's options
+    // without a follow-up round-trip. Decimals coerced to numbers to
+    // match the rest of our API shapes.
+    modifiers: g.modifiers.map((m) => ({
+      id: m.id,
+      groupId: m.groupId,
+      name: m.name,
+      priceAdjust: Number(m.priceAdjust),
+      isDefault: m.isDefault,
+      sortOrder: m.sortOrder,
+      posModifierId: m.posModifierId,
+    })),
     createdAt: g.createdAt,
     updatedAt: g.updatedAt,
   }));

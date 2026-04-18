@@ -11,8 +11,8 @@
  * affords a richer nested-options editor in the same panel.
  */
 
-import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -254,6 +254,23 @@ function GroupEditor({
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
+  // "Copy from existing" — available only when creating a new group. Pulls
+  // the tenant-wide list of groups, filters out ones already on this item
+  // (no point cloning onto itself), and on selection prefills the form +
+  // options rows. Save then creates fresh rows so editing either copy
+  // doesn't affect the other (we picked clone-at-attach semantics).
+  const isCreating = !group;
+  const { data: allGroups = [] } = useQuery<ModifierGroup[]>({
+    queryKey: ['option-groups', tenantId],
+    queryFn: () => tenantApi.listOptionGroups(tenantId),
+    enabled: !!tenantId && isCreating,
+  });
+  const copyableGroups = useMemo(
+    () => allGroups.filter((g) => g.menuItemId !== itemId),
+    [allGroups, itemId],
+  );
+  const [copiedFromId, setCopiedFromId] = useState<string>('');
+
   function updateOption(tempId: string, patch: Partial<OptionDraft>) {
     setOptions((prev) => prev.map((o) => (o.tempId === tempId ? { ...o, ...patch } : o)));
   }
@@ -325,11 +342,62 @@ function GroupEditor({
     }
   }
 
+  function handleCopyFrom(sourceId: string) {
+    setCopiedFromId(sourceId);
+    if (!sourceId) return;
+    const source = copyableGroups.find((g) => g.id === sourceId);
+    if (!source) return;
+    // Prefill all the meta fields + options from the source. Strip source
+    // option ids so save treats them as brand-new rows under the new group.
+    setName(source.name);
+    setSelectionType((source.selectionType as SelectionType) ?? 'SINGLE');
+    setRequired(source.required);
+    setMinSelections(String(source.minSelections ?? 0));
+    setMaxSelections(String(source.maxSelections ?? 1));
+    const srcMods = source.modifiers ?? [];
+    setOptions(
+      srcMods.length > 0
+        ? srcMods.map((m) => ({
+            tempId: `copy-${m.id}`,
+            name: m.name,
+            priceAdjust: String(Number(m.priceAdjust)),
+            isDefault: m.isDefault,
+          }))
+        : [newDraft()],
+    );
+    setDeletedIds([]);
+  }
+
   return (
     <div className="rounded-md border bg-background p-4 space-y-4">
       <div className="text-sm font-semibold">
         {group ? 'Edit option group' : 'New option group'}
       </div>
+
+      {isCreating && copyableGroups.length > 0 && (
+        <div className="rounded-md bg-muted/50 p-3">
+          <Label htmlFor="iog-copy" className="text-xs font-semibold uppercase tracking-wider">
+            Copy from existing (optional)
+          </Label>
+          <select
+            id="iog-copy"
+            value={copiedFromId}
+            onChange={(e) => handleCopyFrom(e.target.value)}
+            className="h-9 w-full rounded-md border bg-background px-3 text-sm mt-1"
+          >
+            <option value="">— Start fresh —</option>
+            {copyableGroups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name} · {g.optionCount ?? g.modifiers?.length ?? 0} options
+                {g.menuItemName ? ` (from ${g.menuItemName})` : ''}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-muted-foreground mt-1">
+            Clones the group and its options onto this item. Edits here don&apos;t affect the original.
+          </p>
+        </div>
+      )}
 
       <div>
         <Label htmlFor="iog-name">
