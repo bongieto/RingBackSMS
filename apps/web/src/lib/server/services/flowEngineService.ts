@@ -12,7 +12,8 @@ import { matchesLocationKeyword, buildLocationReply } from './foodTruckLocationS
 import { createOrderPaymentSession } from './paymentService';
 import { incrementSmsUsage } from './usageMeterService';
 import { logger } from '../logger';
-import { isWithinBusinessHours, getBusinessHoursDisplay } from '../businessHours';
+import { isWithinBusinessHours, getBusinessHoursDisplay, getNextOpenDisplay } from '../businessHours';
+import { getActiveOrderCount } from './queueService';
 import { prisma } from '../db';
 import { encryptMessages, decryptMessages } from '../encryption';
 import { ensureTenantSlug } from '../slugify';
@@ -215,14 +216,35 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
   };
 
   // Check after-hours
-  const withinBusinessHours = isWithinBusinessHours({
+  const hoursConfig = {
     businessHoursStart: tenant.config.businessHoursStart,
     businessHoursEnd: tenant.config.businessHoursEnd,
     businessDays: tenant.config.businessDays as number[],
     businessSchedule: tenant.config.businessSchedule as Record<string, { open: string; close: string }> | null,
     closedDates: tenant.config.closedDates as string[],
     timezone: tenant.config.timezone,
-  });
+  };
+  const withinBusinessHours = isWithinBusinessHours(hoursConfig);
+
+  // Attach business-hours context so the ORDER agent can schedule future
+  // pickups when we're closed (instead of dead-ending the conversation).
+  tenantContext.hoursInfo = {
+    openNow: withinBusinessHours,
+    nextOpenDisplay: withinBusinessHours ? null : getNextOpenDisplay(hoursConfig),
+    todayHoursDisplay: getBusinessHoursDisplay(hoursConfig),
+  };
+
+  // If we're closed AND the tenant has opted out of accepting closed-hour
+  // orders, disable the ORDER flow for this turn so the engine routes
+  // message to FALLBACK (which can still answer questions). Leave other
+  // flows (INQUIRY/MEETING/FALLBACK) intact.
+  const acceptClosedHourOrders =
+    (tenant.config as { acceptClosedHourOrders?: boolean }).acceptClosedHourOrders ?? true;
+  if (!withinBusinessHours && !acceptClosedHourOrders) {
+    tenantContext.flows = tenantContext.flows.map((f) =>
+      f.type === FlowType.ORDER ? { ...f, isEnabled: false } : f,
+    );
+  }
 
   // Build caller memory so the AI can greet by name and reference prior orders.
   // `callerContext` was fetched in parallel with the tenant lookup above.
@@ -326,6 +348,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     chatWithToolsFn,
     recentMessages,
     callerMemory,
+    getActiveOrderCount,
   });
 
   // cal.com async side effects that mutate the outgoing SMS before it

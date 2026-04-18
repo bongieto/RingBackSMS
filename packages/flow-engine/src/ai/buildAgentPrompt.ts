@@ -55,6 +55,12 @@ export function buildOrderAgentSystemPrompt(args: BuildAgentPromptArgs): string 
     tenantContext.tenantSlug != null
       ? `/m/${tenantContext.tenantSlug}`
       : '(menu link unavailable)';
+  const hours = tenantContext.hoursInfo;
+  const hoursBlock = hours
+    ? hours.openNow
+      ? `We're OPEN right now. Today's hours: ${hours.todayHoursDisplay}.`
+      : `We're CURRENTLY CLOSED. Next opening: ${hours.nextOpenDisplay ?? 'unknown'}. Today's hours: ${hours.todayHoursDisplay}. It's fine to take this order — the pickup time MUST be on or after the next opening. Never promise a pickup while we're closed.`
+    : '';
 
   return `You are the SMS ordering assistant for ${tenantContext.tenantName}.
 
@@ -74,6 +80,7 @@ Your job: understand the customer's natural-language order, call the right tools
 # Business
 ${tenantContext.tenantName}
 Menu URL: ${menuUrl}
+${hoursBlock ? `\n# Hours\n${hoursBlock}` : ''}
 
 # Customer memory
 ${formatMemory(memory)}

@@ -15,6 +15,7 @@ import {
 } from './orderAgentTools';
 import { filterMenuForPrompt } from './menuFilter';
 import { buildOrderAgentSystemPrompt } from './buildAgentPrompt';
+import { calculateFlowPrepTime, formatReadyTime } from '../flows/orderFlow';
 
 // Cheap heuristic: did the customer just explicitly confirm?
 const CONFIRM_RE = /\b(yes|yep|yeah|yup|confirm|go ahead|place (it|the order)|that'?s right|correct|ok(ay)?|sure)\b/i;
@@ -208,6 +209,33 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         selectedModifiers: i.selectedModifiers,
       }));
 
+      // Queue-aware ETA. Non-fatal: if the count fn errors, treat queue=0.
+      const queueCount = input.getActiveOrderCount
+        ? await input.getActiveOrderCount(tenantContext.tenantId).catch(() => 0)
+        : 0;
+      const itemCount = draft.items.reduce((s, i) => s + i.quantity, 0);
+      const prepMinutes = calculateFlowPrepTime(
+        {
+          defaultPrepTimeMinutes: (tenantContext.config as { defaultPrepTimeMinutes?: number | null }).defaultPrepTimeMinutes,
+          largeOrderThresholdItems: (tenantContext.config as { largeOrderThresholdItems?: number | null }).largeOrderThresholdItems,
+          largeOrderExtraMinutes: (tenantContext.config as { largeOrderExtraMinutes?: number | null }).largeOrderExtraMinutes,
+          prepTimeOverrides: (tenantContext.config as { prepTimeOverrides?: unknown }).prepTimeOverrides,
+          timezone: tenantContext.config.timezone,
+          minutesPerQueuedOrder: (tenantContext.config as { minutesPerQueuedOrder?: number | null }).minutesPerQueuedOrder,
+        },
+        itemCount,
+        queueCount,
+      );
+      const readyAt =
+        prepMinutes != null
+          ? formatReadyTime(prepMinutes, tenantContext.config.timezone)
+          : null;
+      const queuePhrase =
+        queueCount >= 1
+          ? `${queueCount} order${queueCount === 1 ? '' : 's'} ahead — `
+          : '';
+      const etaPhrase = readyAt ? `ready around ${readyAt}. ` : '';
+
       if (tenantContext.config.requirePayment) {
         // DON'T tell the customer the order is placed — payment hasn't
         // happened yet. The Stripe webhook fires the "order placed"
@@ -215,7 +243,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         const paymentReply =
           aiResponse.text && !/placed|ready for you/i.test(aiResponse.text)
             ? aiResponse.text
-            : `Total: $${total.toFixed(2)}. You'll get a payment link shortly — your order will be confirmed once paid.`;
+            : `${queuePhrase}${etaPhrase}Total: $${total.toFixed(2)}. You'll get a payment link shortly — your order is confirmed once paid.`;
         return {
           nextState: buildBaseState(input, draft, { flowStep: 'AWAITING_PAYMENT' }),
           smsReply: paymentReply.slice(0, 320),
@@ -241,7 +269,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       for (const line of draft.items) line.confirmed = true;
       const baseReply =
         aiResponse.text ||
-        `Your order has been placed! Total: $${total.toFixed(2)}. We'll have it ready for you!`;
+        `Your order has been placed! ${queuePhrase}${etaPhrase}Total: $${total.toFixed(2)}.`;
 
       return {
         nextState: buildBaseState(input, draft, { flowStep: 'ORDER_COMPLETE' }),

@@ -170,3 +170,118 @@ function formatTime(time: string): string {
   const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
   return `${hour12}:${m.toString().padStart(2, '0')} ${suffix}`;
 }
+
+/**
+ * Return a human-readable description of the tenant's next open slot
+ * starting from `now` (in the tenant's timezone). Walks forward up to 7
+ * days honoring closedDates, businessSchedule and businessDays. Returns
+ * strings like "Sun 11:00 AM" or "tomorrow 11:00 AM" or null if no hours
+ * are configured.
+ */
+export function getNextOpenDisplay(
+  config: BusinessHoursConfig,
+  now: Date = new Date(),
+): string | null {
+  const tz = config.timezone ?? 'America/Chicago';
+
+  const {
+    businessHoursStart,
+    businessHoursEnd,
+    businessDays,
+    businessSchedule,
+    closedDates,
+  } = config;
+
+  const hasPerDay = !!(businessSchedule && Object.keys(businessSchedule).length > 0);
+  const hasFlat = !!(businessHoursStart && businessHoursEnd);
+  if (!hasPerDay && !hasFlat) return null;
+
+  const todayParts = localDateParts(now, tz);
+  const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  for (let offset = 0; offset < 8; offset++) {
+    // Compute the candidate calendar date (YYYY-MM-DD) in the tenant's tz.
+    const candidate = new Date(now.getTime() + offset * 24 * 60 * 60 * 1000);
+    const parts = localDateParts(candidate, tz);
+    const ymd = `${parts.year}-${parts.month}-${parts.day}`;
+
+    // Skip closed dates.
+    if (closedDates?.includes(ymd)) continue;
+
+    // Determine the open time string for this weekday, or skip.
+    let openTime: string | null = null;
+    if (hasPerDay) {
+      const daySched = businessSchedule![String(parts.dayOfWeek)];
+      if (daySched) openTime = daySched.open;
+    } else if (hasFlat) {
+      if (
+        !businessDays ||
+        businessDays.length === 0 ||
+        businessDays.includes(parts.dayOfWeek)
+      ) {
+        openTime = businessHoursStart!;
+      }
+    }
+    if (!openTime) continue;
+
+    // If this is today, skip when we're already past close.
+    if (offset === 0) {
+      const close =
+        hasPerDay
+          ? businessSchedule![String(parts.dayOfWeek)]?.close
+          : businessHoursEnd;
+      if (!close) continue;
+      if (isTimeInRange(todayParts.hour, todayParts.minute, openTime, close)) {
+        // We're already open right now — caller shouldn't normally ask in
+        // this case, but return today's open time for completeness.
+        return `today ${formatTime(openTime)}`;
+      }
+      const nowMinutes = todayParts.hour * 60 + todayParts.minute;
+      const [ch, cm] = close.split(':').map(Number);
+      const closeMinutes = ch * 60 + cm;
+      if (nowMinutes >= closeMinutes) continue;
+      const [oh, om] = openTime.split(':').map(Number);
+      const openMinutes = oh * 60 + om;
+      if (nowMinutes < openMinutes) {
+        // Before today's open
+        return `today ${formatTime(openTime)}`;
+      }
+      continue;
+    }
+
+    // Future day
+    const label = offset === 1 ? 'tomorrow' : DAY_LABELS[parts.dayOfWeek];
+    return `${label} ${formatTime(openTime)}`;
+  }
+
+  return null;
+}
+
+function localDateParts(
+  date: Date,
+  tz: string,
+): { year: string; month: string; day: string; hour: number; minute: number; dayOfWeek: number } {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+    weekday: 'short',
+  });
+  const parts = fmt.formatToParts(date);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  const weekdayMap: Record<string, number> = {
+    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+  };
+  return {
+    year: get('year'),
+    month: get('month'),
+    day: get('day'),
+    hour: Number(get('hour') || '0'),
+    minute: Number(get('minute') || '0'),
+    dayOfWeek: weekdayMap[get('weekday')] ?? 0,
+  };
+}

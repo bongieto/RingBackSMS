@@ -15,15 +15,17 @@ interface PrepOverride {
  * Kept inline because the flow-engine package can't import from apps/web.
  * Returns total prep minutes or null if prep time isn't configured.
  */
-function calculateFlowPrepTime(
+export function calculateFlowPrepTime(
   config: {
     defaultPrepTimeMinutes?: number | null;
     largeOrderThresholdItems?: number | null;
     largeOrderExtraMinutes?: number | null;
     prepTimeOverrides?: unknown;
     timezone?: string;
+    minutesPerQueuedOrder?: number | null;
   },
   itemCount: number,
+  queueCount: number = 0,
   now: Date = new Date(),
 ): number | null {
   if (config.defaultPrepTimeMinutes == null) return null;
@@ -61,10 +63,11 @@ function calculateFlowPrepTime(
     itemCount >= config.largeOrderThresholdItems
       ? config.largeOrderExtraMinutes ?? 0
       : 0;
-  return base + overrideExtra + largeExtra;
+  const queueExtra = Math.max(0, queueCount) * (config.minutesPerQueuedOrder ?? 0);
+  return base + overrideExtra + largeExtra + queueExtra;
 }
 
-function formatReadyTime(minutesFromNow: number, timezone: string): string {
+export function formatReadyTime(minutesFromNow: number, timezone: string): string {
   const ready = new Date(Date.now() + minutesFromNow * 60_000);
   try {
     return new Intl.DateTimeFormat('en-US', {
@@ -585,6 +588,9 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
     // Prep time estimate (restaurants & food trucks). Falls back to the
     // legacy message when the tenant hasn't configured prep time.
     const itemCount = orderItems.reduce((s: number, i: { quantity?: number }) => s + (i.quantity ?? 1), 0);
+    const queueCount = input.getActiveOrderCount
+      ? await input.getActiveOrderCount(tenantContext.tenantId).catch(() => 0)
+      : 0;
     const prepMinutes = calculateFlowPrepTime(
       {
         defaultPrepTimeMinutes: (tenantContext.config as { defaultPrepTimeMinutes?: number | null }).defaultPrepTimeMinutes,
@@ -592,8 +598,10 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
         largeOrderExtraMinutes: (tenantContext.config as { largeOrderExtraMinutes?: number | null }).largeOrderExtraMinutes,
         prepTimeOverrides: (tenantContext.config as { prepTimeOverrides?: unknown }).prepTimeOverrides,
         timezone: tenantContext.config.timezone,
+        minutesPerQueuedOrder: (tenantContext.config as { minutesPerQueuedOrder?: number | null }).minutesPerQueuedOrder,
       },
       itemCount,
+      queueCount,
     );
     const readyLine =
       prepMinutes != null

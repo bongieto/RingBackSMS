@@ -299,6 +299,8 @@ model TenantConfig {
   prepTimeOverrides              Json? // Array<{ dayOfWeek, start, end, extraMinutes, label? }>
   ordersAcceptingEnabled         Boolean   @default(true)
   aiOrderAgentEnabled            Boolean   @default(false) // per-tenant rollout of the AI-native ORDER flow (items 1-7)
+  acceptClosedHourOrders         Boolean   @default(true)  // when true, bot schedules orders for next open slot even when currently closed
+  minutesPerQueuedOrder          Int       @default(4)     // added to ETA for every order currently CONFIRMED or PREPARING
   // cal.com integration (OAuth 2.0 authorization code)
   calcomAccessToken              String? // AES-256-GCM encrypted
   calcomRefreshToken             String? // AES-256-GCM encrypted

@@ -25,6 +25,7 @@ export interface PrepTimeConfig {
   largeOrderExtraMinutes: number | null;
   prepTimeOverrides: unknown; // Json from Prisma
   timezone: string | null;
+  minutesPerQueuedOrder?: number | null;
 }
 
 function activeOverrideExtra(
@@ -73,8 +74,12 @@ function activeOverrideExtra(
 export function calculatePrepTime(
   config: PrepTimeConfig,
   itemCount: number,
+  queueCount: number = 0,
   now: Date = new Date(),
-): { totalMinutes: number; breakdown: { base: number; overrideExtra: number; largeOrderExtra: number } } | null {
+): {
+  totalMinutes: number;
+  breakdown: { base: number; overrideExtra: number; largeOrderExtra: number; queueExtra: number; queueCount: number };
+} | null {
   if (config.defaultPrepTimeMinutes == null) return null;
   const base = config.defaultPrepTimeMinutes;
   const overrides = Array.isArray(config.prepTimeOverrides)
@@ -86,9 +91,11 @@ export function calculatePrepTime(
     itemCount >= config.largeOrderThresholdItems
       ? config.largeOrderExtraMinutes ?? 0
       : 0;
+  const perQueue = config.minutesPerQueuedOrder ?? 0;
+  const queueExtra = Math.max(0, queueCount) * perQueue;
   return {
-    totalMinutes: base + overrideExtra + largeOrderExtra,
-    breakdown: { base, overrideExtra, largeOrderExtra },
+    totalMinutes: base + overrideExtra + largeOrderExtra + queueExtra,
+    breakdown: { base, overrideExtra, largeOrderExtra, queueExtra, queueCount },
   };
 }
 
@@ -122,9 +129,16 @@ export async function createOrder(input: CreateOrderInput) {
       largeOrderExtraMinutes: true,
       prepTimeOverrides: true,
       timezone: true,
+      minutesPerQueuedOrder: true,
     },
   });
   const itemCount = input.items.reduce((s, i) => s + (i.quantity ?? 1), 0);
+  // Count orders ahead of this one at write-time so estimatedReadyTime
+  // reflects real kitchen load. We query BEFORE insert so the new order
+  // doesn't count itself.
+  const queueCount = await prisma.order.count({
+    where: { tenantId: input.tenantId, status: { in: ['CONFIRMED', 'PREPARING'] } },
+  });
   const prep = cfg
     ? calculatePrepTime(
         {
@@ -133,8 +147,10 @@ export async function createOrder(input: CreateOrderInput) {
           largeOrderExtraMinutes: cfg.largeOrderExtraMinutes,
           prepTimeOverrides: cfg.prepTimeOverrides,
           timezone: cfg.timezone,
+          minutesPerQueuedOrder: cfg.minutesPerQueuedOrder,
         },
         itemCount,
+        queueCount,
       )
     : null;
   const estimatedReadyTime = prep

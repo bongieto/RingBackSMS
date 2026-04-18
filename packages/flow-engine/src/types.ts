@@ -11,6 +11,14 @@ export interface TenantContext {
   config: TenantConfig;
   flows: Flow[];
   menuItems: MenuItem[];
+  /** Optional business-hours context passed in by the host app. When set,
+   *  the ORDER agent uses it to politely schedule future pickups when we're
+   *  closed rather than dead-ending the conversation. */
+  hoursInfo?: {
+    openNow: boolean;
+    nextOpenDisplay: string | null; // e.g. "tomorrow 11:00 AM" or "Sun 11:00 AM"
+    todayHoursDisplay: string;      // e.g. "Mon-Fri 11:00 AM - 9:00 PM"
+  };
 }
 
 /**
@@ -85,6 +93,10 @@ export interface FlowInput {
   /** Recent conversation messages (most recent last), passed into AI agent. */
   recentMessages?: Array<{ role: 'user' | 'assistant'; content: string }>;
   callerMemory?: CallerMemory;
+  /** Returns how many orders are currently ahead in the kitchen. Used to
+   *  surcharge the pickup ETA. Optional — when unset the flow engine
+   *  behaves as if queue count is 0. */
+  getActiveOrderCount?: (tenantId: string) => Promise<number>;
 }
 
 export interface FlowOutput {

@@ -102,20 +102,39 @@ const tenantContext: TenantContext = {
   ] as any,
 };
 
-function mkInput(message: string, toolCalls: Array<{ name: string; input: any }>, text = '', currentState: any = null): FlowInput {
+function mkInput(
+  message: string,
+  toolCalls: Array<{ name: string; input: any }>,
+  text = '',
+  currentState: any = null,
+  opts: { queueCount?: number; defaultPrepTimeMinutes?: number | null } = {},
+): FlowInput {
   const mockWithTools: ChatWithToolsFn = jest.fn().mockResolvedValue({
     text,
     toolCalls: toolCalls.map((tc, i) => ({ id: `t${i}`, name: tc.name, input: tc.input })),
     stopReason: 'end_turn',
     provider: 'claude' as const,
   });
+  const ctx =
+    opts.defaultPrepTimeMinutes !== undefined
+      ? {
+          ...tenantContext,
+          config: {
+            ...tenantContext.config,
+            defaultPrepTimeMinutes: opts.defaultPrepTimeMinutes,
+            minutesPerQueuedOrder: 4,
+          } as any,
+        }
+      : tenantContext;
   return {
-    tenantContext,
+    tenantContext: ctx,
     callerPhone: '+12175550199',
     inboundMessage: message,
     currentState,
     chatFn,
     chatWithToolsFn: mockWithTools,
+    getActiveOrderCount:
+      opts.queueCount != null ? jest.fn().mockResolvedValue(opts.queueCount) : undefined,
   };
 }
 
@@ -245,6 +264,53 @@ describe('runOrderAgent', () => {
     expect(result.nextState.orderDraft).toBeNull();
     expect(result.nextState.flowStep).toBe('ORDER_COMPLETE');
     expect(result.sideEffects).toHaveLength(0);
+  });
+
+  test('confirm reply includes "N orders ahead" when queue > 0', async () => {
+    const state = {
+      tenantId: TENANT_ID,
+      callerPhone: '+12175550199',
+      conversationId: null,
+      currentFlow: FlowType.ORDER,
+      flowStep: 'ORDER_CONFIRM',
+      orderDraft: {
+        items: [{ menuItemId: LUMPIA_ID, name: 'Lumpia Shanghai', quantity: 2, price: 8.99 }],
+        pickupTime: '6:30pm',
+      },
+      lastMessageAt: Date.now(),
+      messageCount: 1,
+      dedupKey: null,
+    } as any;
+    const input = mkInput('yes', [{ name: 'confirm_order', input: {} }], '', state, {
+      queueCount: 3,
+      defaultPrepTimeMinutes: 10,
+    });
+    const result = await runOrderAgent(input);
+    expect(result.smsReply).toMatch(/3 orders ahead/i);
+    expect(result.smsReply).toMatch(/ready around/i);
+  });
+
+  test('confirm reply omits "orders ahead" when queue is 0', async () => {
+    const state = {
+      tenantId: TENANT_ID,
+      callerPhone: '+12175550199',
+      conversationId: null,
+      currentFlow: FlowType.ORDER,
+      flowStep: 'ORDER_CONFIRM',
+      orderDraft: {
+        items: [{ menuItemId: LUMPIA_ID, name: 'Lumpia Shanghai', quantity: 2, price: 8.99 }],
+        pickupTime: '6:30pm',
+      },
+      lastMessageAt: Date.now(),
+      messageCount: 1,
+      dedupKey: null,
+    } as any;
+    const input = mkInput('yes', [{ name: 'confirm_order', input: {} }], '', state, {
+      queueCount: 0,
+      defaultPrepTimeMinutes: 10,
+    });
+    const result = await runOrderAgent(input);
+    expect(result.smsReply).not.toMatch(/orders? ahead/i);
   });
 
   test('agent throws → falls back to regex flow without user-visible error', async () => {
