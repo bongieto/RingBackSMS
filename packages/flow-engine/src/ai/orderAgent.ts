@@ -9,6 +9,7 @@ import {
   handleAddItems,
   handleAskClarification,
   handleRemoveItem,
+  handleReorderLast,
   handleSetCustomerName,
   handleSetOrderNotes,
   handleSetPickupTime,
@@ -147,6 +148,12 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           wantsMenuLink = true;
           result = { ok: true, kind: 'menu_link' };
           break;
+        case 'reorder_last': {
+          const r = handleReorderLast(draft, tenantContext.menuItems, callerMemory?.lastOrderItems);
+          if (r.ok) anyMutation = true;
+          result = r;
+          break;
+        }
         case 'set_customer_name': {
           const r = handleSetCustomerName(call.input);
           if (r.ok && r.kind === 'customer_name') {

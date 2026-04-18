@@ -131,6 +131,12 @@ export const ORDER_AGENT_TOOLS: ToolSchema[] = [
     },
   },
   {
+    name: 'reorder_last',
+    description:
+      "Repopulate the cart with the customer's most recent order. Call this when the customer says something like 'the usual', 'same as last time', 'reorder', 'REORDER', 'my usual'. Only works if we have a prior order for this caller — the customer memory block will show it under 'Last order items'. Items from the last order that are no longer on the menu are silently skipped.",
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
     name: 'set_customer_name',
     description:
       "Capture the customer's name (usually first name) for the order. Call this any time the customer tells you their name, e.g. 'for Maria' or 'Rolando here'. The name appears on the kitchen ticket, the READY SMS, and the receipt.",
@@ -194,6 +200,7 @@ export type ToolResult =
   | { ok: true; kind: 'menu_link' }
   | { ok: true; kind: 'clarification'; question: string; field: string }
   | { ok: true; kind: 'customer_name'; name: string }
+  | { ok: true; kind: 'reorder'; added: number; skipped: number }
   | { ok: false; error: string };
 
 // ── Handlers: operate on a cloned OrderDraft ──────────────────────────────────
@@ -343,6 +350,60 @@ export function handleAskClarification(raw: unknown): ToolResult {
     question: parsed.data.question,
     field: parsed.data.missing_field,
   };
+}
+
+/**
+ * Refill the cart from the caller's last order. Items whose menu_item_id
+ * no longer maps to an available menu item are dropped silently — the
+ * reply wording tells the customer how many items were skipped so they
+ * can decide whether to order the rest. Modifiers are NOT carried over:
+ * we only persist menuItemId+quantity in CallerMemory.lastOrderItems,
+ * and re-resolving modifier names across menu edits is too brittle. The
+ * customer can re-specify "spicy" etc. in the same message if they want.
+ */
+export function handleReorderLast(
+  draft: OrderDraft,
+  menu: MenuItem[],
+  lastItems: Array<{ menuItemId: string; name: string; quantity: number; price: number }> | undefined,
+):
+  | { ok: true; kind: 'reorder'; added: number; skipped: number }
+  | { ok: false; error: string } {
+  if (!lastItems || lastItems.length === 0) {
+    return { ok: false, error: 'no prior order on file' };
+  }
+  let added = 0;
+  let skipped = 0;
+  for (const prev of lastItems) {
+    const menuItem = findMenuItem(menu, prev.menuItemId);
+    if (!menuItem) {
+      skipped += 1;
+      continue;
+    }
+    // Merge into an existing identical line instead of duplicating.
+    const existing = draft.items.find(
+      (line) =>
+        line.menuItemId === menuItem.id &&
+        (line.notes ?? '') === '' &&
+        modifiersEqual(line.selectedModifiers, undefined),
+    );
+    if (existing) {
+      existing.quantity += prev.quantity;
+      existing.confirmed = false;
+    } else {
+      draft.items.push({
+        menuItemId: menuItem.id,
+        name: menuItem.name,
+        quantity: prev.quantity,
+        price: menuItem.price,
+        confirmed: false,
+      });
+    }
+    added += 1;
+  }
+  if (added === 0) {
+    return { ok: false, error: 'none of the prior items are still on the menu' };
+  }
+  return { ok: true, kind: 'reorder', added, skipped };
 }
 
 export function handleSetCustomerName(raw: unknown):

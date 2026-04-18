@@ -19,8 +19,13 @@ const STATUS_TRANSITIONS: Record<string, OrderStatus[]> = {
   CANCELLED: [],
 };
 
+function appUrl(): string {
+  return (process.env.NEXT_PUBLIC_APP_URL ?? 'https://ringbacksms.com').replace(/\/+$/, '');
+}
+
 function buildStatusSms(
   status: OrderStatus,
+  orderId: string,
   orderNumber: string,
   businessName: string,
   prepMins: number | null,
@@ -30,15 +35,17 @@ function buildStatusSms(
   // SMS copy conversational and under the 160-char GSM limit.
   const firstName = customerName?.trim().split(/\s+/)[0];
   const greet = firstName ? `Hi ${firstName}! ` : '';
+  const trackerUrl = `${appUrl()}/o/${orderId}`;
+  const receiptUrl = `${appUrl()}/r/${orderId}`;
   switch (status) {
     case OrderStatus.CONFIRMED:
       return prepMins
-        ? `${greet}${businessName} got your order #${orderNumber}. Estimated ready in ~${prepMins} min.`
-        : `${greet}${businessName} got your order #${orderNumber}. We'll let you know when it's ready.`;
+        ? `${greet}${businessName} got your order #${orderNumber}. Ready in ~${prepMins} min. Track it: ${trackerUrl}`
+        : `${greet}${businessName} got your order #${orderNumber}. Track it: ${trackerUrl}`;
     case OrderStatus.PREPARING:
       return `${greet}${businessName} is preparing your order #${orderNumber} now!`;
     case OrderStatus.READY:
-      return `${greet}Your order #${orderNumber} from ${businessName} is READY for pickup!`;
+      return `${greet}Your order #${orderNumber} from ${businessName} is READY for pickup! Receipt: ${receiptUrl}`;
     case OrderStatus.CANCELLED:
       return `${greet}Sorry — your order #${orderNumber} from ${businessName} has been cancelled. Please call us if you have questions.`;
     default:
@@ -71,6 +78,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           if (!tenant) return;
           const sms = buildStatusSms(
             status,
+            order.id,
             order.orderNumber,
             tenant.name,
             tenant.config?.defaultPrepTimeMinutes ?? null,
