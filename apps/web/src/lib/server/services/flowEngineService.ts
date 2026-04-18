@@ -508,10 +508,15 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     logger.info('Escalation detected, handing off to human', { tenantId, callerPhone });
   }
 
-  // Save next state
-  await setCallerState({ ...result.nextState, dedupKey: messageSid });
-
-  // Upsert conversation
+  // Upsert conversation FIRST so we can save state with the real
+  // conversationId atomically. The old flow did two writes:
+  //   1) setCallerState({...nextState, dedupKey}) with conversationId=null
+  //   2) setCallerState({...nextState, conversationId, dedupKey}) after create
+  // Any inbound SMS that arrived between (1) and (2) would read state with
+  // conversationId=null and create a duplicate Conversation row. That bug
+  // produced two conversations within 47 seconds for the same caller on
+  // 2026-04-18; the closed-hours notice also re-prepended because
+  // `!existingConversationId` became true on the second SMS.
   let conversationId: string | null = existingConversationId;
   const newMessages = [
     { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },
@@ -530,9 +535,6 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       },
     });
     conversationId = conversation.id;
-
-    // Update state with conversation ID
-    await setCallerState({ ...result.nextState, conversationId, dedupKey: messageSid });
   } else {
     // Append messages to existing conversation
     const existing = await prisma.conversation.findUnique({
@@ -552,6 +554,9 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       },
     });
   }
+
+  // Single state write, always with a resolved conversationId.
+  await setCallerState({ ...result.nextState, conversationId, dedupKey: messageSid });
 
   // Mark firstReplyAt on the most recent missed call from this caller (idempotent).
   try {
