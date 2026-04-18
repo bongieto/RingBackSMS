@@ -203,27 +203,10 @@ export class SquareAdapter extends BasePosAdapter {
           where: { tenantId, posCatalogId: item.id },
         });
 
-        // Square's "Sold at this location" toggle flips two fields:
-        //   presentAtAllLocations (bool)
-        //   presentAtLocationIds / absentAtLocationIds (string[])
-        // Logic per Square docs:
-        //   all=true  → item sold everywhere EXCEPT locations in absent[]
-        //   all=false → item sold ONLY at locations in present[]
-        // If the tenant hasn't selected a location yet (unlikely but
-        // possible), fall back to "available" so we don't mass-hide
-        // their menu on first connect.
-        const itemLocationData = item as {
-          presentAtAllLocations?: boolean;
-          presentAtLocationIds?: string[];
-          absentAtLocationIds?: string[];
-        };
-        const locationId = tokens.locationId;
-        const isAvailable = !locationId
-          ? true
-          : itemLocationData.presentAtAllLocations === true
-            ? !(itemLocationData.absentAtLocationIds ?? []).includes(locationId)
-            : (itemLocationData.presentAtLocationIds ?? []).includes(locationId);
-
+        // Fields that ALWAYS sync (safe to refresh from Square every time).
+        // `isAvailable` is intentionally NOT in this list — operators
+        // curate the public menu in RingbackSMS and don't want Square
+        // pulls to re-enable items they've hidden.
         const itemData = {
           name: item.itemData.name ?? 'Unnamed Item',
           description: item.itemData.description ?? null,
@@ -233,7 +216,6 @@ export class SquareAdapter extends BasePosAdapter {
           posVariationId: variation?.id ?? null,
           squareCatalogId: item.id,
           squareVariationId: variation?.id ?? null,
-          isAvailable,
           lastSyncedAt: new Date(),
         };
 
@@ -243,13 +225,21 @@ export class SquareAdapter extends BasePosAdapter {
           const changed =
             existing.name !== itemData.name ||
             existing.description !== itemData.description ||
-            Number(existing.price) !== itemData.price ||
-            existing.isAvailable !== itemData.isAvailable;
-          await this.prisma.menuItem.update({ where: { id: existing.id }, data: itemData });
+            Number(existing.price) !== itemData.price;
+          await this.prisma.menuItem.update({
+            where: { id: existing.id },
+            data: itemData, // NOTE: does NOT include isAvailable
+          });
           if (changed) result.updated++; else result.unchanged++;
           menuItemId = existing.id;
         } else {
-          const created = await this.prisma.menuItem.create({ data: { tenantId, ...itemData } });
+          // New items default to DISABLED. RingbackSMS is the canonical
+          // curated menu; operators opt individual Square items in from
+          // /dashboard/menu → Items tab. Prevents a Pull from POS from
+          // silently flooding the customer-facing menu.
+          const created = await this.prisma.menuItem.create({
+            data: { tenantId, isAvailable: false, ...itemData },
+          });
           result.newItems++;
           menuItemId = created.id;
         }
