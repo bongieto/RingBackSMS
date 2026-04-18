@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
+import { waitUntil } from '@vercel/functions';
 import { logger } from '../logger';
 import { prisma } from '../db';
 
@@ -24,23 +25,29 @@ function logAiUsage(row: {
 }): void {
   // No tenantId = system-level call (intent classifier on bare webhook). Skip.
   if (!row.tenantId) return;
-  void prisma.aiUsageLog
-    .create({
-      data: {
-        tenantId: row.tenantId,
-        provider: row.provider,
-        model: row.model,
-        purpose: row.purpose ?? 'unknown',
-        inputTokens: row.inputTokens ?? 0,
-        outputTokens: row.outputTokens ?? 0,
-        latencyMs: row.latencyMs,
-        success: row.success ?? true,
-        metadata: row.metadata ? (row.metadata as any) : undefined,
-      },
-    })
-    .catch((err) => {
-      logger.warn('[ai] failed to write AiUsageLog', { err: err?.message });
-    });
+  // waitUntil keeps the insert alive past the serverless response so a
+  // 10-20ms DB write doesn't block customer latency AND isn't killed
+  // when Vercel tears down the request context.
+  waitUntil(
+    prisma.aiUsageLog
+      .create({
+        data: {
+          tenantId: row.tenantId,
+          provider: row.provider,
+          model: row.model,
+          purpose: row.purpose ?? 'unknown',
+          inputTokens: row.inputTokens ?? 0,
+          outputTokens: row.outputTokens ?? 0,
+          latencyMs: row.latencyMs,
+          success: row.success ?? true,
+          metadata: row.metadata ? (row.metadata as any) : undefined,
+        },
+      })
+      .then(() => undefined)
+      .catch((err) => {
+        logger.warn('[ai] failed to write AiUsageLog', { err: err?.message });
+      }),
+  );
 }
 
 let anthropicClient: Anthropic | null = null;
