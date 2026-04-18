@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { X } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -55,26 +55,31 @@ export function ItemForm({
   const priceValid = price !== '' && !Number.isNaN(Number(price)) && Number(price) >= 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg rounded-lg bg-white shadow-xl max-h-[90vh] overflow-auto">
-        <div className="flex items-center justify-between border-b px-4 py-3 sticky top-0 bg-white z-10">
-          <h3 className="font-semibold">{item ? 'Edit item' : 'New item'}</h3>
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-        <div className="space-y-4 p-4">
+    <Card className="mb-4 bg-orange-50/60">
+      <CardContent className="p-6 space-y-5">
+        <h3 className="font-semibold">{item ? 'Edit item' : 'New item'}</h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <Label htmlFor="it-name">Name</Label>
-            <Input id="it-name" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+            <Label htmlFor="it-name">
+              Name <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="it-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="mt-1"
+              autoFocus
+            />
           </div>
           <div>
-            <Label htmlFor="it-desc">Description</Label>
-            <Input id="it-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="it-price">Price (USD)</Label>
+            <Label htmlFor="it-price">
+              Price (USD) <span className="text-destructive">*</span>
+            </Label>
+            <div className="relative mt-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                $
+              </span>
               <Input
                 id="it-price"
                 type="number"
@@ -82,71 +87,90 @@ export function ItemForm({
                 min="0"
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
+                className="pl-7"
               />
             </div>
-            <div>
-              <Label htmlFor="it-cat">Category</Label>
-              <select
-                id="it-cat"
-                value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
-                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-              >
-                <option value="">Uncategorized</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+          </div>
+        </div>
+
+        <div>
+          <Label htmlFor="it-desc">Description</Label>
+          <Input
+            id="it-desc"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Optional"
+            className="mt-1"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <Label htmlFor="it-cat">Category</Label>
+            <select
+              id="it-cat"
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              className="h-10 w-full rounded-md border bg-background px-3 text-sm mt-1"
+            >
+              <option value="">Uncategorized</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
           </div>
           <div>
-            <Label htmlFor="it-img">Image URL (optional)</Label>
+            <Label htmlFor="it-img">Image URL</Label>
             <Input
               id="it-img"
               value={imageUrl}
               onChange={(e) => setImageUrl(e.target.value)}
-              placeholder="https://..."
+              placeholder="https://…"
+              className="mt-1"
             />
           </div>
-          <div className="flex items-center justify-between">
-            <Label>Available</Label>
-            <Switch checked={isAvailable} onCheckedChange={setIsAvailable} />
-          </div>
-          {item && (item.modifierGroups?.length ?? 0) > 0 && (
-            <div className="border-t pt-3">
-              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                Option groups
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {item.modifierGroups!.map((g) => (
-                  <span
-                    key={g.id}
-                    className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground"
-                  >
-                    {g.name} ({g.modifiers?.length ?? 0})
-                  </span>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                Manage option groups in the Option groups tab.
-              </p>
-            </div>
-          )}
         </div>
-        <div className="flex justify-end gap-2 border-t px-4 py-3 sticky bottom-0 bg-white z-10">
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
+
+        <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
+          <Label>Available</Label>
+          <Switch checked={isAvailable} onCheckedChange={setIsAvailable} />
+        </div>
+
+        {item && (item.modifierGroups?.length ?? 0) > 0 && (
+          <div className="border-t pt-3">
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+              Attached option groups
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {item.modifierGroups!.map((g) => (
+                <span
+                  key={g.id}
+                  className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground"
+                >
+                  {g.name} ({g.modifiers?.length ?? 0})
+                </span>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Manage option groups in the Option groups tab.
+            </p>
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-2">
           <Button
             onClick={() => save.mutate()}
             disabled={save.isPending || !name.trim() || !priceValid}
           >
-            {save.isPending ? 'Saving...' : 'Save'}
+            {save.isPending ? 'Saving…' : item ? 'Save' : 'Create'}
+          </Button>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
           </Button>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

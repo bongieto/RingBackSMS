@@ -229,7 +229,11 @@ export const MenuItemModifierGroupSchema = z.object({
   id: z.string().uuid(),
   menuItemId: z.string().uuid(),
   name: z.string(),
-  selectionType: z.enum(['SINGLE', 'MULTIPLE']),
+  // SINGLE = pick one (radio). MULTIPLE = pick many (checkboxes).
+  // QUANTITY / PIZZA / MIXED are modeled so the dashboard can capture intent
+  // but the SMS flow currently treats them like SINGLE — downstream support
+  // for per-option quantity and half/whole placement will ship later.
+  selectionType: z.enum(['SINGLE', 'MULTIPLE', 'QUANTITY', 'PIZZA', 'MIXED']),
   required: z.boolean(),
   minSelections: z.number(),
   maxSelections: z.number(),

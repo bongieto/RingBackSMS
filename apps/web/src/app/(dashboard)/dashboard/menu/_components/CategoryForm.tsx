@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { X } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -42,25 +42,25 @@ export function CategoryForm({
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-lg bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b px-4 py-3">
-          <h3 className="font-semibold">{category ? 'Edit category' : 'New category'}</h3>
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
-            <X className="h-4 w-4" />
-          </Button>
+    <Card className="mb-4 bg-orange-50/60">
+      <CardContent className="p-6 space-y-5">
+        <h3 className="font-semibold">{category ? 'Edit category' : 'New category'}</h3>
+
+        <div>
+          <Label htmlFor="cat-name">
+            Name <span className="text-destructive">*</span>
+          </Label>
+          <Input
+            id="cat-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Appetizers, Drinks"
+            className="mt-1"
+            autoFocus
+          />
         </div>
-        <div className="space-y-4 p-4">
-          <div>
-            <Label htmlFor="cat-name">Name</Label>
-            <Input
-              id="cat-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Appetizers"
-              autoFocus
-            />
-          </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <Label htmlFor="cat-sort">Sort order</Label>
             <Input
@@ -69,26 +69,28 @@ export function CategoryForm({
               value={sortOrder}
               onChange={(e) => setSortOrder(e.target.value)}
               placeholder="0"
+              className="mt-1"
             />
             <p className="text-xs text-muted-foreground mt-1">Lower numbers appear first.</p>
           </div>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2">
             <Label>Available</Label>
             <Switch checked={isAvailable} onCheckedChange={setIsAvailable} />
           </div>
         </div>
-        <div className="flex justify-end gap-2 border-t px-4 py-3">
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
+
+        <div className="flex gap-2 pt-2">
           <Button
             onClick={() => save.mutate()}
             disabled={save.isPending || !name.trim()}
           >
-            {save.isPending ? 'Saving...' : 'Save'}
+            {save.isPending ? 'Saving…' : category ? 'Save' : 'Create'}
+          </Button>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
           </Button>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

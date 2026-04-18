@@ -3,14 +3,34 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { X } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { tenantApi } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import type { MenuItem, ModifierGroup } from './types';
 
+type SelectionType = 'SINGLE' | 'MULTIPLE' | 'QUANTITY' | 'PIZZA' | 'MIXED';
+
+const SELECTION_TYPES: Array<{
+  value: SelectionType;
+  title: string;
+  subtitle: string;
+  supported: boolean;
+}> = [
+  { value: 'SINGLE', title: 'Single', subtitle: 'Select one option', supported: true },
+  { value: 'MULTIPLE', title: 'Multiple', subtitle: 'Select more than one', supported: true },
+  { value: 'QUANTITY', title: 'Quantity', subtitle: 'Select the amount', supported: false },
+  { value: 'PIZZA', title: 'Pizza', subtitle: 'Select half or whole', supported: false },
+  { value: 'MIXED', title: 'Mixed', subtitle: 'Various option selections', supported: false },
+];
+
+/**
+ * Inline expanding form for creating/editing an option group. Renders as a
+ * Card the parent tab mounts above the list (no modal overlay).
+ */
 export function OptionGroupForm({
   tenantId,
   group,
@@ -25,13 +45,13 @@ export function OptionGroupForm({
   const { data: items = [] } = useQuery<MenuItem[]>({
     queryKey: ['menu', tenantId],
     queryFn: () => tenantApi.getMenu(tenantId),
-    enabled: !!tenantId && !group, // only needed when creating
+    enabled: !!tenantId && !group,
   });
 
   const [menuItemId, setMenuItemId] = useState(group?.menuItemId ?? '');
   const [name, setName] = useState(group?.name ?? '');
-  const [selectionType, setSelectionType] = useState<'SINGLE' | 'MULTIPLE'>(
-    (group?.selectionType as 'SINGLE' | 'MULTIPLE') ?? 'SINGLE',
+  const [selectionType, setSelectionType] = useState<SelectionType>(
+    (group?.selectionType as SelectionType) ?? 'SINGLE',
   );
   const [required, setRequired] = useState(group?.required ?? false);
   const [minSelections, setMinSelections] = useState(String(group?.minSelections ?? 0));
@@ -62,105 +82,118 @@ export function OptionGroupForm({
   const canSave = name.trim().length > 0 && (group || menuItemId);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg rounded-lg bg-white shadow-xl max-h-[90vh] overflow-auto">
-        <div className="flex items-center justify-between border-b px-4 py-3 sticky top-0 bg-white z-10">
-          <h3 className="font-semibold">{group ? 'Edit option group' : 'New option group'}</h3>
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-        <div className="space-y-4 p-4">
-          {!group && (
-            <div>
-              <Label htmlFor="og-item">Attach to item</Label>
-              <select
-                id="og-item"
-                value={menuItemId}
-                onChange={(e) => setMenuItemId(e.target.value)}
-                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-              >
-                <option value="">Select an item...</option>
-                {items
-                  .filter((i) => !i.requiresBooking)
-                  .map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name}
-                    </option>
-                  ))}
-              </select>
-            </div>
-          )}
+    <Card className="mb-4 bg-orange-50/60">
+      <CardContent className="p-6 space-y-5">
+        <h3 className="font-semibold">{group ? 'Edit option group' : 'New option group'}</h3>
+
+        {!group && (
           <div>
-            <Label htmlFor="og-name">Name</Label>
+            <Label htmlFor="og-item">
+              Attach to item <span className="text-destructive">*</span>
+            </Label>
+            <select
+              id="og-item"
+              value={menuItemId}
+              onChange={(e) => setMenuItemId(e.target.value)}
+              className="h-10 w-full rounded-md border bg-background px-3 text-sm mt-1"
+            >
+              <option value="">Select an item…</option>
+              {items
+                .filter((i) => !i.requiresBooking)
+                .map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name}
+                  </option>
+                ))}
+            </select>
+          </div>
+        )}
+
+        <div>
+          <Label htmlFor="og-name">Group name</Label>
+          <Input
+            id="og-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Add-ons, Protein choice, Size"
+            className="mt-1"
+            autoFocus
+          />
+        </div>
+
+        <div>
+          <Label>Selection type</Label>
+          <div className="mt-2 grid grid-cols-2 gap-3 md:grid-cols-3">
+            {SELECTION_TYPES.map((t) => {
+              const active = selectionType === t.value;
+              return (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => setSelectionType(t.value)}
+                  className={cn(
+                    'rounded-md border px-4 py-3 text-left transition-colors',
+                    active
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                      : 'bg-background hover:border-foreground/30',
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={cn('font-medium text-sm', active && 'text-primary')}>
+                      {t.title}
+                    </span>
+                    {!t.supported && (
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        SMS: coming soon
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{t.subtitle}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label htmlFor="og-min">Min selections</Label>
             <Input
-              id="og-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Spice level"
-              autoFocus
+              id="og-min"
+              type="number"
+              min="0"
+              value={minSelections}
+              onChange={(e) => setMinSelections(e.target.value)}
+              className="mt-1"
             />
           </div>
           <div>
-            <Label>Selection type</Label>
-            <div className="flex gap-4 mt-1">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  checked={selectionType === 'SINGLE'}
-                  onChange={() => setSelectionType('SINGLE')}
-                />
-                Single
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="radio"
-                  checked={selectionType === 'MULTIPLE'}
-                  onChange={() => setSelectionType('MULTIPLE')}
-                />
-                Multiple
-              </label>
-            </div>
+            <Label htmlFor="og-max">Max selections</Label>
+            <Input
+              id="og-max"
+              type="number"
+              min="1"
+              value={maxSelections}
+              onChange={(e) => setMaxSelections(e.target.value)}
+              className="mt-1"
+            />
           </div>
-          <div className="flex items-center justify-between">
-            <Label>Required</Label>
-            <Switch checked={required} onCheckedChange={setRequired} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label htmlFor="og-min">Min selections</Label>
-              <Input
-                id="og-min"
-                type="number"
-                min="0"
-                value={minSelections}
-                onChange={(e) => setMinSelections(e.target.value)}
-              />
-            </div>
-            <div>
-              <Label htmlFor="og-max">Max selections</Label>
-              <Input
-                id="og-max"
-                type="number"
-                min="1"
-                value={maxSelections}
-                onChange={(e) => setMaxSelections(e.target.value)}
-              />
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Manage this group&apos;s individual options in the Options tab.
-          </p>
         </div>
-        <div className="flex justify-end gap-2 border-t px-4 py-3 sticky bottom-0 bg-white z-10">
+
+        <div className="flex items-center justify-between">
+          <Label>Required</Label>
+          <Switch checked={required} onCheckedChange={setRequired} />
+        </div>
+
+        <div className="flex gap-2 pt-2">
+          <Button onClick={() => save.mutate()} disabled={save.isPending || !canSave}>
+            {save.isPending ? 'Saving…' : group ? 'Save' : 'Create'}
+          </Button>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={() => save.mutate()} disabled={save.isPending || !canSave}>
-            {save.isPending ? 'Saving...' : 'Save'}
-          </Button>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

@@ -35,7 +35,7 @@ export async function upsertOptionGroup(
     id?: string;
     menuItemId: string;
     name: string;
-    selectionType?: 'SINGLE' | 'MULTIPLE';
+    selectionType?: 'SINGLE' | 'MULTIPLE' | 'QUANTITY' | 'PIZZA' | 'MIXED';
     required?: boolean;
     minSelections?: number;
     maxSelections?: number;

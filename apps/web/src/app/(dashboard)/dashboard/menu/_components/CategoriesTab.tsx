@@ -61,13 +61,31 @@ export function CategoriesTab({ tenantId }: { tenantId: string }) {
     });
   };
 
+  const showForm = creating || !!editing;
+
   return (
     <div>
       <div className="flex justify-end mb-4">
-        <Button onClick={() => setCreating(true)}>
+        <Button
+          onClick={() => {
+            setEditing(null);
+            setCreating(true);
+          }}
+        >
           <Plus className="h-4 w-4 mr-1" /> Create Category
         </Button>
       </div>
+
+      {showForm && (
+        <CategoryForm
+          tenantId={tenantId}
+          category={editing}
+          onClose={() => {
+            setCreating(false);
+            setEditing(null);
+          }}
+        />
+      )}
 
       <BulkActionBar
         count={selected.size}
@@ -107,7 +125,15 @@ export function CategoriesTab({ tenantId }: { tenantId: string }) {
                   onCheckedChange={(v) => toggleMutation.mutate({ id: c.id, isAvailable: v })}
                 />
                 <div className="flex items-center gap-1">
-                  <Button variant="ghost" size="icon" onClick={() => setEditing(c)} aria-label="Edit">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      setCreating(false);
+                      setEditing(c);
+                    }}
+                    aria-label="Edit"
+                  >
                     <Pencil className="h-4 w-4" />
                   </Button>
                   <Button
@@ -128,17 +154,6 @@ export function CategoriesTab({ tenantId }: { tenantId: string }) {
           )}
         </CardContent>
       </Card>
-
-      {(creating || editing) && (
-        <CategoryForm
-          tenantId={tenantId}
-          category={editing}
-          onClose={() => {
-            setCreating(false);
-            setEditing(null);
-          }}
-        />
-      )}
     </div>
   );
 }

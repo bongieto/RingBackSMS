@@ -90,7 +90,7 @@ export type BulkAvailabilityRequest = z.infer<typeof BulkAvailabilityRequestSche
 export const CreateOptionGroupRequestSchema = z.object({
   menuItemId: z.string().uuid(),
   name: z.string().min(1).max(100),
-  selectionType: z.enum(['SINGLE', 'MULTIPLE']).default('SINGLE'),
+  selectionType: z.enum(['SINGLE', 'MULTIPLE', 'QUANTITY', 'PIZZA', 'MIXED']).default('SINGLE'),
   required: z.boolean().default(false),
   minSelections: z.number().int().min(0).max(20).default(0),
   maxSelections: z.number().int().min(1).max(20).default(1),

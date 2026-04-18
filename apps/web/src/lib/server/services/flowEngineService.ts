@@ -228,7 +228,9 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       lastSyncedAt: m.lastSyncedAt,
       modifierGroups: (m.modifierGroups ?? []).map((g) => ({
         ...g,
-        selectionType: g.selectionType as 'SINGLE' | 'MULTIPLE',
+        // QUANTITY / PIZZA / MIXED are stored but not yet honored by the SMS
+        // agent — downgrade them to SINGLE so the prompt stays understandable.
+        selectionType: (g.selectionType === 'MULTIPLE' ? 'MULTIPLE' : 'SINGLE') as 'SINGLE' | 'MULTIPLE',
         modifiers: g.modifiers.map((mod) => ({
           ...mod,
           priceAdjust: Number(mod.priceAdjust),

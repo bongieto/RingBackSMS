@@ -89,6 +89,8 @@ export function ItemsTab({ tenantId }: { tenantId: string }) {
     });
   };
 
+  const showForm = creating || !!editing;
+
   return (
     <div>
       <div className="flex flex-wrap gap-3 mb-4 items-center">
@@ -114,10 +116,27 @@ export function ItemsTab({ tenantId }: { tenantId: string }) {
           ))}
         </select>
         <div className="flex-1" />
-        <Button onClick={() => setCreating(true)}>
+        <Button
+          onClick={() => {
+            setEditing(null);
+            setCreating(true);
+          }}
+        >
           <Plus className="h-4 w-4 mr-1" /> Create Item
         </Button>
       </div>
+
+      {showForm && (
+        <ItemForm
+          tenantId={tenantId}
+          item={editing}
+          categories={categories}
+          onClose={() => {
+            setCreating(false);
+            setEditing(null);
+          }}
+        />
+      )}
 
       <BulkActionBar
         count={selected.size}
@@ -171,7 +190,15 @@ export function ItemsTab({ tenantId }: { tenantId: string }) {
                   onCheckedChange={(v) => toggleMutation.mutate({ item, isAvailable: v })}
                 />
                 <div className="flex items-center gap-1">
-                  <Button variant="ghost" size="icon" onClick={() => setEditing(item)} aria-label="Edit">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      setCreating(false);
+                      setEditing(item);
+                    }}
+                    aria-label="Edit"
+                  >
                     <Pencil className="h-4 w-4" />
                   </Button>
                   <Button
@@ -190,18 +217,6 @@ export function ItemsTab({ tenantId }: { tenantId: string }) {
           )}
         </CardContent>
       </Card>
-
-      {(creating || editing) && (
-        <ItemForm
-          tenantId={tenantId}
-          item={editing}
-          categories={categories}
-          onClose={() => {
-            setCreating(false);
-            setEditing(null);
-          }}
-        />
-      )}
     </div>
   );
 }

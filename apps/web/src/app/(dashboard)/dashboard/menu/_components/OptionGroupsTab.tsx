@@ -31,13 +31,31 @@ export function OptionGroupsTab({ tenantId }: { tenantId: string }) {
     onError: () => toast.error('Failed to delete'),
   });
 
+  const showForm = creating || !!editing;
+
   return (
     <div>
       <div className="flex justify-end mb-4">
-        <Button onClick={() => setCreating(true)}>
+        <Button
+          onClick={() => {
+            setEditing(null);
+            setCreating(true);
+          }}
+        >
           <Plus className="h-4 w-4 mr-1" /> Create Option Group
         </Button>
       </div>
+
+      {showForm && (
+        <OptionGroupForm
+          tenantId={tenantId}
+          group={editing}
+          onClose={() => {
+            setCreating(false);
+            setEditing(null);
+          }}
+        />
+      )}
 
       <Card>
         <CardContent className="p-0">
@@ -59,7 +77,14 @@ export function OptionGroupsTab({ tenantId }: { tenantId: string }) {
                     {g.menuItemName ? ` · on ${g.menuItemName}` : ''}
                   </div>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setEditing(g)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setCreating(false);
+                    setEditing(g);
+                  }}
+                >
                   Edit
                 </Button>
                 <Button
@@ -79,17 +104,6 @@ export function OptionGroupsTab({ tenantId }: { tenantId: string }) {
           )}
         </CardContent>
       </Card>
-
-      {(creating || editing) && (
-        <OptionGroupForm
-          tenantId={tenantId}
-          group={editing}
-          onClose={() => {
-            setCreating(false);
-            setEditing(null);
-          }}
-        />
-      )}
     </div>
   );
 }
