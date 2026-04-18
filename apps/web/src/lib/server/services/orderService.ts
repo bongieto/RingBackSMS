@@ -111,6 +111,10 @@ export interface CreateOrderInput {
     notes?: string;
   }>;
   total: number;
+  /** Optional breakdown; when absent we assume subtotal == total, tax/fee = 0. */
+  subtotal?: number;
+  taxAmount?: number;
+  feeAmount?: number;
   pickupTime: string | null;
   notes: string | null;
   stripePaymentId?: string;
@@ -166,6 +170,9 @@ export async function createOrder(input: CreateOrderInput) {
       status: OrderStatus.CONFIRMED,
       items: input.items,
       total: input.total,
+      subtotal: input.subtotal ?? input.total,
+      taxAmount: input.taxAmount ?? 0,
+      feeAmount: input.feeAmount ?? 0,
       pickupTime: input.pickupTime,
       estimatedReadyTime,
       notes: input.notes,

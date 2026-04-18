@@ -208,6 +208,8 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       businessDays: tenant.config.businessDays as number[],
       businessSchedule: tenant.config.businessSchedule as Record<string, { open: string; close: string }> | null | undefined,
       closedDates: tenant.config.closedDates as string[],
+      // Decimal → number for serializable shared-types shape.
+      salesTaxRate: tenant.config.salesTaxRate != null ? Number(tenant.config.salesTaxRate) : null,
     },
     flows: tenant.flows.map((f) => ({
       id: f.id,
@@ -332,8 +334,13 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
   // Claude-primary / MiniMax-backup fallback chain internally. If
   // neither AI provider is configured it throws, which we catch in the
   // error boundary below and send a generic fallback.
-  const chatFn: ChatFn = (params) => chatCompletion(params);
-  const chatWithToolsFn: ChatWithToolsFn = (params) => chatWithTools(params);
+  // Thread tenantId so AI usage is attributed per tenant. Purpose lets us
+  // break down cost by feature (intent classifier vs. order agent etc.)
+  // in later reports.
+  const chatFn: ChatFn = (params) =>
+    chatCompletion({ ...params, tenantId, purpose: 'flow_engine_chat' });
+  const chatWithToolsFn: ChatWithToolsFn = (params) =>
+    chatWithTools({ ...params, tenantId, purpose: 'order_agent' });
 
   // Fetch a short conversation history only when we'll use the AI agent,
   // so we don't pay the decrypt cost for every tenant.
@@ -696,6 +703,9 @@ async function processSideEffect(
         callerPhone,
         items: effect.payload.items,
         total: effect.payload.total,
+        subtotal: effect.payload.subtotal,
+        taxAmount: effect.payload.taxAmount,
+        feeAmount: effect.payload.feeAmount,
         pickupTime: effect.payload.pickupTime,
         notes: effect.payload.notes,
       });
@@ -794,6 +804,9 @@ async function processSideEffect(
           orderNumber: context.orderNumber,
           items: effect.payload.items,
           total: effect.payload.total,
+          subtotal: effect.payload.subtotal,
+          taxAmount: effect.payload.taxAmount,
+          feeAmount: effect.payload.feeAmount,
           callerPhone,
           pickupTime: effect.payload.pickupTime,
           notes: effect.payload.notes,

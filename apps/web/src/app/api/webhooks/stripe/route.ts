@@ -173,7 +173,19 @@ export async function POST(request: NextRequest) {
           if (callerState?.paymentPending?.stripeSessionId === session.id && callerState.orderDraft) {
             const pickupTime = session.metadata?.pickupTime ?? callerState.paymentPending.pickupTime;
             const notes = session.metadata?.notes ?? callerState.paymentPending.notes;
-            const total = callerState.orderDraft.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+            // Prefer the breakdown we stashed in session metadata when the
+            // checkout was created. Fall back to recomputing items-only
+            // subtotal for older sessions without metadata.
+            const parseDollars = (v?: string) => (v ? Number(v) : undefined);
+            const subtotalMeta = parseDollars(session.metadata?.subtotal);
+            const taxMeta = parseDollars(session.metadata?.taxAmount);
+            const feeMeta = parseDollars(session.metadata?.feeAmount);
+            const totalMeta = parseDollars(session.metadata?.total);
+            const itemsSubtotal = callerState.orderDraft.items.reduce(
+              (sum, item) => sum + item.price * item.quantity,
+              0,
+            );
+            const total = totalMeta ?? itemsSubtotal;
 
             const order = await createOrder({
               tenantId,
@@ -181,6 +193,9 @@ export async function POST(request: NextRequest) {
               callerPhone,
               items: callerState.orderDraft.items,
               total,
+              subtotal: subtotalMeta ?? itemsSubtotal,
+              taxAmount: taxMeta ?? 0,
+              feeAmount: feeMeta ?? 0,
               pickupTime,
               notes,
               stripePaymentId: paymentIntentId,

@@ -1,11 +1,47 @@
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { logger } from '../logger';
+import { prisma } from '../db';
 
 const CLAUDE_MODEL =
   process.env.AI_PRIMARY_MODEL?.trim() || 'claude-sonnet-4-20250514';
 const MINIMAX_MODEL = 'MiniMax-M2.7';
 const TIMEOUT_MS = 8000;
+
+/** Fire-and-forget AI usage logger. Never blocks the request path; writes
+ *  a single row to `AiUsageLog` so we can bill tenants by real usage and
+ *  debug cost spikes. Swallows all errors (logging must never cascade). */
+function logAiUsage(row: {
+  tenantId?: string;
+  provider: 'claude' | 'minimax' | 'openai';
+  model: string;
+  purpose?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  latencyMs?: number;
+  success?: boolean;
+  metadata?: Record<string, unknown>;
+}): void {
+  // No tenantId = system-level call (intent classifier on bare webhook). Skip.
+  if (!row.tenantId) return;
+  void prisma.aiUsageLog
+    .create({
+      data: {
+        tenantId: row.tenantId,
+        provider: row.provider,
+        model: row.model,
+        purpose: row.purpose ?? 'unknown',
+        inputTokens: row.inputTokens ?? 0,
+        outputTokens: row.outputTokens ?? 0,
+        latencyMs: row.latencyMs,
+        success: row.success ?? true,
+        metadata: row.metadata ? (row.metadata as any) : undefined,
+      },
+    })
+    .catch((err) => {
+      logger.warn('[ai] failed to write AiUsageLog', { err: err?.message });
+    });
+}
 
 let anthropicClient: Anthropic | null = null;
 let minimaxClient: OpenAI | null = null;
@@ -36,6 +72,10 @@ export interface ChatCompletionParams {
   userMessage: string;
   maxTokens?: number;
   temperature?: number;
+  /** Used only for usage logging/billing; optional. */
+  tenantId?: string;
+  /** Short label like "intent_classifier", "fallback_chat". */
+  purpose?: string;
 }
 
 /**
@@ -51,7 +91,7 @@ export interface ChatCompletionParams {
 export async function chatCompletion(
   params: ChatCompletionParams,
 ): Promise<string> {
-  const { systemPrompt, userMessage, maxTokens = 500, temperature = 0.7 } =
+  const { systemPrompt, userMessage, maxTokens = 500, temperature = 0.7, tenantId, purpose } =
     params;
 
   // Try Claude first
@@ -73,16 +113,27 @@ export async function chatCompletion(
         response.content[0]?.type === 'text'
           ? response.content[0].text
           : '';
+      const latencyMs = Date.now() - start;
       logger.info('[ai] claude completion', {
         model: CLAUDE_MODEL,
-        latencyMs: Date.now() - start,
+        latencyMs,
         tokens: response.usage?.output_tokens,
+      });
+      logAiUsage({
+        tenantId, provider: 'claude', model: CLAUDE_MODEL, purpose,
+        inputTokens: response.usage?.input_tokens ?? 0,
+        outputTokens: response.usage?.output_tokens ?? 0,
+        latencyMs,
       });
       return text;
     } catch (err: any) {
       logger.warn('[ai] claude failed, falling back to minimax', {
         error: err?.message,
         status: err?.status,
+      });
+      logAiUsage({
+        tenantId, provider: 'claude', model: CLAUDE_MODEL, purpose,
+        success: false, metadata: { error: err?.message },
       });
       // Fall through to MiniMax
     }
@@ -109,13 +160,21 @@ export async function chatCompletion(
       );
       clearTimeout(timer);
       const text = response.choices[0]?.message?.content ?? '';
-      logger.info('[ai] minimax completion', {
-        model: MINIMAX_MODEL,
-        latencyMs: Date.now() - start,
+      const latencyMs = Date.now() - start;
+      logger.info('[ai] minimax completion', { model: MINIMAX_MODEL, latencyMs });
+      logAiUsage({
+        tenantId, provider: 'minimax', model: MINIMAX_MODEL, purpose,
+        inputTokens: response.usage?.prompt_tokens ?? 0,
+        outputTokens: response.usage?.completion_tokens ?? 0,
+        latencyMs,
       });
       return text;
     } catch (err: any) {
       logger.error('[ai] minimax also failed', { error: err?.message });
+      logAiUsage({
+        tenantId, provider: 'minimax', model: MINIMAX_MODEL, purpose,
+        success: false, metadata: { error: err?.message },
+      });
       throw new Error(
         `AI unavailable: Claude failed, MiniMax failed (${err?.message})`,
       );
@@ -172,6 +231,10 @@ export interface ChatWithToolsParams {
   tools: ToolSchema[];
   maxTokens?: number;
   temperature?: number;
+  /** Used only for usage logging/billing; optional. */
+  tenantId?: string;
+  /** Short label like "order_agent". */
+  purpose?: string;
 }
 
 export interface ChatWithToolsResult {
@@ -197,6 +260,8 @@ export async function chatWithTools(
     tools,
     maxTokens = 1024,
     temperature = 0.3,
+    tenantId,
+    purpose,
   } = params;
 
   // ── Claude ──
@@ -237,12 +302,20 @@ export async function chatWithTools(
         }
       }
 
+      const latencyMs = Date.now() - start;
       logger.info('[ai] claude tool-use', {
         model: CLAUDE_MODEL,
-        latencyMs: Date.now() - start,
+        latencyMs,
         tokens: response.usage?.output_tokens,
         toolCalls: toolCalls.length,
         stopReason: response.stop_reason,
+      });
+      logAiUsage({
+        tenantId, provider: 'claude', model: CLAUDE_MODEL, purpose,
+        inputTokens: response.usage?.input_tokens ?? 0,
+        outputTokens: response.usage?.output_tokens ?? 0,
+        latencyMs,
+        metadata: { toolCalls: toolCalls.length },
       });
 
       return {
@@ -255,6 +328,10 @@ export async function chatWithTools(
       logger.warn('[ai] claude tool-use failed, falling back to minimax', {
         error: err?.message,
         status: err?.status,
+      });
+      logAiUsage({
+        tenantId, provider: 'claude', model: CLAUDE_MODEL, purpose,
+        success: false, metadata: { error: err?.message },
       });
     }
   }
@@ -313,11 +390,19 @@ export async function chatWithTools(
           };
         });
 
+      const latencyMs = Date.now() - start;
       logger.info('[ai] minimax tool-use', {
         model: MINIMAX_MODEL,
-        latencyMs: Date.now() - start,
+        latencyMs,
         toolCalls: toolCalls.length,
         stopReason: choice?.finish_reason ?? null,
+      });
+      logAiUsage({
+        tenantId, provider: 'minimax', model: MINIMAX_MODEL, purpose,
+        inputTokens: response.usage?.prompt_tokens ?? 0,
+        outputTokens: response.usage?.completion_tokens ?? 0,
+        latencyMs,
+        metadata: { toolCalls: toolCalls.length },
       });
 
       return {
@@ -329,6 +414,10 @@ export async function chatWithTools(
     } catch (err: any) {
       logger.error('[ai] minimax tool-use also failed', {
         error: err?.message,
+      });
+      logAiUsage({
+        tenantId, provider: 'minimax', model: MINIMAX_MODEL, purpose,
+        success: false, metadata: { error: err?.message },
       });
       throw new Error(
         `AI tool-use unavailable: Claude failed, MiniMax failed (${err?.message})`,

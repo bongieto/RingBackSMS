@@ -18,6 +18,11 @@ export async function createOrderPaymentSession(params: {
   orderNumber?: string;
   items: Array<{ name: string; quantity: number; price: number }>;
   total: number;
+  /** Optional breakdown. When provided, tax and fee are added as extra
+   *  line items so Stripe's receipt shows them to the customer. */
+  subtotal?: number;
+  taxAmount?: number;
+  feeAmount?: number;
   callerPhone: string;
   pickupTime?: string | null;
   notes?: string | null;
@@ -33,17 +38,44 @@ export async function createOrderPaymentSession(params: {
   if (params.orderNumber) metadata.orderNumber = params.orderNumber;
   if (params.pickupTime) metadata.pickupTime = params.pickupTime;
   if (params.notes) metadata.notes = params.notes;
+  if (params.subtotal != null) metadata.subtotal = params.subtotal.toFixed(2);
+  if (params.taxAmount != null) metadata.taxAmount = params.taxAmount.toFixed(2);
+  if (params.feeAmount != null) metadata.feeAmount = params.feeAmount.toFixed(2);
+  metadata.total = params.total.toFixed(2);
+
+  const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = params.items.map((item) => ({
+    price_data: {
+      currency: 'usd',
+      product_data: { name: item.name },
+      unit_amount: Math.round(item.price * 100),
+    },
+    quantity: item.quantity,
+  }));
+
+  if (params.taxAmount && params.taxAmount > 0) {
+    lineItems.push({
+      price_data: {
+        currency: 'usd',
+        product_data: { name: 'Sales tax' },
+        unit_amount: Math.round(params.taxAmount * 100),
+      },
+      quantity: 1,
+    });
+  }
+  if (params.feeAmount && params.feeAmount > 0) {
+    lineItems.push({
+      price_data: {
+        currency: 'usd',
+        product_data: { name: 'Processing fee' },
+        unit_amount: Math.round(params.feeAmount * 100),
+      },
+      quantity: 1,
+    });
+  }
 
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
-    line_items: params.items.map((item) => ({
-      price_data: {
-        currency: 'usd',
-        product_data: { name: item.name },
-        unit_amount: Math.round(item.price * 100),
-      },
-      quantity: item.quantity,
-    })),
+    line_items: lineItems,
     metadata,
     success_url: `${frontendUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${frontendUrl}/payment/cancel`,

@@ -5,6 +5,7 @@ import { processOrderFlow } from '../flows/orderFlow';
 import {
   ORDER_AGENT_TOOLS,
   computeTotal,
+  computeOrderTotals,
   handleAddItems,
   handleAskClarification,
   handleRemoveItem,
@@ -200,7 +201,11 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         };
       }
 
-      const total = computeTotal(draft);
+      const totals = computeOrderTotals(draft, {
+        salesTaxRate: (tenantContext.config as { salesTaxRate?: number | null }).salesTaxRate,
+        passStripeFeesToCustomer: (tenantContext.config as { passStripeFeesToCustomer?: boolean | null }).passStripeFeesToCustomer,
+      });
+      const total = totals.total;
       const orderItems = draft.items.map((i) => ({
         menuItemId: i.menuItemId,
         name: i.name,
@@ -208,6 +213,14 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         price: i.price,
         selectedModifiers: i.selectedModifiers,
       }));
+      // Human-readable breakdown line when tax/fee apply. Otherwise keep
+      // just "Total: $X" to avoid cluttering the SMS.
+      const breakdownParts: string[] = [];
+      if (totals.tax > 0) breakdownParts.push(`Tax $${totals.tax.toFixed(2)}`);
+      if (totals.fee > 0) breakdownParts.push(`Processing $${totals.fee.toFixed(2)}`);
+      const totalLine = breakdownParts.length
+        ? `Subtotal $${totals.subtotal.toFixed(2)}, ${breakdownParts.join(', ')}. Total $${total.toFixed(2)}.`
+        : `Total: $${total.toFixed(2)}.`;
 
       // Queue-aware ETA. Non-fatal: if the count fn errors, treat queue=0.
       const queueCount = input.getActiveOrderCount
@@ -258,14 +271,22 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         const paymentReply =
           aiResponse.text && !/placed|ready for you/i.test(aiResponse.text)
             ? aiResponse.text
-            : `${queuePhrase}${etaPhrase}Total: $${total.toFixed(2)}. You'll get a payment link shortly — your order is confirmed once paid.`;
+            : `${queuePhrase}${etaPhrase}${totalLine} You'll get a payment link shortly — your order is confirmed once paid.`;
         return {
           nextState: buildBaseState(input, draft, { flowStep: 'AWAITING_PAYMENT' }),
           smsReply: paymentReply.slice(0, 320),
           sideEffects: [
             {
               type: 'CREATE_PAYMENT_LINK',
-              payload: { items: orderItems, total, pickupTime: draft.pickupTime, notes: draft.notes ?? null },
+              payload: {
+                items: orderItems,
+                total,
+                subtotal: totals.subtotal,
+                taxAmount: totals.tax,
+                feeAmount: totals.fee,
+                pickupTime: draft.pickupTime,
+                notes: draft.notes ?? null,
+              },
             },
             {
               type: 'NOTIFY_OWNER',
@@ -284,7 +305,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       for (const line of draft.items) line.confirmed = true;
       const baseReply =
         aiResponse.text ||
-        `Your order has been placed! ${queuePhrase}${etaPhrase}Total: $${total.toFixed(2)}.`;
+        `Your order has been placed! ${queuePhrase}${etaPhrase}${totalLine}`;
 
       return {
         nextState: buildBaseState(input, draft, { flowStep: 'ORDER_COMPLETE' }),
@@ -292,7 +313,15 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         sideEffects: [
           {
             type: 'SAVE_ORDER',
-            payload: { items: orderItems, pickupTime: draft.pickupTime, notes: draft.notes ?? null, total },
+            payload: {
+              items: orderItems,
+              pickupTime: draft.pickupTime,
+              notes: draft.notes ?? null,
+              total,
+              subtotal: totals.subtotal,
+              taxAmount: totals.tax,
+              feeAmount: totals.fee,
+            },
           },
           {
             type: 'NOTIFY_OWNER',

@@ -19,6 +19,11 @@ export interface SaveOrderSideEffect {
     pickupTime: string | null;
     notes: string | null;
     total: number;
+    /** Optional breakdown. When provided, createOrder persists them and
+     *  Stripe checkout line-items them explicitly. */
+    subtotal?: number;
+    taxAmount?: number;
+    feeAmount?: number;
   };
 }
 
@@ -66,6 +71,9 @@ export interface CreatePaymentLinkSideEffect {
     total: number;
     pickupTime: string | null;
     notes: string | null;
+    subtotal?: number;
+    taxAmount?: number;
+    feeAmount?: number;
   };
 }
 

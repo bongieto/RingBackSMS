@@ -301,6 +301,8 @@ model TenantConfig {
   aiOrderAgentEnabled            Boolean   @default(false) // per-tenant rollout of the AI-native ORDER flow (items 1-7)
   acceptClosedHourOrders         Boolean   @default(true)  // when true, bot schedules orders for next open slot even when currently closed
   minutesPerQueuedOrder          Int       @default(4)     // added to ETA for every order currently CONFIRMED or PREPARING
+  salesTaxRate                   Decimal?  @db.Decimal(5, 4) // e.g. 0.0825 for 8.25%. Null = no tax applied.
+  passStripeFeesToCustomer       Boolean   @default(false) // when true, add 2.9% + $0.30 processing fee as a line item on the checkout
   // cal.com integration (OAuth 2.0 authorization code)
   calcomAccessToken              String? // AES-256-GCM encrypted
   calcomRefreshToken             String? // AES-256-GCM encrypted
@@ -395,7 +397,10 @@ model Order {
   orderNumber        String       @unique
   status             OrderStatus  @default(PENDING)
   items              Json
-  total              Decimal      @db.Decimal(10, 2)
+  subtotal           Decimal?     @db.Decimal(10, 2) // items-only subtotal before tax/fee
+  taxAmount          Decimal?     @db.Decimal(10, 2) // sales tax applied
+  feeAmount          Decimal?     @db.Decimal(10, 2) // processing fee passed to customer (if enabled)
+  total              Decimal      @db.Decimal(10, 2) // final amount customer pays (subtotal + tax + fee)
   pickupTime         String?
   estimatedReadyTime DateTime?
   notes              String?      @db.Text
@@ -711,4 +716,23 @@ model EscalationEvent {
   createdAt      DateTime @default(now())
 
   @@index([tenantId, createdAt])
+}
+
+/// Per-call AI token usage. One row per Claude / MiniMax / OpenAI request
+/// so we can bill tenants by real usage and debug cost spikes.
+model AiUsageLog {
+  id           String   @id @default(uuid())
+  tenantId     String
+  provider     String   // 'claude' | 'minimax' | 'openai'
+  model        String
+  purpose      String   // 'order_agent' | 'intent_classifier' | 'fallback_chat' | 'tts' | ...
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  latencyMs    Int?
+  success      Boolean  @default(true)
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([provider, createdAt])
 }

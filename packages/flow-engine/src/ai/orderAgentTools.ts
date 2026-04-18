@@ -336,6 +336,29 @@ export function computeTotal(draft: OrderDraft): number {
   return Math.round(total * 100) / 100;
 }
 
+/**
+ * Compute the full price breakdown customers see: items subtotal, sales
+ * tax, optional Stripe-fee pass-through, and final total. Stripe US
+ * pricing is 2.9% + $0.30; we apply it to (subtotal + tax) which is
+ * what they're actually processing. Rounds every line to cents.
+ */
+export function computeOrderTotals(
+  draft: OrderDraft,
+  cfg: { salesTaxRate?: number | null; passStripeFeesToCustomer?: boolean | null },
+): { subtotal: number; tax: number; fee: number; total: number } {
+  const subtotal = computeTotal(draft);
+  const tax =
+    cfg.salesTaxRate && cfg.salesTaxRate > 0
+      ? Math.round(subtotal * cfg.salesTaxRate * 100) / 100
+      : 0;
+  const taxedTotal = subtotal + tax;
+  const fee = cfg.passStripeFeesToCustomer
+    ? Math.round((taxedTotal * 0.029 + 0.3) * 100) / 100
+    : 0;
+  const total = Math.round((taxedTotal + fee) * 100) / 100;
+  return { subtotal, tax, fee, total };
+}
+
 /** Human-readable cart summary suitable for system-prompt context. */
 export function formatCart(draft: OrderDraft): string {
   if (!draft.items.length) return '(cart empty)';

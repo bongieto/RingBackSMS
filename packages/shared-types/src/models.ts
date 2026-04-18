@@ -92,6 +92,8 @@ export const TenantConfigSchema = z.object({
   aiOrderAgentEnabled: z.boolean().default(false),
   acceptClosedHourOrders: z.boolean().default(true),
   minutesPerQueuedOrder: z.number().int().default(4),
+  salesTaxRate: z.number().nullable().optional(),
+  passStripeFeesToCustomer: z.boolean().default(false),
   // cal.com integration (OAuth 2.0 authorization code)
   calcomAccessToken: z.string().nullable().optional(),
   calcomRefreshToken: z.string().nullable().optional(),
