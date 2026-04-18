@@ -1,4 +1,4 @@
-import { Client, Environment } from 'square';
+import { Client, Environment, CatalogObject } from 'square';
 import axios from 'axios';
 import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult, getAppBaseUrl } from './base';
 import { encrypt } from '../../encryption';
@@ -143,16 +143,35 @@ export class SquareAdapter extends BasePosAdapter {
 
     const client = buildSquareClient(tokens.accessToken);
 
-    // Fetch items, categories, and modifier lists in parallel
-    const [itemsResponse, categoriesResponse, modifierListsResponse] = await Promise.all([
-      client.catalogApi.listCatalog(undefined, 'ITEM'),
-      client.catalogApi.listCatalog(undefined, 'CATEGORY'),
-      client.catalogApi.listCatalog(undefined, 'MODIFIER_LIST'),
-    ]);
+    // Square's listCatalog is paginated — the SDK returns up to ~100-1000
+    // objects per page and gives us a cursor for the next page. We
+    // previously only fetched page 1, which silently dropped every item
+    // past the first page. Loop until the cursor is empty.
+    const listAll = async (type: 'ITEM' | 'CATEGORY' | 'MODIFIER_LIST'): Promise<CatalogObject[]> => {
+      const out: CatalogObject[] = [];
+      let cursor: string | undefined = undefined;
+      // Safety cap: 50 pages × ~1000 objects = 50k per type. Way past any
+      // realistic catalog. Prevents an infinite loop if Square glitches.
+      for (let page = 0; page < 50; page++) {
+        const resp = await client.catalogApi.listCatalog(cursor, type);
+        if (resp.result.objects) out.push(...resp.result.objects);
+        cursor = resp.result.cursor;
+        if (!cursor) break;
+      }
+      return out;
+    };
 
-    const items = itemsResponse.result.objects ?? [];
-    const categories = categoriesResponse.result.objects ?? [];
-    const modifierLists = modifierListsResponse.result.objects ?? [];
+    const [items, categories, modifierLists] = await Promise.all([
+      listAll('ITEM'),
+      listAll('CATEGORY'),
+      listAll('MODIFIER_LIST'),
+    ]);
+    logger.info('Square catalog fetched', {
+      tenantId,
+      items: items.length,
+      categories: categories.length,
+      modifierLists: modifierLists.length,
+    });
 
     // Build a lookup map: category ID → category name
     const categoryNameById = new Map<string, string>();
