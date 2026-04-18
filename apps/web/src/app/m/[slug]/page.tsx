@@ -33,6 +33,9 @@ async function loadTenantMenu(slug: string): Promise<TenantMenu | null> {
       twilioPhoneNumber: true,
       isActive: true,
       menuItems: {
+        // Items pass the item-level filter here; the category filter
+        // runs post-query because Prisma can't express `OR` across a
+        // nullable relation's field in a single `where`.
         where: { isAvailable: true },
         orderBy: [{ category: 'asc' }, { name: 'asc' }],
         select: {
@@ -43,6 +46,7 @@ async function loadTenantMenu(slug: string): Promise<TenantMenu | null> {
           category: true,
           imageUrl: true,
           duration: true,
+          categoryRef: { select: { isAvailable: true } },
         },
       },
     },
@@ -54,15 +58,20 @@ async function loadTenantMenu(slug: string): Promise<TenantMenu | null> {
     id: tenant.id,
     name: tenant.name,
     phoneNumber: tenant.twilioPhoneNumber,
-    items: tenant.menuItems.map((m) => ({
-      id: m.id,
-      name: m.name,
-      description: m.description,
-      price: Number(m.price),
-      category: m.category,
-      imageUrl: m.imageUrl,
-      duration: m.duration,
-    })),
+    items: tenant.menuItems
+      // Hide items whose category has been marked unavailable — gives
+      // operators a "mute this whole section" switch without having to
+      // toggle every item individually.
+      .filter((m) => (m.categoryRef?.isAvailable ?? true) !== false)
+      .map((m) => ({
+        id: m.id,
+        name: m.name,
+        description: m.description,
+        price: Number(m.price),
+        category: m.category,
+        imageUrl: m.imageUrl,
+        duration: m.duration,
+      })),
   };
 }
 

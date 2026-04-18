@@ -174,8 +174,12 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
         config: true,
         flows: { where: { isEnabled: true } },
         menuItems: {
+          // Include category availability so we can filter below — Prisma
+          // doesn't support OR on relation fields inline, so we filter
+          // after the query rather than at the SQL layer.
           where: { isAvailable: true },
           include: {
+            categoryRef: { select: { isAvailable: true } },
             modifierGroups: {
               include: { modifiers: { orderBy: { sortOrder: 'asc' } } },
               orderBy: { sortOrder: 'asc' },
@@ -220,7 +224,13 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       createdAt: f.createdAt,
       updatedAt: f.updatedAt,
     })),
-    menuItems: tenant.menuItems.map((m) => ({
+    // Filter out items whose category has been hidden. The per-item
+    // availability filter runs in SQL; category-level is post-filter
+    // because Prisma can't express "item.isAvailable AND (categoryRef IS
+    // NULL OR categoryRef.isAvailable = true)" in a single relation `where`.
+    menuItems: tenant.menuItems
+      .filter((m) => (m as { categoryRef?: { isAvailable: boolean } }).categoryRef?.isAvailable !== false)
+      .map((m) => ({
       ...m,
       price: Number(m.price),
       squareCatalogId: m.squareCatalogId,
