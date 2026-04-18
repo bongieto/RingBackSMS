@@ -348,7 +348,14 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
     // never reply with bare "Got it."
     function buildFallbackReply(): string {
       if (clarification?.question) return clarification.question;
-      if (!draft.items.length) return 'How can I help with your order?';
+      // Empty cart but pickup time just set → they're ready to order.
+      // Warmer than "How can I help with your order?" — feels like a
+      // person taking a verbal order at the counter.
+      if (!draft.items.length) {
+        return draft.pickupTime
+          ? 'OK, what can I get you?'
+          : 'What can I get started for you?';
+      }
       const summary = draft.items
         .map((i) => `${i.quantity}× ${i.name}`)
         .join(', ');
