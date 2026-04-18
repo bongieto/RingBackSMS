@@ -259,13 +259,41 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       };
     }
 
+    // CANCEL / NEVERMIND shortcut: exit the order flow cleanly so the
+    // customer can ask questions or start fresh.
+    if (upperMsg === 'CANCEL' || upperMsg === 'NEVERMIND' || upperMsg === 'NEVER MIND') {
+      return {
+        nextState: {
+          ...currentState,
+          currentFlow: null,
+          flowStep: null,
+          orderDraft: null,
+          lastMessageAt: Date.now(),
+        },
+        smsReply: `No problem — order cancelled. Text me anytime when you're ready!`,
+        sideEffects: [],
+        flowType: FlowType.ORDER,
+      };
+    }
+
     const parsedItems = parseOrderItems(inboundMessage, menuItems);
 
     if (parsedItems.length === 0) {
+      // Show a few sample items + web menu URL so the customer knows
+      // what's available without us having to dump the whole menu.
+      const sample = menuItems
+        .slice(0, 3)
+        .map((m) => m.name)
+        .join(', ');
+      const menuUrl = tenantContext.tenantSlug
+        ? `Full menu: https://ringbacksms.com/m/${tenantContext.tenantSlug}`
+        : 'Text MENU for our full list';
+      const reply = sample
+        ? `Hmm, I didn't catch that. Try something like "2 ${menuItems[0]?.name}" — we have ${sample}${menuItems.length > 3 ? ', and more' : ''}. ${menuUrl}. Text CANCEL to stop.`
+        : `I didn't catch that. Text MENU for our list or CANCEL to stop.`;
       return {
         nextState: { ...currentState, lastMessageAt: Date.now() },
-        smsReply:
-          "I didn't catch that. Please reply with item numbers (e.g., \"1x2\" for 2 of item 1) or item names.",
+        smsReply: reply,
         sideEffects: [],
         flowType: FlowType.ORDER,
       };
