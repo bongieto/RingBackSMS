@@ -37,7 +37,27 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
   }
 
   // Check if conversation is in HUMAN handoff mode
-  const currentState = await getCallerState(tenantId, callerPhone);
+  let currentState = await getCallerState(tenantId, callerPhone);
+
+  // Stale-state guard: if the caller's last interaction was > 30 min ago,
+  // treat this message as the start of a fresh conversation rather than
+  // replaying yesterday's cart. Redis TTL is 24h, so without this we'd
+  // happily load an abandoned AWAITING_PAYMENT draft and the agent would
+  // summarize it as if it were active.
+  const STALE_STATE_MINUTES = 30;
+  if (
+    currentState?.lastMessageAt &&
+    Date.now() - currentState.lastMessageAt > STALE_STATE_MINUTES * 60 * 1000
+  ) {
+    logger.info('Discarding stale caller state', {
+      tenantId,
+      callerPhone,
+      ageMinutes: Math.round((Date.now() - currentState.lastMessageAt) / 60000),
+      flowStep: currentState.flowStep,
+    });
+    currentState = null;
+  }
+
   const existingConversationId = currentState?.conversationId ?? null;
 
   if (existingConversationId) {
@@ -570,14 +590,17 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
   // reset the flow to FALLBACK so the next message doesn't re-run the
   // same failed step.
   try {
+    // Send the main agent reply FIRST, then fire side effects. A side
+    // effect like CREATE_PAYMENT_LINK sends its own follow-up SMS
+    // ("Pay securely here: …"); if we fire side effects first, the Stripe
+    // link lands before the agent's summary, which reads backwards.
+    await sendSms(tenantId, callerPhone, result.smsReply);
+
     // Process side effects (context passes data between effects, e.g. orderId from SAVE_ORDER to CREATE_PAYMENT_LINK)
     const sideEffectContext: Record<string, any> = {};
     for (const effect of result.sideEffects) {
       await processSideEffect(effect, tenantId, conversationId as string, callerPhone, sideEffectContext);
     }
-
-    // Send SMS reply
-    await sendSms(tenantId, callerPhone, result.smsReply);
 
     // Record usage
     const tenantMeta = await prisma.tenant.findUnique({
