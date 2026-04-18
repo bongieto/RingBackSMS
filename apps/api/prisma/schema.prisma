@@ -158,6 +158,7 @@ model Tenant {
   escalationEvents   EscalationEvent[]
   commissions        CommissionLedger[]
   members            TenantMember[]
+  smsCampaigns       SmsCampaign[]
 
   @@index([twilioPhoneNumber])
   @@index([clerkOrgId])
@@ -454,6 +455,65 @@ enum TenantMemberRole {
   MEMBER
 }
 
+/// Outbound SMS marketing campaign. We queue recipients in a separate
+/// table so opt-outs that arrive after queue-time are honored at send.
+model SmsCampaign {
+  id            String                 @id @default(uuid())
+  tenantId      String
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name          String
+  body          String                 @db.Text
+  status        SmsCampaignStatus      @default(DRAFT)
+  scheduledFor  DateTime?
+  sentAt        DateTime?
+  sentCount     Int                    @default(0)
+  suppressedCount Int                  @default(0)
+  failedCount   Int                    @default(0)
+  createdBy     String?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  recipients    SmsCampaignRecipient[]
+
+  @@index([tenantId, status])
+}
+
+enum SmsCampaignStatus {
+  DRAFT
+  QUEUED
+  SENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+model SmsCampaignRecipient {
+  id           String      @id @default(uuid())
+  campaignId   String
+  campaign     SmsCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contactId    String?
+  phone        String
+  status       String      @default("PENDING") // PENDING | SENT | SUPPRESSED | FAILED
+  error        String?
+  sentAt       DateTime?
+  createdAt    DateTime    @default(now())
+
+  @@unique([campaignId, phone])
+  @@index([campaignId, status])
+}
+
+/// Post-pickup review. SMS ends after order goes COMPLETED; customer
+/// replies 1-5 and we persist a row. One review per order.
+model OrderReview {
+  id        String   @id @default(uuid())
+  orderId   String   @unique
+  tenantId  String
+  rating    Int      // 1..5
+  comment   String?  @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+}
+
 model Meeting {
   id               String        @id @default(uuid())
   tenantId         String
@@ -589,6 +649,7 @@ model Contact {
   lastOrderId      String?
   lastOrderAt      DateTime?
   suppressed       Boolean       @default(false)
+  loyaltyPoints    Int           @default(0)
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 

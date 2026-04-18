@@ -202,6 +202,11 @@ export async function createOrder(input: CreateOrderInput) {
   // manually-edited data).
   try {
     const totalCents = Math.round(Number(order.total) * 100);
+    // Loyalty: 1 point per $ of items subtotal (pre-tax, pre-fee). Keeps
+    // the math intuitive for customers ("spend $10 → get 10 points") and
+    // avoids rewarding processing fees / taxes that aren't margin.
+    const loyaltyBase = input.subtotal != null ? Number(input.subtotal) : Number(order.total);
+    const pointsEarned = Math.max(0, Math.floor(loyaltyBase));
     await prisma.contact.updateMany({
       where: { tenantId: input.tenantId, phone: input.callerPhone },
       data: {
@@ -209,6 +214,7 @@ export async function createOrder(input: CreateOrderInput) {
         lastOrderAt: order.createdAt,
         totalOrders: { increment: 1 },
         totalSpent: { increment: totalCents },
+        loyaltyPoints: { increment: pointsEarned },
         lastContactAt: new Date(),
       },
     });

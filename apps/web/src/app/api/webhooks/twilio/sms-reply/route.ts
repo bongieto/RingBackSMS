@@ -184,6 +184,12 @@ export async function POST(request: NextRequest) {
   waitUntil(
     (async () => {
       try {
+        // Review capture runs BEFORE the AI so bare "5" replies don't
+        // get parsed as part of an order flow.
+        const { tryConsumeReviewReply } = await import('@/lib/server/services/reviewService');
+        const consumed = await tryConsumeReviewReply(tenant.id, From, Body);
+        if (consumed) return;
+
         // Check escalation keywords before AI processes the message.
         // If triggered, the escalation service sends a holding message
         // and notifies the tenant — we skip the AI flow entirely.

@@ -106,6 +106,38 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       })()
     );
 
+    // After an order transitions to COMPLETED (customer picked it up),
+    // schedule a follow-up review-request SMS 2 hours later. We use
+    // setTimeout via waitUntil so this works on Vercel; for longer
+    // delays we'd need a real scheduler. 2 hours stays under Vercel's
+    // max execution window when waitUntil is backed by Fluid/Edge runtime.
+    //
+    // NOTE: on long-cold serverless deploys where the function can't
+    // stay alive for 2h, this is a best-effort hook. Move to a cron
+    // job when we see real ops use.
+    if (status === OrderStatus.COMPLETED) {
+      waitUntil(
+        (async () => {
+          const delayMs = 2 * 60 * 60 * 1000;
+          // Only sleep if we can — in many hosts waitUntil times out.
+          // Keep it simple and best-effort.
+          await new Promise((r) => setTimeout(r, delayMs));
+          try {
+            const already = await prisma.orderReview.findUnique({ where: { orderId: order.id } });
+            if (already) return;
+            await sendSms(
+              tenantId,
+              order.callerPhone,
+              `How was your order from ${(await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } }))?.name ?? ''}? Reply 1-5 (5 = great!).`,
+            );
+            logger.info('Review prompt SMS sent', { orderId: order.id });
+          } catch (err: any) {
+            logger.warn('Review prompt SMS failed', { orderId: order.id, err: err?.message });
+          }
+        })(),
+      );
+    }
+
     if (shouldRefund && order.stripePaymentId) {
       const stripePaymentId = order.stripePaymentId;
       waitUntil(
