@@ -259,9 +259,12 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       };
     }
 
-    // CANCEL / NEVERMIND shortcut: exit the order flow cleanly so the
-    // customer can ask questions or start fresh.
-    if (upperMsg === 'CANCEL' || upperMsg === 'NEVERMIND' || upperMsg === 'NEVER MIND') {
+    // NEVERMIND / RESET shortcut: exit the order flow cleanly. We do NOT
+    // accept CANCEL, QUIT, STOP, END here — those are carrier-reserved
+    // universal opt-out keywords that Twilio intercepts at the network
+    // level before the webhook fires (so our code would never see them,
+    // AND suggesting them to customers causes accidental unsubscribes).
+    if (upperMsg === 'NEVERMIND' || upperMsg === 'NEVER MIND' || upperMsg === 'RESTART' || upperMsg === 'RESET') {
       return {
         nextState: {
           ...currentState,
@@ -280,7 +283,7 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
 
     if (parsedItems.length === 0) {
       // Show a few sample items + web menu URL so the customer knows
-      // what's available without us having to dump the whole menu.
+      // what's available without dumping the full menu.
       const sample = menuItems
         .slice(0, 3)
         .map((m) => m.name)
@@ -289,8 +292,8 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
         ? `Full menu: https://ringbacksms.com/m/${tenantContext.tenantSlug}`
         : 'Text MENU for our full list';
       const reply = sample
-        ? `Hmm, I didn't catch that. Try something like "2 ${menuItems[0]?.name}" — we have ${sample}${menuItems.length > 3 ? ', and more' : ''}. ${menuUrl}. Text CANCEL to stop.`
-        : `I didn't catch that. Text MENU for our list or CANCEL to stop.`;
+        ? `Hmm, I didn't catch that. Try "2 ${menuItems[0]?.name}" — we have ${sample}${menuItems.length > 3 ? ', and more' : ''}. ${menuUrl}.`
+        : `I didn't catch that. Text MENU for our list.`;
       return {
         nextState: { ...currentState, lastMessageAt: Date.now() },
         smsReply: reply,
@@ -480,7 +483,7 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       };
     }
 
-    if (upperMsg === 'NO' || upperMsg === 'N' || upperMsg === 'CANCEL') {
+    if (upperMsg === 'NO' || upperMsg === 'N' || upperMsg === 'NEVERMIND') {
       const nextState: CallerState = {
         ...buildInitialState(input),
         flowStep: 'MENU_DISPLAY',
@@ -690,7 +693,7 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
 
   // ── AWAITING_PAYMENT (customer texted while waiting for payment) ──────────
   if (step === 'AWAITING_PAYMENT') {
-    if (upperMsg === 'CANCEL' || upperMsg === 'NO') {
+    if (upperMsg === 'NEVERMIND' || upperMsg === 'NO') {
       const nextState: CallerState = {
         ...buildInitialState(input),
         flowStep: 'MENU_DISPLAY',
@@ -698,7 +701,7 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       };
       return {
         nextState,
-        smsReply: `Order cancelled. Here's our menu again:\n${buildMenuText(menuItems)}`,
+        smsReply: `Order cancelled. Text me what you'd like to order.`,
         sideEffects: [],
         flowType: FlowType.ORDER,
       };
@@ -706,7 +709,7 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
 
     return {
       nextState: { ...currentState, lastMessageAt: Date.now() },
-      smsReply: 'Your payment link has been sent. Complete payment to confirm your order. Text CANCEL to start over.',
+      smsReply: 'Your payment link has been sent. Complete payment to confirm your order. Reply NO to start over.',
       sideEffects: [],
       flowType: FlowType.ORDER,
     };
