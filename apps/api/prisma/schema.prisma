@@ -157,6 +157,7 @@ model Tenant {
   smsSuppressions    SmsSuppression[]
   escalationEvents   EscalationEvent[]
   commissions        CommissionLedger[]
+  members            TenantMember[]
 
   @@index([twilioPhoneNumber])
   @@index([clerkOrgId])
@@ -318,6 +319,8 @@ model TenantConfig {
   followupOpener                 String?   @db.Text
   customAiInstructions           String?   @db.Text
   customEscalationKeywords       String[]  @default([])
+  lastOrdersGraceMinutes         Int       @default(15) // minutes before close after which we refuse new pickups
+  cloudPrntToken                 String?   // tenant-unique token a Star CloudPRNT printer polls our endpoint with
   createdAt                      DateTime  @default(now())
   updatedAt                      DateTime  @updatedAt
 }
@@ -415,12 +418,40 @@ model Order {
   stripeRefundId     String?
   stripePaymentUrl   String?
   paymentStatus      String?      @default("UNPAID")
+  printedAt          DateTime?    // set by the CloudPRNT POST callback after a successful print
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
   @@index([tenantId, status])
   @@index([tenantId, createdAt])
   @@index([tenantId, callerPhone])
+}
+
+/// Per-tenant role for a Clerk user. Clerk provides one `orgRole`
+/// (admin / basic_member) but our operators need finer-grained roles
+/// (owner vs kitchen vs viewer) and we want them scoped per tenant, not
+/// per Clerk org. When no row exists for a given (tenant, user), the
+/// fallback assumes OWNER for Clerk org admins and MEMBER for basic
+/// members — keeps existing users unblocked when we ship this.
+model TenantMember {
+  id          String           @id @default(uuid())
+  tenantId    String
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  clerkUserId String
+  role        TenantMemberRole @default(MEMBER)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([tenantId, clerkUserId])
+  @@index([clerkUserId])
+}
+
+enum TenantMemberRole {
+  OWNER
+  MANAGER
+  KITCHEN
+  VIEWER
+  MEMBER
 }
 
 model Meeting {

@@ -12,7 +12,7 @@ import { matchesLocationKeyword, buildLocationReply } from './foodTruckLocationS
 import { createOrderPaymentSession } from './paymentService';
 import { incrementSmsUsage } from './usageMeterService';
 import { logger } from '../logger';
-import { isWithinBusinessHours, getBusinessHoursDisplay, getNextOpenDisplay, getTodayHoursDisplay } from '../businessHours';
+import { isWithinBusinessHours, getBusinessHoursDisplay, getNextOpenDisplay, getTodayHoursDisplay, getMinutesUntilClose, getClosesAtDisplay } from '../businessHours';
 import { getActiveOrderCount } from './queueService';
 import { prisma } from '../db';
 import { encryptMessages, decryptMessages } from '../encryption';
@@ -262,11 +262,21 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
 
   // Attach business-hours context so the ORDER agent can schedule future
   // pickups when we're closed (instead of dead-ending the conversation).
+  const minutesUntilClose = withinBusinessHours ? getMinutesUntilClose(hoursConfig) : null;
+  // Default last-orders grace — the operator can override per-tenant via
+  // config.lastOrdersGraceMinutes once we expose it in settings. 15 min
+  // is the industry default (matches Toast, Square).
+  const lastOrdersGrace =
+    (tenant.config as { lastOrdersGraceMinutes?: number | null }).lastOrdersGraceMinutes ?? 15;
   tenantContext.hoursInfo = {
     openNow: withinBusinessHours,
     nextOpenDisplay: withinBusinessHours ? null : getNextOpenDisplay(hoursConfig),
     todayHoursDisplay: getTodayHoursDisplay(hoursConfig),
     weeklyHoursDisplay: getBusinessHoursDisplay(hoursConfig),
+    minutesUntilClose,
+    closesAtDisplay: withinBusinessHours ? getClosesAtDisplay(hoursConfig) : null,
+    closingSoon:
+      minutesUntilClose != null && minutesUntilClose > 0 && minutesUntilClose <= lastOrdersGrace,
   };
 
   // If we're closed AND the tenant has opted out of accepting closed-hour

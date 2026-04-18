@@ -58,7 +58,17 @@ export function buildOrderAgentSystemPrompt(args: BuildAgentPromptArgs): string 
   const hours = tenantContext.hoursInfo;
   const hoursBlock = hours
     ? hours.openNow
-      ? `We're OPEN right now. Today's hours (verbatim — never paraphrase): ${hours.todayHoursDisplay}. Weekly schedule for context: ${hours.weeklyHoursDisplay}.`
+      ? (() => {
+          const closingLine = hours.closesAtDisplay
+            ? ` We close today at ${hours.closesAtDisplay}${
+                hours.minutesUntilClose != null ? ` (in ${hours.minutesUntilClose} min)` : ''
+              }.`
+            : '';
+          const closingSoonLine = hours.closingSoon
+            ? " ⚠ WE'RE CLOSING SOON — refuse orders that can't be picked up before we lock the door. Offer tomorrow's opening instead."
+            : '';
+          return `We're OPEN right now. Today's hours (verbatim — never paraphrase): ${hours.todayHoursDisplay}. Weekly schedule for context: ${hours.weeklyHoursDisplay}.${closingLine}${closingSoonLine}`;
+        })()
       : `We're CURRENTLY CLOSED. Next opening (verbatim): ${hours.nextOpenDisplay ?? 'unknown'}. Today we were ${hours.todayHoursDisplay === 'Closed today' ? 'closed' : `open ${hours.todayHoursDisplay}`}. Weekly schedule for context: ${hours.weeklyHoursDisplay}. It's fine to take this order — the pickup time MUST be on or after the next opening. Never promise a pickup while we're closed.`
     : '';
 

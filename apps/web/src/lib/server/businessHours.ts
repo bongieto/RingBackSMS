@@ -178,6 +178,77 @@ function formatTime(time: string): string {
  * week) — the AI agent was paraphrasing the weekly display and picking
  * the wrong close time. Feeding just today's hours removes ambiguity.
  */
+/**
+ * Minutes remaining until today's closing time. Returns null when closed
+ * or when no hours are configured (24/7 / always open).
+ */
+export function getMinutesUntilClose(
+  config: BusinessHoursConfig,
+  now: Date = new Date(),
+): number | null {
+  const tz = config.timezone ?? 'America/Chicago';
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+    weekday: 'short',
+  });
+  const parts = fmt.formatToParts(now);
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+  const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? '0');
+  const weekdayStr = parts.find((p) => p.type === 'weekday')?.value ?? '';
+  const weekdayMap: Record<string, number> = {
+    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+  };
+  const dow = weekdayMap[weekdayStr] ?? 0;
+
+  let closeHH: string | undefined;
+  if (config.businessSchedule && Object.keys(config.businessSchedule).length > 0) {
+    closeHH = config.businessSchedule[String(dow)]?.close;
+  } else if (config.businessHoursEnd) {
+    closeHH = config.businessHoursEnd;
+  }
+  if (!closeHH) return null;
+
+  const [ch, cm] = closeHH.split(':').map((n) => parseInt(n, 10));
+  if (Number.isNaN(ch) || Number.isNaN(cm)) return null;
+
+  // Handle close-after-midnight (e.g. open until 1:00 AM the next day).
+  let minutesNow = hour * 60 + minute;
+  let minutesClose = ch * 60 + cm;
+  if (minutesClose <= 0) minutesClose += 24 * 60;
+  if (minutesClose < minutesNow - 60) minutesClose += 24 * 60;
+
+  const delta = minutesClose - minutesNow;
+  return delta > 0 ? delta : 0;
+}
+
+/**
+ * Pretty version of today's closing time — "9:00 PM" — for the SMS agent
+ * prompt. Returns null when closed today / no hours configured.
+ */
+export function getClosesAtDisplay(
+  config: BusinessHoursConfig,
+  now: Date = new Date(),
+): string | null {
+  const tz = config.timezone ?? 'America/Chicago';
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' });
+  const weekdayStr = fmt.formatToParts(now).find((p) => p.type === 'weekday')?.value ?? '';
+  const weekdayMap: Record<string, number> = {
+    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+  };
+  const dow = weekdayMap[weekdayStr] ?? 0;
+  let closeHH: string | undefined;
+  if (config.businessSchedule && Object.keys(config.businessSchedule).length > 0) {
+    closeHH = config.businessSchedule[String(dow)]?.close;
+  } else if (config.businessHoursEnd) {
+    closeHH = config.businessHoursEnd;
+  }
+  if (!closeHH) return null;
+  return formatTime(closeHH);
+}
+
 export function getTodayHoursDisplay(
   config: BusinessHoursConfig,
   now: Date = new Date(),

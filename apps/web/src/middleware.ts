@@ -11,6 +11,10 @@ const isPublicRoute = createRouteMatcher([
   '/privacy',
   '/terms',
   '/m/(.*)',            // public menu pages for customers
+  '/o/(.*)',            // public order tracker (link-only access)
+  '/r/(.*)',            // public digital receipt
+  '/pay/(.*)',          // public tip-jar / checkout interstitial
+  '/api/printers/(.*)', // CloudPRNT printer polling (token-auth)
 ]);
 
 export default clerkMiddleware(async (auth, request) => {

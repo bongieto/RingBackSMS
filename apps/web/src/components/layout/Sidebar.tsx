@@ -87,11 +87,49 @@ function useTenantProfile() {
   return getProfile(businessType);
 }
 
+// Kitchen/Viewer/Member roles see a reduced sidebar — the server also
+// enforces route access in layout.tsx. This is pure UX: hide nav items
+// they can't open anyway.
+const ROLE_ROUTE_PREFIXES: Record<string, string[]> = {
+  KITCHEN: ['/dashboard', '/dashboard/kitchen', '/dashboard/orders', '/dashboard/tasks'],
+  VIEWER: [
+    '/dashboard',
+    '/dashboard/orders',
+    '/dashboard/conversations',
+    '/dashboard/contacts',
+    '/dashboard/analytics',
+    '/dashboard/revenue',
+  ],
+  MEMBER: ['/dashboard', '/dashboard/orders', '/dashboard/kitchen'],
+};
+
+function useCurrentRole() {
+  return useQuery<{ role: string; tenantId: string } | null>({
+    queryKey: ['my-role'],
+    queryFn: async () => {
+      try {
+        const r = await axios.get('/api/me/role');
+        return r.data.data;
+      } catch {
+        return null;
+      }
+    },
+    staleTime: 60_000,
+  });
+}
+
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const taskBadge = useTaskBadge();
   const profile = useTenantProfile();
-  const visibleItems = navItems.filter((i) => !i.show || i.show(profile.nav));
+  const { data: roleData } = useCurrentRole();
+  const role = roleData?.role ?? 'OWNER';
+  const allowedPrefixes = ROLE_ROUTE_PREFIXES[role];
+  const visibleItems = navItems.filter((i) => {
+    if (i.show && !i.show(profile.nav)) return false;
+    if (!allowedPrefixes) return true; // OWNER / MANAGER see everything
+    return allowedPrefixes.some((p) => i.href === p || i.href.startsWith(p + '/')) || i.href === '/help';
+  });
   const { user } = useUser();
   const isAgency = Boolean((user?.publicMetadata as Record<string, unknown> | undefined)?.isAgency);
 

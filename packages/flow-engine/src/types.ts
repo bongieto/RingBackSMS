@@ -19,6 +19,14 @@ export interface TenantContext {
     nextOpenDisplay: string | null;   // e.g. "tomorrow 11:00 AM" or "Sun 11:00 AM"
     todayHoursDisplay: string;        // e.g. "11:00 AM - 9:00 PM" — TODAY only
     weeklyHoursDisplay: string;       // e.g. "Sun 11-8pm, Tue-Sat 11-9pm" — full week for ops context
+    /** Minutes remaining until today's close. Null when closed. */
+    minutesUntilClose?: number | null;
+    /** Today's closing time verbatim (e.g. "9:00 PM"). Null when closed. */
+    closesAtDisplay?: string | null;
+    /** True when minutesUntilClose is within the last-orders window. The
+     *  agent should refuse new orders past close+grace; operators usually
+     *  want the grace to be 15 minutes. */
+    closingSoon?: boolean;
   };
 }
 
