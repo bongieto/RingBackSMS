@@ -1,21 +1,57 @@
-import OpenAI from 'openai';
 import { FlowInput, FlowOutput } from '../types';
 import { FlowType } from '@ringback/shared-types';
 import { CallerState } from '@ringback/shared-types';
-
-const AI_MODEL = 'MiniMax-M2.7';
 
 function stripThinkTags(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
 }
 
-export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput> {
-  const { tenantContext, inboundMessage, currentState, aiApiKey, callerMemory } = input;
+// Conversational closures — the customer is just being polite after a
+// completed interaction ("ok", "thanks", "see you soon"). A generic
+// "Thanks for reaching out" answer feels robotic; a brief warm reply
+// (or sometimes none at all) is better. Checked as whole-message match
+// after normalization.
+const CLOSURE_PATTERNS: Array<{ re: RegExp; reply: string | null }> = [
+  { re: /^(ok+|okay+|k+|kk+)$/i, reply: null }, // silence
+  { re: /^(thx|thanks|thank you|ty|appreciate it|🙏|thank u)$/i, reply: "You're welcome!" },
+  { re: /^(bye|goodbye|cya|see (you|ya)( soon)?|later|take care|ttyl)$/i, reply: 'See you!' },
+  { re: /^(great|cool|awesome|nice|perfect|sweet|👍|👌|🙌|❤️|😊|🫶)$/i, reply: null },
+  { re: /^(got it|sounds good|alright|aight|right on|cheers)$/i, reply: null },
+];
 
-  const client = new OpenAI({
-    baseURL: 'https://api.minimax.io/v1',
-    apiKey: aiApiKey,
-  });
+function matchClosure(body: string): { matched: true; reply: string | null } | { matched: false } {
+  const normalized = body.trim().replace(/[.!?]+$/, '');
+  for (const { re, reply } of CLOSURE_PATTERNS) {
+    if (re.test(normalized)) return { matched: true, reply };
+  }
+  return { matched: false };
+}
+
+export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput> {
+  const { tenantContext, inboundMessage, currentState, chatFn, callerMemory } = input;
+
+  // Short-circuit: if the customer is just politely closing out, don't run
+  // the AI. Either stay silent (empty reply) or drop a one-liner.
+  const closure = matchClosure(inboundMessage);
+  if (closure.matched) {
+    const nextState: CallerState = {
+      tenantId: tenantContext.tenantId,
+      callerPhone: input.callerPhone,
+      conversationId: currentState?.conversationId ?? null,
+      currentFlow: FlowType.FALLBACK,
+      flowStep: 'FALLBACK',
+      orderDraft: currentState?.orderDraft ?? null,
+      lastMessageAt: Date.now(),
+      messageCount: (currentState?.messageCount ?? 0) + 1,
+      dedupKey: null,
+    };
+    return {
+      nextState,
+      smsReply: closure.reply ?? '',
+      sideEffects: [],
+      flowType: FlowType.FALLBACK,
+    };
+  }
 
   const personality = tenantContext.config.aiPersonality ?? 'helpful, friendly, and professional';
   const enabledFlows = tenantContext.flows
@@ -79,21 +115,14 @@ If asked about scheduling, direct them to reply MEETING.
 When asked about services or products, reference the available list above.
 Never share internal business details. Be warm and helpful.`;
 
-  const previousMessages: OpenAI.ChatCompletionMessageParam[] = [];
-
   try {
-    const response = await client.chat.completions.create({
-      model: AI_MODEL,
-      max_tokens: 200,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...previousMessages,
-        { role: 'user', content: inboundMessage },
-      ],
+    const raw = await chatFn({
+      systemPrompt,
+      userMessage: inboundMessage,
+      maxTokens: 200,
+      temperature: 0.7,
     });
-
-    const replyText = stripThinkTags(response.choices[0]?.message?.content ?? '')
-      || "Thanks for reaching out! How can I help you today?";
+    const replyText = stripThinkTags(raw) || 'How can I help you today?';
 
     const nextState: CallerState = {
       tenantId: tenantContext.tenantId,

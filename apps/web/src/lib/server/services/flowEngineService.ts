@@ -601,7 +601,10 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     // effect like CREATE_PAYMENT_LINK sends its own follow-up SMS
     // ("Pay securely here: …"); if we fire side effects first, the Stripe
     // link lands before the agent's summary, which reads backwards.
-    await sendSms(tenantId, callerPhone, result.smsReply);
+    // Empty smsReply = intentional silence (e.g. "ok" / emoji closure).
+    if (result.smsReply && result.smsReply.trim().length > 0) {
+      await sendSms(tenantId, callerPhone, result.smsReply);
+    }
 
     // Process side effects (context passes data between effects, e.g. orderId from SAVE_ORDER to CREATE_PAYMENT_LINK)
     const sideEffectContext: Record<string, any> = {};
