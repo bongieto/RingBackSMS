@@ -312,12 +312,31 @@ export async function getTenantMenuItems(tenantId: string) {
     where: { tenantId },
     orderBy: [{ category: 'asc' }, { name: 'asc' }],
     include: {
+      categoryRef: true,
       modifierGroups: {
         include: { modifiers: { orderBy: { sortOrder: 'asc' } } },
         orderBy: { sortOrder: 'asc' },
       },
     },
   });
+}
+
+/**
+ * Ensure a MenuCategory row exists for (tenantId, name). Returns the id.
+ * Used when the dashboard creates an item by typing a category string in
+ * the legacy field — we auto-promote it to a first-class entity.
+ */
+async function ensureCategoryByName(tenantId: string, name: string): Promise<string> {
+  const existing = await prisma.menuCategory.findUnique({
+    where: { tenantId_name: { tenantId, name } },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+  const created = await prisma.menuCategory.create({
+    data: { tenantId, name, sortOrder: 0, isAvailable: true },
+    select: { id: true },
+  });
+  return created.id;
 }
 
 export async function upsertMenuItem(
@@ -328,14 +347,29 @@ export async function upsertMenuItem(
     description?: string;
     price: number;
     category?: string;
+    categoryId?: string | null;
     imageUrl?: string | null;
     isAvailable?: boolean;
     duration?: number | null;
     requiresBooking?: boolean;
   }
 ) {
+  // Resolve category: prefer explicit categoryId, else auto-promote the string.
+  let categoryId: string | null = item.categoryId ?? null;
+  let categoryName: string | null = item.category ?? null;
+  if (!categoryId && categoryName) {
+    categoryId = await ensureCategoryByName(tenantId, categoryName);
+  } else if (categoryId && !categoryName) {
+    // Keep the string field in sync with the category row's name.
+    const cat = await prisma.menuCategory.findUnique({
+      where: { id: categoryId },
+      select: { name: true, tenantId: true },
+    });
+    if (cat && cat.tenantId === tenantId) categoryName = cat.name;
+    else categoryId = null;
+  }
+
   if (item.id) {
-    // Verify the item belongs to this tenant before updating
     const existing = await prisma.menuItem.findUnique({
       where: { id: item.id },
       select: { tenantId: true },
@@ -349,7 +383,8 @@ export async function upsertMenuItem(
         name: item.name,
         description: item.description,
         price: item.price,
-        category: item.category,
+        category: categoryName,
+        categoryId,
         imageUrl: item.imageUrl ?? null,
         isAvailable: item.isAvailable ?? true,
         duration: item.duration ?? null,
@@ -364,11 +399,109 @@ export async function upsertMenuItem(
       name: item.name,
       description: item.description,
       price: item.price,
-      category: item.category,
+      category: categoryName,
+      categoryId,
       imageUrl: item.imageUrl ?? null,
       isAvailable: item.isAvailable ?? true,
       duration: item.duration ?? null,
       requiresBooking: item.requiresBooking ?? false,
     },
   });
+}
+
+// ── Menu categories ──────────────────────────────────────────────────────────
+
+export async function listMenuCategories(tenantId: string) {
+  const cats = await prisma.menuCategory.findMany({
+    where: { tenantId },
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    include: { _count: { select: { items: true } } },
+  });
+  return cats.map((c) => ({
+    id: c.id,
+    tenantId: c.tenantId,
+    name: c.name,
+    sortOrder: c.sortOrder,
+    isAvailable: c.isAvailable,
+    posCategoryId: c.posCategoryId,
+    itemCount: c._count.items,
+    createdAt: c.createdAt,
+    updatedAt: c.updatedAt,
+  }));
+}
+
+export async function upsertMenuCategory(
+  tenantId: string,
+  input: { id?: string; name: string; sortOrder?: number; isAvailable?: boolean },
+) {
+  if (input.id) {
+    const existing = await prisma.menuCategory.findUnique({
+      where: { id: input.id },
+      select: { tenantId: true, name: true },
+    });
+    if (!existing || existing.tenantId !== tenantId) throw new NotFoundError('Category');
+    const updated = await prisma.menuCategory.update({
+      where: { id: input.id },
+      data: {
+        name: input.name,
+        sortOrder: input.sortOrder,
+        isAvailable: input.isAvailable,
+      },
+    });
+    // Keep the legacy string field on all affected items in sync
+    if (input.name && input.name !== existing.name) {
+      await prisma.menuItem.updateMany({
+        where: { tenantId, categoryId: input.id },
+        data: { category: input.name },
+      });
+    }
+    return updated;
+  }
+  return prisma.menuCategory.create({
+    data: {
+      tenantId,
+      name: input.name,
+      sortOrder: input.sortOrder ?? 0,
+      isAvailable: input.isAvailable ?? true,
+    },
+  });
+}
+
+export async function deleteMenuCategory(tenantId: string, id: string) {
+  const existing = await prisma.menuCategory.findUnique({
+    where: { id },
+    select: { tenantId: true },
+  });
+  if (!existing || existing.tenantId !== tenantId) throw new NotFoundError('Category');
+  // onDelete: SetNull on MenuItem.categoryId handles unlinking automatically.
+  // Also clear the legacy string field on items that were in this category.
+  await prisma.menuItem.updateMany({
+    where: { tenantId, categoryId: id },
+    data: { category: null },
+  });
+  await prisma.menuCategory.delete({ where: { id } });
+}
+
+export async function bulkSetCategoriesAvailability(
+  tenantId: string,
+  ids: string[],
+  isAvailable: boolean,
+) {
+  const result = await prisma.menuCategory.updateMany({
+    where: { tenantId, id: { in: ids } },
+    data: { isAvailable },
+  });
+  return { count: result.count };
+}
+
+export async function bulkSetItemsAvailability(
+  tenantId: string,
+  ids: string[],
+  isAvailable: boolean,
+) {
+  const result = await prisma.menuItem.updateMany({
+    where: { tenantId, id: { in: ids } },
+    data: { isAvailable },
+  });
+  return { count: result.count };
 }

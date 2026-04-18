@@ -242,6 +242,19 @@ export type MenuItemModifierGroup = z.infer<typeof MenuItemModifierGroupSchema>;
 
 // ── MenuItem ──────────────────────────────────────────────────────────────────
 
+export const MenuCategorySchema = z.object({
+  id: z.string().uuid(),
+  tenantId: z.string().uuid(),
+  name: z.string().min(1).max(100),
+  sortOrder: z.number().int().default(0),
+  isAvailable: z.boolean().default(true),
+  posCategoryId: z.string().nullable().optional(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export type MenuCategory = z.infer<typeof MenuCategorySchema>;
+
 export const MenuItemSchema = z.object({
   id: z.string().uuid(),
   tenantId: z.string().uuid(),
@@ -249,6 +262,7 @@ export const MenuItemSchema = z.object({
   description: z.string().nullable(),
   price: z.number().nonnegative(),
   category: z.string().nullable(),
+  categoryId: z.string().uuid().nullable().optional(),
   imageUrl: z.string().url().nullable().optional(),
   isAvailable: z.boolean().default(true),
   duration: z.number().int().positive().nullable(),

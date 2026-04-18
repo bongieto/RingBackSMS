@@ -67,6 +67,54 @@ export const UpdateTenantConfigRequestSchema = z.object({
 
 export type UpdateTenantConfigRequest = z.infer<typeof UpdateTenantConfigRequestSchema>;
 
+// ── Menu — categories ─────────────────────────────────────────────────────────
+
+export const CreateMenuCategoryRequestSchema = z.object({
+  name: z.string().min(1).max(100),
+  sortOrder: z.number().int().optional(),
+  isAvailable: z.boolean().optional(),
+});
+export type CreateMenuCategoryRequest = z.infer<typeof CreateMenuCategoryRequestSchema>;
+
+export const UpdateMenuCategoryRequestSchema = CreateMenuCategoryRequestSchema.partial();
+export type UpdateMenuCategoryRequest = z.infer<typeof UpdateMenuCategoryRequestSchema>;
+
+export const BulkAvailabilityRequestSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(500),
+  isAvailable: z.boolean(),
+});
+export type BulkAvailabilityRequest = z.infer<typeof BulkAvailabilityRequestSchema>;
+
+// ── Menu — option groups ─────────────────────────────────────────────────────
+
+export const CreateOptionGroupRequestSchema = z.object({
+  menuItemId: z.string().uuid(),
+  name: z.string().min(1).max(100),
+  selectionType: z.enum(['SINGLE', 'MULTIPLE']).default('SINGLE'),
+  required: z.boolean().default(false),
+  minSelections: z.number().int().min(0).max(20).default(0),
+  maxSelections: z.number().int().min(1).max(20).default(1),
+  sortOrder: z.number().int().optional(),
+});
+export type CreateOptionGroupRequest = z.infer<typeof CreateOptionGroupRequestSchema>;
+
+export const UpdateOptionGroupRequestSchema = CreateOptionGroupRequestSchema.partial().omit({ menuItemId: true });
+export type UpdateOptionGroupRequest = z.infer<typeof UpdateOptionGroupRequestSchema>;
+
+// ── Menu — options (modifiers) ───────────────────────────────────────────────
+
+export const CreateOptionRequestSchema = z.object({
+  groupId: z.string().uuid(),
+  name: z.string().min(1).max(100),
+  priceAdjust: z.number().default(0),
+  isDefault: z.boolean().default(false),
+  sortOrder: z.number().int().optional(),
+});
+export type CreateOptionRequest = z.infer<typeof CreateOptionRequestSchema>;
+
+export const UpdateOptionRequestSchema = CreateOptionRequestSchema.partial().omit({ groupId: true });
+export type UpdateOptionRequest = z.infer<typeof UpdateOptionRequestSchema>;
+
 export const CreateFlowRequestSchema = z.object({
   type: z.nativeEnum(FlowType),
   isEnabled: z.boolean().optional().default(true),

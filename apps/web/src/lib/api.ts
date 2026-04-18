@@ -38,6 +38,37 @@ export const tenantApi = {
     webApi.post(`/tenants/${id}/menu`, item).then((r) => r.data.data),
   deleteMenuItem: (tenantId: string, itemId: string) =>
     webApi.delete(`/tenants/${tenantId}/menu/${itemId}`).then((r) => r.data),
+  // Categories
+  listCategories: (tenantId: string) =>
+    webApi.get(`/tenants/${tenantId}/menu/categories`).then((r) => r.data.data),
+  createCategory: (tenantId: string, body: Record<string, unknown>) =>
+    webApi.post(`/tenants/${tenantId}/menu/categories`, body).then((r) => r.data.data),
+  updateCategory: (tenantId: string, categoryId: string, body: Record<string, unknown>) =>
+    webApi.patch(`/tenants/${tenantId}/menu/categories/${categoryId}`, body).then((r) => r.data.data),
+  deleteCategory: (tenantId: string, categoryId: string) =>
+    webApi.delete(`/tenants/${tenantId}/menu/categories/${categoryId}`).then((r) => r.data.data),
+  bulkSetCategoryAvailability: (tenantId: string, ids: string[], isAvailable: boolean) =>
+    webApi.patch(`/tenants/${tenantId}/menu/categories/bulk-availability`, { ids, isAvailable }).then((r) => r.data.data),
+  bulkSetItemAvailability: (tenantId: string, ids: string[], isAvailable: boolean) =>
+    webApi.patch(`/tenants/${tenantId}/menu/items/bulk-availability`, { ids, isAvailable }).then((r) => r.data.data),
+  // Option groups
+  listOptionGroups: (tenantId: string) =>
+    webApi.get(`/tenants/${tenantId}/menu/option-groups`).then((r) => r.data.data),
+  createOptionGroup: (tenantId: string, body: Record<string, unknown>) =>
+    webApi.post(`/tenants/${tenantId}/menu/option-groups`, body).then((r) => r.data.data),
+  updateOptionGroup: (tenantId: string, groupId: string, body: Record<string, unknown>) =>
+    webApi.patch(`/tenants/${tenantId}/menu/option-groups/${groupId}`, body).then((r) => r.data.data),
+  deleteOptionGroup: (tenantId: string, groupId: string) =>
+    webApi.delete(`/tenants/${tenantId}/menu/option-groups/${groupId}`).then((r) => r.data.data),
+  // Options
+  listOptions: (tenantId: string) =>
+    webApi.get(`/tenants/${tenantId}/menu/options`).then((r) => r.data.data),
+  createOption: (tenantId: string, body: Record<string, unknown>) =>
+    webApi.post(`/tenants/${tenantId}/menu/options`, body).then((r) => r.data.data),
+  updateOption: (tenantId: string, optionId: string, body: Record<string, unknown>) =>
+    webApi.patch(`/tenants/${tenantId}/menu/options/${optionId}`, body).then((r) => r.data.data),
+  deleteOption: (tenantId: string, optionId: string) =>
+    webApi.delete(`/tenants/${tenantId}/menu/options/${optionId}`).then((r) => r.data.data),
   getFlows: (id: string) => webApi.get(`/tenants/${id}/flows`).then((r) => r.data.data),
   updateFlow: (tenantId: string, flowId: string, data: Record<string, unknown>) =>
     webApi.patch(`/tenants/${tenantId}/flows/${flowId}`, data).then((r) => r.data.data),

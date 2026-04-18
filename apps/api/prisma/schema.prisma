@@ -146,6 +146,7 @@ model Tenant {
   orders             Order[]
   meetings           Meeting[]
   menuItems          MenuItem[]
+  menuCategories     MenuCategory[]
   usageLogs          UsageLog[]
   contacts           Contact[]
   syncLogs           PosSyncLog[]
@@ -445,7 +446,9 @@ model MenuItem {
   name              String
   description       String?   @db.Text
   price             Decimal   @db.Decimal(10, 2)
-  category          String?
+  category          String?               // kept for back-compat with POS sync (Square pushes strings)
+  categoryId        String?               // preferred: FK to MenuCategory
+  categoryRef       MenuCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   imageUrl          String?
   isAvailable       Boolean   @default(true)
   duration          Int?
@@ -462,6 +465,27 @@ model MenuItem {
 
   @@index([tenantId, isAvailable])
   @@index([tenantId, category])
+  @@index([categoryId])
+}
+
+/// First-class grouping for MenuItems. A tenant may have one or more categories;
+/// items link via `MenuItem.categoryId`. Name is unique per tenant.
+/// `category` string on MenuItem is kept in sync for POS push/pull.
+model MenuCategory {
+  id            String   @id @default(uuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name          String
+  sortOrder     Int      @default(0)
+  isAvailable   Boolean  @default(true)
+  posCategoryId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  items MenuItem[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, sortOrder])
 }
 
 model MenuItemModifierGroup {

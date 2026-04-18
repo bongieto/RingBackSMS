@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
-import { getTenantMenuItems, upsertMenuItem } from '@/lib/server/services/tenantService';
-import { z } from 'zod';
+import { listOptionGroups, upsertOptionGroup } from '@/lib/server/services/menuModifiersService';
+import { CreateOptionGroupRequestSchema } from '@ringback/shared-types';
 import { apiSuccess, apiCreated, apiError } from '@/lib/server/response';
 import { AppError } from '@/lib/server/errors';
 
@@ -9,36 +9,24 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   const authResult = await verifyTenantAccess(params.id);
   if (isNextResponse(authResult)) return authResult;
   try {
-    const items = await getTenantMenuItems(params.id);
-    return apiSuccess(items);
+    return apiSuccess(await listOptionGroups(params.id));
   } catch (err) {
     if (err instanceof AppError) return apiError(err.message, err.statusCode);
+    console.error('[GET option-groups] failed', err);
     return apiError('Internal server error', 500);
   }
 }
-
-const ItemSchema = z.object({
-  id: z.string().uuid().optional(),
-  name: z.string().min(1),
-  description: z.string().optional(),
-  price: z.number().nonnegative(),
-  category: z.string().optional(),
-  categoryId: z.string().uuid().nullable().optional(),
-  imageUrl: z.string().url().nullable().optional(),
-  isAvailable: z.boolean().optional(),
-  duration: z.number().int().positive().nullable().optional(),
-  requiresBooking: z.boolean().optional(),
-});
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const authResult = await verifyTenantAccess(params.id);
   if (isNextResponse(authResult)) return authResult;
   try {
-    const body = ItemSchema.parse(await req.json());
-    const item = await upsertMenuItem(params.id, body);
-    return apiCreated(item);
+    const body = CreateOptionGroupRequestSchema.parse(await req.json());
+    const group = await upsertOptionGroup(params.id, body);
+    return apiCreated(group);
   } catch (err) {
     if (err instanceof AppError) return apiError(err.message, err.statusCode);
-    return apiError('Internal server error', 500);
+    console.error('[POST option-groups] failed', err);
+    return apiError('Failed to create option group', 500);
   }
 }
