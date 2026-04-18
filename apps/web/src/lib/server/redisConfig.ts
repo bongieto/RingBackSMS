@@ -10,12 +10,19 @@ import type { RedisOptions } from 'ioredis';
  * exact same connection options are used everywhere.
  */
 /**
- * Clean an env-var-sourced URL. Handles two common paste mistakes:
+ * Clean an env-var-sourced URL. Handles common paste mistakes:
  * 1. Leading/trailing whitespace
  * 2. Surrounding quotes ("rediss://..." or 'rediss://...')
+ * 3. KEY=VALUE format pasted whole (e.g. "REDIS_URL=rediss://...")
  */
 function cleanUrl(raw: string): string {
   let s = raw.trim();
+  // Strip a leading "KEY=" prefix if the whole .env line was pasted
+  const eq = s.indexOf('=');
+  if (eq > 0 && /^[A-Z_][A-Z0-9_]*$/.test(s.slice(0, eq))) {
+    s = s.slice(eq + 1).trim();
+  }
+  // Strip surrounding quotes (may appear before OR after the KEY= strip)
   if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
     s = s.slice(1, -1).trim();
   }
