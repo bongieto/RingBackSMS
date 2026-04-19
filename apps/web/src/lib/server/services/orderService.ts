@@ -358,6 +358,15 @@ async function pushOrderToPos(
     data: {
       squareOrderId: tenant.posProvider === 'square' ? result.externalOrderId : undefined,
       posOrderId: result.externalOrderId,
+      // Also stamp the external-tender payment id when the adapter
+      // recorded one. Lets ops verify the Square order closed out paid
+      // without having to open the Square Dashboard.
+      ...(result.externalPaymentId
+        ? {
+            squarePaymentId: tenant.posProvider === 'square' ? result.externalPaymentId : undefined,
+            posPaymentId: result.externalPaymentId,
+          }
+        : {}),
     },
   });
 

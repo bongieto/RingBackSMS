@@ -37,6 +37,10 @@ export interface PosOrderItem {
 
 export interface PosOrderResult {
   externalOrderId: string;
+  /** Opaque payment id from the POS when an external-tender Payment was
+   *  recorded (Square closes the order out this way). Null when we
+   *  didn't attempt a payment or it failed. */
+  externalPaymentId?: string | null;
   raw: Record<string, unknown>;
 }
 

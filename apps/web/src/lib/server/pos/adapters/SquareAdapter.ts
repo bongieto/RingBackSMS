@@ -430,6 +430,7 @@ export class SquareAdapter extends BasePosAdapter {
     // kitchen UI. The tender is tagged `OTHER` + source="Stripe" so
     // Square's standard sales reports can be filtered to exclude it and
     // avoid double-counting with Stripe's own reports.
+    let externalPaymentId: string | null = null;
     if (metadata.totalCents && metadata.totalCents > 0) {
       try {
         const paymentResponse = await client.paymentsApi.createPayment({
@@ -454,10 +455,11 @@ export class SquareAdapter extends BasePosAdapter {
             return name ? `${base} — ${name}` : base;
           })(),
         });
+        externalPaymentId = paymentResponse.result.payment?.id ?? null;
         logger.info('Square external payment recorded', {
           tenantId,
           squareOrderId,
-          paymentId: paymentResponse.result.payment?.id,
+          paymentId: externalPaymentId,
           totalCents: metadata.totalCents,
         });
       } catch (err: any) {
@@ -473,6 +475,7 @@ export class SquareAdapter extends BasePosAdapter {
 
     return {
       externalOrderId: squareOrderId,
+      externalPaymentId,
       raw: response.result as unknown as Record<string, unknown>,
     };
   }
