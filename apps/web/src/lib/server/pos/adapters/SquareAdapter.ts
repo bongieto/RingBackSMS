@@ -617,23 +617,35 @@ export class SquareAdapter extends BasePosAdapter {
 
     const squareOrderId = response.result.order?.id;
     if (!squareOrderId) throw new Error('Square order creation failed');
-    logger.info('Square order created', { tenantId, squareOrderId });
 
-    // If we know the total the customer paid outside of Square (e.g. via
-    // Stripe), record a matching Payment with an EXTERNAL tender. This
-    // closes the Square order out so it stops showing as OPEN in the
-    // kitchen UI. The tender is tagged `OTHER` + source="Stripe" so
-    // Square's standard sales reports can be filtered to exclude it and
-    // avoid double-counting with Stripe's own reports.
+    // Square's calculated order total (item prices + Square's own tax rules).
+    // We use THIS amount — not our Stripe total — when recording the external
+    // payment. Square rejects payments where amountMoney ≠ order total, which
+    // was causing the payment to silently fail and leave orders as OPEN.
+    // Our Stripe total includes our own tax/fee/tip markup, which Square
+    // doesn't know about, so the numbers naturally differ.
+    const squareOrderTotalMoney = response.result.order?.totalMoney;
+    const squareOrderTotalCents = squareOrderTotalMoney?.amount
+      ? Number(squareOrderTotalMoney.amount)
+      : null;
+
+    logger.info('Square order created', { tenantId, squareOrderId, squareOrderTotalCents });
+
+    // Record a matching Payment with an EXTERNAL tender so the Square order
+    // closes out (stops showing as OPEN in the kitchen UI). Use Square's own
+    // calculated total so the amount always matches. The Stripe payment amount
+    // (with tip/fee) is included in the note for operator reference.
+    // Tagged `OTHER` + source="Stripe" so Square sales reports can exclude
+    // it and avoid double-counting with Stripe's own reports.
     let externalPaymentId: string | null = null;
-    if (metadata.totalCents && metadata.totalCents > 0) {
+    if (squareOrderTotalCents && squareOrderTotalCents > 0) {
       try {
         const paymentResponse = await client.paymentsApi.createPayment({
           sourceId: 'EXTERNAL',
           idempotencyKey: `${metadata.idempotencyKey}-pay`,
           amountMoney: {
-            amount: BigInt(metadata.totalCents),
-            currency: 'USD',
+            amount: BigInt(squareOrderTotalCents),
+            currency: squareOrderTotalMoney?.currency ?? 'USD',
           },
           orderId: squareOrderId,
           locationId: metadata.locationId,
@@ -647,7 +659,12 @@ export class SquareAdapter extends BasePosAdapter {
               ? `Paid via ${metadata.externalSource} (RingbackSMS)`
               : 'Paid externally (RingbackSMS)';
             const name = metadata.customerName?.trim();
-            return name ? `${base} — ${name}` : base;
+            // Include Stripe total for reference (may differ from Square total
+            // due to our tip/fee markup that Square doesn't see).
+            const stripeSuffix = metadata.totalCents
+              ? ` | Stripe total: $${(metadata.totalCents / 100).toFixed(2)}`
+              : '';
+            return name ? `${base} — ${name}${stripeSuffix}` : `${base}${stripeSuffix}`;
           })(),
         });
         externalPaymentId = paymentResponse.result.payment?.id ?? null;
@@ -655,7 +672,8 @@ export class SquareAdapter extends BasePosAdapter {
           tenantId,
           squareOrderId,
           paymentId: externalPaymentId,
-          totalCents: metadata.totalCents,
+          squareOrderTotalCents,
+          stripeTotalCents: metadata.totalCents,
         });
       } catch (err: any) {
         // Non-fatal: the order still exists in Square for prep, it just
@@ -663,6 +681,7 @@ export class SquareAdapter extends BasePosAdapter {
         logger.warn('Square external payment failed (order still created)', {
           tenantId,
           squareOrderId,
+          squareOrderTotalCents,
           error: err?.message,
         });
       }
