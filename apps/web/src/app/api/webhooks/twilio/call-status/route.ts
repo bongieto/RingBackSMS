@@ -5,6 +5,7 @@ import { sendSms, getValidationToken } from '@/lib/server/services/twilioService
 import { logger } from '@/lib/server/logger';
 import { TwilioCallStatusSchema } from '@ringback/shared-types';
 import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/server/rateLimit';
+import { buildGreetingVars, renderGreetingTemplate } from '@/lib/server/businessHours';
 
 export async function POST(request: NextRequest) {
   const ip = getClientIp(request.headers);
@@ -73,7 +74,21 @@ export async function POST(request: NextRequest) {
       update: {},
     });
     if (!missedCall.smsSent) {
-      await sendSms(tenant.id, From, tenant.config.greeting);
+      // Render any {business_name} / {next_open} / {today_hours} /
+      // {closes_at} placeholders before sending — same template system
+      // used by the voice greeting.
+      const rendered = renderGreetingTemplate(
+        tenant.config.greeting,
+        buildGreetingVars(tenant.name, {
+          businessHoursStart: tenant.config.businessHoursStart,
+          businessHoursEnd: tenant.config.businessHoursEnd,
+          businessDays: tenant.config.businessDays,
+          businessSchedule: (tenant.config.businessSchedule as any) ?? null,
+          closedDates: tenant.config.closedDates,
+          timezone: tenant.config.timezone,
+        }),
+      );
+      await sendSms(tenant.id, From, rendered);
       await prisma.missedCall.update({ where: { id: missedCall.id }, data: { smsSent: true } });
     }
     logger.info('Missed call handled via status callback fallback', { tenantId: tenant.id, callSid: CallSid });

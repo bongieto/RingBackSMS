@@ -409,6 +409,23 @@ export default function SettingsPage() {
               </Button>
             </div>
 
+            {/* Template-variable hint — applies to every greeting textarea below */}
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+              <p className="font-semibold mb-1">Tip: use placeholders so your greeting stays correct every day.</p>
+              <p className="text-blue-800">
+                Drop these into any greeting and they&apos;ll auto-fill at call time:
+              </p>
+              <ul className="mt-1.5 space-y-0.5 font-mono text-[11px]">
+                <li><span className="bg-white border border-blue-200 rounded px-1">{'{business_name}'}</span> → your business name</li>
+                <li><span className="bg-white border border-blue-200 rounded px-1">{'{next_open}'}</span> → when we reopen (e.g. &ldquo;tomorrow at 11:00 AM&rdquo; or &ldquo;Tuesday at 11:00 AM&rdquo; on a Monday)</li>
+                <li><span className="bg-white border border-blue-200 rounded px-1">{'{today_hours}'}</span> → today&apos;s hours (e.g. &ldquo;11:00 AM - 9:00 PM&rdquo;)</li>
+                <li><span className="bg-white border border-blue-200 rounded px-1">{'{closes_at}'}</span> → today&apos;s close time (e.g. &ldquo;9:00 PM&rdquo;)</li>
+              </ul>
+              <p className="mt-2 text-blue-800">
+                Example after-hours greeting: <em>&ldquo;Hi, you&apos;ve reached {'{business_name}'}! We&apos;re closed right now — reopening {'{next_open}'}. Leave a message after the beep.&rdquo;</em>
+              </p>
+            </div>
+
             <div className="space-y-1.5">
               <Label>Voice Greeting (what callers hear)</Label>
               <textarea
@@ -457,10 +474,10 @@ export default function SettingsPage() {
                 value={form.voiceGreetingAfterHours}
                 maxLength={500}
                 onChange={(e) => setForm(f => ({ ...f, voiceGreetingAfterHours: e.target.value }))}
-                placeholder="Hi, thanks for calling. We're closed right now — leave a message after the beep and we'll text you back as soon as we open."
+                placeholder="Hi, you've reached {business_name}! We're closed right now — reopening {next_open}. Leave a message after the beep and we'll text you back."
               />
               <p className="text-xs text-muted-foreground">
-                Spoken when calls arrive outside business hours. Max 500 characters.
+                Spoken when calls arrive outside business hours (including day-off closures like Mondays and holidays). Max 500 characters.
               </p>
             </div>
 

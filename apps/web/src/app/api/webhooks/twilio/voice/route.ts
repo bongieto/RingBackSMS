@@ -12,7 +12,11 @@ import {
   logConsentEvent,
 } from '@/lib/server/services/consentService';
 import { linkMissedCallToContact } from '@/lib/server/services/contactLinking';
-import { isWithinBusinessHours } from '@/lib/server/businessHours';
+import {
+  isWithinBusinessHours,
+  buildGreetingVars,
+  renderGreetingTemplate,
+} from '@/lib/server/businessHours';
 import { getCallerContext, type CallerTier } from '@/lib/server/services/callerContextService';
 import { sendHighPriorityAlert } from '@/lib/server/services/notificationService';
 import { acquireAlertLock } from '@/lib/server/services/stateService';
@@ -281,11 +285,37 @@ export async function POST(request: NextRequest) {
       })
     : true;
 
-  const voiceGreetingText = selectVoiceGreeting({
+  const rawVoiceGreetingText = selectVoiceGreeting({
     tier,
     isAfterHours: !isOpen,
     config: tenant.config,
   });
+
+  // Substitute {business_name}, {next_open}, {today_hours}, {closes_at}
+  // into the greeting text. Lets a SINGLE after-hours greeting be
+  // correct across all closed scenarios (tonight, day off, holiday) —
+  // the operator writes "We'll reopen {next_open}" and the right answer
+  // is computed at call time.
+  //
+  // NOTE: this only applies to the TTS path. Pre-generated audio URLs
+  // (voiceAudioUrl) are static and cannot carry dynamic content; when
+  // set, they take precedence below. Operators who want dynamic
+  // greetings should leave voiceAudioUrl empty.
+  const voiceGreetingText = rawVoiceGreetingText
+    ? renderGreetingTemplate(
+        rawVoiceGreetingText,
+        tenant.config
+          ? buildGreetingVars(businessName, {
+              businessHoursStart: tenant.config.businessHoursStart,
+              businessHoursEnd: tenant.config.businessHoursEnd,
+              businessDays: tenant.config.businessDays,
+              businessSchedule: (tenant.config.businessSchedule as any) ?? null,
+              closedDates: tenant.config.closedDates,
+              timezone: tenant.config.timezone,
+            })
+          : { business_name: businessName },
+      )
+    : null;
 
   const voiceAudioUrl = selectVoiceAudioUrl({
     tier,

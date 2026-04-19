@@ -35,7 +35,7 @@ const SLOTS: SlotSpec[] = [
     tier: 'afterHours',
     maxChars: 200,
     intent:
-      'Spoken when calls arrive outside business hours, ≤20 words. Acknowledge closed, invite voicemail, mention we will text them back when we open.',
+      'Spoken when calls arrive outside business hours (tonight, day off, holiday) ≤20 words. Use the literal placeholder {next_open} so the reopening time is accurate — do NOT guess a time or day. Example: "Hi, you\'ve reached {business_name}. We\'re closed right now — reopening {next_open}. Leave a message or text us."',
   },
   {
     key: 'voiceGreetingRapidRedial',

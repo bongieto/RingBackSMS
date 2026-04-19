@@ -403,3 +403,64 @@ function localDateParts(
     dayOfWeek: weekdayMap[get('weekday')] ?? 0,
   };
 }
+
+// ── Greeting template substitution ───────────────────────────────────────────
+
+/**
+ * Placeholders that operators can drop into voice + SMS greeting copy. Keeps
+ * a SINGLE greeting string correct across every "we're closed" scenario —
+ * tonight, a regular day off, a holiday in closedDates, etc. — without
+ * making operators maintain a matrix of greetings.
+ *
+ * Supported placeholders (case-insensitive, with or without surrounding
+ * whitespace):
+ *   {business_name}   — tenant.name
+ *   {next_open}       — getNextOpenDisplay() result
+ *   {today_hours}     — getTodayHoursDisplay() result
+ *   {closes_at}       — getClosesAtDisplay() result
+ *
+ * Any placeholder whose value resolves to null/empty is rendered as an
+ * empty string and the surrounding punctuation is left as-is. That's the
+ * right default for optional placeholders (e.g. {closes_at} is null after
+ * close time — the sentence still makes sense without it).
+ */
+export interface GreetingTemplateVars {
+  business_name?: string | null;
+  next_open?: string | null;
+  today_hours?: string | null;
+  closes_at?: string | null;
+}
+
+export function renderGreetingTemplate(
+  template: string | null | undefined,
+  vars: GreetingTemplateVars,
+): string {
+  if (!template) return '';
+  // Match both `{key}` and `{ key }`. Case-insensitive on the key name so
+  // operators can write `{Next_Open}` without getting a literal.
+  return template.replace(/\{\s*([a-z_]+)\s*\}/gi, (match, rawKey: string) => {
+    const key = rawKey.toLowerCase() as keyof GreetingTemplateVars;
+    const value = vars[key];
+    if (value == null || value === '') return '';
+    return String(value);
+  });
+}
+
+/**
+ * Build the full var bag for a tenant's current moment. Centralizes the
+ * getNextOpenDisplay / getTodayHoursDisplay / getClosesAtDisplay calls so
+ * callers (voice webhook, SMS after-hours reply) don't duplicate the
+ * wiring.
+ */
+export function buildGreetingVars(
+  businessName: string,
+  config: BusinessHoursConfig,
+  now: Date = new Date(),
+): GreetingTemplateVars {
+  return {
+    business_name: businessName,
+    next_open: getNextOpenDisplay(config, now),
+    today_hours: getTodayHoursDisplay(config, now),
+    closes_at: getClosesAtDisplay(config, now),
+  };
+}
