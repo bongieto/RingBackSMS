@@ -51,7 +51,17 @@ function stripThinkTags(text: string): string {
  *  on top of forgotten prior attempts. */
 function looksLikeFreshOrderList(msg: string): boolean {
   const trimmed = msg.trim();
-  return /^(order\s*:|i(?:'ll| would like| want| need| want to order)|can i (?:get|have|order)|let me (?:get|have)|i'll have)\b/i.test(
+  return /^(order\s*:|i(?:'ll| would like| want| need| want to order)|can i (?:get|have|order)|(?:can we|we'd like to|we want to|we would like to) (?:get|have|order)|let me (?:get|have)|i'll have|gimme|we want|we need)\b/i.test(
+    trimmed,
+  );
+}
+
+/** Heuristic: is the customer disowning what the bot just echoed? "that's
+ *  not my order", "wrong order", "no that's wrong", etc. When TRUE, wipe
+ *  the cart so the next turn starts clean. */
+function looksLikeRejectCart(msg: string): boolean {
+  const trimmed = msg.trim();
+  return /\b(that'?s not (my|the|what)|not my order|wrong order|that'?s wrong|nope that'?s wrong|incorrect order|that'?s not what|you got it wrong)\b/i.test(
     trimmed,
   );
 }
@@ -114,15 +124,21 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
     const draft = cloneDraft(currentState?.orderDraft);
 
     // If the customer is restating their entire order ("Order: X, Y, Z"
-    // or "I want X, Y, Z"), reset the cart before the agent runs so it
-    // doesn't pile on top of lingering items from earlier in the
-    // session. Caveat: don't wipe if the current flowStep is
-    // AWAITING_PAYMENT / ORDER_CONFIRM — the customer is mid-commit,
-    // not starting over.
-    const inCommitFlow =
-      currentState?.flowStep === 'AWAITING_PAYMENT' ||
-      currentState?.flowStep === 'ORDER_CONFIRM';
-    if (draft.items.length > 0 && !inCommitFlow && looksLikeFreshOrderList(inboundMessage)) {
+    // or "I want X, Y, Z" / "can i get X"), or rejecting the bot's
+    // summary ("that's not my order"), wipe the cart before the agent
+    // runs so the new turn starts clean and Claude doesn't pile new
+    // items on top of forgotten prior attempts.
+    //
+    // Only AWAITING_PAYMENT truly blocks the wipe — once the customer
+    // is at /pay, we need to keep the items that have already been
+    // saved. ORDER_CONFIRM is just "I'm waiting on a yes"; a fresh
+    // order list during that state clearly means start over.
+    const inCommitFlow = currentState?.flowStep === 'AWAITING_PAYMENT';
+    const shouldResetCart =
+      draft.items.length > 0 &&
+      !inCommitFlow &&
+      (looksLikeFreshOrderList(inboundMessage) || looksLikeRejectCart(inboundMessage));
+    if (shouldResetCart) {
       draft.items = [];
     }
 
