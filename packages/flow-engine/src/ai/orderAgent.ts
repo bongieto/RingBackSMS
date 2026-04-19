@@ -22,13 +22,22 @@ import { buildOrderAgentSystemPrompt } from './buildAgentPrompt';
 import { calculateFlowPrepTime, formatReadyTime } from '../flows/orderFlow';
 
 // Cheap heuristic: did the customer just explicitly confirm?
-const CONFIRM_RE = /\b(yes|yep|yeah|yup|confirm|go ahead|place (it|the order)|that'?s right|correct|ok(ay)?|sure)\b/i;
+// Anchored to start-of-message so phrases like "I can confirm that's
+// not right" or "yes but change X" don't accidentally commit the
+// order. Entire message must be ONE of: a confirm word, a confirm
+// word with trailing punctuation, or two words starting with a
+// confirm word (e.g. "yes please", "confirm now").
+const CONFIRM_RE =
+  /^\s*(yes|yep|yeah|yup|yess+|ya|yah|yas|confirm|go ahead|place it|place the order|that'?s right|correct|ok|okay|sure|sounds good|do it|let'?s go)\s*[.!?]*\s*$/i;
 
 // Cheap heuristic: did the customer just explicitly ask to cancel?
-// Tight — we lost a $40 order to Claude auto-cancelling on a typo that
-// it couldn't parse, with no cancel-intent words in the customer's
-// message at all. Bar is high now: must see a literal cancel/stop word.
-const CANCEL_RE = /\b(cancel|nevermind|never mind|forget it|scratch that|clear (my|the) (order|cart)|start over|stop (the )?order)\b/i;
+// Tight — we lost a $40 order to Claude auto-cancelling on a typo it
+// couldn't parse. Also tightened so phrases like "cancel the spicy on
+// my fries" or "clear the extras" don't wipe the whole cart — we
+// require either a standalone cancel-type word, OR a clear "cart/order
+// scope" marker (cancel my/the order, start over, stop order).
+const CANCEL_RE =
+  /^\s*(cancel|nvm|nevermind|never\s+mind|forget it|scratch that|start over|stop|stop order|stop the order)\s*[.!?]*\s*$|\b(cancel (my|the) (order|cart)|clear (my|the) (order|cart)|restart (my|the) order)\b/i;
 
 /** Strip extended-thinking / reasoning tags that occasionally leak through
  *  from the model. Belt-and-suspenders: the SDK usually hides them, but
@@ -51,9 +60,23 @@ function stripThinkTags(text: string): string {
  *  on top of forgotten prior attempts. */
 function looksLikeFreshOrderList(msg: string): boolean {
   const trimmed = msg.trim();
-  return /^(order\s*:|i(?:'ll| would like| want| need| want to order)|can i (?:get|have|order)|(?:can we|we'd like to|we want to|we would like to) (?:get|have|order)|let me (?:get|have)|i'll have|gimme|we want|we need)\b/i.test(
+  // First gate: message starts with an order-intent phrase.
+  const hasIntent = /^(order\s*:|i(?:'ll| would like| want| need| want to order)|can i (?:get|have|order)|(?:can we|we'd like to|we want to|we would like to) (?:get|have|order)|let me (?:get|have)|i'll have|gimme|we want|we need)\b/i.test(
     trimmed,
   );
+  if (!hasIntent) return false;
+  // Second gate: require the message to mention an actual item signal
+  // (a number for quantity, an article, or just plain length). Filters
+  // out "I'll have what Maria has" style references where the customer
+  // isn't specifying new items.
+  const hasQuantityOrArticle = /\b(\d+|a|an|the|some|another|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(
+    trimmed,
+  );
+  if (!hasQuantityOrArticle) return false;
+  // Third gate: message is long enough to plausibly list items. A bare
+  // "I want it" or "I'll have" isn't a fresh order list — it's a
+  // confirmation reply or reference.
+  return trimmed.length >= 10;
 }
 
 /** Heuristic: is the customer disowning what the bot just echoed? "that's
@@ -197,6 +220,10 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       callerMemory?.contactName ??
       null;
     const toolErrors: string[] = [];
+    // Messages from mutation results that should surface to the customer
+    // — e.g. "skipped: Calamansi Sizzler: 'Sour Lemon' isn't a valid
+    // option". Distinct from toolErrors (those are hard failures).
+    const mutationNotices: string[] = [];
     let anyMutation = false;
 
     for (const call of aiResponse.toolCalls) {
@@ -270,7 +297,12 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           result = { ok: false, error: `unknown tool ${call.name}` };
       }
       if (!result.ok) toolErrors.push(`${call.name}: ${result.error}`);
-      else if (result.kind === 'mutated') anyMutation = true;
+      else if (result.kind === 'mutated') {
+        anyMutation = true;
+        if (result.message && result.message.startsWith('skipped:')) {
+          mutationNotices.push(result.message);
+        }
+      }
     }
 
     // ── CANCEL ──
@@ -519,7 +551,44 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       return `Added: ${summary}. Total $${total}. ${next}`;
     }
 
-    const reply = (aiResponse.text || buildFallbackReply()).slice(0, 320);
+    const baseReply = (aiResponse.text || buildFallbackReply());
+
+    // Surface dropped modifiers as a customer-visible postscript.
+    // Previously, when `resolveModifiers` failed on an item (e.g.
+    // "gluten-free bun" not on menu), we added the item WITHOUT
+    // modifiers and silently swallowed the failure — customer didn't
+    // know their request didn't land. For allergy-class requests this
+    // is a safety issue.
+    //
+    // Parse the raw "skipped: Name: '<mod>' isn't a valid option" lines
+    // into a friendlier "Couldn't add X to Y" format.
+    function formatNotices(): string {
+      if (mutationNotices.length === 0) return '';
+      const dropped: string[] = [];
+      for (const n of mutationNotices) {
+        // Strip "skipped: " prefix and take each semicolon-separated
+        // entry
+        const parts = n.replace(/^skipped:\s*/, '').split(';').map((s) => s.trim()).filter(Boolean);
+        for (const p of parts) {
+          // Match "ItemName: '<modifier>' isn't a valid option"
+          const m = p.match(/^([^:]+):\s*"?([^"']+)"?\s+isn'?t a valid option/i);
+          if (m) {
+            dropped.push(`"${m[2]}" on ${m[1]}`);
+          } else {
+            dropped.push(p);
+          }
+        }
+      }
+      if (dropped.length === 0) return '';
+      return ` (couldn't find ${dropped.join(', ')} — let me know if that's important)`;
+    }
+
+    const reply = (baseReply + formatNotices()).slice(0, 320);
+
+    if (toolErrors.length > 0) {
+      // eslint-disable-next-line no-console
+      console.warn('[orderAgent] tool errors', toolErrors.join('; '));
+    }
 
     const nextStep =
       clarification
@@ -536,7 +605,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           ? { field: clarification.field, question: clarification.question, askedAt: Date.now() }
           : null,
       }),
-      smsReply: reply + (toolErrors.length && !anyMutation ? '' : ''), // errors are logged below, not shown
+      smsReply: reply,
       sideEffects: [],
       flowType: FlowType.ORDER,
     };
