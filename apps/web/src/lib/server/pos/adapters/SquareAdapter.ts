@@ -609,11 +609,18 @@ export class SquareAdapter extends BasePosAdapter {
     // the ticket to the kitchen screen. Without a fulfillment the order
     // is accepted by the Orders API but never appears in any KDS or
     // Dashboard Orders view — it's invisible to kitchen staff.
+    //
+    // We always use ASAP as the schedule_type. SCHEDULED requires a
+    // pickup_at ISO timestamp, but our pickupTime is a human string
+    // like "7:35pm" with no date or timezone context — converting it
+    // reliably requires the tenant's timezone and today's date, which
+    // adds complexity for minimal gain. The pickup time is included in
+    // the note so kitchen staff see it on the ticket.
     const fulfillment: Record<string, unknown> = {
       type: 'PICKUP',
       state: 'PROPOSED',
       pickup_details: {
-        schedule_type: metadata.pickupTime ? 'SCHEDULED' : 'ASAP',
+        schedule_type: 'ASAP',
         ...(metadata.pickupTime && { note: `Pickup: ${metadata.pickupTime}` }),
         recipient: {
           display_name: metadata.customerName?.trim() || 'RingbackSMS Order',
