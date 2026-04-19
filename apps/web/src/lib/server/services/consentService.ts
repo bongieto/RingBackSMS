@@ -1,7 +1,12 @@
 import { prisma } from '../db';
 import { logger } from '../logger';
+import {
+  renderGreetingTemplate,
+  buildGreetingVars,
+  type BusinessHoursConfig,
+} from '../businessHours';
 
-const CONSENT_TEMPLATE =
+export const DEFAULT_CONSENT_TEMPLATE =
   "Hey! {business_name} here — we just missed your call and we're sorry about that! I can help you via text if you want. Reply YES to go ahead or STOP to opt out. Msg & data rates may apply.";
 
 const CONSENT_WORDS = new Set([
@@ -39,8 +44,26 @@ const DECLINE_WORDS = new Set([
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
-export function buildConsentMessage(tenantName: string): string {
-  return CONSENT_TEMPLATE.replace('{business_name}', tenantName);
+/**
+ * Build the consent SMS. Supports full greeting-template placeholders
+ * ({business_name}, {next_open}, {today_hours}, {closes_at}) when a
+ * business-hours config is provided. Back-compat: callers that don't
+ * have hours context yet (e.g. tenant creation) can still call with
+ * only tenantName and get the old {business_name}-only behavior.
+ */
+export function buildConsentMessage(
+  tenantName: string,
+  opts?: {
+    customTemplate?: string | null;
+    hoursConfig?: BusinessHoursConfig;
+  },
+): string {
+  const template = opts?.customTemplate?.trim() || DEFAULT_CONSENT_TEMPLATE;
+  if (opts?.hoursConfig) {
+    return renderGreetingTemplate(template, buildGreetingVars(tenantName, opts.hoursConfig));
+  }
+  // Legacy path — only business_name placeholder.
+  return template.replace(/\{\s*business_name\s*\}/gi, tenantName);
 }
 
 export function isConsentAffirmative(body: string): boolean {

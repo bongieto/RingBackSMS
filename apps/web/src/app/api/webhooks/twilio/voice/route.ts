@@ -340,7 +340,24 @@ export async function POST(request: NextRequest) {
       console.log('[consent-sms] create-result', JSON.stringify({ consentRequestId, alreadyPending }));
       if (alreadyPending) return;
 
-      const consentMsg = buildConsentMessage(businessName);
+      // Consent SMS now supports full placeholder substitution — the
+      // tenant's stored consentMessage (editable in Settings) can use
+      // {business_name}, {next_open}, {today_hours}, {closes_at}.
+      // Falls back to DEFAULT_CONSENT_TEMPLATE when no custom message
+      // is set.
+      const consentMsg = buildConsentMessage(businessName, {
+        customTemplate: tenant.config?.consentMessage,
+        hoursConfig: tenant.config
+          ? {
+              businessHoursStart: tenant.config.businessHoursStart,
+              businessHoursEnd: tenant.config.businessHoursEnd,
+              businessDays: tenant.config.businessDays,
+              businessSchedule: (tenant.config.businessSchedule as any) ?? null,
+              closedDates: tenant.config.closedDates,
+              timezone: tenant.config.timezone,
+            }
+          : undefined,
+      });
       console.log('[consent-sms] calling-twilio');
       const messageSid = await sendSms(tenant.id, from, consentMsg);
       console.log('[consent-sms] twilio-accepted', JSON.stringify({ messageSid }));
