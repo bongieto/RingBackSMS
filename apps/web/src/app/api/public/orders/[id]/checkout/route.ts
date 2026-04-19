@@ -32,6 +32,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return Response.json({ error: 'Invalid body' }, { status: 400 });
   }
 
+  // Verify the order belongs to an active tenant. A leaked order UUID
+  // for a disabled tenant shouldn't be able to spawn new Stripe
+  // checkout sessions against the tenant's billing account.
   const order = await prisma.order.findUnique({
     where: { id: params.id },
     select: {
@@ -47,9 +50,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       total: true,
       pickupTime: true,
       notes: true,
+      tenant: { select: { isActive: true } },
     },
   });
-  if (!order) return Response.json({ error: 'Not found' }, { status: 404 });
+  if (!order || !order.tenant?.isActive) {
+    return Response.json({ error: 'Not found' }, { status: 404 });
+  }
   if (order.paymentStatus === 'PAID') {
     return Response.json({ error: 'Order already paid' }, { status: 400 });
   }

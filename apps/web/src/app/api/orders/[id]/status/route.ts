@@ -3,7 +3,7 @@ import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { OrderStatus } from '@prisma/client';
 import { getOrderById, updateOrderStatus } from '@/lib/server/services/orderService';
 import { refundOrderPayment } from '@/lib/server/services/paymentService';
-import { sendSms } from '@/lib/server/services/twilioService';
+import { sendSms, sendSmsWithRetry } from '@/lib/server/services/twilioService';
 import { looksEncrypted } from '@/lib/server/encryption';
 import { prisma } from '@/lib/server/db';
 import { logger } from '@/lib/server/logger';
@@ -102,7 +102,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
             order.customerName ?? null,
           );
           if (sms) {
-            await sendSms(tenantId, order.callerPhone, sms);
+            // Status transitions are time-sensitive (READY = "come pick
+            // it up now"), so retry on transient Twilio failures.
+            await sendSmsWithRetry(tenantId, order.callerPhone, sms, 2);
             logger.info('Order status SMS sent', { tenantId, orderId: order.id, status });
           }
         } catch (err) {
@@ -153,10 +155,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
               where: { id: order.id },
               data: { stripeRefundId: refundId, paymentStatus: 'REFUNDED' },
             });
-            await sendSms(
+            // Refund notifications are high-stakes — if Twilio drops the
+            // first attempt, retry so the customer knows about the
+            // refund. Without this, a silent drop means the customer
+            // thinks they were charged without refund recourse.
+            await sendSmsWithRetry(
               tenantId,
               order.callerPhone,
               `A refund has been issued for order #${order.orderNumber}. It may take 5-10 days to appear on your card.`,
+              2,
             );
             logger.info('Order refund issued', { tenantId, orderId: order.id, refundId });
           } catch (err: any) {

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { constructStripeEvent, handleSubscriptionUpdated, handleSubscriptionDeleted } from '@/lib/server/services/billingService';
 import { sendPaymentFailedEmail } from '@/lib/server/services/emailService';
-import { sendSms } from '@/lib/server/services/twilioService';
+import { sendSms, sendSmsWithRetry } from '@/lib/server/services/twilioService';
 import { createOrder, pushOrderToPos } from '@/lib/server/services/orderService';
 import { getCallerState, setCallerState } from '@/lib/server/services/stateService';
 import { logger } from '@/lib/server/logger';
@@ -277,10 +277,13 @@ export async function POST(request: NextRequest) {
                   : null;
               const firstName = safeName?.trim().split(/\s+/)[0];
               const greet = firstName ? `Hi ${firstName}! ` : '';
-              await sendSms(
+              // Critical — customer just paid and deserves confirmation.
+              // Retry on transient Twilio failures.
+              await sendSmsWithRetry(
                 tenantId,
                 callerPhone,
                 `${greet}Payment received for order #${paidOrder.orderNumber}. Thanks! Track it: ${trackerUrl}`,
+                2,
               );
             } catch (err) {
               logger.error('Payment confirmation SMS failed', { err, orderId });
@@ -342,7 +345,7 @@ export async function POST(request: NextRequest) {
                 : null;
             const firstName = safeName?.trim().split(/\s+/)[0];
             const greet = firstName ? `Hi ${firstName}! ` : '';
-            sendSms(tenantId, callerPhone, `${greet}Payment received! Order #${order.orderNumber} confirmed. Pickup: ${pickupTime}. Track: ${trackerUrl}`).catch((err) =>
+            sendSmsWithRetry(tenantId, callerPhone, `${greet}Payment received! Order #${order.orderNumber} confirmed. Pickup: ${pickupTime}. Track: ${trackerUrl}`, 2).catch((err) =>
               logger.error('Failed to send payment confirmation SMS', { err, tenantId })
             );
           } else {
