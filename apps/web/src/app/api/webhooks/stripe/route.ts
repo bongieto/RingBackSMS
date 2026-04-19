@@ -193,10 +193,15 @@ export async function POST(request: NextRequest) {
           });
           logger.info('Order payment completed', { orderId, tenantId });
           if (callerPhone) {
-            const order = await prisma.order.findUnique({ where: { id: orderId }, select: { orderNumber: true } });
+            const order = await prisma.order.findUnique({
+              where: { id: orderId },
+              select: { orderNumber: true, customerName: true },
+            });
             const appBase = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://ringbacksms.com').replace(/\/+$/, '');
             const trackerUrl = `${appBase}/o/${orderId}`;
-            sendSms(tenantId, callerPhone, `Payment received for order #${order?.orderNumber ?? ''}. Thanks! Track it: ${trackerUrl}`).catch((err) =>
+            const firstName = order?.customerName?.trim().split(/\s+/)[0];
+            const greet = firstName ? `Hi ${firstName}! ` : '';
+            sendSms(tenantId, callerPhone, `${greet}Payment received for order #${order?.orderNumber ?? ''}. Thanks! Track it: ${trackerUrl}`).catch((err) =>
               logger.error('Failed to send payment confirmation SMS', { err, orderId })
             );
           }
@@ -249,7 +254,9 @@ export async function POST(request: NextRequest) {
             logger.info('Payment-first order created', { orderId: order.id, tenantId });
             const appBase = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://ringbacksms.com').replace(/\/+$/, '');
             const trackerUrl = `${appBase}/o/${order.id}`;
-            sendSms(tenantId, callerPhone, `Payment received! Order #${order.orderNumber} confirmed. Pickup: ${pickupTime}. Track: ${trackerUrl}`).catch((err) =>
+            const firstName = order.customerName?.trim().split(/\s+/)[0];
+            const greet = firstName ? `Hi ${firstName}! ` : '';
+            sendSms(tenantId, callerPhone, `${greet}Payment received! Order #${order.orderNumber} confirmed. Pickup: ${pickupTime}. Track: ${trackerUrl}`).catch((err) =>
               logger.error('Failed to send payment confirmation SMS', { err, tenantId })
             );
           } else {

@@ -166,6 +166,27 @@ export async function createOrder(input: CreateOrderInput) {
     ? new Date(Date.now() + prep.totalMinutes * 60_000)
     : null;
 
+  // Fallback: if the caller didn't restate their name this session, use
+  // whatever's already on their Contact row (decrypting). Keeps returning
+  // customers' Order.customerName populated without forcing the agent to
+  // re-ask every time.
+  let effectiveName: string | null = input.customerName ?? null;
+  if (!effectiveName) {
+    const existingContact = await prisma.contact.findFirst({
+      where: { tenantId: input.tenantId, phone: input.callerPhone },
+      select: { name: true },
+    });
+    if (existingContact?.name) {
+      try {
+        const { decryptNullable } = await import('../encryption');
+        effectiveName = decryptNullable(existingContact.name);
+      } catch {
+        // If decryption fails (e.g. key rotated), leave null. Order still
+        // saves; we just lose the greeting for this one ticket.
+      }
+    }
+  }
+
   const order = await prisma.order.create({
     data: {
       tenantId: input.tenantId,
@@ -178,7 +199,7 @@ export async function createOrder(input: CreateOrderInput) {
       subtotal: input.subtotal ?? input.total,
       taxAmount: input.taxAmount ?? 0,
       feeAmount: input.feeAmount ?? 0,
-      customerName: input.customerName ?? null,
+      customerName: effectiveName,
       pickupTime: input.pickupTime,
       estimatedReadyTime,
       notes: input.notes,

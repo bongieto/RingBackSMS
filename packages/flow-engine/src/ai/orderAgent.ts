@@ -116,8 +116,16 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
     let wantsCancel = false;
     let wantsMenuLink = false;
     let clarification: { question: string; field: string } | null = null;
+    // Name resolution order:
+    //   1. Whatever set_customer_name grabbed earlier this session
+    //   2. What the caller told us last session (CallerMemory.contactName,
+    //      read from Contact.name) — so returning customers don't need
+    //      to re-state their name, and the Order row still gets stamped
+    //   3. null — the prompt will prompt for it
     let capturedName: string | null =
-      (currentState?.customerName as string | null | undefined) ?? null;
+      (currentState?.customerName as string | null | undefined) ??
+      callerMemory?.contactName ??
+      null;
     const toolErrors: string[] = [];
     let anyMutation = false;
 
