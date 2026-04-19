@@ -633,13 +633,36 @@ export class SquareAdapter extends BasePosAdapter {
       },
     };
 
+    // Fetch item names + prices from our DB so we can build ad-hoc line items.
+    // Using catalogObjectId caused Square to silently drop line items when the
+    // variation isn't enabled at the target location — the order was created
+    // with 0 line items and was invisible in Dashboard + KDS. Ad-hoc items
+    // (name + basePriceMoney, no catalogObjectId) always appear regardless of
+    // how the Square catalog is scoped per location.
+    const menuRows = await this.prisma.menuItem.findMany({
+      where: {
+        tenantId,
+        posVariationId: { in: items.map((i) => i.externalVariationId) },
+      },
+      select: { posVariationId: true, name: true, price: true },
+    });
+    const byVariationId = new Map(menuRows.map((m) => [m.posVariationId!, m]));
+
+    const lineItems = items.map((item) => {
+      const ref = byVariationId.get(item.externalVariationId);
+      const name = ref?.name ?? 'Item';
+      const priceCents = ref ? Math.round(Number(ref.price) * 100) : 0;
+      return {
+        quantity: String(item.quantity),
+        name,
+        basePriceMoney: { amount: BigInt(priceCents), currency: 'USD' },
+      };
+    });
+
     const response = await client.ordersApi.createOrder({
       order: {
         locationId: metadata.locationId,
-        lineItems: items.map((item) => ({
-          quantity: String(item.quantity),
-          catalogObjectId: item.externalVariationId,
-        })),
+        lineItems,
         fulfillments: [fulfillment],
       },
       idempotencyKey: metadata.idempotencyKey,
