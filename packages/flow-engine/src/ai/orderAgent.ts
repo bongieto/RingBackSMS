@@ -488,7 +488,12 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           : 'What can I get started for you?';
       }
       const summary = draft.items
-        .map((i) => `${i.quantity}× ${i.name}`)
+        .map((i) => {
+          const mods = i.selectedModifiers?.length
+            ? ` (${i.selectedModifiers.map((m) => m.modifierName).join(', ')})`
+            : '';
+          return `${i.quantity}× ${i.name}${mods}`;
+        })
         .join(', ');
       const total = computeTotal(draft).toFixed(2);
       const needsPickup = !draft.pickupTime;
