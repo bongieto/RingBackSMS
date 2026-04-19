@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Search, Download } from 'lucide-react';
+import { Search, Download, AlertTriangle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -40,6 +40,28 @@ export function ImportTab({ tenantId }: { tenantId: string }) {
     queryFn: () => tenantApi.listCategories(tenantId),
     enabled: !!tenantId,
   });
+
+  // Duplicate detection — same name appearing more than once across
+  // the live menu. Typically from operator renaming an item in Square
+  // without deleting the old entry, so our sync pulls both and stamps
+  // different posCatalogIds on each. Surface as a merge banner so the
+  // operator can clean up.
+  const duplicates = useMemo(() => {
+    const byName = new Map<string, MenuItem[]>();
+    for (const item of allItems) {
+      // Skip soft-deleted (posDeletedAt) — those can't cause runtime
+      // confusion since they're hidden everywhere.
+      const md = item as unknown as { posDeletedAt?: string | null };
+      if (md.posDeletedAt) continue;
+      const key = item.name.trim().toLowerCase();
+      if (!byName.has(key)) byName.set(key, []);
+      byName.get(key)!.push(item);
+    }
+    return Array.from(byName.entries())
+      .filter(([, items]) => items.length > 1)
+      .map(([, items]) => ({ name: items[0].name, items }))
+      .sort((a, b) => b.items.length - a.items.length);
+  }, [allItems]);
 
   // Staged = came from Square (has a posCatalogId / squareCatalogId) but
   // not yet added to the menu (isAvailable=false).
@@ -90,6 +112,47 @@ export function ImportTab({ tenantId }: { tenantId: string }) {
           </div>
         </CardContent>
       </Card>
+
+      {duplicates.length > 0 && (
+        <Card className="mb-4 bg-amber-50 dark:bg-amber-950/20 border-amber-300">
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+              <div className="text-sm flex-1">
+                <div className="font-medium text-amber-900 dark:text-amber-100">
+                  {duplicates.length} duplicate item name{duplicates.length === 1 ? '' : 's'} detected
+                </div>
+                <p className="text-amber-800/80 dark:text-amber-200/80 text-xs mt-1">
+                  Usually from a rename in your POS without deleting the old entry. Your AI agent may pick either copy when a customer orders — consider 86&apos;ing the outdated one in the KDS drawer or renaming one so they&apos;re distinct.
+                </p>
+                <ul className="mt-2 space-y-1">
+                  {duplicates.slice(0, 5).map((dup) => (
+                    <li key={dup.name} className="text-xs">
+                      <span className="font-mono font-semibold text-amber-900 dark:text-amber-100">
+                        {dup.name}
+                      </span>
+                      <span className="text-amber-700 dark:text-amber-300 ml-2">
+                        · {dup.items.length} copies
+                        {dup.items.some((i) => !!(i.squareCatalogId ?? i.posCatalogId)) &&
+                          dup.items.some((i) => !(i.squareCatalogId ?? i.posCatalogId))
+                          ? ' (mixed: some from POS, some manual)'
+                          : dup.items.every((i) => !!(i.squareCatalogId ?? i.posCatalogId))
+                            ? ' (all from POS)'
+                            : ' (all manual entries)'}
+                      </span>
+                    </li>
+                  ))}
+                  {duplicates.length > 5 && (
+                    <li className="text-xs text-amber-700 italic">
+                      +{duplicates.length - 5} more…
+                    </li>
+                  )}
+                </ul>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex flex-wrap gap-3 mb-4 items-center">
         <div className="relative flex-1 min-w-[240px] max-w-md">

@@ -647,6 +647,12 @@ model MenuItem {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
+  /// Set when a sync detects the item is no longer in the POS catalog.
+  /// Operator-visible tombstone — item hidden from the dashboard by
+  /// default but we don't hard-delete so historical Order.items refs
+  /// stay intact. Cleared if the item later reappears in a sync.
+  posDeletedAt DateTime?
+
   modifierGroups MenuItemModifierGroup[]
 
   @@index([tenantId, isAvailable])

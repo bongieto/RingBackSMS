@@ -177,7 +177,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
           // Include category availability so we can filter below — Prisma
           // doesn't support OR on relation fields inline, so we filter
           // after the query rather than at the SQL layer.
-          where: { isAvailable: true },
+          where: { isAvailable: true, posDeletedAt: null },
           include: {
             categoryRef: { select: { isAvailable: true } },
             modifierGroups: {

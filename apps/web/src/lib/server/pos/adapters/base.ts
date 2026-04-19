@@ -28,6 +28,19 @@ export interface SyncResult {
   updated: number;
   unchanged: number;
   errors: number;
+  /** Items that the sync matched to an existing orphan MenuItem by
+   *  name (no posCatalogId yet) and stamped with the Square IDs. */
+  reconciled?: number;
+  /** Items previously synced from the POS that no longer appear in
+   *  the current catalog — marked posDeletedAt + isAvailable=false. */
+  tombstoned?: number;
+  /** Items un-tombstoned because they reappeared in the POS. */
+  restored?: number;
+  /** Duplicate MenuItem.name groups in the tenant after sync.
+   *  Surfaced to the Import tab so operators can merge/clean up
+   *  (usually created by renaming in the POS without deleting the
+   *  old entry, then our sync pulled both). */
+  duplicates?: Array<{ name: string; count: number }>;
 }
 
 export interface PosOrderItem {

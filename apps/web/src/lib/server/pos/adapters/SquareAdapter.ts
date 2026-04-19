@@ -152,6 +152,13 @@ export class SquareAdapter extends BasePosAdapter {
     const tokens = await this.loadTokens(tenantId);
     if (!tokens) throw new Error('Tenant not connected to Square');
 
+    // Snapshot sync start-time so that after we've processed every
+    // item Square returned, we can identify rows whose lastSyncedAt is
+    // older than the snapshot — those items were previously linked to
+    // Square but aren't in the current catalog (deleted or archived
+    // server-side).
+    const syncStartedAt = new Date();
+
     const client = buildSquareClient(tokens.accessToken);
 
     // Square's listCatalog is paginated — the SDK returns up to ~100-1000
@@ -206,7 +213,17 @@ export class SquareAdapter extends BasePosAdapter {
       });
     }
 
-    const result: SyncResult = { total: 0, newItems: 0, updated: 0, unchanged: 0, errors: 0 };
+    const result: SyncResult = {
+      total: 0,
+      newItems: 0,
+      updated: 0,
+      unchanged: 0,
+      errors: 0,
+      reconciled: 0,
+      tombstoned: 0,
+      restored: 0,
+      duplicates: [],
+    };
 
     for (const item of items) {
       if (!item.itemData) continue;
@@ -229,16 +246,41 @@ export class SquareAdapter extends BasePosAdapter {
           ? categoryNameById.get(categoryId) ?? null
           : null;
 
-        const existing = await this.prisma.menuItem.findFirst({
+        // Match strategy, most-to-least specific:
+        //   1. posCatalogId match — the normal case. Square item was
+        //      previously synced; find its existing row.
+        //   2. Name match with NO posCatalogId — this is an orphan
+        //      manually-created item in our DB (added before Square was
+        //      connected, or added during the pagination-bug window
+        //      when Square failed to pull its real twin). Stamp the
+        //      Square IDs onto the existing row instead of creating a
+        //      duplicate. Orders already placed against that item's id
+        //      stay valid; POS push now works because the Square link
+        //      is live.
+        //   3. Neither matches → genuinely new item, create.
+        let existing = await this.prisma.menuItem.findFirst({
           where: { tenantId, posCatalogId: item.id },
         });
+        let reconciledFromOrphan = false;
+        const resolvedName = item.itemData.name ?? 'Unnamed Item';
+        if (!existing) {
+          existing = await this.prisma.menuItem.findFirst({
+            where: {
+              tenantId,
+              name: resolvedName,
+              posCatalogId: null,
+              squareCatalogId: null,
+            },
+          });
+          if (existing) reconciledFromOrphan = true;
+        }
 
         // Fields that ALWAYS sync (safe to refresh from Square every time).
         // `isAvailable` is intentionally NOT in this list — operators
         // curate the public menu in RingbackSMS and don't want Square
         // pulls to re-enable items they've hidden.
         const itemData = {
-          name: item.itemData.name ?? 'Unnamed Item',
+          name: resolvedName,
           description: item.itemData.description ?? null,
           price,
           category,
@@ -255,11 +297,21 @@ export class SquareAdapter extends BasePosAdapter {
           const changed =
             existing.name !== itemData.name ||
             existing.description !== itemData.description ||
-            Number(existing.price) !== itemData.price;
+            Number(existing.price) !== itemData.price ||
+            reconciledFromOrphan; // stamping Square IDs onto an orphan counts as a change
           await this.prisma.menuItem.update({
             where: { id: existing.id },
             data: itemData, // NOTE: does NOT include isAvailable
           });
+          if (reconciledFromOrphan) {
+            logger.info('Square sync reconciled orphan item by name', {
+              tenantId,
+              menuItemId: existing.id,
+              name: resolvedName,
+              squareCatalogId: item.id,
+            });
+            result.reconciled = (result.reconciled ?? 0) + 1;
+          }
           if (changed) result.updated++; else result.unchanged++;
           menuItemId = existing.id;
         } else {
@@ -284,6 +336,78 @@ export class SquareAdapter extends BasePosAdapter {
         result.errors++;
         logger.warn('Failed to sync item from Square', { tenantId, itemId: item.id, error: (err as Error).message });
       }
+    }
+
+    // Tombstone sweep: find Square-linked items whose lastSyncedAt is
+    // older than syncStartedAt → these weren't in the current catalog
+    // → Square has deleted or archived them. Mark posDeletedAt +
+    // isAvailable=false so they vanish from customer-facing surfaces
+    // but stay in the DB for historical Order.items references.
+    //
+    // If an item ever reappears in Square, the normal sync path will
+    // re-match by posCatalogId and update lastSyncedAt; we then clear
+    // posDeletedAt below (un-tombstone).
+    try {
+      const tombstoned = await this.prisma.menuItem.updateMany({
+        where: {
+          tenantId,
+          squareCatalogId: { not: null },
+          lastSyncedAt: { lt: syncStartedAt },
+          posDeletedAt: null,
+        },
+        data: { isAvailable: false, posDeletedAt: new Date() },
+      });
+      result.tombstoned = tombstoned.count;
+      if (tombstoned.count > 0) {
+        logger.info('Square sync tombstoned items no longer in catalog', {
+          tenantId,
+          count: tombstoned.count,
+        });
+      }
+      // Un-tombstone items that came back in the current sync (fresh
+      // lastSyncedAt ≥ syncStartedAt AND previously had posDeletedAt).
+      const restored = await this.prisma.menuItem.updateMany({
+        where: {
+          tenantId,
+          squareCatalogId: { not: null },
+          lastSyncedAt: { gte: syncStartedAt },
+          posDeletedAt: { not: null },
+        },
+        data: { posDeletedAt: null },
+      });
+      result.restored = restored.count;
+      if (restored.count > 0) {
+        logger.info('Square sync restored previously tombstoned items', {
+          tenantId,
+          count: restored.count,
+        });
+      }
+
+      // Duplicate detection: same name appearing more than once across
+      // the live menu (not counting tombstoned rows). Typically caused
+      // by operator renaming in Square without deleting the original —
+      // our sync pulls both and stamps different posCatalogIds on each.
+      // Surface the duplicate list so the Import tab can show a merge
+      // banner.
+      const dupRows = await this.prisma.menuItem.groupBy({
+        by: ['name'],
+        where: { tenantId, posDeletedAt: null },
+        _count: { name: true },
+      });
+      result.duplicates = dupRows
+        .filter((r) => r._count.name > 1)
+        .map((r) => ({ name: r.name, count: r._count.name }));
+      if (result.duplicates.length > 0) {
+        logger.info('Square sync found duplicate menu-item names', {
+          tenantId,
+          duplicates: result.duplicates,
+        });
+      }
+    } catch (err) {
+      logger.warn('Tombstone sweep failed (sync result itself still valid)', {
+        tenantId,
+        err: (err as Error).message,
+      });
     }
 
     logger.info('Catalog synced from Square', { tenantId, result });

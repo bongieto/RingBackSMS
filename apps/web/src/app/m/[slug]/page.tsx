@@ -58,7 +58,12 @@ async function loadTenantMenu(slug: string): Promise<TenantMenu | null> {
         // Items pass the item-level filter here; the category filter
         // runs post-query because Prisma can't express `OR` across a
         // nullable relation's field in a single `where`.
-        where: { isAvailable: true },
+        // isAvailable=true AND not tombstoned by a Square delete.
+        // Belt-and-suspenders: the sync already flips isAvailable=false
+        // when it tombstones, but if an operator clicks "86 back" on a
+        // tombstoned item in the KDS drawer we still don't want it on
+        // the public menu.
+        where: { isAvailable: true, posDeletedAt: null },
         orderBy: [{ category: 'asc' }, { name: 'asc' }],
         select: {
           id: true,
