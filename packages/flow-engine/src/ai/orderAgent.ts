@@ -24,6 +24,32 @@ import { calculateFlowPrepTime, formatReadyTime } from '../flows/orderFlow';
 // Cheap heuristic: did the customer just explicitly confirm?
 const CONFIRM_RE = /\b(yes|yep|yeah|yup|confirm|go ahead|place (it|the order)|that'?s right|correct|ok(ay)?|sure)\b/i;
 
+/** Strip extended-thinking / reasoning tags that occasionally leak through
+ *  from the model. Belt-and-suspenders: the SDK usually hides them, but
+ *  some fallback providers (MiniMax) pass them through raw. Never ship
+ *  <think>…</think> to an SMS. */
+function stripThinkTags(text: string): string {
+  return text
+    .replace(/<think>[\s\S]*?<\/think>\s*/gi, '')
+    // Also strip a dangling open <think> with no close — happens when
+    // max_tokens cut the response mid-reasoning. In that case EVERYTHING
+    // from <think> onward is thinking-content we don't want to ship.
+    .replace(/<think>[\s\S]*$/i, '')
+    .trim();
+}
+
+/** Heuristic: is this message the customer (re)stating their entire
+ *  order rather than adding to an existing cart? Captures "Order: ...",
+ *  "I want ...", and bullet-list phrasing. When TRUE and the cart is
+ *  non-empty, we wipe the cart first so Claude doesn't pile new items
+ *  on top of forgotten prior attempts. */
+function looksLikeFreshOrderList(msg: string): boolean {
+  const trimmed = msg.trim();
+  return /^(order\s*:|i(?:'ll| would like| want| need| want to order)|can i (?:get|have|order)|let me (?:get|have)|i'll have)\b/i.test(
+    trimmed,
+  );
+}
+
 function cloneDraft(d: OrderDraft | null | undefined): OrderDraft {
   if (!d) return { items: [] };
   return {
@@ -80,6 +106,20 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
   try {
     const { tenantContext, inboundMessage, currentState, callerMemory, chatWithToolsFn, recentMessages } = input;
     const draft = cloneDraft(currentState?.orderDraft);
+
+    // If the customer is restating their entire order ("Order: X, Y, Z"
+    // or "I want X, Y, Z"), reset the cart before the agent runs so it
+    // doesn't pile on top of lingering items from earlier in the
+    // session. Caveat: don't wipe if the current flowStep is
+    // AWAITING_PAYMENT / ORDER_CONFIRM — the customer is mid-commit,
+    // not starting over.
+    const inCommitFlow =
+      currentState?.flowStep === 'AWAITING_PAYMENT' ||
+      currentState?.flowStep === 'ORDER_CONFIRM';
+    if (draft.items.length > 0 && !inCommitFlow && looksLikeFreshOrderList(inboundMessage)) {
+      draft.items = [];
+    }
+
     const filteredMenu = filterMenuForPrompt(
       tenantContext.menuItems,
       inboundMessage,
@@ -102,7 +142,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       pendingClarification: currentState?.pendingClarification ?? null,
     });
 
-    const aiResponse = await chatWithToolsFn({
+    const aiResponseRaw = await chatWithToolsFn({
       systemPrompt,
       userMessage: inboundMessage,
       messageHistory: recentMessages?.slice(-6),
@@ -110,6 +150,14 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       maxTokens: 1024,
       temperature: 0.3,
     });
+    // Defensively strip <think>…</think> reasoning blocks before we ever
+    // consider shipping the text to a customer. Some providers (MiniMax
+    // fallback, Anthropic extended-thinking) leak these when max_tokens
+    // is hit mid-reasoning.
+    const aiResponse = {
+      ...aiResponseRaw,
+      text: stripThinkTags(aiResponseRaw.text ?? ''),
+    };
 
     // Execute tool calls against the cloned draft, collect signals.
     let wantsConfirm = false;
