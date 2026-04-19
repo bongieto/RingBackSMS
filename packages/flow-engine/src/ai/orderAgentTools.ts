@@ -249,27 +249,56 @@ function findMenuItem(menu: MenuItem[], id: string): MenuItem | undefined {
   return menu.find((m) => m.id === id && m.isAvailable !== false);
 }
 
+/** Case-and-whitespace-insensitive normalization used for every menu-data
+ *  comparison. Merchants in the wild type "Extra Garlic  Rice" with
+ *  double spaces, "extra  corned beef", etc. — we don't want a single
+ *  typo'd space to drop a paying modifier. */
+function normalize(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
 /** Resolve modifier group+name pairs against the menu item's modifierGroups,
- *  returning the SelectedModifier array we persist in the cart. */
+ *  returning the SelectedModifier array we persist in the cart.
+ *
+ *  Matching strategy, most-to-least specific:
+ *    1. Exact (normalized) match on group name + modifier name.
+ *    2. If the group name didn't match but the modifier name is unique
+ *       across this item's groups → use that group.
+ *    3. Fail.
+ *
+ *  This tolerates operators who type "Add Ons" vs "Add-ons", agents who
+ *  guess the wrong group_name, and items whose name includes
+ *  parenthetical content (e.g. "Cornsilog (Corned Beef, Sinangag,
+ *  Itlog)") — the first parens is descriptive, not a modifier. */
 function resolveModifiers(
   item: MenuItem,
   raw: Array<{ group_name: string; modifier_name: string }>,
 ): { ok: true; mods: SelectedModifier[] } | { ok: false; error: string } {
   const mods: SelectedModifier[] = [];
   for (const r of raw) {
-    const group = item.modifierGroups?.find(
-      (g) => g.name.toLowerCase() === r.group_name.toLowerCase(),
-    );
-    if (!group) {
-      return { ok: false, error: `"${item.name}" has no "${r.group_name}" option` };
-    }
-    const mod = group.modifiers.find(
-      (m) => m.name.toLowerCase() === r.modifier_name.toLowerCase(),
-    );
+    const wantModifier = normalize(r.modifier_name);
+    const wantGroup = normalize(r.group_name);
+
+    // Attempt 1: exact group + modifier match.
+    let group = item.modifierGroups?.find((g) => normalize(g.name) === wantGroup);
+    let mod = group?.modifiers.find((m) => normalize(m.name) === wantModifier);
+
+    // Attempt 2: ignore group_name, find the modifier anywhere on this item.
     if (!mod) {
+      for (const g of item.modifierGroups ?? []) {
+        const candidate = g.modifiers.find((m) => normalize(m.name) === wantModifier);
+        if (candidate) {
+          group = g;
+          mod = candidate;
+          break;
+        }
+      }
+    }
+
+    if (!group || !mod) {
       return {
         ok: false,
-        error: `"${r.modifier_name}" isn't a valid ${group.name} for ${item.name}`,
+        error: `"${r.modifier_name}" isn't a valid option for ${item.name}`,
       };
     }
     mods.push({

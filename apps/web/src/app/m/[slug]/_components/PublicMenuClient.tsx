@@ -193,13 +193,18 @@ export function PublicMenuClient({ tenantName, phoneNumber, items, brandColor, b
   const totalPrice = cartLines.reduce((s, r) => s + r.unitPrice * r.quantity, 0);
 
   // Compose the SMS body. Modifiers are appended in parentheses so the
-  // agent's `add_items` tool parses them as modifier selections. Format:
-  // "Order: 2 Kanto Fries (Spicy), 1 Pancit (Shrimp, Extra veggies)"
+  // agent's `add_items` tool parses them as modifier selections. Strip
+  // any trailing descriptive parens FROM THE ITEM NAME (many tenants
+  // embed ingredient hints like "Cornsilog (Corned Beef, Sinangag,
+  // Itlog)") so the agent doesn't have to disambiguate two parens
+  // groups on the same line. Format:
+  //   "Order: 2 Kanto Fries (Spicy), 1 Pancit (Shrimp, Extra veggies)"
+  const shortName = (n: string) => n.replace(/\s*\([^)]*\)\s*$/, '').trim() || n;
   const smsBody = useMemo(() => {
     if (cartLines.length === 0) return 'ORDER';
     const parts = cartLines.map((r) => {
       const mods = r.modNames.length ? ` (${r.modNames.join(', ')})` : '';
-      return `${r.quantity} ${r.item.name}${mods}`;
+      return `${r.quantity} ${shortName(r.item.name)}${mods}`;
     });
     let body = `Order: ${parts.join(', ')}`;
     if (body.length > 400) body = body.slice(0, 397) + '…';
