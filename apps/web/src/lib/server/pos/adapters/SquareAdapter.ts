@@ -610,20 +610,25 @@ export class SquareAdapter extends BasePosAdapter {
     // is accepted by the Orders API but never appears in any KDS or
     // Dashboard Orders view — it's invisible to kitchen staff.
     //
-    // We always use ASAP as the schedule_type. SCHEDULED requires a
-    // pickup_at ISO timestamp, but our pickupTime is a human string
+    // We always use ASAP as the scheduleType. SCHEDULED requires a
+    // pickupAt ISO timestamp, but our pickupTime is a human string
     // like "7:35pm" with no date or timezone context — converting it
     // reliably requires the tenant's timezone and today's date, which
     // adds complexity for minimal gain. The pickup time is included in
     // the note so kitchen staff see it on the ticket.
-    const fulfillment: Record<string, unknown> = {
+    //
+    // IMPORTANT: the Square SDK uses camelCase field names (pickupDetails,
+    // scheduleType, displayName). Using snake_case here causes the SDK to
+    // silently drop those fields, resulting in a bare PICKUP fulfillment
+    // that Square rejects with a 400 error.
+    const fulfillment = {
       type: 'PICKUP',
       state: 'PROPOSED',
-      pickup_details: {
-        schedule_type: 'ASAP',
+      pickupDetails: {
+        scheduleType: 'ASAP',
         ...(metadata.pickupTime && { note: `Pickup: ${metadata.pickupTime}` }),
         recipient: {
-          display_name: metadata.customerName?.trim() || 'RingbackSMS Order',
+          displayName: metadata.customerName?.trim() || 'RingbackSMS Order',
         },
       },
     };
@@ -635,9 +640,7 @@ export class SquareAdapter extends BasePosAdapter {
           quantity: String(item.quantity),
           catalogObjectId: item.externalVariationId,
         })),
-        // Cast needed — Square SDK types use PascalCase wrappers but the
-        // underlying API accepts snake_case fulfillment objects directly.
-        fulfillments: [fulfillment as any],
+        fulfillments: [fulfillment],
       },
       idempotencyKey: metadata.idempotencyKey,
     });
