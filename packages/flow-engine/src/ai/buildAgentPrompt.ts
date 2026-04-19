@@ -45,13 +45,25 @@ function formatMemory(memory?: CallerMemory): string {
 export interface BuildAgentPromptArgs {
   tenantContext: TenantContext;
   filteredMenu: MenuItem[];
+  /** Items that EXIST on this tenant's menu but are 86'd/unavailable
+   *  today. Included in the prompt as a separate section so the agent
+   *  can distinguish "we're out today" from "we don't carry that". */
+  soldOutItems?: MenuItem[];
   draft: OrderDraft | null;
   memory?: CallerMemory;
   pendingClarification?: { field: string; question: string } | null;
 }
 
+function formatSoldOut(items: MenuItem[] | undefined): string {
+  if (!items || items.length === 0) return '';
+  const lines = items
+    .map((m) => `- ${m.name}${m.category ? ` (${m.category})` : ''} — $${m.price.toFixed(2)}`)
+    .join('\n');
+  return `\n# Currently sold out / 86'd today\nThese items DO exist on our menu — we're just out right now. If a customer asks for one, say "we're out of {name} today" and suggest 1-2 available alternatives. Never say the item isn't on the menu.\n${lines}\n`;
+}
+
 export function buildOrderAgentSystemPrompt(args: BuildAgentPromptArgs): string {
-  const { tenantContext, filteredMenu, draft, memory, pendingClarification } = args;
+  const { tenantContext, filteredMenu, soldOutItems, draft, memory, pendingClarification } = args;
   const menuUrl =
     tenantContext.tenantSlug != null
       ? `/m/${tenantContext.tenantSlug}`
@@ -115,7 +127,7 @@ ${
 
 # Menu (use these EXACT ids)
 ${formatMenu(filteredMenu)}
-
+${formatSoldOut(soldOutItems)}
 ${(() => {
   const custom = (tenantContext.config as { customAiInstructions?: string | null }).customAiInstructions;
   return custom && custom.trim().length > 0

@@ -87,9 +87,16 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       draft,
     );
 
+    // 86'd items still go into the prompt (as a separate block) so the
+    // agent can say "we're out of X today" instead of "we don't carry X".
+    // Cap at 25 to avoid ballooning the prompt on giant menus.
+    const soldOutItems = tenantContext.menuItems
+      .filter((m) => m.isAvailable === false)
+      .slice(0, 25);
     const systemPrompt = buildOrderAgentSystemPrompt({
       tenantContext,
       filteredMenu,
+      soldOutItems,
       draft,
       memory: callerMemory,
       pendingClarification: currentState?.pendingClarification ?? null,

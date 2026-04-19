@@ -73,15 +73,25 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
 
   let catalogContext = '';
   if (tenantContext.menuItems.length > 0) {
-    const itemLines = tenantContext.menuItems
-      .filter((m) => m.isAvailable)
-      .map((item) => {
-        let line = `- ${item.name}: $${item.price.toFixed(2)}`;
-        if (item.duration) line += ` (${item.duration} min)`;
-        if (item.requiresBooking) line += ' [booking required]';
-        return line;
-      });
-    catalogContext = `\nAvailable products/services:\n${itemLines.join('\n')}`;
+    const fmt = (item: typeof tenantContext.menuItems[number]) => {
+      let line = `- ${item.name}: $${item.price.toFixed(2)}`;
+      if (item.duration) line += ` (${item.duration} min)`;
+      if (item.requiresBooking) line += ' [booking required]';
+      return line;
+    };
+    const available = tenantContext.menuItems.filter((m) => m.isAvailable).map(fmt);
+    // 86'd items are first-class context — if a customer asks about
+    // one, we want to say "we're out today" not "we don't carry that".
+    const outToday = tenantContext.menuItems.filter((m) => !m.isAvailable).map(fmt);
+    catalogContext = `\nAvailable products/services:\n${available.join('\n')}`;
+    if (outToday.length > 0) {
+      catalogContext += `\n\nCurrently sold out / 86'd today (DO exist on our menu — we're just out right now):\n${outToday.join('\n')}`;
+    }
+    catalogContext += `\n\nItem-availability rules:
+- If the customer asks about an item in "Available" → confirm with name + price, offer to help them order.
+- If the customer asks about an item in "Currently sold out" → say "We're out of {name} today — {suggest 1-2 available alternatives}." Never say the item isn't on the menu.
+- If the customer asks about something NOT in either list → "We don't carry that" + suggest 1-2 closest matches from Available.
+- Never invent item names, prices, or descriptions. If you don't have it in the two lists above, you don't have it.`;
   }
 
   // Caller memory: a one-paragraph "what we know about this person" block so
