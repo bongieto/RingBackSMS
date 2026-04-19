@@ -318,7 +318,12 @@ export async function pushOrderToPos(
     select: { posProvider: true, posLocationId: true },
   });
   if (!tenant?.posProvider || !tenant.posLocationId) {
-    // Tenant not connected to a POS — nothing to do.
+    logger.info('POS push skipped — tenant has no POS connected', {
+      orderId,
+      tenantId,
+      hasProvider: !!tenant?.posProvider,
+      hasLocationId: !!tenant?.posLocationId,
+    });
     return;
   }
 
@@ -328,25 +333,61 @@ export async function pushOrderToPos(
   const menuItemIds = items
     .map((i) => (i as { menuItemId?: string }).menuItemId)
     .filter((id): id is string => typeof id === 'string' && id.length > 0);
-  if (menuItemIds.length === 0) return;
+  if (menuItemIds.length === 0) {
+    logger.warn('POS push skipped — no menuItemIds on order items', { orderId, tenantId });
+    return;
+  }
 
   const menuRows = await prisma.menuItem.findMany({
     where: { tenantId, id: { in: menuItemIds } },
-    select: { id: true, posVariationId: true, squareVariationId: true },
+    select: { id: true, name: true, posVariationId: true, squareVariationId: true },
   });
   const byId = new Map(menuRows.map((m) => [m.id, m]));
 
+  // Track which items got dropped for diagnostics. Common failure
+  // mode: manually-created MenuItem that was never linked to Square.
+  const droppedItems: Array<{ menuItemId: string; name: string; reason: string }> = [];
   const posItems = items
     .map((i) => {
-      const ref = byId.get((i as { menuItemId: string }).menuItemId);
-      const variationId = ref?.posVariationId ?? ref?.squareVariationId;
-      if (!variationId) return null;
+      const itemTyped = i as { menuItemId: string; name?: string };
+      const ref = byId.get(itemTyped.menuItemId);
+      if (!ref) {
+        droppedItems.push({
+          menuItemId: itemTyped.menuItemId,
+          name: itemTyped.name ?? '(unknown)',
+          reason: 'menuItem row no longer exists (deleted?)',
+        });
+        return null;
+      }
+      const variationId = ref.posVariationId ?? ref.squareVariationId;
+      if (!variationId) {
+        droppedItems.push({
+          menuItemId: itemTyped.menuItemId,
+          name: ref.name,
+          reason: 'no posVariationId or squareVariationId (orphan item, not linked to POS)',
+        });
+        return null;
+      }
       return { externalVariationId: variationId, quantity: i.quantity };
     })
     .filter((x): x is { externalVariationId: string; quantity: number } => x !== null);
 
+  if (droppedItems.length > 0) {
+    logger.warn('POS push: some items dropped (not linked to POS catalog)', {
+      orderId,
+      tenantId,
+      dropped: droppedItems,
+      kept: posItems.length,
+    });
+  }
+
   if (posItems.length === 0) {
-    logger.warn('POS push skipped: no items have variation ids', { orderId, tenantId });
+    logger.warn('POS push skipped — no items survived linkage check', {
+      orderId,
+      tenantId,
+      totalItemsOnOrder: items.length,
+      droppedCount: droppedItems.length,
+    });
     return;
   }
 

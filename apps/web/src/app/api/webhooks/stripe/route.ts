@@ -8,6 +8,7 @@ import { getCallerState, setCallerState } from '@/lib/server/services/stateServi
 import { logger } from '@/lib/server/logger';
 import { prisma } from '@/lib/server/db';
 import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/server/rateLimit';
+import { waitUntil } from '@/lib/server/waitUntil';
 import Stripe from 'stripe';
 
 export async function POST(request: NextRequest) {
@@ -240,6 +241,12 @@ export async function POST(request: NextRequest) {
           // previously pushed (e.g. resubmitted), the adapter's
           // idempotencyKey + presence of squareOrderId guards against
           // double-push — Square will just return the same order.
+          //
+          // MUST be wrapped in waitUntil — Vercel tears down the lambda
+          // as soon as we return 200 to Stripe, so a bare fire-and-
+          // forget Promise gets killed mid-flight. This was why paid
+          // orders silently stopped appearing in Square. waitUntil
+          // explicitly keeps the lambda alive until the push resolves.
           if (!paidOrder.squareOrderId) {
             const items = Array.isArray(paidOrder.items)
               ? (paidOrder.items as unknown as Array<{
@@ -252,14 +259,25 @@ export async function POST(request: NextRequest) {
             const totalCents = Math.round(
               (Number(paidOrder.total) + Number(paidOrder.tipAmount ?? 0)) * 100,
             );
-            pushOrderToPos(paidOrder.id, tenantId, paidOrder.conversationId, items, {
-              totalCents,
-              externalSource: 'Stripe',
-              externalSourceId: paymentIntentId,
-              customerName: paidOrder.customerName ?? null,
-            }).catch((err) =>
-              logger.error('POS push after payment failed', { err, orderId }),
+            waitUntil(
+              pushOrderToPos(paidOrder.id, tenantId, paidOrder.conversationId, items, {
+                totalCents,
+                externalSource: 'Stripe',
+                externalSourceId: paymentIntentId,
+                customerName: paidOrder.customerName ?? null,
+              })
+                .then(() => {
+                  logger.info('POS push after payment completed', { orderId });
+                })
+                .catch((err) =>
+                  logger.error('POS push after payment failed', { err: err?.message, orderId }),
+                ),
             );
+          } else {
+            logger.info('POS push skipped — order already has squareOrderId', {
+              orderId,
+              squareOrderId: paidOrder.squareOrderId,
+            });
           }
 
           // Confirmation SMS — wrap in try/catch so a Twilio blip
