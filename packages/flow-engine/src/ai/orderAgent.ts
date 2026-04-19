@@ -331,6 +331,25 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       };
     }
 
+    // ── "yes" with empty cart — session expired ──
+    // Customer left "ORDER_CONFIRM" in their state (or even without
+    // it, just said "yes" out of the blue), state expired, cart is
+    // empty. Without this branch we'd fall through to the fallback
+    // reply ("What can I get started for you?") which ignores their
+    // confirm intent entirely.
+    if (wantsConfirm && draft.items.length === 0) {
+      return {
+        nextState: buildBaseState(input, draft, {
+          flowStep: 'MENU_DISPLAY',
+          customerName: capturedName,
+        }),
+        smsReply:
+          "Looks like your cart is empty — want to place a new order? Tell me what you'd like.",
+        sideEffects: [],
+        flowType: FlowType.ORDER,
+      };
+    }
+
     // ── CONFIRM ──
     if (wantsConfirm && draft.items.length > 0) {
       if (!draft.pickupTime) {

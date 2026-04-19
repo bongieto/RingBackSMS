@@ -232,19 +232,38 @@ describe('runOrderAgent', () => {
   });
 
   test('ask_clarification sets pendingClarification in state', async () => {
+    // missing_field gets normalized against a whitelist so the stored
+    // state never holds junk like "potato" that the next turn's prompt
+    // can't interpret. Unknown field names collapse to 'generic'.
     const input = mkInput(
       'adobo',
       [
         {
           name: 'ask_clarification',
-          input: { question: 'How many Adobo Chicken?', missing_field: 'quantity_for_adobo' },
+          input: { question: 'How many Adobo Chicken?', missing_field: 'quantity' },
         },
       ],
       'How many Adobo Chicken?',
     );
     const result = await runOrderAgent(input);
-    expect(result.nextState.pendingClarification?.field).toBe('quantity_for_adobo');
+    expect(result.nextState.pendingClarification?.field).toBe('quantity');
     expect(result.smsReply).toContain('How many');
+  });
+
+  test('ask_clarification normalizes unknown missing_field to "generic"', async () => {
+    const input = mkInput(
+      'adobo',
+      [
+        {
+          name: 'ask_clarification',
+          input: { question: 'Hmm?', missing_field: 'quantity_for_adobo' },
+        },
+      ],
+      'Hmm?',
+    );
+    const result = await runOrderAgent(input);
+    // "quantity_for_adobo" is not in CLARIFICATION_FIELDS → normalized.
+    expect(result.nextState.pendingClarification?.field).toBe('generic');
   });
 
   test('cancel_order clears cart', async () => {

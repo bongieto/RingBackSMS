@@ -222,9 +222,32 @@ export const UpdateQuantityInput = z.object({
 });
 export const SetPickupTimeInput = z.object({ when: z.string().min(1).max(100) });
 export const SetOrderNotesInput = z.object({ notes: z.string().max(500) });
+// Known clarification fields. We let the agent pass a free-form
+// hint in case nothing matches, but canonical names keep the
+// pendingClarification state predictable for downstream logic.
+const CLARIFICATION_FIELDS = [
+  'pickup_time',
+  'customer_name',
+  'item_modifier',
+  'item_identity',
+  'quantity',
+  'payment_method',
+  'generic',
+] as const;
+
 export const AskClarificationInput = z.object({
   question: z.string().min(1).max(320),
-  missing_field: z.string().min(1).max(80),
+  // Normalize unknown field names to 'generic' so stored state never
+  // carries junk values like "potato" that the next turn's prompt can't
+  // interpret.
+  missing_field: z
+    .string()
+    .min(1)
+    .max(80)
+    .transform((v) => {
+      const lower = v.toLowerCase().replace(/[^a-z_]/g, '_');
+      return (CLARIFICATION_FIELDS as readonly string[]).includes(lower) ? lower : 'generic';
+    }),
 });
 
 export const SetCustomerNameInput = z.object({

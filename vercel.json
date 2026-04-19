@@ -2,5 +2,15 @@
   "buildCommand": "pnpm --filter=@ringbacksms/web build",
   "installCommand": "pnpm install",
   "framework": "nextjs",
-  "outputDirectory": "apps/web/.next"
+  "outputDirectory": "apps/web/.next",
+  "crons": [
+    {
+      "path": "/api/cron/recurring-orders",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/review-prompts",
+      "schedule": "*/15 * * * *"
+    }
+  ]
 }
