@@ -29,22 +29,47 @@ export async function POST(request: NextRequest) {
   // Idempotency: Stripe guarantees at-least-once delivery, and their
   // Dashboard has a manual "Resend" button. Replaying a checkout event
   // without dedup would create duplicate Order rows + re-send "Payment
-  // received!" SMS. Check a processed-events log before handling.
+  // received!" SMS.
+  //
+  // Previous implementation tried create() as the dedup primitive and
+  // treated any non-P2002 error as "proceed anyway" — that meant a DB
+  // blip during the insert would silently bypass dedup, and Stripe's
+  // next retry would re-process the event. Now we explicit findUnique
+  // first (cheap read), and if the insert fails for any reason we
+  // return 500 so Stripe retries with a fresh findUnique chance.
   try {
-    await prisma.webhookEventLog.create({
-      data: { id: event.id, provider: 'stripe', eventType: event.type },
+    const existing = await prisma.webhookEventLog.findUnique({
+      where: { id: event.id },
+      select: { id: true },
     });
-  } catch (err: any) {
-    // P2002 = unique constraint violation → we've processed this event already
-    if (err?.code === 'P2002') {
+    if (existing) {
       logger.info('Duplicate Stripe webhook event, skipping', { eventId: event.id, type: event.type });
       return new Response(JSON.stringify({ received: true, duplicate: true }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
     }
-    // Any other DB error: log but continue (better to process than lose events)
-    logger.warn('WebhookEventLog insert failed, proceeding anyway', { eventId: event.id, err: err?.message });
+    await prisma.webhookEventLog.create({
+      data: { id: event.id, provider: 'stripe', eventType: event.type },
+    });
+  } catch (err: any) {
+    // P2002 here means a concurrent request created the row between
+    // our findUnique and create — treat as duplicate.
+    if (err?.code === 'P2002') {
+      logger.info('Duplicate Stripe webhook event (race), skipping', { eventId: event.id });
+      return new Response(JSON.stringify({ received: true, duplicate: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    // Any other DB error: fail loudly so Stripe retries. Returning 500
+    // means we try again with a fresh findUnique + create on the next
+    // attempt, rather than silently bypassing idempotency.
+    logger.error('WebhookEventLog dedup failed — returning 500 to force Stripe retry', {
+      eventId: event.id,
+      err: err?.message,
+    });
+    return Response.json({ error: 'Dedup check failed' }, { status: 500 });
   }
 
   try {

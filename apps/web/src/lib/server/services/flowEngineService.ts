@@ -717,10 +717,60 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       await sendSms(tenantId, callerPhone, result.smsReply);
     }
 
-    // Process side effects (context passes data between effects, e.g. orderId from SAVE_ORDER to CREATE_PAYMENT_LINK)
+    // Process side effects. Each is wrapped in its own try/catch so a
+    // failure in one effect doesn't cascade and silently drop subsequent
+    // effects. Two classes of effects:
+    //   - CRITICAL effects (SAVE_ORDER, CREATE_PAYMENT_LINK): failure
+    //     means the customer is stuck — we abort the rest of the chain
+    //     and send an apology SMS.
+    //   - CONVENIENCE effects (NOTIFY_OWNER, CREATE_POS_ORDER when the
+    //     customer hasn't paid yet): failure is non-fatal; log and move
+    //     on so the customer gets their payment link even if the owner
+    //     didn't get their Slack ping.
+    const CRITICAL_EFFECTS = new Set(['SAVE_ORDER', 'CREATE_PAYMENT_LINK']);
     const sideEffectContext: Record<string, any> = {};
+    let criticalFailure: { effect: string; error: string } | null = null;
     for (const effect of result.sideEffects) {
-      await processSideEffect(effect, tenantId, conversationId as string, callerPhone, sideEffectContext);
+      if (criticalFailure) break; // abort chain once a critical effect fails
+      try {
+        await processSideEffect(effect, tenantId, conversationId as string, callerPhone, sideEffectContext);
+      } catch (effectErr: any) {
+        const msg = effectErr?.message ?? String(effectErr);
+        if (CRITICAL_EFFECTS.has(effect.type)) {
+          criticalFailure = { effect: effect.type, error: msg };
+          logger.error('Critical side effect failed — aborting chain', {
+            tenantId,
+            effect: effect.type,
+            err: msg,
+          });
+        } else {
+          logger.warn('Non-critical side effect failed — continuing', {
+            tenantId,
+            effect: effect.type,
+            err: msg,
+          });
+        }
+      }
+    }
+
+    if (criticalFailure) {
+      // Customer got the agent's "you'll get a payment link shortly"
+      // reply already. If the link generation tanked, tell them now.
+      await sendSms(
+        tenantId,
+        callerPhone,
+        "Sorry — something went wrong processing your order. Please text us again to retry.",
+      ).catch(() => {});
+      // Mark any partially-created order as UNPAID (not stuck in PENDING)
+      // so operator-facing dashboards show it didn't finalize.
+      if (sideEffectContext.orderId) {
+        await prisma.order
+          .updateMany({
+            where: { id: sideEffectContext.orderId, paymentStatus: 'PENDING' },
+            data: { paymentStatus: 'UNPAID' },
+          })
+          .catch(() => {});
+      }
     }
 
     // Record usage
@@ -841,12 +891,23 @@ async function processSideEffect(
       break;
 
     case 'NOTIFY_OWNER':
-      await sendNotification({
-        tenantId,
-        subject: effect.payload.subject,
-        message: effect.payload.message,
-        channel: effect.payload.channel,
-      });
+      // Belt-and-suspenders: the caller wraps us in a try/catch, but
+      // also log here so the warning names NOTIFY_OWNER specifically
+      // rather than the generic "non-critical side effect failed".
+      try {
+        await sendNotification({
+          tenantId,
+          subject: effect.payload.subject,
+          message: effect.payload.message,
+          channel: effect.payload.channel,
+        });
+      } catch (err: any) {
+        logger.warn('NOTIFY_OWNER send failed (non-fatal, customer flow continues)', {
+          tenantId,
+          subject: effect.payload.subject,
+          err: err?.message ?? String(err),
+        });
+      }
       break;
 
     case 'CREATE_SQUARE_ORDER': {
@@ -963,6 +1024,11 @@ async function processSideEffect(
         logger.info('Payment link sent', { tenantId, orderId: context.orderId ?? 'pending', sessionId });
       } catch (err) {
         logger.error('CREATE_PAYMENT_LINK failed', { tenantId, error: err });
+        // Re-throw so the caller's critical-effect handler knows to
+        // abort the chain and send a user-visible apology. Previously
+        // we swallowed here, leaving the customer with a "you'll get a
+        // link shortly" reply that never arrived.
+        throw err;
       }
       break;
     }
