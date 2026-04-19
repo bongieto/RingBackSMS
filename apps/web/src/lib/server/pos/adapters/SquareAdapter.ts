@@ -655,7 +655,17 @@ export class SquareAdapter extends BasePosAdapter {
     // Square only knows catalog item prices while Stripe captured the full
     // customer total (our tax + service fee + tip). Keeping Square payment-
     // free means Square sales reports simply aren't used for this channel.
-    logger.info('Square KDS ticket created', { tenantId, squareOrderId });
+    const o = response.result.order;
+    logger.info('Square KDS ticket created', {
+      tenantId,
+      squareOrderId,
+      locationId: o?.locationId,
+      state: o?.state,
+      lineItemCount: o?.lineItems?.length ?? 0,
+      fulfillmentCount: (o as any)?.fulfillments?.length ?? 0,
+      fulfillmentState: (o as any)?.fulfillments?.[0]?.state,
+      source: (o as any)?.source?.name,
+    });
 
     return {
       externalOrderId: squareOrderId,
