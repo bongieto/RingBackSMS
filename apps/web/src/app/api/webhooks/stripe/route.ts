@@ -231,6 +231,7 @@ export async function POST(request: NextRequest) {
               total: true,
               tipAmount: true,
               customerName: true,
+              pickupTime: true,
               squareOrderId: true,
             },
           });
@@ -265,6 +266,7 @@ export async function POST(request: NextRequest) {
                 externalSource: 'Stripe',
                 externalSourceId: paymentIntentId,
                 customerName: paidOrder.customerName ?? null,
+                pickupTime: paidOrder.pickupTime ?? null,
               })
                 .then(() => {
                   logger.info('POS push after payment completed', { orderId });

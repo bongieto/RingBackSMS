@@ -80,9 +80,12 @@ export abstract class BasePosAdapter {
       externalSource?: string;
       /** Opaque id from the external processor (e.g. Stripe payment_intent). */
       externalSourceId?: string;
-      /** Customer name (optional). Included on the external-tender note so
-       *  kitchen staff can tie the Square order to a name. */
+      /** Customer name (optional). Shown on the KDS ticket so kitchen
+       *  staff know whose order they're making. */
       customerName?: string | null;
+      /** Pickup time string (e.g. "2:30 PM"). Attached as a PICKUP
+       *  fulfillment so Square for Restaurants KDS routes the ticket. */
+      pickupTime?: string | null;
     },
   ): Promise<PosOrderResult>;
   abstract verifyWebhook(

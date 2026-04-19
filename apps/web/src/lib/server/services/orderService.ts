@@ -311,6 +311,7 @@ export async function pushOrderToPos(
     externalSource?: string;
     externalSourceId?: string;
     customerName?: string | null;
+    pickupTime?: string | null;
   },
 ): Promise<void> {
   const tenant = await prisma.tenant.findUnique({
@@ -401,6 +402,7 @@ export async function pushOrderToPos(
     externalSource: payment?.externalSource,
     externalSourceId: payment?.externalSourceId,
     customerName: payment?.customerName ?? null,
+    pickupTime: payment?.pickupTime ?? null,
   });
 
   await prisma.order.update({

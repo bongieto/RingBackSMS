@@ -597,12 +597,29 @@ export class SquareAdapter extends BasePosAdapter {
       externalSource?: string;
       externalSourceId?: string;
       customerName?: string | null;
+      pickupTime?: string | null;
     },
   ): Promise<PosOrderResult> {
     const tokens = await this.loadTokens(tenantId);
     if (!tokens) throw new Error('Tenant not connected to Square');
 
     const client = buildSquareClient(tokens.accessToken);
+
+    // Build a PICKUP fulfillment so Square for Restaurants KDS routes
+    // the ticket to the kitchen screen. Without a fulfillment the order
+    // is accepted by the Orders API but never appears in any KDS or
+    // Dashboard Orders view — it's invisible to kitchen staff.
+    const fulfillment: Record<string, unknown> = {
+      type: 'PICKUP',
+      state: 'PROPOSED',
+      pickup_details: {
+        schedule_type: metadata.pickupTime ? 'SCHEDULED' : 'ASAP',
+        ...(metadata.pickupTime && { note: `Pickup: ${metadata.pickupTime}` }),
+        recipient: {
+          display_name: metadata.customerName?.trim() || 'RingbackSMS Order',
+        },
+      },
+    };
 
     const response = await client.ordersApi.createOrder({
       order: {
@@ -611,6 +628,9 @@ export class SquareAdapter extends BasePosAdapter {
           quantity: String(item.quantity),
           catalogObjectId: item.externalVariationId,
         })),
+        // Cast needed — Square SDK types use PascalCase wrappers but the
+        // underlying API accepts snake_case fulfillment objects directly.
+        fulfillments: [fulfillment as any],
       },
       idempotencyKey: metadata.idempotencyKey,
     });
