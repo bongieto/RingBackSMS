@@ -47,6 +47,21 @@ export interface CallerMemory {
     price: number;
   }>;
   lastConversationPreview?: string | null;
+  /** Current in-flight order, if any. Populated from the most recent
+   *  non-completed Order row for this caller. Lets chat/fallback replies
+   *  quote the REAL pickup ETA instead of inferring one from message
+   *  context. */
+  activeOrder?: {
+    orderNumber: string;
+    status: 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'COMPLETED' | 'CANCELLED' | string;
+    /** ISO string — the estimated ready time we calculated at order time. */
+    estimatedReadyTime?: string | null;
+    /** Customer-provided pickup-time string (e.g. "8:30 tonight"). */
+    pickupTime?: string | null;
+    /** Short summary like "2x Kanto Fries, 1x Cornedsilog" for context. */
+    itemsSummary?: string | null;
+    total?: number | null;
+  } | null;
   /** BCP-47 language tag detected from prior messages. When set, the
    *  agent replies in this language. */
   preferredLanguage?: string | null;

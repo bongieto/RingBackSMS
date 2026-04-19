@@ -117,6 +117,35 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
     }
   }
 
+  // Active-order block: when the caller has an in-flight order, include
+  // the AUTHORITATIVE ETA from the DB so chat replies never have to
+  // guess. Format the estimatedReadyTime in the tenant's timezone (or
+  // UTC fallback) as a human-friendly time-of-day.
+  let activeOrderBlock = '';
+  if (callerMemory?.activeOrder) {
+    const ao = callerMemory.activeOrder;
+    const parts: string[] = [`#${ao.orderNumber}`, `status: ${ao.status}`];
+    if (ao.estimatedReadyTime) {
+      try {
+        const ready = new Date(ao.estimatedReadyTime);
+        const tz = tenantContext.config.timezone ?? 'America/Chicago';
+        const timeStr = new Intl.DateTimeFormat('en-US', {
+          timeZone: tz,
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        }).format(ready);
+        parts.push(`estimated ready at ${timeStr}`);
+      } catch {
+        // ignore formatting error
+      }
+    }
+    if (ao.pickupTime) parts.push(`pickup: ${ao.pickupTime}`);
+    if (ao.itemsSummary) parts.push(`items: ${ao.itemsSummary}`);
+    if (ao.total != null) parts.push(`total $${ao.total.toFixed(2)}`);
+    activeOrderBlock = `\n\nCurrent in-flight order (use THESE facts when they ask about their order — never guess or paraphrase the time): ${parts.join(' · ')}.`;
+  }
+
   const justCompletedOrder = currentState?.flowStep === 'ORDER_COMPLETE';
   const postOrderHint = justCompletedOrder
     ? '\nThe customer JUST completed an order — most messages right now are polite chit-chat ("ok", "see you", "thanks man"), questions ABOUT the existing order, or random non-requests. Treat casual messages as casual. Do NOT try to upsell or re-prompt for a new order.'
@@ -142,7 +171,7 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
 - Never repeat the customer's message back to them.${postOrderHint}
 
 # Capabilities and context
-${capabilities}${businessAddress}${websiteContext}${catalogContext}${callerContextBlock}${customBlock}`;
+${capabilities}${businessAddress}${websiteContext}${catalogContext}${callerContextBlock}${activeOrderBlock}${customBlock}`;
 
   const nextState: CallerState = {
     tenantId: tenantContext.tenantId,

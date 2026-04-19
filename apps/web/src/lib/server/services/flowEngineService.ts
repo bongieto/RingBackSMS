@@ -377,6 +377,53 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       }
     }
 
+    // Active order: find the most recent non-terminal Order for this
+    // caller. Lets fallback/chat replies quote the REAL pickup ETA
+    // instead of making one up from conversation context.
+    let activeOrder: CallerMemory['activeOrder'] = null;
+    try {
+      const inflight = await prisma.order.findFirst({
+        where: {
+          tenantId,
+          callerPhone,
+          status: { in: ['PENDING', 'CONFIRMED', 'PREPARING', 'READY'] },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          orderNumber: true,
+          status: true,
+          estimatedReadyTime: true,
+          pickupTime: true,
+          items: true,
+          total: true,
+        },
+      });
+      if (inflight) {
+        const rawItems = Array.isArray(inflight.items)
+          ? (inflight.items as Array<{ name?: unknown; quantity?: unknown }>)
+          : [];
+        const itemsSummary = rawItems
+          .map((i) =>
+            typeof i.name === 'string' && typeof i.quantity === 'number'
+              ? `${i.quantity}× ${i.name}`
+              : null,
+          )
+          .filter(Boolean)
+          .slice(0, 5)
+          .join(', ');
+        activeOrder = {
+          orderNumber: inflight.orderNumber,
+          status: inflight.status,
+          estimatedReadyTime: inflight.estimatedReadyTime?.toISOString() ?? null,
+          pickupTime: inflight.pickupTime ?? null,
+          itemsSummary: itemsSummary || null,
+          total: Number(inflight.total),
+        };
+      }
+    } catch (err) {
+      logger.warn('Failed to fetch active order for callerMemory', { err });
+    }
+
     callerMemory = {
       contactName,
       contactStatus: callerContext.contact?.status ?? null,
@@ -385,6 +432,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       lastOrderItems,
       lastConversationPreview: callerContext.lastConversation?.lastMessagePreview ?? null,
       preferredLanguage,
+      activeOrder,
     };
   }
 
