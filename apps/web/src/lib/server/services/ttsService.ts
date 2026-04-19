@@ -83,6 +83,20 @@ export async function generateAndUploadGreetingAudio(params: {
     return null;
   }
 
+  // Null the audio URL BEFORE attempting regen. If OpenAI or the upload
+  // fails, we leave null in the DB so the voice webhook falls back to
+  // real-time Twilio TTS with the *new* text. Without this, a failed regen
+  // would keep the old stale MP3 that no longer matches what the operator
+  // wrote — caller would hear the old greeting indefinitely.
+  try {
+    await prisma.tenantConfig.update({
+      where: { tenantId },
+      data: { [SLOT_TO_URL_FIELD[slot]]: null },
+    });
+  } catch (err) {
+    logger.warn('Could not pre-clear audio URL before regen', { err, tenantId, slot });
+  }
+
   try {
     // 1. Generate speech
     const response = await openai.audio.speech.create({
