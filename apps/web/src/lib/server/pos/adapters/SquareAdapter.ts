@@ -5,9 +5,18 @@ import { encrypt } from '../../encryption';
 import { logger } from '../../logger';
 
 function getSquareEnvironment(): Environment {
-  return process.env.SQUARE_ENVIRONMENT === 'production'
-    ? Environment.Production
-    : Environment.Sandbox;
+  // Default to Production — our prod deploy pushes real orders to real
+  // Square merchants. Devs who want sandbox must set
+  // SQUARE_ENVIRONMENT=sandbox explicitly.
+  //
+  // Prior default was sandbox, which silently routed every live order
+  // to Square's test environment — operators couldn't find their
+  // orders in the real Square Dashboard and thought the integration
+  // was broken. Flip to production-by-default fails closed the safer
+  // direction.
+  return process.env.SQUARE_ENVIRONMENT === 'sandbox'
+    ? Environment.Sandbox
+    : Environment.Production;
 }
 
 function buildSquareClient(accessToken: string): Client {
@@ -18,9 +27,11 @@ function buildSquareClient(accessToken: string): Client {
 }
 
 function getSquareBaseUrl(): string {
-  return process.env.SQUARE_ENVIRONMENT === 'production'
-    ? 'https://connect.squareup.com'
-    : 'https://connect.squareupsandbox.com';
+  // Same default-to-production flip as getSquareEnvironment above —
+  // sandbox only when explicitly opted in.
+  return process.env.SQUARE_ENVIRONMENT === 'sandbox'
+    ? 'https://connect.squareupsandbox.com'
+    : 'https://connect.squareup.com';
 }
 
 export class SquareAdapter extends BasePosAdapter {
