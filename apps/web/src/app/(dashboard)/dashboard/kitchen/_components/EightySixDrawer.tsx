@@ -45,8 +45,17 @@ export function EightySixDrawer({
   });
 
   const toggle = useMutation({
-    mutationFn: ({ id, isAvailable }: { id: string; isAvailable: boolean }) =>
-      tenantApi.bulkSetItemAvailability(tenantId, [id], isAvailable),
+    mutationFn: async ({ id, isAvailable }: { id: string; isAvailable: boolean }) => {
+      if (!tenantId) throw new Error('tenantId missing');
+      const res = await tenantApi.bulkSetItemAvailability(tenantId, [id], isAvailable);
+      // updateMany returns { count }. If 0 rows changed it means either
+      // the id doesn't belong to this tenant (wrong cache) or someone
+      // already flipped it. Surface this so we don't mislead staff.
+      if (res && typeof res === 'object' && 'count' in res && (res as { count: number }).count === 0) {
+        throw new Error('No rows updated — item may have been removed. Refreshing.');
+      }
+      return res;
+    },
     onMutate: async ({ id, isAvailable }) => {
       // Optimistic — kitchen staff shouldn't feel any lag
       await queryClient.cancelQueries({ queryKey: ['menu', tenantId] });
@@ -56,9 +65,18 @@ export function EightySixDrawer({
       );
       return { prev };
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err: unknown, _vars, ctx) => {
       if (ctx?.prev) queryClient.setQueryData(['menu', tenantId], ctx.prev);
-      toast.error('Failed to update');
+      // Surface the real error — "Failed to update" without detail is
+      // exactly how this bug hid in plain sight before.
+      const msg =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message: unknown }).message)
+          : 'Failed to update';
+      toast.error(msg);
+    },
+    onSuccess: (_data, { isAvailable }) => {
+      toast.success(isAvailable ? 'Brought back' : '86\'d');
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['menu', tenantId] });
