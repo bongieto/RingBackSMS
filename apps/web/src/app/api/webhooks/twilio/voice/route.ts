@@ -296,11 +296,7 @@ export async function POST(request: NextRequest) {
   // correct across all closed scenarios (tonight, day off, holiday) —
   // the operator writes "We'll reopen {next_open}" and the right answer
   // is computed at call time.
-  //
-  // NOTE: this only applies to the TTS path. Pre-generated audio URLs
-  // (voiceAudioUrl) are static and cannot carry dynamic content; when
-  // set, they take precedence below. Operators who want dynamic
-  // greetings should leave voiceAudioUrl empty.
+  const hasPlaceholders = !!rawVoiceGreetingText && /\{[a-z_]+\}/i.test(rawVoiceGreetingText);
   const voiceGreetingText = rawVoiceGreetingText
     ? renderGreetingTemplate(
         rawVoiceGreetingText,
@@ -317,11 +313,17 @@ export async function POST(request: NextRequest) {
       )
     : null;
 
-  const voiceAudioUrl = selectVoiceAudioUrl({
+  const voiceAudioUrlRaw = selectVoiceAudioUrl({
     tier,
     isAfterHours: !isOpen,
     config: tenant.config,
   });
+  // If the greeting text uses placeholders, any pre-generated static MP3
+  // was rendered from stale literal text and would play "{next_open}"
+  // verbatim. Skip it and fall back to real-time TTS, which reads the
+  // substituted voiceGreetingText above. Keeps operators from having to
+  // regenerate audio every time business hours shift.
+  const voiceAudioUrl = hasPlaceholders ? null : voiceAudioUrlRaw;
 
   // TCPA consent-first flow — send consent request SMS. Using console.log
   // directly (not Winston) because Vercel's serverless log pipeline seems to

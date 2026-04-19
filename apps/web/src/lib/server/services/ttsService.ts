@@ -50,6 +50,29 @@ export async function generateAndUploadGreetingAudio(params: {
 }): Promise<string | null> {
   const { tenantId, slot, text, voice } = params;
 
+  // Greetings that use {business_name} / {next_open} / etc. must be
+  // rendered at call-time because the resolved values change daily.
+  // Baking them into a static MP3 would lock in stale data (e.g.
+  // Monday's "reopen Tuesday" message playing for the rest of the
+  // week). Skip TTS generation entirely; also null out any existing
+  // audio URL for this slot so the voice webhook falls back to
+  // real-time TTS.
+  if (/\{[a-z_]+\}/i.test(text)) {
+    try {
+      await prisma.tenantConfig.update({
+        where: { tenantId },
+        data: { [SLOT_TO_URL_FIELD[slot]]: null },
+      });
+    } catch (err) {
+      logger.warn('Failed to clear stale audio URL for templated greeting', { err, tenantId, slot });
+    }
+    logger.info('Skipping TTS — greeting uses placeholders, real-time TTS will render at call-time', {
+      tenantId,
+      slot,
+    });
+    return null;
+  }
+
   const openai = getOpenAIClient();
   if (!openai) {
     logger.warn('OpenAI TTS unavailable — OPENAI_API_KEY not set');
