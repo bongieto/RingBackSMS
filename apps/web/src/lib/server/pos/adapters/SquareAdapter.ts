@@ -618,78 +618,18 @@ export class SquareAdapter extends BasePosAdapter {
     const squareOrderId = response.result.order?.id;
     if (!squareOrderId) throw new Error('Square order creation failed');
 
-    // Square's calculated order total (item prices + Square's own tax rules).
-    // We use THIS amount — not our Stripe total — when recording the external
-    // payment. Square rejects payments where amountMoney ≠ order total, which
-    // was causing the payment to silently fail and leave orders as OPEN.
-    // Our Stripe total includes our own tax/fee/tip markup, which Square
-    // doesn't know about, so the numbers naturally differ.
-    const squareOrderTotalMoney = response.result.order?.totalMoney;
-    const squareOrderTotalCents = squareOrderTotalMoney?.amount
-      ? Number(squareOrderTotalMoney.amount)
-      : null;
-
-    logger.info('Square order created', { tenantId, squareOrderId, squareOrderTotalCents });
-
-    // Record a matching Payment with an EXTERNAL tender so the Square order
-    // closes out (stops showing as OPEN in the kitchen UI). Use Square's own
-    // calculated total so the amount always matches. The Stripe payment amount
-    // (with tip/fee) is included in the note for operator reference.
-    // Tagged `OTHER` + source="Stripe" so Square sales reports can exclude
-    // it and avoid double-counting with Stripe's own reports.
-    let externalPaymentId: string | null = null;
-    if (squareOrderTotalCents && squareOrderTotalCents > 0) {
-      try {
-        const paymentResponse = await client.paymentsApi.createPayment({
-          sourceId: 'EXTERNAL',
-          idempotencyKey: `${metadata.idempotencyKey}-pay`,
-          amountMoney: {
-            amount: BigInt(squareOrderTotalCents),
-            currency: squareOrderTotalMoney?.currency ?? 'USD',
-          },
-          orderId: squareOrderId,
-          locationId: metadata.locationId,
-          externalDetails: {
-            type: 'OTHER',
-            source: metadata.externalSource ?? 'External',
-            ...(metadata.externalSourceId && { sourceId: metadata.externalSourceId }),
-          },
-          note: (() => {
-            const base = metadata.externalSource
-              ? `Paid via ${metadata.externalSource} (RingbackSMS)`
-              : 'Paid externally (RingbackSMS)';
-            const name = metadata.customerName?.trim();
-            // Include Stripe total for reference (may differ from Square total
-            // due to our tip/fee markup that Square doesn't see).
-            const stripeSuffix = metadata.totalCents
-              ? ` | Stripe total: $${(metadata.totalCents / 100).toFixed(2)}`
-              : '';
-            return name ? `${base} — ${name}${stripeSuffix}` : `${base}${stripeSuffix}`;
-          })(),
-        });
-        externalPaymentId = paymentResponse.result.payment?.id ?? null;
-        logger.info('Square external payment recorded', {
-          tenantId,
-          squareOrderId,
-          paymentId: externalPaymentId,
-          squareOrderTotalCents,
-          stripeTotalCents: metadata.totalCents,
-        });
-      } catch (err: any) {
-        // Non-fatal: the order still exists in Square for prep, it just
-        // stays in OPEN/unpaid state until someone closes it manually.
-        logger.warn('Square external payment failed (order still created)', {
-          tenantId,
-          squareOrderId,
-          squareOrderTotalCents,
-          error: err?.message,
-        });
-      }
-    }
+    // Square is used as KDS only — we send the ticket so kitchen staff see
+    // what to make, but we do NOT record a payment in Square. All financial
+    // data (revenue, tips, fees, taxes) lives in Stripe + RingbackSMS.
+    // Recording a Square payment would create a ledger mismatch because
+    // Square only knows catalog item prices while Stripe captured the full
+    // customer total (our tax + service fee + tip). Keeping Square payment-
+    // free means Square sales reports simply aren't used for this channel.
+    logger.info('Square KDS ticket created', { tenantId, squareOrderId });
 
     return {
       externalOrderId: squareOrderId,
-      externalPaymentId,
+      externalPaymentId: null,
       raw: response.result as unknown as Record<string, unknown>,
     };
   }
