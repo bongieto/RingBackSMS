@@ -198,6 +198,22 @@ export class SquareAdapter extends BasePosAdapter {
       if (cat.id && name) categoryNameById.set(cat.id, name);
     }
 
+    // Pre-populate our MenuCategory rows for each Square category so
+    // every synced item can link via MenuItem.categoryId (FK). Without
+    // this, dashboard category filters (which match by categoryId UUID)
+    // miss Square-synced items even when their `category` string is
+    // correct. Upsert is safe — unique on (tenantId, name).
+    const menuCategoryIdByName = new Map<string, string>();
+    for (const name of new Set(categoryNameById.values())) {
+      const row = await this.prisma.menuCategory.upsert({
+        where: { tenantId_name: { tenantId, name } },
+        create: { tenantId, name, sortOrder: 0, isAvailable: true },
+        update: {}, // leave isAvailable + sortOrder as operator set them
+        select: { id: true },
+      });
+      menuCategoryIdByName.set(name, row.id);
+    }
+
     // Build a lookup map: modifier list ID → modifier list data
     const modifierListMap = new Map<string, { name: string; selectionType: string; modifiers: Array<{ id: string; name: string; priceMoney?: { amount?: bigint; currency?: string } }> }>();
     for (const ml of modifierLists) {
@@ -277,6 +293,10 @@ export class SquareAdapter extends BasePosAdapter {
         const category = categoryId
           ? categoryNameById.get(categoryId) ?? null
           : null;
+        // FK to our MenuCategory row (so dashboard category filters
+        // match Square-synced items). Upsert happened earlier in
+        // menuCategoryIdByName preload.
+        const categoryFkId = category ? menuCategoryIdByName.get(category) ?? null : null;
 
         // Match strategy, most-to-least specific:
         //   1. posCatalogId match — the normal case. Square item was
@@ -323,6 +343,7 @@ export class SquareAdapter extends BasePosAdapter {
           description: item.itemData.description ?? null,
           price,
           category,
+          categoryId: categoryFkId, // FK — populated so dashboard category filters match
           posCatalogId: item.id,
           posVariationId: variation?.id ?? null,
           squareCatalogId: item.id,
