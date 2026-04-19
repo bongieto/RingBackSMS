@@ -225,6 +225,38 @@ export class SquareAdapter extends BasePosAdapter {
       duplicates: [],
     };
 
+    // Preload all orphans (POS-unlinked MenuItems) for this tenant so
+    // the per-item reconciliation loop below can match by normalized
+    // name in-memory rather than running a Prisma findFirst per Square
+    // item. Reduces ~N*2 DB queries to 1 for tenants with many items.
+    const orphans = await this.prisma.menuItem.findMany({
+      where: { tenantId, posCatalogId: null, squareCatalogId: null },
+      select: { id: true, name: true, price: true },
+    });
+    // Normalize: lowercase, strip leading menu-number prefix, strip
+    // trailing ingredient-description parens, collapse whitespace.
+    // Handles "Kanto Fries", "#A6 Kanto Fries", and
+    // "#A5 Kanto Balls Sampler (Kikiam, Squid Ball, Fish Ball)" all
+    // mapping to the same canonical key.
+    const normalizeName = (n: string): string =>
+      n
+        .toLowerCase()
+        .replace(/^\s*#?[a-z]{0,3}\d+\.?\s+/i, '') // "#a6 ", "#lb13 ", "a1. ", "3. "
+        .replace(/^\s*#\d+\s+/i, '') // "#8 "
+        .replace(/\s*\([^)]*\)\s*$/g, '') // trailing " (...)"
+        .replace(/\s+/g, ' ')
+        .trim();
+    const orphansByNormName = new Map<string, typeof orphans>();
+    for (const o of orphans) {
+      const key = normalizeName(o.name);
+      if (!orphansByNormName.has(key)) orphansByNormName.set(key, []);
+      orphansByNormName.get(key)!.push(o);
+    }
+    // Track which orphan IDs have already been claimed this sync so
+    // two Square items with the same normalized name don't both try to
+    // stamp onto one orphan row.
+    const claimedOrphanIds = new Set<string>();
+
     for (const item of items) {
       if (!item.itemData) continue;
 
@@ -249,14 +281,12 @@ export class SquareAdapter extends BasePosAdapter {
         // Match strategy, most-to-least specific:
         //   1. posCatalogId match — the normal case. Square item was
         //      previously synced; find its existing row.
-        //   2. Name match with NO posCatalogId — this is an orphan
-        //      manually-created item in our DB (added before Square was
-        //      connected, or added during the pagination-bug window
-        //      when Square failed to pull its real twin). Stamp the
-        //      Square IDs onto the existing row instead of creating a
-        //      duplicate. Orders already placed against that item's id
-        //      stay valid; POS push now works because the Square link
-        //      is live.
+        //   2. Normalized-name + price match against the preloaded
+        //      orphan map (POS-unlinked rows). Normalization strips
+        //      common Square prefix/suffix patterns so e.g.
+        //      "Kanto Fries" orphan links to "#A6 Kanto Fries" Square
+        //      item. Price guardrail (within 25%) prevents false
+        //      positives across similarly-named items.
         //   3. Neither matches → genuinely new item, create.
         let existing = await this.prisma.menuItem.findFirst({
           where: { tenantId, posCatalogId: item.id },
@@ -264,15 +294,24 @@ export class SquareAdapter extends BasePosAdapter {
         let reconciledFromOrphan = false;
         const resolvedName = item.itemData.name ?? 'Unnamed Item';
         if (!existing) {
-          existing = await this.prisma.menuItem.findFirst({
-            where: {
-              tenantId,
-              name: resolvedName,
-              posCatalogId: null,
-              squareCatalogId: null,
-            },
+          const normKey = normalizeName(resolvedName);
+          const candidates = orphansByNormName.get(normKey) ?? [];
+          const match = candidates.find((c) => {
+            if (claimedOrphanIds.has(c.id)) return false;
+            const ourPrice = Number(c.price);
+            if (price <= 0 || ourPrice <= 0) return true; // no price signal → trust the name
+            const ratio = Math.abs(ourPrice - price) / Math.max(ourPrice, price);
+            return ratio <= 0.25;
           });
-          if (existing) reconciledFromOrphan = true;
+          if (match) {
+            // Fetch the full row so we have all fields for the update
+            // below (changed-detection compares description etc.).
+            existing = await this.prisma.menuItem.findUnique({ where: { id: match.id } });
+            if (existing) {
+              reconciledFromOrphan = true;
+              claimedOrphanIds.add(match.id);
+            }
+          }
         }
 
         // Fields that ALWAYS sync (safe to refresh from Square every time).
