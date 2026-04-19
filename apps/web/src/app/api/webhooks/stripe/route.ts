@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { constructStripeEvent, handleSubscriptionUpdated, handleSubscriptionDeleted } from '@/lib/server/services/billingService';
 import { sendPaymentFailedEmail } from '@/lib/server/services/emailService';
 import { sendSms, sendSmsWithRetry } from '@/lib/server/services/twilioService';
+import { sms as i18nSms } from '@/lib/server/i18n';
 import { createOrder, pushOrderToPos } from '@/lib/server/services/orderService';
 import { getCallerState, setCallerState } from '@/lib/server/services/stateService';
 import { logger } from '@/lib/server/logger';
@@ -276,13 +277,23 @@ export async function POST(request: NextRequest) {
                   ? paidOrder.customerName
                   : null;
               const firstName = safeName?.trim().split(/\s+/)[0];
-              const greet = firstName ? `Hi ${firstName}! ` : '';
+              const contactLang = await prisma.contact
+                .findFirst({
+                  where: { tenantId, phone: callerPhone },
+                  select: { preferredLanguage: true },
+                })
+                .then((c) => c?.preferredLanguage ?? null)
+                .catch(() => null);
               // Critical — customer just paid and deserves confirmation.
               // Retry on transient Twilio failures.
               await sendSmsWithRetry(
                 tenantId,
                 callerPhone,
-                `${greet}Payment received for order #${paidOrder.orderNumber}. Thanks! Track it: ${trackerUrl}`,
+                i18nSms('paymentReceivedTracker', contactLang, {
+                  firstName,
+                  orderNumber: paidOrder.orderNumber,
+                  trackerUrl,
+                }),
                 2,
               );
             } catch (err) {
@@ -344,8 +355,24 @@ export async function POST(request: NextRequest) {
                 ? order.customerName
                 : null;
             const firstName = safeName?.trim().split(/\s+/)[0];
-            const greet = firstName ? `Hi ${firstName}! ` : '';
-            sendSmsWithRetry(tenantId, callerPhone, `${greet}Payment received! Order #${order.orderNumber} confirmed. Pickup: ${pickupTime}. Track: ${trackerUrl}`, 2).catch((err) =>
+            const contactLang = await prisma.contact
+              .findFirst({
+                where: { tenantId, phone: callerPhone },
+                select: { preferredLanguage: true },
+              })
+              .then((c) => c?.preferredLanguage ?? null)
+              .catch(() => null);
+            sendSmsWithRetry(
+              tenantId,
+              callerPhone,
+              i18nSms('paymentReceivedWithPickup', contactLang, {
+                firstName,
+                orderNumber: order.orderNumber,
+                pickupTime: pickupTime ?? '',
+                trackerUrl,
+              }),
+              2,
+            ).catch((err) =>
               logger.error('Failed to send payment confirmation SMS', { err, tenantId })
             );
           } else {
@@ -379,7 +406,14 @@ export async function POST(request: NextRequest) {
               orderDraft: null,
               lastMessageAt: Date.now(),
             });
-            sendSms(tenantId, callerPhone, 'Your payment link has expired. Text us to start a new order.').catch((err) =>
+            const expLang = await prisma.contact
+              .findFirst({
+                where: { tenantId, phone: callerPhone },
+                select: { preferredLanguage: true },
+              })
+              .then((c) => c?.preferredLanguage ?? null)
+              .catch(() => null);
+            sendSms(tenantId, callerPhone, i18nSms('paymentExpired', expLang, {})).catch((err) =>
               logger.error('Failed to send expiry SMS', { err, tenantId })
             );
           }

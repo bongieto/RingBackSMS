@@ -1,6 +1,7 @@
 import { prisma } from '../db';
 import { sendSms } from './twilioService';
 import { logger } from '../logger';
+import { sms as i18nSms } from '../i18n';
 
 /**
  * If the caller has a recently-completed order awaiting review and their
@@ -53,9 +54,16 @@ export async function tryConsumeReviewReply(
         comment,
       },
     });
-    const thanks = rating >= 4
-      ? `Thanks for the ${rating}-star rating! We appreciate you.`
-      : `Thanks for the feedback — sorry we missed the mark. Reply back if there's anything we can do.`;
+    // Honor caller's preferredLanguage so the thank-you matches the
+    // language the rest of the conversation was in.
+    const contact = await prisma.contact.findFirst({
+      where: { tenantId, phone: callerPhone },
+      select: { preferredLanguage: true },
+    });
+    const thanks =
+      rating >= 4
+        ? i18nSms('reviewThanksHigh', contact?.preferredLanguage ?? null, { rating })
+        : i18nSms('reviewThanksLow', contact?.preferredLanguage ?? null, {});
     await sendSms(tenantId, callerPhone, thanks).catch(() => {});
     logger.info('Order review saved', { orderId: order.id, rating });
     return true;

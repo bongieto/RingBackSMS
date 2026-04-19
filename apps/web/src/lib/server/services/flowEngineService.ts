@@ -756,10 +756,18 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     if (criticalFailure) {
       // Customer got the agent's "you'll get a payment link shortly"
       // reply already. If the link generation tanked, tell them now.
+      const { sms: i18nSms } = await import('@/lib/server/i18n');
+      const contactLang = await prisma.contact
+        .findFirst({
+          where: { tenantId, phone: callerPhone },
+          select: { preferredLanguage: true },
+        })
+        .then((c) => c?.preferredLanguage ?? null)
+        .catch(() => null);
       await sendSms(
         tenantId,
         callerPhone,
-        "Sorry — something went wrong processing your order. Please text us again to retry.",
+        i18nSms('orderProcessingFailed', contactLang, {}),
       ).catch(() => {});
       // Mark any partially-created order as UNPAID (not stuck in PENDING)
       // so operator-facing dashboards show it didn't finalize.

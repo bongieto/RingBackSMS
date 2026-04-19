@@ -5,6 +5,7 @@ import { getOrderById, updateOrderStatus } from '@/lib/server/services/orderServ
 import { refundOrderPayment } from '@/lib/server/services/paymentService';
 import { sendSms, sendSmsWithRetry } from '@/lib/server/services/twilioService';
 import { looksEncrypted } from '@/lib/server/encryption';
+import { sms as i18nSms } from '@/lib/server/i18n';
 import { prisma } from '@/lib/server/db';
 import { logger } from '@/lib/server/logger';
 import { z } from 'zod';
@@ -32,6 +33,7 @@ function buildStatusSms(
   businessName: string,
   prepMins: number | null,
   customerName: string | null,
+  lang: string | null | undefined,
 ): string | null {
   // Pull just the first name so "Rolando Cabral" becomes "Rolando" — keeps
   // SMS copy conversational and under the 160-char GSM limit.
@@ -40,20 +42,20 @@ function buildStatusSms(
   const safeName =
     customerName && !looksEncrypted(customerName) ? customerName : null;
   const firstName = safeName?.trim().split(/\s+/)[0];
-  const greet = firstName ? `Hi ${firstName}! ` : '';
   const trackerUrl = `${appUrl()}/o/${orderId}`;
   const receiptUrl = `${appUrl()}/r/${orderId}`;
+  const vars = { firstName, orderNumber, businessName, prepMins, trackerUrl, receiptUrl };
   switch (status) {
     case OrderStatus.CONFIRMED:
       return prepMins
-        ? `${greet}${businessName} got your order #${orderNumber}. Ready in ~${prepMins} min. Track it: ${trackerUrl}`
-        : `${greet}${businessName} got your order #${orderNumber}. Track it: ${trackerUrl}`;
+        ? i18nSms('statusConfirmedWithPrep', lang, vars)
+        : i18nSms('statusConfirmed', lang, vars);
     case OrderStatus.PREPARING:
-      return `${greet}${businessName} is preparing your order #${orderNumber} now!`;
+      return i18nSms('statusPreparing', lang, vars);
     case OrderStatus.READY:
-      return `${greet}Your order #${orderNumber} from ${businessName} is READY for pickup! Receipt: ${receiptUrl}`;
+      return i18nSms('statusReady', lang, vars);
     case OrderStatus.CANCELLED:
-      return `${greet}Sorry — your order #${orderNumber} from ${businessName} has been cancelled. Please call us if you have questions.`;
+      return i18nSms('statusCancelled', lang, vars);
     default:
       return null;
   }
@@ -84,14 +86,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       !!order.stripePaymentId &&
       !order.stripeRefundId;
 
-    // Fire-and-forget: send customer SMS notification on status change
+    // Fire-and-forget: send customer SMS notification on status change.
+    // Look up the caller's stored preferredLanguage so the SMS lands in
+    // the same language the agent's been speaking in.
     waitUntil(
       (async () => {
         try {
-          const tenant = await prisma.tenant.findUnique({
-            where: { id: tenantId },
-            select: { name: true, config: { select: { defaultPrepTimeMinutes: true } } },
-          });
+          const [tenant, contact] = await Promise.all([
+            prisma.tenant.findUnique({
+              where: { id: tenantId },
+              select: { name: true, config: { select: { defaultPrepTimeMinutes: true } } },
+            }),
+            prisma.contact.findFirst({
+              where: { tenantId, phone: order.callerPhone },
+              select: { preferredLanguage: true },
+            }),
+          ]);
           if (!tenant) return;
           const sms = buildStatusSms(
             status,
@@ -100,6 +110,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
             tenant.name,
             tenant.config?.defaultPrepTimeMinutes ?? null,
             order.customerName ?? null,
+            contact?.preferredLanguage ?? null,
           );
           if (sms) {
             // Status transitions are time-sensitive (READY = "come pick
@@ -132,10 +143,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           try {
             const already = await prisma.orderReview.findUnique({ where: { orderId: order.id } });
             if (already) return;
+            const [tenant, contact] = await Promise.all([
+              prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } }),
+              prisma.contact.findFirst({
+                where: { tenantId, phone: order.callerPhone },
+                select: { preferredLanguage: true },
+              }),
+            ]);
             await sendSms(
               tenantId,
               order.callerPhone,
-              `How was your order from ${(await prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } }))?.name ?? ''}? Reply 1-5 (5 = great!).`,
+              i18nSms('reviewPrompt', contact?.preferredLanguage ?? null, {
+                businessName: tenant?.name ?? '',
+              }),
             );
             logger.info('Review prompt SMS sent', { orderId: order.id });
           } catch (err: any) {
@@ -159,10 +179,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
             // first attempt, retry so the customer knows about the
             // refund. Without this, a silent drop means the customer
             // thinks they were charged without refund recourse.
+            const contactLang = await prisma.contact
+              .findFirst({
+                where: { tenantId, phone: order.callerPhone },
+                select: { preferredLanguage: true },
+              })
+              .then((c) => c?.preferredLanguage ?? null)
+              .catch(() => null);
             await sendSmsWithRetry(
               tenantId,
               order.callerPhone,
-              `A refund has been issued for order #${order.orderNumber}. It may take 5-10 days to appear on your card.`,
+              i18nSms('refundIssued', contactLang, { orderNumber: order.orderNumber }),
               2,
             );
             logger.info('Order refund issued', { tenantId, orderId: order.id, refundId });
