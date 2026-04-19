@@ -146,17 +146,23 @@ export async function generateMetadata(
   }
   const title = `Menu — ${tenant.name}`;
   const description = `Browse the menu for ${tenant.name} and text your order directly.`;
+  const logoUrl = tenant.brandLogoUrl ?? null;
   return {
     title,
     description,
-    // iMessage / SMS rich-link previews read Open Graph tags. Setting
-    // `siteName` to "Menu" makes the preview card show "Menu" instead of
-    // the bare domain (ringbacksms.com), which confuses customers.
+    // iMessage / SMS rich-link previews read Open Graph tags. Set
+    // siteName to the tenant's own name so the preview card shows
+    // "The Lumpia House & Truck" instead of the bare domain
+    // (ringbacksms.com) or our generic marketing title. Only emit an
+    // og:image when the tenant has uploaded a brand logo — better to
+    // ship a text-only card than leak the RingBackSMS default into the
+    // tenant's customer conversation.
     openGraph: {
       title,
       description,
-      siteName: 'Menu',
+      siteName: tenant.name,
       type: 'website',
+      ...(logoUrl ? { images: [{ url: logoUrl }] } : {}),
     },
     twitter: {
       card: 'summary',

@@ -5,11 +5,6 @@ import { PrintButton } from './_components/PrintButton';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = {
-  title: 'Receipt',
-  robots: { index: false, follow: false },
-};
-
 interface ReceiptItem {
   name: string;
   quantity: number;
@@ -45,11 +40,44 @@ async function loadOrder(orderId: string) {
         select: {
           name: true,
           twilioPhoneNumber: true,
-          config: { select: { timezone: true } },
+          config: { select: { timezone: true, brandLogoUrl: true } },
         },
       },
     },
   });
+}
+
+/**
+ * Make iMessage's link-preview card show the tenant's name (e.g. "The
+ * Lumpia House & Truck") instead of the generic RingBackSMS root
+ * metadata that would otherwise leak through. Omit og:image when the
+ * tenant hasn't set a brandLogoUrl — better to show a text-only card
+ * with their name than the RingBackSMS default logo.
+ */
+export async function generateMetadata(
+  { params }: { params: { id: string } },
+): Promise<Metadata> {
+  const order = await loadOrder(params.id);
+  if (!order) {
+    return { title: 'Receipt', robots: { index: false, follow: false } };
+  }
+  const tenantName = order.tenant.name;
+  const title = `Receipt #${order.orderNumber} · ${tenantName}`;
+  const description = `Your receipt from ${tenantName}.`;
+  const logoUrl = order.tenant.config?.brandLogoUrl ?? null;
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      siteName: tenantName,
+      type: 'website',
+      ...(logoUrl ? { images: [{ url: logoUrl }] } : {}),
+    },
+    twitter: { card: 'summary', title, description },
+    robots: { index: false, follow: false },
+  };
 }
 
 function formatDateTime(d: Date, timezone?: string | null): string {

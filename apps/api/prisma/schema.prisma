@@ -160,6 +160,8 @@ model Tenant {
   members            TenantMember[]
   smsCampaigns       SmsCampaign[]
   locations          TenantLocation[]
+  devices            Device[]
+  devicePairingCodes DevicePairingCode[]
 
   @@index([twilioPhoneNumber])
   @@index([clerkOrgId])
@@ -459,6 +461,45 @@ enum TenantMemberRole {
   KITCHEN
   VIEWER
   MEMBER
+}
+
+/// Short-lived code a manager generates from the web dashboard to pair a
+/// mobile device. Consumed by POST /api/devices/claim which mints a Device
+/// and marks the code consumed.
+model DevicePairingCode {
+  id          String    @id @default(uuid())
+  code        String    @unique
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  clerkUserId String
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([tenantId])
+  @@index([expiresAt])
+}
+
+/// A paired mobile device. The bearer token is stored hashed (SHA-256);
+/// revocation sets revokedAt and takes effect on the next request since
+/// Express middleware hits this table on every authenticated call.
+model Device {
+  id          String    @id @default(uuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  clerkUserId String
+  label       String
+  platform    String
+  tokenHash   String    @unique
+  fcmToken    String?
+  lastSeenAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([tenantId])
+  @@index([clerkUserId])
+  @@index([tokenHash])
 }
 
 /// Physical location / storefront under a tenant. For v1 every tenant

@@ -5,12 +5,6 @@ import { OrderTrackerClient } from './_components/OrderTrackerClient';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = {
-  title: 'Order status',
-  // Link-only access; don't surface in search.
-  robots: { index: false, follow: false },
-};
-
 /**
  * Public order-status tracker. Reachable by knowing the Order.id UUID —
  * we include the link in the payment-received / confirmation SMS. No
@@ -35,11 +29,51 @@ async function loadOrder(orderId: string) {
       estimatedReadyTime: true,
       total: true,
       createdAt: true,
-      tenant: { select: { name: true, slug: true } },
+      tenant: {
+        select: {
+          name: true,
+          slug: true,
+          config: { select: { brandLogoUrl: true } },
+        },
+      },
     },
   });
   if (!order) return null;
   return order;
+}
+
+/**
+ * iMessage/SMS link-preview cards pull og:site_name + og:title to render
+ * the label on the preview. We explicitly override with the tenant's
+ * name so the customer sees "The Lumpia House & Truck" instead of the
+ * RingBackSMS root metadata leaking through. Intentionally omit
+ * og:image when the tenant has no brandLogoUrl — the RingBackSMS
+ * /logo.png default would defeat the purpose.
+ */
+export async function generateMetadata(
+  { params }: { params: { id: string } },
+): Promise<Metadata> {
+  const order = await loadOrder(params.id);
+  if (!order) {
+    return { title: 'Order status', robots: { index: false, follow: false } };
+  }
+  const tenantName = order.tenant.name;
+  const title = `Order #${order.orderNumber} · ${tenantName}`;
+  const description = `Track your order from ${tenantName}.`;
+  const logoUrl = order.tenant.config?.brandLogoUrl ?? null;
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      siteName: tenantName,
+      type: 'website',
+      ...(logoUrl ? { images: [{ url: logoUrl }] } : {}),
+    },
+    twitter: { card: 'summary', title, description },
+    robots: { index: false, follow: false },
+  };
 }
 
 export default async function OrderTrackerPage({ params }: { params: { id: string } }) {

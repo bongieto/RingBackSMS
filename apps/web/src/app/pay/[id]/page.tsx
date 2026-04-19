@@ -5,11 +5,6 @@ import { PayClient } from './_components/PayClient';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata: Metadata = {
-  title: 'Complete payment',
-  robots: { index: false, follow: false },
-};
-
 /**
  * Tip-jar interstitial. Sits between the "Pay securely here:" SMS and
  * Stripe Checkout. Customer picks a tip preset, we regenerate a Stripe
@@ -33,9 +28,46 @@ async function loadOrder(orderId: string) {
       feeAmount: true,
       total: true,
       pickupTime: true,
-      tenant: { select: { name: true } },
+      tenant: {
+        select: {
+          name: true,
+          config: { select: { brandLogoUrl: true } },
+        },
+      },
     },
   });
+}
+
+/**
+ * Overriding root OG metadata so the "Pay securely here:" iMessage card
+ * shows the tenant's name, not the RingBackSMS default. Logo only
+ * emitted when the tenant has set brandLogoUrl — otherwise text-only is
+ * better than leaking the RingBackSMS logo into their customer's chat.
+ */
+export async function generateMetadata(
+  { params }: { params: { id: string } },
+): Promise<Metadata> {
+  const order = await loadOrder(params.id);
+  if (!order) {
+    return { title: 'Complete payment', robots: { index: false, follow: false } };
+  }
+  const tenantName = order.tenant.name;
+  const title = `Complete payment · ${tenantName}`;
+  const description = `Secure payment for your order from ${tenantName}.`;
+  const logoUrl = order.tenant.config?.brandLogoUrl ?? null;
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      siteName: tenantName,
+      type: 'website',
+      ...(logoUrl ? { images: [{ url: logoUrl }] } : {}),
+    },
+    twitter: { card: 'summary', title, description },
+    robots: { index: false, follow: false },
+  };
 }
 
 export default async function PayPage({ params }: { params: { id: string } }) {
