@@ -86,6 +86,17 @@ export function decryptMaybePlaintext(value: string | null | undefined): string 
 }
 
 /**
+ * Cheap format check: does this string look like our AES-256-GCM output
+ * (`iv:tag:ciphertext` base64)? Used as a defensive guard before we
+ * splice a name/email into customer-facing copy — a plaintext name will
+ * never match this pattern, so false positives are negligible.
+ */
+export function looksEncrypted(value: string | null | undefined): boolean {
+  if (typeof value !== 'string' || value.length === 0) return false;
+  return /^[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/.test(value);
+}
+
+/**
  * Deterministic HMAC-SHA256 of a normalized value, used to make encrypted
  * columns searchable at the SQL level (exact match only). Not reversible.
  *

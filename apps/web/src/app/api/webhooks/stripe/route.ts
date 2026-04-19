@@ -243,7 +243,14 @@ export async function POST(request: NextRequest) {
             try {
               const appBase = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://ringbacksms.com').replace(/\/+$/, '');
               const trackerUrl = `${appBase}/o/${paidOrder.id}`;
-              const firstName = paidOrder.customerName?.trim().split(/\s+/)[0];
+              // Defensive: never greet with an encrypted blob if one
+              // somehow leaked into Order.customerName.
+              const { looksEncrypted } = await import('@/lib/server/encryption');
+              const safeName =
+                paidOrder.customerName && !looksEncrypted(paidOrder.customerName)
+                  ? paidOrder.customerName
+                  : null;
+              const firstName = safeName?.trim().split(/\s+/)[0];
               const greet = firstName ? `Hi ${firstName}! ` : '';
               await sendSms(
                 tenantId,
@@ -303,7 +310,12 @@ export async function POST(request: NextRequest) {
             logger.info('Payment-first order created', { orderId: order.id, tenantId });
             const appBase = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://ringbacksms.com').replace(/\/+$/, '');
             const trackerUrl = `${appBase}/o/${order.id}`;
-            const firstName = order.customerName?.trim().split(/\s+/)[0];
+            const { looksEncrypted } = await import('@/lib/server/encryption');
+            const safeName =
+              order.customerName && !looksEncrypted(order.customerName)
+                ? order.customerName
+                : null;
+            const firstName = safeName?.trim().split(/\s+/)[0];
             const greet = firstName ? `Hi ${firstName}! ` : '';
             sendSms(tenantId, callerPhone, `${greet}Payment received! Order #${order.orderNumber} confirmed. Pickup: ${pickupTime}. Track: ${trackerUrl}`).catch((err) =>
               logger.error('Failed to send payment confirmation SMS', { err, tenantId })

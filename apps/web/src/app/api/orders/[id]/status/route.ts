@@ -4,6 +4,7 @@ import { OrderStatus } from '@prisma/client';
 import { getOrderById, updateOrderStatus } from '@/lib/server/services/orderService';
 import { refundOrderPayment } from '@/lib/server/services/paymentService';
 import { sendSms } from '@/lib/server/services/twilioService';
+import { looksEncrypted } from '@/lib/server/encryption';
 import { prisma } from '@/lib/server/db';
 import { logger } from '@/lib/server/logger';
 import { z } from 'zod';
@@ -34,7 +35,11 @@ function buildStatusSms(
 ): string | null {
   // Pull just the first name so "Rolando Cabral" becomes "Rolando" — keeps
   // SMS copy conversational and under the 160-char GSM limit.
-  const firstName = customerName?.trim().split(/\s+/)[0];
+  // Defensive: if the stored value happens to look like an AES blob (from
+  // a prior bug), skip the greeting rather than text it to the customer.
+  const safeName =
+    customerName && !looksEncrypted(customerName) ? customerName : null;
+  const firstName = safeName?.trim().split(/\s+/)[0];
   const greet = firstName ? `Hi ${firstName}! ` : '';
   const trackerUrl = `${appUrl()}/o/${orderId}`;
   const receiptUrl = `${appUrl()}/r/${orderId}`;
