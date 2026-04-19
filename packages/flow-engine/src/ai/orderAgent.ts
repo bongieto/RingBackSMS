@@ -24,6 +24,12 @@ import { calculateFlowPrepTime, formatReadyTime } from '../flows/orderFlow';
 // Cheap heuristic: did the customer just explicitly confirm?
 const CONFIRM_RE = /\b(yes|yep|yeah|yup|confirm|go ahead|place (it|the order)|that'?s right|correct|ok(ay)?|sure)\b/i;
 
+// Cheap heuristic: did the customer just explicitly ask to cancel?
+// Tight — we lost a $40 order to Claude auto-cancelling on a typo that
+// it couldn't parse, with no cancel-intent words in the customer's
+// message at all. Bar is high now: must see a literal cancel/stop word.
+const CANCEL_RE = /\b(cancel|nevermind|never mind|forget it|scratch that|clear (my|the) (order|cart)|start over|stop (the )?order)\b/i;
+
 /** Strip extended-thinking / reasoning tags that occasionally leak through
  *  from the model. Belt-and-suspenders: the SDK usually hides them, but
  *  some fallback providers (MiniMax) pass them through raw. Never ship
@@ -208,8 +214,15 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           }
           break;
         case 'cancel_order':
-          wantsCancel = true;
-          result = { ok: true, kind: 'cancel' };
+          // Gate: require explicit user cancel-intent in this turn.
+          // Otherwise Claude can kill the whole cart over a typo it
+          // couldn't parse — we've seen this in the wild.
+          if (CANCEL_RE.test(inboundMessage)) {
+            wantsCancel = true;
+            result = { ok: true, kind: 'cancel' };
+          } else {
+            result = { ok: false, error: 'customer did not explicitly ask to cancel' };
+          }
           break;
         case 'send_menu_link':
           wantsMenuLink = true;
