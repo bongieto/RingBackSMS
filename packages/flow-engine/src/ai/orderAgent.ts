@@ -314,6 +314,11 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
             ? aiResponse.text
             : `${queuePhrase}${etaPhrase}${totalLine} You'll get a payment link shortly — your order is confirmed once paid.`;
         const ownerNameLine = capturedName ? `\nName: ${capturedName}` : '';
+        // Emit SAVE_ORDER FIRST so CREATE_PAYMENT_LINK has context.orderId
+        // to build a /pay/{orderId} tip-jar interstitial link. Order is
+        // persisted with paymentStatus=PENDING; createOrder skips the POS
+        // push for pending orders, and the Stripe webhook triggers it
+        // after payment confirms.
         return {
           nextState: buildBaseState(input, draft, {
             flowStep: 'AWAITING_PAYMENT',
@@ -321,6 +326,20 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           }),
           smsReply: paymentReply.slice(0, 320),
           sideEffects: [
+            {
+              type: 'SAVE_ORDER',
+              payload: {
+                items: orderItems,
+                pickupTime: draft.pickupTime,
+                notes: draft.notes ?? null,
+                total,
+                subtotal: totals.subtotal,
+                taxAmount: totals.tax,
+                feeAmount: totals.fee,
+                customerName: capturedName,
+                paymentStatus: 'PENDING',
+              },
+            },
             {
               type: 'CREATE_PAYMENT_LINK',
               payload: {

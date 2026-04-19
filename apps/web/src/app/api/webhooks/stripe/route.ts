@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { constructStripeEvent, handleSubscriptionUpdated, handleSubscriptionDeleted } from '@/lib/server/services/billingService';
 import { sendPaymentFailedEmail } from '@/lib/server/services/emailService';
 import { sendSms } from '@/lib/server/services/twilioService';
-import { createOrder } from '@/lib/server/services/orderService';
+import { createOrder, pushOrderToPos } from '@/lib/server/services/orderService';
 import { getCallerState, setCallerState } from '@/lib/server/services/stateService';
 import { logger } from '@/lib/server/logger';
 import { prisma } from '@/lib/server/db';
@@ -183,15 +183,51 @@ export async function POST(request: NextRequest) {
           const tipFromMeta = session.metadata?.tipAmount
             ? Number(session.metadata.tipAmount)
             : null;
-          await prisma.order.update({
+          const paidOrder = await prisma.order.update({
             where: { id: orderId },
             data: {
               paymentStatus: 'PAID',
               stripePaymentId: paymentIntentId,
               ...(tipFromMeta != null && tipFromMeta > 0 ? { tipAmount: tipFromMeta } : {}),
             },
+            select: {
+              id: true,
+              conversationId: true,
+              items: true,
+              total: true,
+              tipAmount: true,
+              customerName: true,
+              squareOrderId: true,
+            },
           });
           logger.info('Order payment completed', { orderId, tenantId });
+
+          // Push to POS now that payment is confirmed. Skipped at
+          // createOrder time for PENDING orders. If the order was
+          // previously pushed (e.g. resubmitted), the adapter's
+          // idempotencyKey + presence of squareOrderId guards against
+          // double-push — Square will just return the same order.
+          if (!paidOrder.squareOrderId) {
+            const items = Array.isArray(paidOrder.items)
+              ? (paidOrder.items as unknown as Array<{
+                  menuItemId: string;
+                  name: string;
+                  quantity: number;
+                  price: number;
+                }>)
+              : [];
+            const totalCents = Math.round(
+              (Number(paidOrder.total) + Number(paidOrder.tipAmount ?? 0)) * 100,
+            );
+            pushOrderToPos(paidOrder.id, tenantId, paidOrder.conversationId, items, {
+              totalCents,
+              externalSource: 'Stripe',
+              externalSourceId: paymentIntentId,
+              customerName: paidOrder.customerName ?? null,
+            }).catch((err) =>
+              logger.error('POS push after payment failed', { err, orderId }),
+            );
+          }
           if (callerPhone) {
             const order = await prisma.order.findUnique({
               where: { id: orderId },

@@ -270,18 +270,24 @@ export async function createOrder(input: CreateOrderInput) {
   // If the order was already paid externally (e.g. Stripe), we also pass
   // totalCents + externalSource so the adapter records an external-tender
   // Payment — otherwise the order would sit OPEN in Square forever.
-  const totalCents = Math.round(Number(input.total) * 100);
-  const paidViaStripe = input.paymentStatus === 'PAID' && !!input.stripePaymentId;
-  waitUntil(
-    pushOrderToPos(order.id, input.tenantId, input.conversationId, input.items, {
-      totalCents: paidViaStripe ? totalCents : undefined,
-      externalSource: paidViaStripe ? 'Stripe' : undefined,
-      externalSourceId: paidViaStripe ? input.stripePaymentId : undefined,
-      customerName: input.customerName ?? null,
-    }).catch((err) =>
-      logger.error('POS push failed (non-fatal)', { err, orderId: order.id }),
-    ),
-  );
+  //
+  // SKIP POS push for PENDING orders — customer hasn't paid yet and may
+  // never pay. Pushing now would create phantom orders in Square. The
+  // Stripe webhook calls pushOrderToPos after payment confirms.
+  if (input.paymentStatus !== 'PENDING') {
+    const totalCents = Math.round(Number(input.total) * 100);
+    const paidViaStripe = input.paymentStatus === 'PAID' && !!input.stripePaymentId;
+    waitUntil(
+      pushOrderToPos(order.id, input.tenantId, input.conversationId, input.items, {
+        totalCents: paidViaStripe ? totalCents : undefined,
+        externalSource: paidViaStripe ? 'Stripe' : undefined,
+        externalSourceId: paidViaStripe ? input.stripePaymentId : undefined,
+        customerName: input.customerName ?? null,
+      }).catch((err) =>
+        logger.error('POS push failed (non-fatal)', { err, orderId: order.id }),
+      ),
+    );
+  }
 
   return order;
 }
@@ -292,7 +298,7 @@ export async function createOrder(input: CreateOrderInput) {
  * failure so the customer still gets their SMS confirmation even if
  * Square is temporarily unreachable.
  */
-async function pushOrderToPos(
+export async function pushOrderToPos(
   orderId: string,
   tenantId: string,
   conversationId: string,

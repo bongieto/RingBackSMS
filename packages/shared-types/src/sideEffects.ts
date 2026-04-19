@@ -27,6 +27,10 @@ export interface SaveOrderSideEffect {
     /** Customer's given name captured during the order (e.g. "Rolando").
      *  Shown on kitchen tickets and the READY SMS. */
     customerName?: string | null;
+    /** When 'PENDING', createOrder skips the POS push — we'll push after
+     *  Stripe confirms payment. Default is to push immediately (legacy
+     *  pay-after-order flow). */
+    paymentStatus?: 'PENDING' | 'PAID' | 'UNPAID';
   };
 }
 
