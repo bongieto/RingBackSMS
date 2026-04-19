@@ -295,7 +295,18 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
   // `callerContext` was fetched in parallel with the tenant lookup above.
   let callerMemory: CallerMemory | undefined;
   if (callerContext) {
-    const contactName: string | null = callerContext.contact?.name ?? null;
+    // Contact.name is stored encrypted (AES-256-GCM) — decrypt here before
+    // exposing as plain text to the rest of the flow engine. Older rows
+    // may still be legacy plaintext; decryptMaybePlaintext handles both.
+    let contactName: string | null = null;
+    if (callerContext.contact?.name) {
+      try {
+        const { decryptMaybePlaintext } = await import('../encryption');
+        contactName = decryptMaybePlaintext(callerContext.contact.name);
+      } catch {
+        contactName = null;
+      }
+    }
 
     let lastOrderSummary: string | null = null;
     let lastOrderItems: CallerMemory['lastOrderItems'] = undefined;

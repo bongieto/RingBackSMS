@@ -183,6 +183,12 @@ export async function POST(request: NextRequest) {
           const tipFromMeta = session.metadata?.tipAmount
             ? Number(session.metadata.tipAmount)
             : null;
+          // Single update+select gets us everything we need for POS push
+          // AND the confirmation SMS. Avoids a second findUnique that
+          // could throw and kill the whole webhook after the order's
+          // already been marked PAID (would orphan the customer — no
+          // confirmation SMS, no retry because our idempotency log
+          // dedups on retry).
           const paidOrder = await prisma.order.update({
             where: { id: orderId },
             data: {
@@ -192,6 +198,7 @@ export async function POST(request: NextRequest) {
             },
             select: {
               id: true,
+              orderNumber: true,
               conversationId: true,
               items: true,
               total: true,
@@ -228,18 +235,24 @@ export async function POST(request: NextRequest) {
               logger.error('POS push after payment failed', { err, orderId }),
             );
           }
+
+          // Confirmation SMS — wrap in try/catch so a Twilio blip
+          // doesn't make the webhook return 500 and stall Stripe retries
+          // while the order's already PAID in our DB.
           if (callerPhone) {
-            const order = await prisma.order.findUnique({
-              where: { id: orderId },
-              select: { orderNumber: true, customerName: true },
-            });
-            const appBase = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://ringbacksms.com').replace(/\/+$/, '');
-            const trackerUrl = `${appBase}/o/${orderId}`;
-            const firstName = order?.customerName?.trim().split(/\s+/)[0];
-            const greet = firstName ? `Hi ${firstName}! ` : '';
-            sendSms(tenantId, callerPhone, `${greet}Payment received for order #${order?.orderNumber ?? ''}. Thanks! Track it: ${trackerUrl}`).catch((err) =>
-              logger.error('Failed to send payment confirmation SMS', { err, orderId })
-            );
+            try {
+              const appBase = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://ringbacksms.com').replace(/\/+$/, '');
+              const trackerUrl = `${appBase}/o/${paidOrder.id}`;
+              const firstName = paidOrder.customerName?.trim().split(/\s+/)[0];
+              const greet = firstName ? `Hi ${firstName}! ` : '';
+              await sendSms(
+                tenantId,
+                callerPhone,
+                `${greet}Payment received for order #${paidOrder.orderNumber}. Thanks! Track it: ${trackerUrl}`,
+              );
+            } catch (err) {
+              logger.error('Payment confirmation SMS failed', { err, orderId });
+            }
           }
         } else if (tenantId && callerPhone) {
           // Payment-first flow: create the order now

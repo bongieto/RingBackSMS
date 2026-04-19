@@ -178,11 +178,14 @@ export async function createOrder(input: CreateOrderInput) {
     });
     if (existingContact?.name) {
       try {
-        const { decryptNullable } = await import('../encryption');
-        effectiveName = decryptNullable(existingContact.name);
+        // Use decryptMaybePlaintext: some legacy rows store Contact.name
+        // as plaintext (pre-encryption rollout); new rows are encrypted.
+        // This helper Just Works for both.
+        const { decryptMaybePlaintext } = await import('../encryption');
+        effectiveName = decryptMaybePlaintext(existingContact.name);
       } catch {
-        // If decryption fails (e.g. key rotated), leave null. Order still
-        // saves; we just lose the greeting for this one ticket.
+        // If decryption fails (e.g. key rotated, malformed data), leave
+        // null. Order still saves; we just lose the greeting.
       }
     }
   }
