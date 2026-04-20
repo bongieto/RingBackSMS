@@ -405,7 +405,24 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         const looksLikeQuestion =
           /\?\s*$/.test(inboundMessage.trim()) ||
           /^\s*(what|where|why|how|when|who|can\s+(i|you|we)|do\s+you|does|did|is\s+it|are\s+you)\b/i.test(inboundMessage);
-        if (!looksLikeQuestion) pickupParseFailed = true;
+        // Also don't fake-out on bare acknowledgments. Real-world
+        // repros from this transcript:
+        //   - Bot: "Added: ... What time would you like to pick up?"
+        //     then (after an unrelated pizza-not-on-menu exchange)
+        //     customer: "ah ok" → we replied "Sorry, I couldn't
+        //     understand that pickup time." The customer wasn't
+        //     answering the pickup prompt, they were acknowledging
+        //     the pizza reply.
+        //   - Bot: "We're currently closed... What time...?" customer:
+        //     "yes" → same bogus failure reply. "yes" is a confirm-ish
+        //     filler, not a pickup attempt.
+        // Letting these fall through to the normal reply path means
+        // the bot re-asks naturally ("What time would you like to
+        // pick up?") instead of scolding the customer for not giving
+        // a time they never tried to give.
+        const looksLikeAck =
+          /^\s*(ah+\s*)?(ok(ay)?|k|alr(ight)?|sure|cool|nice|great|thanks?|thx|ty|got it|mhm+|hmm+|oh+|aah+|ahh+|yes|yeah|yep|yup|ya|yass+|no|nope|nah)\b\s*[.!?]*\s*$/i.test(inboundMessage.trim());
+        if (!looksLikeQuestion && !looksLikeAck) pickupParseFailed = true;
       }
     }
 

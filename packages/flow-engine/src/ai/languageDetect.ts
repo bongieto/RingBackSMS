@@ -31,11 +31,17 @@ const TL_MARKERS = [
   // Politeness / affirmation particles — distinctive enough to match
   // as substrings without colliding with English tokens.
   'maraming', 'opo', 'hindi po', ' po ', ' po,', ' po.', ' po!', ' po?',
-  // Common Tagalog particle and cooking term. "prito" = fried (a
-  // cooking method, not a food name — safe to include unlike "lumpia"
-  // or "adobo"). ("ang" deliberately omitted — collides with English
-  // "hang on", "rang", etc.)
-  'yung', 'prito',
+  // Common Tagalog particle. ("ang" deliberately omitted — collides
+  // with English "hang on", "rang", etc.)
+  //
+  // "prito" was here briefly as a "cooking method, not a food name"
+  // — that rationale turned out to be wrong in practice. "Lumpia
+  // Prito" is the printed dish name on this tenant's menu, so every
+  // English SMS asking about it ("wheres my lumpia prito?") flipped
+  // language to Tagalog. Rule stands: markers must be LANGUAGE
+  // signals (greetings, particles, function words), never words that
+  // appear verbatim in menu item names, even if they're loan terms.
+  'yung',
 ];
 
 // Explicit "don't assume my language" signals. When the customer says
