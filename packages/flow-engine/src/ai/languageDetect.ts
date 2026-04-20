@@ -6,20 +6,32 @@
  *
  * Tested targets: Spanish (es) and Tagalog (tl). Easy to extend.
  */
+// IMPORTANT: never include FOOD names here, even if they're loanwords
+// from the target language. "lumpia", "adobo", "pancit", "tacos",
+// "pollo", "arroz" etc. show up on English-language restaurant menus
+// and get ordered by customers of every background. Real-world bug
+// this caused: every customer of a Filipino restaurant named "The
+// Lumpia House" sent a first SMS containing "lumpia" and got flipped
+// to Tagalog for the rest of the session. Markers must be LANGUAGE
+// signals — greetings, particles, function words — not menu items.
 const ES_MARKERS = [
   'hola', 'gracias', 'por favor', 'quiero', 'quisiera', 'necesito',
-  'tengo', 'esta', 'estoy', 'está', 'pedido', 'orden', 'cuánto', 'cuanto',
+  'tengo', 'esta', 'estoy', 'está', 'pedido', 'cuánto', 'cuanto',
   'dónde', 'donde', 'cuándo', 'cuando', 'para mí', 'para mi',
   'buenas', 'buenos dias', 'buenas tardes', 'buenas noches',
-  'tacos', 'pollo', 'arroz',
 ];
 
 const TL_MARKERS = [
   'salamat', 'kumusta', 'kamusta', 'paki', 'pabili', 'gusto ko',
   'meron ba', 'ilan', 'magkano', 'pwede', 'puwede',
-  'para sa akin', 'bigyan mo', 'lumpia', 'adobo', 'pancit', 'sinigang',
-  'kanin', 'ulam',
+  'para sa akin', 'bigyan mo',
 ];
+
+// Explicit "don't assume my language" signals. When the customer says
+// "I don't speak X" or "English please", clear sticky detection so the
+// agent drops back to English on the next turn.
+const EN_RESET_RE =
+  /\b(?:i\s*don'?t\s*(?:speak|understand|know)\s*(?:tagalog|spanish|espanol|español|filipino|tl|es|that)|english\s*(?:please|only)|in english|speak english)\b/i;
 
 function scoreMarkers(text: string, markers: string[]): number {
   let score = 0;
@@ -34,6 +46,11 @@ export function detectLanguage(
   inbound: string,
   previous: string | null | undefined,
 ): string | null {
+  // Explicit English reset always wins — lets the customer override a
+  // bad sticky detection by saying "I don't speak Tagalog" or
+  // "English please". We return 'en' (not null) so downstream code can
+  // distinguish "customer asked for English" from "no signal yet".
+  if (inbound && EN_RESET_RE.test(inbound)) return 'en';
   if (previous) return previous; // sticky once detected
   if (!inbound || inbound.length < 3) return null;
   const es = scoreMarkers(inbound, ES_MARKERS);

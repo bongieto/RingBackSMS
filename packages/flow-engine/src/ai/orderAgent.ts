@@ -22,13 +22,18 @@ import { buildOrderAgentSystemPrompt } from './buildAgentPrompt';
 import { calculateFlowPrepTime, formatReadyTime } from '../flows/orderFlow';
 
 // Cheap heuristic: did the customer just explicitly confirm?
-// Anchored to start-of-message so phrases like "I can confirm that's
-// not right" or "yes but change X" don't accidentally commit the
-// order. Entire message must be ONE of: a confirm word, a confirm
-// word with trailing punctuation, or two words starting with a
-// confirm word (e.g. "yes please", "confirm now").
-const CONFIRM_RE =
-  /^\s*(yes|yep|yeah|yup|yess+|ya|yah|yas|confirm|go ahead|place it|place the order|that'?s right|correct|ok|okay|sure|sounds good|do it|let'?s go)\s*[.!?]*\s*$/i;
+// Anchored to start-and-end of message so phrases like "I can confirm
+// that's not right" or "yes but change X" don't accidentally commit the
+// order. The whole message must be one or more confirm-phrase tokens
+// back-to-back, so "yes", "yes confirm", "yeah go ahead", "ok sure",
+// and "confirm please" all match. "yes but change X" does not (the
+// trailing content doesn't match any confirm token).
+const CONFIRM_TOKENS =
+  '(?:yes|yep|yeah|yup|yess+|ya|yah|yas|confirm|confirmed|go ahead|place it|place the order|that\'?s right|correct|ok|okay|sure|sounds good|do it|let\'?s go|please|now|thanks|thx)';
+const CONFIRM_RE = new RegExp(
+  `^\\s*${CONFIRM_TOKENS}(?:[\\s,]+${CONFIRM_TOKENS})*\\s*[.!?]*\\s*$`,
+  'i',
+);
 
 // Cheap heuristic: did the customer just explicitly ask to cancel?
 // Tight — we lost a $40 order to Claude auto-cancelling on a typo it
@@ -152,14 +157,19 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
     // runs so the new turn starts clean and Claude doesn't pile new
     // items on top of forgotten prior attempts.
     //
-    // Only AWAITING_PAYMENT truly blocks the wipe — once the customer
-    // is at /pay, we need to keep the items that have already been
-    // saved. ORDER_CONFIRM is just "I'm waiting on a yes"; a fresh
-    // order list during that state clearly means start over.
-    const inCommitFlow = currentState?.flowStep === 'AWAITING_PAYMENT';
+    // We used to gate this behind `flowStep !== 'AWAITING_PAYMENT'` to
+    // protect in-flight payments, but that caused a worse bug: after a
+    // confirmed order that never paid, the cart persisted, and the next
+    // "Order: ..." SMS from the same customer got piled on top. The
+    // compounded cart then got billed in full. Real-world repro:
+    //    8:04 PM  →  1× A1 confirmed, pending payment
+    //    8:10 PM  →  "Order: 2 #A6" → bot replied "1× A1, 2× A6" (!)
+    //    8:19 PM  →  "Order: 1 #A1" → bot replied "2× A1, 1× A6" (!)
+    // A fresh-order-list signal is a strong "I've moved on" — reset
+    // unconditionally. Item-level tweaks ("add a drink") don't match the
+    // fresh-list heuristic so the AWAITING_PAYMENT path is unaffected.
     const shouldResetCart =
       draft.items.length > 0 &&
-      !inCommitFlow &&
       (looksLikeFreshOrderList(inboundMessage) || looksLikeRejectCart(inboundMessage));
     if (shouldResetCart) {
       draft.items = [];
@@ -501,8 +511,12 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         `Your order has been placed! ${queuePhrase}${etaPhrase}${totalLine} We'll text you when it's ready!`;
 
       const ownerNameLine = capturedName ? `\nName: ${capturedName}` : '';
+      // Clear the draft out of nextState once the order is committed —
+      // ORDER_COMPLETE is terminal. Leaving items in state caused the
+      // NEXT order attempt to start with the prior cart's items, which
+      // billed customers for compounded orders they never placed.
       return {
-        nextState: buildBaseState(input, draft, {
+        nextState: buildBaseState(input, { items: [] }, {
           flowStep: 'ORDER_COMPLETE',
           customerName: capturedName,
         }),

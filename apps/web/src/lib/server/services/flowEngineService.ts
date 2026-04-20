@@ -357,23 +357,37 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     // Language: use the stored Contact.preferredLanguage when set. Otherwise
     // run the cheap marker heuristic on this inbound message; on a hit
     // we'll persist it below so subsequent turns stay in that language.
+    //
+    // The detector also returns 'en' when the customer explicitly says
+    // "I don't speak Tagalog" / "English please" — in that case we
+    // OVERWRITE any prior stored value, since a sticky mis-detection
+    // is exactly what this path exists to undo.
     let preferredLanguage: string | null = (callerContext.contact as { preferredLanguage?: string | null } | null)?.preferredLanguage ?? null;
-    if (!preferredLanguage) {
-      const { detectLanguage } = await import('@ringback/flow-engine');
-      const detected = detectLanguage(inboundMessage, null);
-      if (detected) {
-        preferredLanguage = detected;
-        // Fire-and-forget backfill so subsequent turns pick it up. Skip
-        // when we don't have a contact row yet — happens before first
-        // consent capture — since upsert-by-phone is its own dance.
-        if (callerContext.contact?.id) {
-          prisma.contact
-            .update({
-              where: { id: callerContext.contact.id },
-              data: { preferredLanguage: detected },
-            })
-            .catch(() => {});
-        }
+    const { detectLanguage } = await import('@ringback/flow-engine');
+    const detected = detectLanguage(inboundMessage, preferredLanguage);
+    if (detected === 'en' && preferredLanguage && preferredLanguage !== 'en') {
+      // Explicit reset — stored value was wrong, clear it.
+      preferredLanguage = 'en';
+      if (callerContext.contact?.id) {
+        prisma.contact
+          .update({
+            where: { id: callerContext.contact.id },
+            data: { preferredLanguage: 'en' },
+          })
+          .catch(() => {});
+      }
+    } else if (!preferredLanguage && detected && detected !== 'en') {
+      preferredLanguage = detected;
+      // Fire-and-forget backfill so subsequent turns pick it up. Skip
+      // when we don't have a contact row yet — happens before first
+      // consent capture — since upsert-by-phone is its own dance.
+      if (callerContext.contact?.id) {
+        prisma.contact
+          .update({
+            where: { id: callerContext.contact.id },
+            data: { preferredLanguage: detected },
+          })
+          .catch(() => {});
       }
     }
 
