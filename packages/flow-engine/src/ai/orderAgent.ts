@@ -60,27 +60,42 @@ function stripThinkTags(text: string): string {
 
 /** Heuristic: is this message the customer (re)stating their entire
  *  order rather than adding to an existing cart? Captures "Order: ...",
- *  "I want ...", and bullet-list phrasing. When TRUE and the cart is
- *  non-empty, we wipe the cart first so Claude doesn't pile new items
- *  on top of forgotten prior attempts. */
+ *  "I want ...", bullet-list phrasing, AND the menu-page-generated
+ *  format "N #code item name". When TRUE and the cart is non-empty, we
+ *  wipe the cart first so Claude doesn't pile new items on top of
+ *  forgotten prior attempts. */
 function looksLikeFreshOrderList(msg: string): boolean {
   const trimmed = msg.trim();
-  // First gate: message starts with an order-intent phrase.
+
+  // Explicit ADD-intent prefixes short-circuit to FALSE. "add 1 #a1" /
+  // "also two fries" are continuations of the existing cart, not
+  // fresh-order lists. Without this check the hash-code rule below
+  // would false-positive on "add #a6".
+  if (/^(add\b|also\b|and\b|plus\b|one more\b|another\b|one more of\b|give me (?:one|a|another) more\b)/i.test(trimmed)) {
+    return false;
+  }
+
+  // STRONG SIGNAL: the message begins with a menu-item hash code.
+  // Our menu page generates SMS drafts in the format
+  //   "Order: N #code item"  OR  "N #code item"  OR  "#code"
+  // and customers who tap the menu link always get one of those. Nothing
+  // else in the conversation corpus uses `#<short-alnum>` as a prefix,
+  // so false-positive risk is near zero. This catches the case where a
+  // customer re-taps the menu link and sends "1 #a1 lumpia regular" —
+  // which looked like a bare add to the prior heuristic.
+  if (/^\s*\d*\s*#[a-z0-9]{1,8}\b/i.test(trimmed)) return true;
+
+  // Otherwise: require an intent phrase + item signal + plausible length.
   const hasIntent = /^(order\s*:|i(?:'ll| would like| want| need| want to order)|can i (?:get|have|order)|(?:can we|we'd like to|we want to|we would like to) (?:get|have|order)|let me (?:get|have)|i'll have|gimme|we want|we need)\b/i.test(
     trimmed,
   );
   if (!hasIntent) return false;
-  // Second gate: require the message to mention an actual item signal
-  // (a number for quantity, an article, or just plain length). Filters
-  // out "I'll have what Maria has" style references where the customer
-  // isn't specifying new items.
   const hasQuantityOrArticle = /\b(\d+|a|an|the|some|another|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(
     trimmed,
   );
   if (!hasQuantityOrArticle) return false;
-  // Third gate: message is long enough to plausibly list items. A bare
-  // "I want it" or "I'll have" isn't a fresh order list — it's a
-  // confirmation reply or reference.
+  // "I want it" / "I'll have" alone isn't a fresh order list — it's a
+  // reference. Require some body.
   return trimmed.length >= 10;
 }
 
