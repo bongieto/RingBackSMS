@@ -673,13 +673,6 @@ export class SquareAdapter extends BasePosAdapter {
     const squareOrderId = response.result.order?.id;
     if (!squareOrderId) throw new Error('Square order creation failed');
 
-    // Square is used as KDS only — we send the ticket so kitchen staff see
-    // what to make, but we do NOT record a payment in Square. All financial
-    // data (revenue, tips, fees, taxes) lives in Stripe + RingbackSMS.
-    // Recording a Square payment would create a ledger mismatch because
-    // Square only knows catalog item prices while Stripe captured the full
-    // customer total (our tax + service fee + tip). Keeping Square payment-
-    // free means Square sales reports simply aren't used for this channel.
     const o = response.result.order;
     logger.info('Square KDS ticket created', {
       tenantId,
@@ -692,9 +685,58 @@ export class SquareAdapter extends BasePosAdapter {
       source: (o as any)?.source?.name,
     });
 
+    // Record an external-tender payment so Square routes the order to the
+    // KDS. Without a payment, orders sit as OPEN/unpaid and Square for
+    // Restaurants never sends them to the kitchen display — the ticket is
+    // invisible to staff (confirmed by testing: Owner.com and other
+    // third-party integrations that appear on the KDS all record a payment).
+    //
+    // We use Square's own calculated order total (not the Stripe total) so
+    // the amounts match exactly and Square doesn't flag the order as
+    // over/under-paid. Stripe remains the authoritative financial record;
+    // Square sales reports for this channel will show item subtotals only
+    // (no tax, tips, or service fees), which is an acceptable trade-off for
+    // getting KDS routing to work.
+    let externalPaymentId: string | null = null;
+    const squareOrderTotal = (o as any)?.totalMoney?.amount as bigint | number | undefined;
+    if (squareOrderTotal != null && Number(squareOrderTotal) > 0) {
+      try {
+        const paymentResp = await client.paymentsApi.createPayment({
+          sourceId: 'EXTERNAL',
+          idempotencyKey: `${metadata.idempotencyKey}-pay`,
+          amountMoney: {
+            amount: BigInt(Number(squareOrderTotal)),
+            currency: 'USD',
+          },
+          orderId: squareOrderId,
+          locationId: metadata.locationId,
+          externalDetails: {
+            type: 'OTHER',
+            source: metadata.externalSource ?? 'Stripe',
+            sourceId: metadata.externalSourceId ?? undefined,
+          },
+        });
+        externalPaymentId = paymentResp.result.payment?.id ?? null;
+        logger.info('Square external payment recorded', {
+          tenantId,
+          squareOrderId,
+          externalPaymentId,
+          amountCents: Number(squareOrderTotal),
+        });
+      } catch (payErr: any) {
+        // Non-fatal: the order is already in Square. KDS routing may not
+        // work without the payment but the order is not lost.
+        logger.warn('Square external payment failed (order still created)', {
+          tenantId,
+          squareOrderId,
+          err: payErr?.message,
+        });
+      }
+    }
+
     return {
       externalOrderId: squareOrderId,
-      externalPaymentId: null,
+      externalPaymentId,
       raw: response.result as unknown as Record<string, unknown>,
     };
   }
