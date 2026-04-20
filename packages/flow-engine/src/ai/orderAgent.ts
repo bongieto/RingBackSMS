@@ -29,7 +29,7 @@ import { calculateFlowPrepTime, formatReadyTime } from '../flows/orderFlow';
 // and "confirm please" all match. "yes but change X" does not (the
 // trailing content doesn't match any confirm token).
 const CONFIRM_TOKENS =
-  '(?:yes|yep|yeah|yup|yess+|ya|yah|yas|confirm|confirmed|go ahead|place it|place the order|that\'?s right|correct|ok|okay|sure|sounds good|do it|let\'?s go|please|now|thanks|thx)';
+  '(?:yes|yep|yeah|yup|yess+|ya|yah|yas|confirm|confirmed|go ahead|place it|place the order|that\'?s right|correct|ok|okay|sure|sounds good|do it|let\'?s go|please|now|thanks|thx|ready|ready to confirm|ready to order|ready to go|i\'?m ready|im ready|all set|good to go|lock it in)';
 const CONFIRM_RE = new RegExp(
   `^\\s*${CONFIRM_TOKENS}(?:[\\s,]+${CONFIRM_TOKENS})*\\s*[.!?]*\\s*$`,
   'i',
@@ -328,6 +328,27 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           mutationNotices.push(result.message);
         }
       }
+    }
+
+    // ── LLM-FAILED-TO-CONFIRM SAFETY NET ──
+    // If the previous turn landed the customer in ORDER_CONFIRM (i.e.
+    // we just showed the "Anything else, or ready to confirm?" prompt)
+    // and their current message is an unambiguous commit phrase, commit
+    // even if the LLM failed to call confirm_order. Real-world repro:
+    // "ready to confirm", "ready", "all set" — the LLM sometimes
+    // interprets these as conversational acknowledgments and re-summarizes
+    // the cart instead of committing. The CONFIRM_RE whole-message
+    // anchor is our guardrail against false positives like "I'm ready
+    // to add more" (which won't match because "to add more" isn't a
+    // confirm token).
+    if (
+      !wantsConfirm &&
+      !wantsCancel &&
+      currentState?.flowStep === 'ORDER_CONFIRM' &&
+      draft.items.length > 0 &&
+      CONFIRM_RE.test(inboundMessage)
+    ) {
+      wantsConfirm = true;
     }
 
     // ── CANCEL ──
