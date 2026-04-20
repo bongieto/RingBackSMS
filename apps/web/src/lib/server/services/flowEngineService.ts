@@ -788,9 +788,14 @@ export async function processInboundSms(
     const CRITICAL_EFFECTS = new Set(['SAVE_ORDER', 'CREATE_PAYMENT_LINK']);
     const sideEffectContext: Record<string, any> = {};
     let criticalFailure: { effect: string; error: string } | null = null;
+    // In testMode, selectively execute DB-only effects so the admin bot
+    // tester can simulate payment webhooks against a real Order row.
+    // Everything that talks to external systems (Stripe, Square, Twilio,
+    // email/Slack notifications) stays skipped.
+    const TEST_MODE_EXECUTABLE = new Set(['SAVE_ORDER']);
     for (const effect of result.sideEffects) {
       if (criticalFailure) break; // abort chain once a critical effect fails
-      if (testMode) continue; // test mode: collect-only, do not execute
+      if (testMode && !TEST_MODE_EXECUTABLE.has(effect.type)) continue;
       try {
         await processSideEffect(effect, tenantId, conversationId as string, callerPhone, sideEffectContext);
       } catch (effectErr: any) {

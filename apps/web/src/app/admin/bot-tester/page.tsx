@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { webApi } from '@/lib/api';
 import { toast } from 'sonner';
-import { Send, RefreshCw, Bot, User as UserIcon, Zap } from 'lucide-react';
+import { Send, RefreshCw, Bot, User as UserIcon, Zap, CreditCard } from 'lucide-react';
 
 interface AdminTenant {
   id: string;
@@ -72,6 +72,12 @@ export default function BotTesterPage() {
     const text = input.trim();
     if (!text || !tenantId || sending) return;
     setInput('');
+    // Special-case: /paid triggers the simulated Stripe webhook path
+    // instead of running the flow engine. Mirrors clicking "Mark paid".
+    if (/^\/paid\b/i.test(text)) {
+      await markPaid(text);
+      return;
+    }
     const userMsg: ChatMessage = { role: 'user', content: text, at: Date.now() };
     setMessages((m) => [...m, userMsg]);
     setSending(true);
@@ -106,6 +112,60 @@ export default function BotTesterPage() {
       setSending(false);
     }
   }
+
+  async function markPaid(triggerLabel = '[Mark paid]') {
+    if (!tenantId || sending) return;
+    const userMsg: ChatMessage = {
+      role: 'user',
+      content: triggerLabel,
+      at: Date.now(),
+    };
+    setMessages((m) => [...m, userMsg]);
+    setSending(true);
+    try {
+      const res = await webApi.post('/admin/bot-tester/mark-paid', {
+        tenantId,
+        ...(callerPhone.trim() && { callerPhone: callerPhone.trim() }),
+      });
+      const data = res.data.data as {
+        reply: string;
+        sideEffects: SideEffect[];
+        flowType: string;
+        flowStep: string | null;
+        orderNumber: string;
+      };
+      const botMsg: ChatMessage = {
+        role: 'bot',
+        content: data.reply || '(no reply)',
+        sideEffects: data.sideEffects,
+        flowType: data.flowType,
+        flowStep: data.flowStep,
+        at: Date.now(),
+      };
+      setMessages((m) => [...m, botMsg]);
+      toast.success(`Order ${data.orderNumber} marked PAID (simulated)`);
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.error ?? err?.message ?? 'Mark-paid failed';
+      toast.error(msg);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  // "Mark paid" is enabled once the most recent bot turn shows a
+  // CREATE_PAYMENT_LINK side effect (= the agent just handed over the
+  // payment link; in prod this is where we'd wait for the Stripe webhook).
+  const canMarkPaid = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role !== 'bot') continue;
+      return (m.sideEffects ?? []).some(
+        (se) => se.type === 'CREATE_PAYMENT_LINK',
+      );
+    }
+    return false;
+  }, [messages]);
 
   async function resetSession() {
     if (!tenantId) return;
@@ -171,14 +231,30 @@ export default function BotTesterPage() {
       <Card className="bg-slate-900 border-slate-800">
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <CardTitle className="text-white text-base">Conversation</CardTitle>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={resetSession}
-            className="text-slate-400 hover:text-white"
-          >
-            <RefreshCw className="w-4 h-4 mr-1" /> Reset session
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => markPaid()}
+              disabled={!canMarkPaid || sending}
+              className="text-emerald-400 hover:text-emerald-300 disabled:text-slate-600"
+              title={
+                canMarkPaid
+                  ? 'Simulate Stripe webhook firing for the pending order'
+                  : 'Place + confirm an order first so there is a payment link to simulate'
+              }
+            >
+              <CreditCard className="w-4 h-4 mr-1" /> Mark paid
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={resetSession}
+              className="text-slate-400 hover:text-white"
+            >
+              <RefreshCw className="w-4 h-4 mr-1" /> Reset session
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <div
@@ -186,9 +262,13 @@ export default function BotTesterPage() {
             className="h-[480px] overflow-y-auto px-4 py-3 space-y-3 border-t border-slate-800"
           >
             {messages.length === 0 && (
-              <div className="text-center text-slate-500 text-sm py-12">
-                Send a message to start. Try "menu", "order: 1 #A1", "yes
-                confirm".
+              <div className="text-center text-slate-500 text-sm py-12 px-4 leading-relaxed">
+                Send a message to start. Try <code className="text-slate-400">menu</code>,{' '}
+                <code className="text-slate-400">order: 1 #A1</code>,{' '}
+                <code className="text-slate-400">yes confirm</code>.<br />
+                After a payment link fires, click <span className="text-emerald-400">Mark paid</span>{' '}
+                or type <code className="text-slate-400">/paid</code> to
+                simulate the Stripe webhook.
               </div>
             )}
             {messages.map((m, i) => (
