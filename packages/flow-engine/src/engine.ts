@@ -8,8 +8,16 @@ import { runOrderAgent } from './ai/orderAgent';
 import { FlowType } from '@ringback/shared-types';
 
 function routeOrder(input: FlowInput): Promise<FlowOutput> {
+  // AI order agent is the default when a tool-use chat fn is wired.
+  // Tenants can opt OUT via `aiOrderAgentEnabled: false` as a kill
+  // switch — e.g. if the agent is misbehaving for a specific tenant's
+  // menu shape — but the legacy regex flow is no longer the default.
+  // Previous default (opt-in) left tenants on a flow that silently
+  // dropped 3 of 4 items in comma-separated orders; the agent with
+  // its deterministic safety nets handles multi-item reliably.
   const cfg = input.tenantContext.config as { aiOrderAgentEnabled?: boolean };
-  if (cfg.aiOrderAgentEnabled && input.chatWithToolsFn) {
+  const agentEnabled = cfg.aiOrderAgentEnabled !== false;
+  if (agentEnabled && input.chatWithToolsFn) {
     return runOrderAgent(input);
   }
   return processOrderFlow(input);

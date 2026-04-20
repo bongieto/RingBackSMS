@@ -396,7 +396,16 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         // Short reply to "what time pickup?" that doesn't look like any
         // time phrase we recognize. Flag for a clearer re-ask below so
         // the customer doesn't silently loop.
-        pickupParseFailed = true;
+        //
+        // HOWEVER: don't fake-out on obvious questions. Real-world
+        // repro — customer in ORDER_CONFIRM asked "what happened to my
+        // other orders?" and we replied "Sorry, I couldn't understand
+        // that pickup time" because flowStep was ORDER_CONFIRM + no
+        // pickup + items>0. Questions are never pickup-time answers.
+        const looksLikeQuestion =
+          /\?\s*$/.test(inboundMessage.trim()) ||
+          /^\s*(what|where|why|how|when|who|can\s+(i|you|we)|do\s+you|does|did|is\s+it|are\s+you)\b/i.test(inboundMessage);
+        if (!looksLikeQuestion) pickupParseFailed = true;
       }
     }
 
@@ -774,8 +783,11 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
 
     // ── CLARIFICATION or mutation only ──
     const hasAnyToolCall = aiResponse.toolCalls.length > 0;
-    if (!hasAnyToolCall && !aiResponse.text) {
-      // No signal at all — let the regex flow handle it this turn
+    if (!hasAnyToolCall && !aiResponse.text && !anyMutation) {
+      // No signal at all AND our deterministic safety nets didn't
+      // mutate anything — let the regex flow handle it this turn.
+      // (Previously: checked only LLM output, which discarded
+      // safety-net-added items when the LLM also stayed silent.)
       return processOrderFlow(input);
     }
 
