@@ -23,8 +23,19 @@ const ES_MARKERS = [
 
 const TL_MARKERS = [
   'salamat', 'kumusta', 'kamusta', 'paki', 'pabili', 'gusto ko',
-  'meron ba', 'ilan', 'magkano', 'pwede', 'puwede',
+  'meron ba', 'meron', 'wala', 'ilan', 'magkano', 'pwede', 'puwede',
   'para sa akin', 'bigyan mo',
+  // Time/day words — show up in pickup-time phrasing like "bukas 12pm"
+  // and are strong Tagalog signals (not English substrings of note).
+  'bukas', 'mamaya', 'ngayon', 'kanina',
+  // Politeness / affirmation particles — distinctive enough to match
+  // as substrings without colliding with English tokens.
+  'maraming', 'opo', 'hindi po', ' po ', ' po,', ' po.', ' po!', ' po?',
+  // Common Tagalog particle and cooking term. "prito" = fried (a
+  // cooking method, not a food name — safe to include unlike "lumpia"
+  // or "adobo"). ("ang" deliberately omitted — collides with English
+  // "hang on", "rang", etc.)
+  'yung', 'prito',
 ];
 
 // Explicit "don't assume my language" signals. When the customer says
