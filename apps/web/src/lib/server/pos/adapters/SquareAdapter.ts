@@ -603,7 +603,9 @@ export class SquareAdapter extends BasePosAdapter {
     const tokens = await this.loadTokens(tenantId);
     if (!tokens) throw new Error('Tenant not connected to Square');
 
+    const squareEnv = process.env.SQUARE_ENVIRONMENT ?? 'production';
     const client = buildSquareClient(tokens.accessToken);
+    logger.info('Square createOrder: environment check', { tenantId, squareEnv, locationId: metadata.locationId });
 
     // Build a PICKUP fulfillment so Square for Restaurants KDS routes
     // the ticket to the kitchen screen. Without a fulfillment the order
