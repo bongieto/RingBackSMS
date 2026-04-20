@@ -421,6 +421,14 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
     // Only runs when the LLM added NOTHING this turn — we never
     // second-guess a live add_items call. If the customer is clarifying
     // an already-added item, the cart won't be empty and we skip.
+    // Tracks whether the safety net actually added any items this turn.
+    // If it did AND the LLM separately called ask_clarification about
+    // those same items being unavailable (common failure mode on
+    // verbose multilingual input: LLM hallucinates "we don't have
+    // lumpia prito" while the menu clearly lists it), we need to
+    // discard the stale clarification so the reply reflects the real
+    // state of the cart.
+    let safetyNetAddedItems = false;
     if (!anyMutation || draft.items.length === 0) {
       const phraseHits = findItemPhraseMatches(inboundMessage, tenantContext.menuItems);
       if (phraseHits.length > 0) {
@@ -488,8 +496,28 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           );
           if (result.ok && result.kind === 'mutated') {
             anyMutation = true;
+            safetyNetAddedItems = true;
           }
         }
+      }
+    }
+
+    // If the safety net added items that the LLM's ask_clarification
+    // falsely claimed were unavailable, discard the clarification.
+    // Heuristic: clarification was about item availability if its
+    // question mentions "not on the menu" / "don't have" / "don't
+    // carry" / Tagalog "wala kami" / Spanish "no tenemos". Safer than
+    // blanket-discarding every clarification — we still want to
+    // preserve legitimate ones ("which size?", "spicy or regular?").
+    if (safetyNetAddedItems && clarification) {
+      const q = clarification.question.toLowerCase();
+      const saysUnavailable =
+        /\b(not on (the |our )?menu|don'?t (have|carry|offer|serve)|we don'?t|isn'?t on|no (esta|tenemos)|wala kami|hindi namin|wala po)\b/i.test(q);
+      if (saysUnavailable) {
+        clarification = null;
+        // Also blank the LLM's text reply — it's saying the opposite of
+        // what just happened. The fallback/echo path will rebuild.
+        (aiResponse as { text: string }).text = '';
       }
     }
 
@@ -858,11 +886,13 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       if (!replyMentionsTime) {
         const summary = draft.items
           .map((i) => {
-            // Pull the menu code prefix from the matching menu item
-            // when available — kitchen parity across languages.
-            const mi = tenantContext.menuItems.find((m) => m.id === i.menuItemId);
-            const code = mi?.id ? `#${mi.id} ` : '';
-            return `${i.quantity}× ${code}${i.name}`;
+            // Menu items already encode their customer-facing code
+            // ("#A4 Lumpia Prito") inside the name field itself — that's
+            // how tenants configure them. Don't prepend anything extra:
+            // the previous `#${mi.id}` prefix leaked the internal UUID
+            // into customer replies because MenuItem.id is a DB UUID,
+            // not the public "A4" code.
+            return `${i.quantity}× ${i.name}`;
           })
           .join(', ');
         const total = computeTotal(draft).toFixed(2);
