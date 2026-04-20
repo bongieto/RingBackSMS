@@ -18,7 +18,7 @@ import {
   type ToolResult,
 } from './orderAgentTools';
 import { filterMenuForPrompt } from './menuFilter';
-import { buildOrderAgentSystemPrompt } from './buildAgentPrompt';
+import { buildOrderAgentSystemPrompt, findItemPhraseMatches } from './buildAgentPrompt';
 import { calculateFlowPrepTime, formatReadyTime } from '../flows/orderFlow';
 
 // Cheap heuristic: did the customer just explicitly confirm?
@@ -400,6 +400,90 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       }
     }
 
+    // ── LLM-FAILED-TO-ADD-ITEMS SAFETY NET ──
+    // Multilingual/verbose messages sometimes cause the LLM to capture
+    // pickup time but drop the add_items tool call — the order phrase
+    // is there, but buried under enough non-English tokens that tool
+    // routing flakes. Since findItemPhraseMatches already identified
+    // exact-phrase menu hits deterministically, fall back to adding
+    // those items ourselves. Quantity is inferred from the nearest
+    // preceding integer (within 4 tokens); defaults to 1.
+    //
+    // Only runs when the LLM added NOTHING this turn — we never
+    // second-guess a live add_items call. If the customer is clarifying
+    // an already-added item, the cart won't be empty and we skip.
+    if (!anyMutation || draft.items.length === 0) {
+      const phraseHits = findItemPhraseMatches(inboundMessage, tenantContext.menuItems);
+      if (phraseHits.length > 0) {
+        // Tokenize the inbound for quantity lookup. Lowercase + strip
+        // punctuation; keep digit and word tokens.
+        // Tokenize AND apply the same Tagalog "-ng" ligature normalization
+        // the matcher uses, so "lumpiang" collapses to "lumpia" for the
+        // purposes of anchor finding. Keeps the raw token count identical
+        // (positions stay aligned with the raw message) — we only rewrite
+        // each token in place.
+        const tokens = inboundMessage
+          .toLowerCase()
+          .replace(/[^a-z0-9\s]/g, ' ')
+          .split(/\s+/)
+          .filter(Boolean)
+          .map((t) => t.replace(/(\w)ng$/, '$1'));
+        // Track which token indices have already been claimed by a
+        // previous hit's phrase so multi-item messages ("2 lumpia
+        // prito and 3 lumpia regular") don't both anchor on the first
+        // "lumpia" and inherit the wrong quantity.
+        const claimed = new Set<number>();
+        for (const hit of phraseHits) {
+          const alreadyInCart = draft.items.some((l) => l.menuItemId === hit.item.id);
+          if (alreadyInCart) continue;
+
+          const phraseTokens = hit.phrase.split(/\s+/).filter(Boolean);
+          // Strict anchor: find a window of phraseTokens.length
+          // consecutive tokens that contains ALL phrase tokens (with all
+          // positions unclaimed). This prevents "2 lumpia prito and 3
+          // lumpia regular" from anchoring A1="lumpia regular" on the
+          // first "lumpia" — since that window is [lumpia, prito] which
+          // doesn't contain "regular".
+          let anchor = -1;
+          for (let i = 0; i + phraseTokens.length <= tokens.length; i++) {
+            let allUnclaimed = true;
+            for (let k = 0; k < phraseTokens.length; k++) {
+              if (claimed.has(i + k)) { allUnclaimed = false; break; }
+            }
+            if (!allUnclaimed) continue;
+            const windowSet = new Set(tokens.slice(i, i + phraseTokens.length));
+            const allPresent = phraseTokens.every((pt) => windowSet.has(pt));
+            if (allPresent) {
+              anchor = i;
+              for (let k = 0; k < phraseTokens.length; k++) claimed.add(i + k);
+              break;
+            }
+          }
+          let quantity = 1;
+          if (anchor > 0) {
+            for (let j = anchor - 1; j >= Math.max(0, anchor - 4); j--) {
+              if (claimed.has(j)) continue;
+              const n = parseInt(tokens[j], 10);
+              if (!isNaN(n) && n >= 1 && n <= 50) {
+                quantity = n;
+                claimed.add(j);
+                break;
+              }
+            }
+          }
+
+          const result = handleAddItems(
+            draft,
+            tenantContext.menuItems,
+            { items: [{ menu_item_id: hit.item.id, quantity, modifiers: [] }] },
+          );
+          if (result.ok && result.kind === 'mutated') {
+            anyMutation = true;
+          }
+        }
+      }
+    }
+
     // ── LLM-FAILED-TO-CONFIRM SAFETY NET ──
     // If the previous turn landed the customer in ORDER_CONFIRM (i.e.
     // we just showed the "Anything else, or ready to confirm?" prompt)
@@ -743,19 +827,52 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       // If Claude's own reply already echoes the time, trust it.
       // Otherwise force an explicit echo so the customer sees their
       // time landed.
+      //
+      // Language-awareness: when preferredLanguage is set (tl/es), use
+      // a localized template instead of the English default. The LLM's
+      // own reply is also checked in the target language's common
+      // idioms so we don't clobber a good LLM reply that already
+      // echoed the time. Regression this guards: Tagalog customer
+      // asked for pickup, LLM wrote English fallback, we clobbered
+      // with more English — now we write Tagalog explicitly.
+      const preferredLang = callerMemory?.preferredLanguage;
+      const replyHasTimeLiteral = baseReply.toLowerCase().includes(draft.pickupTime.toLowerCase());
+      const enIdiomHit = /\b(got it|scheduled|pickup (at|for))\b/i.test(baseReply);
+      const tlIdiomHit = /\b(nakuha|sige po|para sa|para bukas|para sa)\b/i.test(baseReply);
+      const esIdiomHit = /\b(entendido|para recoger|para las)\b/i.test(baseReply);
       const replyMentionsTime =
-        baseReply.toLowerCase().includes(draft.pickupTime.toLowerCase()) ||
-        /\b(got it|scheduled|pickup (at|for))\b/i.test(baseReply);
+        replyHasTimeLiteral ||
+        (preferredLang === 'tl' ? tlIdiomHit : preferredLang === 'es' ? esIdiomHit : enIdiomHit);
       if (!replyMentionsTime) {
         const summary = draft.items
-          .map((i) => `${i.quantity}× ${i.name}`)
+          .map((i) => {
+            // Pull the menu code prefix from the matching menu item
+            // when available — kitchen parity across languages.
+            const mi = tenantContext.menuItems.find((m) => m.id === i.menuItemId);
+            const code = mi?.id ? `#${mi.id} ` : '';
+            return `${i.quantity}× ${code}${i.name}`;
+          })
           .join(', ');
         const total = computeTotal(draft).toFixed(2);
-        const head = summary
-          ? `Got it — pickup ${draft.pickupTime}. ${summary}. Total $${total}.`
-          : `Got it — pickup ${draft.pickupTime}.`;
-        const tail = summary ? ' Ready to confirm?' : ' What can I get you?';
-        baseReply = `${head}${tail}`;
+        if (preferredLang === 'tl') {
+          const head = summary
+            ? `Sige po — ${summary} para ${draft.pickupTime}. Total $${total}.`
+            : `Sige po — pickup ${draft.pickupTime}.`;
+          const tail = summary ? ' Kumpirmahin na po?' : ' Ano po ang gusto niyong i-order?';
+          baseReply = `${head}${tail}`;
+        } else if (preferredLang === 'es') {
+          const head = summary
+            ? `Entendido — ${summary} para las ${draft.pickupTime}. Total $${total}.`
+            : `Entendido — recoger ${draft.pickupTime}.`;
+          const tail = summary ? ' ¿Listo para confirmar?' : ' ¿Qué te gustaría ordenar?';
+          baseReply = `${head}${tail}`;
+        } else {
+          const head = summary
+            ? `Got it — pickup ${draft.pickupTime}. ${summary}. Total $${total}.`
+            : `Got it — pickup ${draft.pickupTime}.`;
+          const tail = summary ? ' Ready to confirm?' : ' What can I get you?';
+          baseReply = `${head}${tail}`;
+        }
       }
     }
 

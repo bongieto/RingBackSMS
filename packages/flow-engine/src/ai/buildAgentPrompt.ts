@@ -79,7 +79,7 @@ function normalizeForMatch(s: string): string {
  *  Returns a list of (phrase, item) pairs, preferring longer/more-specific
  *  names when multiple items match the same region (so "Lumpia Prito"
  *  wins over "Lumpia" alone). Plural "s" tolerated. */
-function findItemPhraseMatches(
+export function findItemPhraseMatches(
   inbound: string,
   menu: MenuItem[],
 ): Array<{ phrase: string; item: MenuItem }> {
