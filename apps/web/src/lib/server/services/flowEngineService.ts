@@ -335,6 +335,119 @@ export async function processInboundSms(
     );
   }
 
+  // ── Pre-flow-engine handlers ────────────────────────────────────────────
+  // Intercept specific message classes BEFORE we invoke the LLM. These
+  // cover compliance (STOP/HELP/START), safety (allergy), operational
+  // integrity (pause-orders), arrival validation ("I'm here"), and
+  // dedicated intents that the FALLBACK LLM has been handling badly
+  // (HOURS). See preHandlers.ts for rationale on each.
+  //
+  // Order matters: suppression → compliance keyword → ops → allergy →
+  // arrival → hours. Compliance keywords win even if the caller is
+  // suppressed (so a STOP re-confirms, a START unsuppresses).
+  {
+    const { handleComplianceKeyword, checkSuppression, handleOpsCommand,
+      handleAllergyIntent, handleArrivalIntent, handleHoursIntent } =
+      await import('./preHandlers');
+    const preCtx = {
+      tenantId,
+      tenantName: tenant.name,
+      tenantPhoneNumber: tenant.twilioPhoneNumber ?? null,
+      callerPhone,
+    };
+    const compliance = await handleComplianceKeyword(inboundMessage, preCtx);
+    const preResult =
+      compliance ??
+      (await checkSuppression(preCtx)) ??
+      handleOpsCommand(inboundMessage, preCtx) ??
+      handleAllergyIntent(inboundMessage, preCtx) ??
+      (await handleArrivalIntent(inboundMessage, preCtx)) ??
+      handleHoursIntent(inboundMessage, {
+        ...preCtx,
+        openNow: tenantContext.hoursInfo!.openNow,
+        todayHoursDisplay: tenantContext.hoursInfo!.todayHoursDisplay,
+        nextOpenDisplay: tenantContext.hoursInfo!.nextOpenDisplay,
+        weeklyHoursDisplay: tenantContext.hoursInfo!.weeklyHoursDisplay,
+        closesAtDisplay: tenantContext.hoursInfo!.closesAtDisplay ?? null,
+      });
+
+    if (preResult) {
+      logger.info('Pre-handler short-circuit', {
+        tenantId,
+        callerPhone,
+        reply: preResult.reply.slice(0, 80),
+      });
+      // Persist the turn so it shows up in the dashboard, then return
+      // without running the flow engine or emitting side effects
+      // through processSideEffect (testMode behavior mirrors this).
+      const newMessages = [
+        { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },
+        ...(preResult.reply
+          ? [{ role: 'assistant', content: preResult.reply, timestamp: new Date(), sender: 'bot' } as const]
+          : []),
+      ];
+      try {
+        let convoId = existingConversationId;
+        if (convoId) {
+          const existing = await prisma.conversation.findUnique({
+            where: { id: convoId },
+            select: { messages: true },
+          });
+          const messages = decryptMessages(existing?.messages);
+          await prisma.conversation.update({
+            where: { id: convoId },
+            data: {
+              messages: encryptMessages([...messages, ...newMessages]) as unknown as Prisma.InputJsonValue,
+              updatedAt: new Date(),
+            },
+          });
+        } else if (preResult.reply) {
+          const conv = await prisma.conversation.create({
+            data: {
+              tenantId,
+              callerPhone,
+              flowType: preResult.flowType,
+              messages: encryptMessages(newMessages) as unknown as Prisma.InputJsonValue,
+              isActive: true,
+            },
+          });
+          convoId = conv.id;
+        }
+        if (convoId) {
+          await setCallerState({
+            tenantId,
+            callerPhone,
+            conversationId: convoId,
+            currentFlow: preResult.flowType,
+            flowStep: null,
+            orderDraft: null,
+            lastMessageAt: Date.now(),
+            messageCount: (currentState?.messageCount ?? 0) + 1,
+            dedupKey: messageSid,
+          });
+        }
+      } catch (err) {
+        logger.error('Failed to persist pre-handler turn', { err, tenantId });
+      }
+
+      if (!testMode && preResult.reply) {
+        await sendSms(tenantId, callerPhone, preResult.reply).catch((err) =>
+          logger.error('Failed to send pre-handler SMS', { err, tenantId }),
+        );
+      }
+      if (testMode) {
+        const st = await getCallerState(tenantId, callerPhone);
+        return {
+          reply: preResult.reply,
+          sideEffects: preResult.sideEffects,
+          nextState: (st as unknown as ProcessInboundSmsTestResult['nextState']),
+          flowType: preResult.flowType,
+        };
+      }
+      return;
+    }
+  }
+
   // Build caller memory so the AI can greet by name and reference prior orders.
   // `callerContext` was fetched in parallel with the tenant lookup above.
   let callerMemory: CallerMemory | undefined;
@@ -674,6 +787,16 @@ export async function processInboundSms(
   if (isEscalation) {
     result.smsReply = "I'm connecting you with a team member who can help. Someone will follow up with you shortly!";
     logger.info('Escalation detected, handing off to human', { tenantId, callerPhone });
+  }
+
+  // Strip emoji + non-GSM-7 pictographs before sending. A single emoji
+  // bumps the whole SMS to UCS-2 encoding, halving the 160-char
+  // segment size and doubling cost. LLM replies regularly leak
+  // (e.g. "Order ready! ") despite prompt instructions — this is
+  // the belt-and-suspenders filter.
+  {
+    const { stripEmoji } = await import('./preHandlers');
+    result.smsReply = stripEmoji(result.smsReply);
   }
 
   // Upsert conversation FIRST so we can save state with the real
