@@ -127,7 +127,7 @@ export function parsePickupPhrase(raw: string): string | null {
   const hasClockTime = /\b\d{1,2}(:\d{2})?\s*(am|pm|a\.m\.|p\.m\.)\b/i.test(msg);
   const hasRelative = /\b(in\s+(a|an|\d+)\s+(min(ute)?s?|hour|hours|hr|hrs))\b/i.test(msg);
   const hasNamedTime = /\b(noon|midnight|tonight|morning|afternoon|evening)\b/i.test(msg);
-  const hasDay = /\b(today|tomorrow|(mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)(day)?)\b/i.test(msg);
+  const hasDay = /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tues|tue|weds|wed|thurs|thur|thu|fri|sat|sun)\b/i.test(msg);
   if (hasClockTime || hasRelative || hasNamedTime || (hasDay && /\d/.test(msg))) {
     // Strip filler "schedule for ", "pickup at ", "for " prefixes.
     return msg
@@ -194,6 +194,11 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
   try {
     const { tenantContext, inboundMessage, currentState, callerMemory, chatWithToolsFn, recentMessages } = input;
     const draft = cloneDraft(currentState?.orderDraft);
+    // Snapshot whether pickup was empty on entry — we use this below to
+    // detect "pickup was just captured this turn" regardless of whether
+    // the capture came via Claude's set_pickup_time tool OR our
+    // deterministic fallback parser. Both paths need the same echo.
+    const pickupWasEmptyOnEntry = !draft.pickupTime;
 
     // If the customer is restating their entire order ("Order: X, Y, Z"
     // or "I want X, Y, Z" / "can i get X"), or rejecting the bot's
@@ -368,16 +373,29 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
     // short/ambiguous to trip the tool routing). Without this the cart
     // stays stuck with null pickupTime forever and the closed-hours
     // confirm gate re-asks in a loop.
+    // Pickup was implicitly or explicitly asked for when:
+    //  - we routed to the dedicated PICKUP_TIME step
+    //  - we attached a pickup_time clarification
+    //  - the cart already has items but no pickup time (the fallback
+    //    reply in the prior turn ended with "What time pickup?"), so
+    //    a short time-phrase reply is almost certainly the answer.
     const wasAskedForPickup =
       currentState?.flowStep === 'PICKUP_TIME' ||
-      currentState?.pendingClarification?.field === 'pickup_time';
-    let pickupJustCaptured = false;
+      currentState?.pendingClarification?.field === 'pickup_time' ||
+      (currentState?.flowStep === 'ORDER_CONFIRM' &&
+        !currentState?.orderDraft?.pickupTime &&
+        (currentState?.orderDraft?.items?.length ?? 0) > 0);
+    let pickupParseFailed = false;
     if (wasAskedForPickup && !draft.pickupTime) {
       const parsed = parsePickupPhrase(inboundMessage);
       if (parsed) {
         draft.pickupTime = parsed;
-        pickupJustCaptured = true;
         anyMutation = true;
+      } else if (inboundMessage.trim().length <= 60) {
+        // Short reply to "what time pickup?" that doesn't look like any
+        // time phrase we recognize. Flag for a clearer re-ask below so
+        // the customer doesn't silently loop.
+        pickupParseFailed = true;
       }
     }
 
@@ -458,7 +476,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       const hours = tenantContext.hoursInfo;
       const pickupStrForHours = (draft.pickupTime ?? '').trim().toLowerCase();
       const pickupIsFutureScheduled =
-        /\btomorrow\b|\b(mon|tue|wed|thu|fri|sat|sun)(day|\.|\b)/i.test(pickupStrForHours);
+        /\btomorrow\b|\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tues|tue|weds|wed|thurs|thur|thu|fri|sat|sun)\b/i.test(pickupStrForHours);
       if (hours && hours.openNow === false && !pickupIsFutureScheduled) {
         const whenOpen = hours.nextOpenDisplay
           ? ` We open ${hours.nextOpenDisplay}.`
@@ -705,21 +723,39 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       return `Added: ${summary}. Total $${total}. ${next}`;
     }
 
-    // If we just captured pickup time via the fallback parser (LLM didn't
-    // call set_pickup_time), echo it explicitly so the customer knows
-    // their time landed — and then ask to confirm. QA consistently
-    // flagged "silent capture" as confusing UX.
+    // Echo captured pickup time explicitly so the customer knows their
+    // time landed. Fires whether Claude's set_pickup_time tool captured
+    // it OR our deterministic fallback parser did — both are "silent
+    // advance" from the customer's perspective without an echo. QA has
+    // flagged this UX gap in every round.
+    const pickupWasCapturedThisTurn =
+      pickupWasEmptyOnEntry && !!draft.pickupTime;
     let baseReply = (aiResponse.text || buildFallbackReply());
-    if (pickupJustCaptured && draft.pickupTime) {
-      const summary = draft.items
-        .map((i) => `${i.quantity}× ${i.name}`)
-        .join(', ');
-      const total = computeTotal(draft).toFixed(2);
-      const head = summary
-        ? `Got it — pickup ${draft.pickupTime}. ${summary}. Total $${total}.`
-        : `Got it — pickup ${draft.pickupTime}.`;
-      const tail = summary ? ' Ready to confirm?' : ' What can I get you?';
-      baseReply = `${head}${tail}`;
+    if (pickupParseFailed && !pickupWasCapturedThisTurn) {
+      // Override the LLM reply — if it silently advanced to "anything
+      // else?" the customer never got feedback that their time didn't
+      // land. This keeps them from looping on the closed-hours gate.
+      baseReply =
+        "Sorry, I couldn't understand that pickup time. Try something like \"tomorrow at noon\", \"Tuesday 12pm\", or \"ASAP\".";
+    }
+    if (pickupWasCapturedThisTurn && draft.pickupTime) {
+      // If Claude's own reply already echoes the time, trust it.
+      // Otherwise force an explicit echo so the customer sees their
+      // time landed.
+      const replyMentionsTime =
+        baseReply.toLowerCase().includes(draft.pickupTime.toLowerCase()) ||
+        /\b(got it|scheduled|pickup (at|for))\b/i.test(baseReply);
+      if (!replyMentionsTime) {
+        const summary = draft.items
+          .map((i) => `${i.quantity}× ${i.name}`)
+          .join(', ');
+        const total = computeTotal(draft).toFixed(2);
+        const head = summary
+          ? `Got it — pickup ${draft.pickupTime}. ${summary}. Total $${total}.`
+          : `Got it — pickup ${draft.pickupTime}.`;
+        const tail = summary ? ' Ready to confirm?' : ' What can I get you?';
+        baseReply = `${head}${tail}`;
+      }
     }
 
     // Surface dropped modifiers as a customer-visible postscript.

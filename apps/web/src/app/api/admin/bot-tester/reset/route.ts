@@ -53,12 +53,16 @@ export async function POST(request: NextRequest) {
       where: { tenantId, callerPhone },
     });
 
-    // Clear any sticky language pref on the sentinel contact so repro
-    // of language-detection bugs starts from a clean slate.
+    // Clear sticky state on the sentinel contact so repros start from a
+    // clean slate:
+    //  - preferredLanguage → language-detection regressions re-run fresh
+    //  - name → a phantom cached name ("Pepsi") kept leaking into the
+    //    paymentReceivedTracker greeting ("Hi Pepsi! Payment received…")
+    //    because CallerMemory.contactName is sourced from Contact.name.
     await prisma.contact
       .updateMany({
         where: { tenantId, phone: callerPhone },
-        data: { preferredLanguage: null },
+        data: { preferredLanguage: null, name: null },
       })
       .catch(() => {});
 
