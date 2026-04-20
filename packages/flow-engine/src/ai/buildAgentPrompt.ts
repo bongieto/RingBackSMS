@@ -74,6 +74,22 @@ function normalizeForMatch(s: string): string {
     .trim();
 }
 
+/** Strip a leading menu-catalog code prefix like "#A4 ", "#LB13 ",
+ *  "A1. ", from a menu item name. These are internal catalog codes
+ *  tenants bake into `MenuItem.name` itself (confirmed in the Square
+ *  adapter's orphan-matching normalizeName — same regex shape); real
+ *  customers don't say them aloud when ordering. Stripping gives us a
+ *  second variant to phrase-match against so "lumpia prito" can bind
+ *  to "#A4 Lumpia Prito (Fried Lumpia)".
+ *
+ *  Requires either a leading `#` or at least one letter before the
+ *  digits, so we never accidentally strip a leading quantity from an
+ *  inbound message ("3 lumpia prito" must keep its "3"). Only called
+ *  on menu names, not on inbound. */
+function stripMenuCodePrefix(s: string): string {
+  return s.replace(/^\s*(?:#[a-z]{0,3}\d+|[a-z]{1,3}\d+)\.?\s+/i, '').trim();
+}
+
 /** Scan the inbound message for exact menu-item-name phrase matches.
  *  Returns a list of (phrase, item) pairs, preferring longer/more-specific
  *  names when multiple items match the same region (so "Lumpia Prito"
@@ -103,6 +119,16 @@ export function findItemPhraseMatches(
       // "lumpiang prito" ↔ "lumpia prito": strip "ng" suffix from any word
       const dropNg = base.replace(/(\w)ng\b/g, '$1');
       if (dropNg !== base) variants.add(dropNg);
+      // Also strip any leading catalog code ("#A4 Lumpia Prito" → "lumpia
+      // prito"). Without this the base variant is "a4 lumpia prito", which
+      // never appears in customer phrasing — so multi-item compound orders
+      // ("my husband wants 3 lumpia prito...") failed the safety net
+      // entirely even though every item was on the menu. Regression caught
+      // in R13 testing on The Lumpia House menu.
+      const stripped = normalizeForMatch(stripMenuCodePrefix(item.name));
+      if (stripped && !variants.has(stripped)) variants.add(stripped);
+      const strippedNoNg = stripped.replace(/(\w)ng\b/g, '$1');
+      if (strippedNoNg && !variants.has(strippedNoNg)) variants.add(strippedNoNg);
       return { item, variants: Array.from(variants).filter((v) => v.length >= 3) };
     })
     .filter((x): x is { item: MenuItem; variants: string[] } => x !== null);

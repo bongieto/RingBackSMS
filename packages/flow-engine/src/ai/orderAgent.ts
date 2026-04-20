@@ -495,11 +495,28 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           }
           let quantity = 1;
           if (anchor > 0) {
+            // Word-numbers ("two kanto fries for the kids") are just as
+            // common in natural phrasing as digit-numbers. Map common
+            // ones so the safety net doesn't silently default to 1 when
+            // the customer spelled the quantity out.
+            const WORD_NUM: Record<string, number> = {
+              one: 1, two: 2, three: 3, four: 4, five: 5,
+              six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+              eleven: 11, twelve: 12, dozen: 12,
+              a: 1, an: 1, couple: 2, pair: 2,
+            };
             for (let j = anchor - 1; j >= Math.max(0, anchor - 4); j--) {
               if (claimed.has(j)) continue;
-              const n = parseInt(tokens[j], 10);
-              if (!isNaN(n) && n >= 1 && n <= 50) {
-                quantity = n;
+              const tok = tokens[j];
+              const asDigit = parseInt(tok, 10);
+              if (!isNaN(asDigit) && asDigit >= 1 && asDigit <= 50) {
+                quantity = asDigit;
+                claimed.add(j);
+                break;
+              }
+              const asWord = WORD_NUM[tok];
+              if (asWord != null) {
+                quantity = asWord;
                 claimed.add(j);
                 break;
               }
@@ -514,6 +531,51 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           if (result.ok && result.kind === 'mutated') {
             anyMutation = true;
             safetyNetAddedItems = true;
+          }
+        }
+      }
+    }
+
+    // ── PICKUP-TIME & NAME SAFETY NET ──
+    // Companion to the items safety net above. When the LLM punts on a
+    // dense compound first-turn message ("my husband wants 3 lumpia
+    // prito, I want 2 lumpia sariwa, and two kanto fries for the kids,
+    // pickup at 7pm friday, name Cabral") it tends to drop EVERYTHING —
+    // items, pickup time, and name — not just items. Since we just
+    // rebuilt the cart deterministically, try the same for pickup + name
+    // so the R13 acceptance scenario resolves in one round-trip instead
+    // of three.
+    if (safetyNetAddedItems) {
+      if (!draft.pickupTime) {
+        // Look for "pickup at <phrase>" / "pick up at <phrase>" /
+        // "for pickup <phrase>" segments. Scope the candidate to the
+        // current comma-delimited clause so we don't swallow the
+        // trailing "name Cabral" portion.
+        const pickupMatch = inboundMessage.match(
+          /\b(?:pick\s*up|pickup)\s+(?:at\s+|for\s+)?([^,.!?;\n]+)/i,
+        );
+        if (pickupMatch) {
+          const candidate = pickupMatch[1]
+            .replace(/\s+(?:name|customer|for\s+(?:me|us|the))\b.*$/i, '')
+            .trim();
+          const parsed = parsePickupPhrase(candidate);
+          if (parsed) draft.pickupTime = parsed;
+        }
+      }
+      if (!capturedName) {
+        // "name Cabral" / "name: Cabral" / "under Cabral" / "for Cabral".
+        // Require a capital-letter first char to avoid matching stray
+        // lowercase words; accept up to two name tokens.
+        const nameMatch =
+          inboundMessage.match(
+            /\b(?:name|under|for)\s*:?\s*([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+)?)(?=[,.!?;\s]|$)/,
+          );
+        if (nameMatch) {
+          const candidate = nameMatch[1].trim();
+          // Guard against capturing common sentence-initial words that
+          // happen to follow "for" ("for the kids", "for me", "for Us").
+          if (!/^(The|A|An|Me|Us|My|Our|You|Your|Him|Her|Them|Tomorrow|Today|Tonight|Friday|Saturday|Sunday|Monday|Tuesday|Wednesday|Thursday)$/i.test(candidate)) {
+            capturedName = candidate;
           }
         }
       }

@@ -44,9 +44,13 @@ const TL_MARKERS = [
   // Time/day words — show up in pickup-time phrasing like "bukas 12pm"
   // and are strong Tagalog signals (not English substrings of note).
   'bukas', 'mamaya', 'ngayon', 'kanina',
-  // Politeness / affirmation particles — distinctive enough to match
-  // as substrings without colliding with English tokens.
-  'maraming', 'opo', 'hindi po', ' po ', ' po,', ' po.', ' po!', ' po?',
+  // Politeness particles. "hindi po" and "maraming" are strong — the
+  // 2-word phrases are unambiguously Tagalog. Bare " po " and "opo"
+  // were previously here but caused false positives on Filipino-American
+  // English-with-po phrasing ("2 lumpia prito po for tomorrow"), which
+  // shouldn't trip the English-only gate for what is mostly English.
+  // We rely on stronger markers to catch actual Tagalog messages.
+  'maraming', 'hindi po',
   // Common Tagalog particle. ("ang" deliberately omitted — collides
   // with English "hang on", "rang", etc.)
   'yung',

@@ -207,9 +207,32 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
     // New order — ask what they want instead of dumping the full menu.
     // Dumping a long menu via SMS fails on restaurants with 30+ items.
     // Customers who want to browse can text MENU for the web link.
+    //
+    // Example items come from the tenant's ACTUAL menu, not a generic
+    // "2 lumpia, 1 pancit" string. A pizza shop shouldn't see lumpia
+    // examples, and The Lumpia House shouldn't hallucinate "pancit" if
+    // it's not on their menu. We pick the first 1-2 available items and
+    // echo the first 2-3 words of each name so the sample phrasing
+    // matches what the customer sees on their printed menu.
+    const exampleItems = tenantContext.menuItems
+      .filter((m) => m.isAvailable !== false)
+      .slice(0, 2)
+      .map((m) => {
+        // Trim parens descriptor tails so the sample stays short.
+        const clean = m.name.replace(/\s*\([^)]*\)\s*$/, '').trim();
+        return clean;
+      })
+      .filter((s) => s.length > 0);
+    const exampleText =
+      exampleItems.length >= 2
+        ? `(like "1 ${exampleItems[0]}, 2 ${exampleItems[1]}")`
+        : exampleItems.length === 1
+          ? `(like "2 ${exampleItems[0]}")`
+          : '';
+    const orderHint = exampleText ? `Tell me your order ${exampleText} or text MENU for our full list.` : 'Tell me your order, or text MENU for our full list.';
     return {
       nextState,
-      smsReply: `OK, what can I get you from ${tenantContext.tenantName}? Tell me your order (like "2 lumpia, 1 pancit") or text MENU for our full list.`,
+      smsReply: `OK, what can I get you from ${tenantContext.tenantName}? ${orderHint}`,
       sideEffects: [],
       flowType: FlowType.ORDER,
     };
