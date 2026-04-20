@@ -1,0 +1,72 @@
+import { NextRequest } from 'next/server';
+import { requireBotTesterAdmin, isNextResponse } from '@/lib/server/auth';
+import { apiSuccess, apiError } from '@/lib/server/response';
+import { deleteCallerState } from '@/lib/server/services/stateService';
+import { prisma } from '@/lib/server/db';
+import { logger } from '@/lib/server/logger';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+const DEFAULT_SENTINEL =
+  process.env.BOT_TESTER_SENTINEL_PHONE ?? '+19990000001';
+
+/**
+ * POST /api/admin/bot-tester/reset
+ * Body: { tenantId: string, callerPhone?: string }
+ *
+ * Wipes the sentinel tester session: deletes all Conversation rows for
+ * the sentinel phone in this tenant, clears Redis CallerState, and
+ * resets Contact.preferredLanguage so language detection starts fresh.
+ */
+export async function POST(request: NextRequest) {
+  const auth = await requireBotTesterAdmin();
+  if (isNextResponse(auth)) return auth;
+
+  let body: { tenantId?: unknown; callerPhone?: unknown };
+  try {
+    body = await request.json();
+  } catch {
+    return apiError('Invalid JSON body', 400);
+  }
+
+  const tenantId = typeof body.tenantId === 'string' ? body.tenantId : '';
+  const callerPhone =
+    typeof body.callerPhone === 'string' && body.callerPhone.trim().length > 0
+      ? body.callerPhone.trim()
+      : DEFAULT_SENTINEL;
+
+  if (!tenantId) return apiError('tenantId is required', 400);
+
+  try {
+    await deleteCallerState(tenantId, callerPhone);
+
+    const deleted = await prisma.conversation.deleteMany({
+      where: { tenantId, callerPhone },
+    });
+
+    // Clear any sticky language pref on the sentinel contact so repro
+    // of language-detection bugs starts from a clean slate.
+    await prisma.contact
+      .updateMany({
+        where: { tenantId, phone: callerPhone },
+        data: { preferredLanguage: null },
+      })
+      .catch(() => {});
+
+    logger.info('Bot tester session reset', {
+      tenantId,
+      callerPhone,
+      deletedConversations: deleted.count,
+    });
+
+    return apiSuccess({
+      reset: true,
+      callerPhone,
+      deletedConversations: deleted.count,
+    });
+  } catch (err: any) {
+    logger.error('Bot tester reset failed', { tenantId, err: err?.message });
+    return apiError(`Reset failed: ${err?.message ?? 'unknown'}`, 500);
+  }
+}

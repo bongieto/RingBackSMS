@@ -26,8 +26,31 @@ export interface ProcessInboundSmsInput {
   messageSid: string;
 }
 
-export async function processInboundSms(input: ProcessInboundSmsInput): Promise<void> {
+export interface ProcessInboundSmsOptions {
+  /**
+   * Bot-tester mode: run the full compute path (flow engine, persistence,
+   * caller state, contact upsert) but DO NOT send any outbound SMS and
+   * DO NOT execute side effects (SAVE_ORDER, CREATE_PAYMENT_LINK,
+   * NOTIFY_OWNER, etc). The computed reply + raw side-effect descriptors
+   * are returned to the caller instead. Used by /admin/bot-tester to
+   * simulate conversations without touching Twilio, Stripe, or Square.
+   */
+  testMode?: boolean;
+}
+
+export interface ProcessInboundSmsTestResult {
+  reply: string;
+  sideEffects: SideEffect[];
+  nextState: Awaited<ReturnType<typeof runFlowEngine>>['nextState'];
+  flowType: FlowType;
+}
+
+export async function processInboundSms(
+  input: ProcessInboundSmsInput,
+  options?: ProcessInboundSmsOptions,
+): Promise<void | ProcessInboundSmsTestResult> {
   const { tenantId, callerPhone, inboundMessage, messageSid } = input;
+  const testMode = options?.testMode === true;
 
   // Dedup check
   const duplicate = await isDuplicate(tenantId, messageSid);
@@ -82,14 +105,24 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       });
 
       // Notify owner about new message during handoff
-      await sendNotification({
-        tenantId,
-        subject: 'New message during human handoff',
-        message: `Customer ${callerPhone} sent a message while in human handoff mode: "${inboundMessage.substring(0, 100)}"`,
-        channel: 'email',
-      }).catch((err) => logger.warn('Failed to send handoff notification', { error: err }));
+      if (!testMode) {
+        await sendNotification({
+          tenantId,
+          subject: 'New message during human handoff',
+          message: `Customer ${callerPhone} sent a message while in human handoff mode: "${inboundMessage.substring(0, 100)}"`,
+          channel: 'email',
+        }).catch((err) => logger.warn('Failed to send handoff notification', { error: err }));
+      }
 
-      logger.info('Message received during human handoff, skipping AI', { tenantId, callerPhone });
+      logger.info('Message received during human handoff, skipping AI', { tenantId, callerPhone, testMode });
+      if (testMode) {
+        return {
+          reply: '',
+          sideEffects: [],
+          nextState: (currentState as unknown as ProcessInboundSmsTestResult['nextState']),
+          flowType: FlowType.FALLBACK,
+        };
+      }
       return;
     }
   }
@@ -111,9 +144,11 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
         return null;
       });
       if (reply) {
-        await sendSms(tenantId, callerPhone, reply).catch((err) =>
-          logger.error('Failed to send food-truck location SMS', { err, tenantId })
-        );
+        if (!testMode) {
+          await sendSms(tenantId, callerPhone, reply).catch((err) =>
+            logger.error('Failed to send food-truck location SMS', { err, tenantId })
+          );
+        }
 
         // Persist the exchange to a conversation so it shows up in the dashboard.
         try {
@@ -158,7 +193,16 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
         } catch (err) {
           logger.error('Failed to persist food-truck location conversation', { err, tenantId });
         }
-        logger.info('Food-truck location reply sent', { tenantId, callerPhone });
+        logger.info('Food-truck location reply sent', { tenantId, callerPhone, testMode });
+        if (testMode) {
+          const st = await getCallerState(tenantId, callerPhone);
+          return {
+            reply,
+            sideEffects: [],
+            nextState: (st as unknown as ProcessInboundSmsTestResult['nextState']),
+            flowType: FlowType.FALLBACK,
+          };
+        }
         return;
       }
     }
@@ -696,7 +740,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
   }
 
   // Notify owner if escalation
-  if (isEscalation) {
+  if (isEscalation && !testMode) {
     await sendNotification({
       tenantId,
       subject: 'Customer requested human assistance',
@@ -727,7 +771,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     // ("Pay securely here: …"); if we fire side effects first, the Stripe
     // link lands before the agent's summary, which reads backwards.
     // Empty smsReply = intentional silence (e.g. "ok" / emoji closure).
-    if (result.smsReply && result.smsReply.trim().length > 0) {
+    if (result.smsReply && result.smsReply.trim().length > 0 && !testMode) {
       await sendSms(tenantId, callerPhone, result.smsReply);
     }
 
@@ -746,6 +790,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     let criticalFailure: { effect: string; error: string } | null = null;
     for (const effect of result.sideEffects) {
       if (criticalFailure) break; // abort chain once a critical effect fails
+      if (testMode) continue; // test mode: collect-only, do not execute
       try {
         await processSideEffect(effect, tenantId, conversationId as string, callerPhone, sideEffectContext);
       } catch (effectErr: any) {
@@ -778,11 +823,13 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
         })
         .then((c) => c?.preferredLanguage ?? null)
         .catch(() => null);
-      await sendSms(
-        tenantId,
-        callerPhone,
-        i18nSms('orderProcessingFailed', contactLang, {}),
-      ).catch(() => {});
+      if (!testMode) {
+        await sendSms(
+          tenantId,
+          callerPhone,
+          i18nSms('orderProcessingFailed', contactLang, {}),
+        ).catch(() => {});
+      }
       // Mark any partially-created order as UNPAID (not stuck in PENDING)
       // so operator-facing dashboards show it didn't finalize.
       if (sideEffectContext.orderId) {
@@ -801,7 +848,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       select: { plan: true, stripeSubscriptionId: true },
     });
 
-    if (tenantMeta) {
+    if (tenantMeta && !testMode) {
       await incrementSmsUsage(tenantId, tenantMeta.stripeSubscriptionId, tenantMeta.plan);
     }
 
@@ -857,20 +904,33 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       });
     } catch { /* best-effort */ }
     // Send a generic fallback SMS so the customer isn't silently abandoned.
-    try {
-      await sendSms(
-        tenantId,
-        callerPhone,
-        `Sorry, something went wrong on our end. A team member has been notified and will follow up with you shortly.`,
-      );
-    } catch { /* best-effort */ }
+    if (!testMode) {
+      try {
+        await sendSms(
+          tenantId,
+          callerPhone,
+          `Sorry, something went wrong on our end. A team member has been notified and will follow up with you shortly.`,
+        );
+      } catch { /* best-effort */ }
+    }
     // Notify the owner
-    await sendNotification({
-      tenantId,
-      subject: 'Flow engine error',
-      message: `An error occurred while processing a message from ${callerPhone}. The customer has been notified.`,
-      channel: 'email',
-    }).catch(() => {});
+    if (!testMode) {
+      await sendNotification({
+        tenantId,
+        subject: 'Flow engine error',
+        message: `An error occurred while processing a message from ${callerPhone}. The customer has been notified.`,
+        channel: 'email',
+      }).catch(() => {});
+    }
+  }
+
+  if (testMode) {
+    return {
+      reply: result.smsReply ?? '',
+      sideEffects: result.sideEffects,
+      nextState: result.nextState,
+      flowType: result.flowType,
+    };
   }
 }
 
