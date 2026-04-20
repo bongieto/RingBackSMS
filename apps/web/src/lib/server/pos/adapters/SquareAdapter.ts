@@ -1,5 +1,6 @@
 import { Client, Environment, CatalogObject } from 'square';
 import axios from 'axios';
+import { createHash } from 'crypto';
 import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult, getAppBaseUrl } from './base';
 import { encrypt } from '../../encryption';
 import { logger } from '../../logger';
@@ -701,9 +702,20 @@ export class SquareAdapter extends BasePosAdapter {
     const squareOrderTotal = (o as any)?.totalMoney?.amount as bigint | number | undefined;
     if (squareOrderTotal != null && Number(squareOrderTotal) > 0) {
       try {
+        // Square's Payments API caps idempotency_key at 45 chars (vs 192
+        // for Orders). Our order-level key `ringback-{convId}-{orderId}` is
+        // ~60 chars, so appending `-pay` blew the limit and every payment
+        // was rejected with VALUE_TOO_LONG — the order was created but no
+        // payment was recorded, which meant KDS never saw the ticket.
+        // Hash down to a deterministic 40-char hex string so retries stay
+        // idempotent and we never collide with the order-level key.
+        const payIdemKey = createHash('sha256')
+          .update(`${metadata.idempotencyKey}-pay`)
+          .digest('hex')
+          .slice(0, 40);
         const paymentResp = await client.paymentsApi.createPayment({
           sourceId: 'EXTERNAL',
-          idempotencyKey: `${metadata.idempotencyKey}-pay`,
+          idempotencyKey: payIdemKey,
           amountMoney: {
             amount: BigInt(Number(squareOrderTotal)),
             currency: 'USD',
