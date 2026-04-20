@@ -92,10 +92,13 @@ export function getBusinessHoursDisplay(config: BusinessHoursConfig): string {
   if (businessSchedule && Object.keys(businessSchedule).length > 0) {
     // Group days with the same hours
     const hourGroups: Record<string, number[]> = {};
+    const scheduledDays = new Set<number>();
     for (const [dayKey, sched] of Object.entries(businessSchedule)) {
       const key = `${sched.open}-${sched.close}`;
       if (!hourGroups[key]) hourGroups[key] = [];
-      hourGroups[key].push(Number(dayKey));
+      const dayNum = Number(dayKey);
+      hourGroups[key].push(dayNum);
+      scheduledDays.add(dayNum);
     }
 
     const parts: string[] = [];
@@ -104,6 +107,16 @@ export function getBusinessHoursDisplay(config: BusinessHoursConfig): string {
       const daysLabel = formatDaysLabel(days);
       parts.push(`${daysLabel} ${formatTime(open)} - ${formatTime(close)}`);
     }
+
+    // Explicitly surface closed days so customers don't have to infer
+    // them from omission. R6 flagged "Sun 11-7:30, Tue-Sat 11-8:30"
+    // as misleading because Mon was silently missing.
+    const closedDays: number[] = [];
+    for (let d = 0; d < 7; d++) if (!scheduledDays.has(d)) closedDays.push(d);
+    if (closedDays.length > 0 && closedDays.length < 7) {
+      parts.push(`${formatDaysLabel(closedDays)}: Closed`);
+    }
+
     return parts.join(', ');
   }
 

@@ -87,7 +87,7 @@ export function buildOrderAgentSystemPrompt(args: BuildAgentPromptArgs): string 
 
   const langLabel = languageLabel(memory?.preferredLanguage);
   const languageLine = langLabel
-    ? `\n# Language\nThe customer's preferred language is ${langLabel}. Reply in ${langLabel}. Never switch to English unless they explicitly ask in English.`
+    ? `\n\n# LANGUAGE — READ THIS FIRST\nThe customer speaks ${langLabel}. Your reply MUST be written in ${langLabel}. The English examples and phrasing templates later in this prompt are structural guides only — TRANSLATE them into ${langLabel} when you reply. Do not reply in English. Do not mix languages. Only switch to English if the customer explicitly asks for English in a later message.`
     : '';
 
   return `You are the SMS ordering assistant for ${tenantContext.tenantName}.${languageLine}
@@ -157,5 +157,5 @@ ${(() => {
 7. Never reply with just "Got it." or "Ok." — always include cart contents + total + next step.
 6. If you called ask_clarification, the reply IS the question.
 7. If the customer says something unrelated to ordering, redirect gently back to the order.
-8. After a confirm_order, state the total, pickup time, **and the name on the order** (when known), and reassure them. Example: "You're all set, Bruno! Order placed for pickup at 7pm. Total $41.19. We'll text you when it's ready." Naming the customer explicitly at commit time is important — it's how they know the kitchen ticket is tagged with their name.`;
+8. After a confirm_order, state the total, pickup time, **and the name on the order** (when known), and reassure them. Example: "You're all set, Bruno! Order placed for pickup at 7pm. Total $41.19. We'll text you when it's ready." Naming the customer explicitly at commit time is important — it's how they know the kitchen ticket is tagged with their name.${langLabel ? `\n9. **LANGUAGE REMINDER:** This customer speaks ${langLabel}. Your reply text must be in ${langLabel}, even though every example above is written in English. Translate the phrasing, keep the structure.` : ''}`;
 }

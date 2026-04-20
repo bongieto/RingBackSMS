@@ -242,7 +242,23 @@ export async function handleArrivalIntent(
   }
 
   const now = Date.now();
-  const readyAt = order.estimatedReadyTime?.getTime() ?? null;
+  let readyAt = order.estimatedReadyTime?.getTime() ?? null;
+
+  // Order.estimatedReadyTime is set at order placement as "now + prep",
+  // so for a "tomorrow at noon" scheduled order placed earlier today
+  // it's already in the past or near-now — NOT the true pickup time.
+  // If the pickupTime string references a future day, push readyAt out
+  // to a reasonable approximation so the customer gets honest wait
+  // wording ("about a day to go") instead of "1 hour to go".
+  const pickupStr = (order.pickupTime ?? '').toLowerCase();
+  const isTomorrow = /\btomorrow\b/.test(pickupStr);
+  const isDayOfWeek =
+    /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(pickupStr);
+  if ((isTomorrow || isDayOfWeek) && (readyAt == null || readyAt - now < 6 * 60 * 60 * 1000)) {
+    // Nudge to "at least a day away" — downstream humanWait bucketing
+    // will surface this as "about a day to go".
+    readyAt = now + 24 * 60 * 60 * 1000;
+  }
 
   // READY → confirmed: hand it over.
   if (order.status === 'READY') {
@@ -270,13 +286,23 @@ export async function handleArrivalIntent(
     readyAt != null ? Math.max(0, Math.round((readyAt - now) / 60000)) : null;
 
   if (minutesEarly != null && minutesEarly > 2) {
-    const humanWait =
-      minutesEarly >= 60
-        ? `${Math.round(minutesEarly / 60)} hour${minutesEarly >= 120 ? 's' : ''}`
-        : `${minutesEarly} min`;
+    // Humanize the wait. Days > hours > minutes. Round 6 caught us
+    // saying "about 1 hour to go" for a 24h-away pickup — the raw
+    // hour bucket was overflowing without a day bucket above it.
+    let humanWait: string;
+    if (minutesEarly >= 60 * 18) {
+      const days = Math.round(minutesEarly / (60 * 24));
+      humanWait = days <= 1 ? 'about a day' : `${days} days`;
+    } else if (minutesEarly >= 60) {
+      const hours = Math.round(minutesEarly / 60);
+      humanWait = `${hours} hour${hours === 1 ? '' : 's'}`;
+    } else {
+      humanWait = `${minutesEarly} min`;
+    }
     const pickupLabel = order.pickupTime ? ` (scheduled ${order.pickupTime})` : '';
+    const prefix = humanWait.startsWith('about') ? humanWait : `about ${humanWait}`;
     return {
-      reply: `Thanks! Order #${order.orderNumber} isn't quite ready yet${pickupLabel} — about ${humanWait} to go. We'll text you as soon as it's up.`,
+      reply: `Thanks! Order #${order.orderNumber} isn't quite ready yet${pickupLabel} — ${prefix} to go. We'll text you as soon as it's up.`,
       flowType: FlowType.FALLBACK,
       sideEffects: [
         {
@@ -327,13 +353,21 @@ export function handleHoursIntent(
 ): PreHandlerResult | null {
   if (!HOURS_RE.test(message)) return null;
 
+  // todayHoursDisplay is sometimes a redundant phrase like "Closed today"
+  // — in that case drop the "Today:" prefix so we don't render "Today:
+  // Closed today." (flagged as polish in R6).
+  const todayIsClosed = /closed/i.test(ctx.todayHoursDisplay);
   const nowLine = ctx.openNow
     ? `We're open now — today ${ctx.todayHoursDisplay}${
         ctx.closesAtDisplay ? ` (close ${ctx.closesAtDisplay})` : ''
       }.`
-    : `We're currently closed. Today: ${ctx.todayHoursDisplay}. ${
-        ctx.nextOpenDisplay ? `Next open: ${ctx.nextOpenDisplay}.` : ''
-      }`;
+    : todayIsClosed
+      ? `We're closed today.${
+          ctx.nextOpenDisplay ? ` Next open: ${ctx.nextOpenDisplay}.` : ''
+        }`
+      : `We're currently closed. Today: ${ctx.todayHoursDisplay}.${
+          ctx.nextOpenDisplay ? ` Next open: ${ctx.nextOpenDisplay}.` : ''
+        }`;
 
   return {
     reply: `${nowLine} Full week: ${ctx.weeklyHoursDisplay}.`.trim(),
