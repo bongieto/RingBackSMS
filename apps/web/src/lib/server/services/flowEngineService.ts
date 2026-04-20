@@ -653,7 +653,11 @@ export async function processInboundSms(
   // conversation. Repeating it on every turn spams the customer (and
   // confuses the AI agent when it's mid-flow).
   const isFirstTurn = !existingConversationId;
-  if (!withinBusinessHours && isFirstTurn) {
+  // Skip the hours notice when the first turn is an ORDER — the agent
+  // itself decides whether to accept the cart or schedule it for next
+  // open window, and prepending "We're currently closed…" on top of an
+  // "Added: 1× #A1" reply is both redundant and confusing.
+  if (!withinBusinessHours && isFirstTurn && result.flowType !== FlowType.ORDER) {
     const hoursDisplay = getBusinessHoursDisplay({
       businessHoursStart: tenant.config.businessHoursStart,
       businessHoursEnd: tenant.config.businessHoursEnd,

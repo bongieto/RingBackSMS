@@ -398,6 +398,35 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
 
     // ── CONFIRM ──
     if (wantsConfirm && draft.items.length > 0) {
+      // Refuse to lock in an order if we're closed AND the customer hasn't
+      // specified a future-scheduled pickup. QA caught us happily accepting
+      // "12:19 AM" as a pickup time at 12:19 AM when the restaurant was
+      // closed — and then billing for it. If pickup references a future
+      // day (tomorrow / day-of-week), let it through so scheduled orders
+      // still work; otherwise ask them to schedule.
+      const hours = tenantContext.hoursInfo;
+      const pickupStrForHours = (draft.pickupTime ?? '').trim().toLowerCase();
+      const pickupIsFutureScheduled =
+        /\btomorrow\b|\b(mon|tue|wed|thu|fri|sat|sun)(day|\.|\b)/i.test(pickupStrForHours);
+      if (hours && hours.openNow === false && !pickupIsFutureScheduled) {
+        const whenOpen = hours.nextOpenDisplay
+          ? ` We open ${hours.nextOpenDisplay}.`
+          : '';
+        return {
+          nextState: buildBaseState(input, draft, {
+            flowStep: 'PICKUP_TIME',
+            customerName: capturedName,
+            pendingClarification: {
+              field: 'pickup_time',
+              question: `We're currently closed.${whenOpen} What time would you like to schedule pickup for?`,
+              askedAt: Date.now(),
+            },
+          }),
+          smsReply: `We're currently closed, so I can't place this right now.${whenOpen} What time would you like to schedule pickup for?`.slice(0, 320),
+          sideEffects: [],
+          flowType: FlowType.ORDER,
+        };
+      }
       if (!draft.pickupTime) {
         // Don't commit without a pickup time — ask for it.
         return {
@@ -493,8 +522,13 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         // persisted with paymentStatus=PENDING; createOrder skips the POS
         // push for pending orders, and the Stripe webhook triggers it
         // after payment confirms.
+        // Clear the draft out of nextState once the order is locked in for
+        // payment — AWAITING_PAYMENT is terminal from the conversation's
+        // perspective (the Stripe webhook takes over from here). Leaving
+        // items in state caused the NEXT order attempt to start with the
+        // prior cart's items, compounding orders the customer never placed.
         return {
-          nextState: buildBaseState(input, draft, {
+          nextState: buildBaseState(input, { items: [] }, {
             flowStep: 'AWAITING_PAYMENT',
             customerName: capturedName,
           }),

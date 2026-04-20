@@ -41,6 +41,14 @@ export async function POST(request: NextRequest) {
   try {
     await deleteCallerState(tenantId, callerPhone);
 
+    // Order has an FK → Conversation (Order_conversationId_fkey). Orders
+    // placed by the sentinel must be deleted BEFORE the Conversation row,
+    // otherwise Prisma throws a foreign-key violation. These are tester
+    // orders (sentinel phone only), so hard-delete is safe.
+    const deletedOrders = await prisma.order.deleteMany({
+      where: { tenantId, callerPhone },
+    });
+
     const deleted = await prisma.conversation.deleteMany({
       where: { tenantId, callerPhone },
     });
@@ -58,12 +66,14 @@ export async function POST(request: NextRequest) {
       tenantId,
       callerPhone,
       deletedConversations: deleted.count,
+      deletedOrders: deletedOrders.count,
     });
 
     return apiSuccess({
       reset: true,
       callerPhone,
       deletedConversations: deleted.count,
+      deletedOrders: deletedOrders.count,
     });
   } catch (err: any) {
     logger.error('Bot tester reset failed', { tenantId, err: err?.message });
