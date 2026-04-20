@@ -109,6 +109,35 @@ function looksLikeRejectCart(msg: string): boolean {
   );
 }
 
+/** Deterministic pickup-time parser — used as a fallback when Claude
+ *  doesn't call set_pickup_time on a short reply to "what time?". We
+ *  don't need to resolve this into a timestamp (the owner reads the
+ *  pickup string verbatim); we just need to accept a plausible time
+ *  phrase and save it. Returns the normalized string or null. */
+export function parsePickupPhrase(raw: string): string | null {
+  const msg = raw.trim();
+  if (!msg) return null;
+  // "asap", "now", "whenever" etc.
+  if (/^(asap|now|right now|immediately|whenever|any ?time|as soon as possible|soon)\b/i.test(msg)) {
+    return msg.toLowerCase();
+  }
+  // Explicit time + optional day: "11:30am tuesday", "tuesday 12pm",
+  // "schedule for tuesday 12pm", "tomorrow at 1pm", "in 30 minutes",
+  // "in an hour", "8:30 tonight", "noon", "midnight".
+  const hasClockTime = /\b\d{1,2}(:\d{2})?\s*(am|pm|a\.m\.|p\.m\.)\b/i.test(msg);
+  const hasRelative = /\b(in\s+(a|an|\d+)\s+(min(ute)?s?|hour|hours|hr|hrs))\b/i.test(msg);
+  const hasNamedTime = /\b(noon|midnight|tonight|morning|afternoon|evening)\b/i.test(msg);
+  const hasDay = /\b(today|tomorrow|(mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)(day)?)\b/i.test(msg);
+  if (hasClockTime || hasRelative || hasNamedTime || (hasDay && /\d/.test(msg))) {
+    // Strip filler "schedule for ", "pickup at ", "for " prefixes.
+    return msg
+      .replace(/^(schedule(d)?\s+(it\s+)?(for|at)\s+|pick ?up\s+(at|for)\s+|at\s+|for\s+)/i, '')
+      .trim()
+      .toLowerCase();
+  }
+  return null;
+}
+
 function cloneDraft(d: OrderDraft | null | undefined): OrderDraft {
   if (!d) return { items: [] };
   return {
@@ -327,6 +356,28 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         if (result.message && result.message.startsWith('skipped:')) {
           mutationNotices.push(result.message);
         }
+      }
+    }
+
+    // ── LLM-FAILED-TO-CAPTURE-PICKUP SAFETY NET ──
+    // When we just asked "what time would you like pickup?" (flowStep ===
+    // 'PICKUP_TIME' or pendingClarification.field === 'pickup_time') and
+    // the customer responds with a short time-phrase like "asap",
+    // "tuesday 12pm", "11:30am tuesday", "schedule for tuesday 12pm",
+    // Claude sometimes doesn't call set_pickup_time (the message is too
+    // short/ambiguous to trip the tool routing). Without this the cart
+    // stays stuck with null pickupTime forever and the closed-hours
+    // confirm gate re-asks in a loop.
+    const wasAskedForPickup =
+      currentState?.flowStep === 'PICKUP_TIME' ||
+      currentState?.pendingClarification?.field === 'pickup_time';
+    let pickupJustCaptured = false;
+    if (wasAskedForPickup && !draft.pickupTime) {
+      const parsed = parsePickupPhrase(inboundMessage);
+      if (parsed) {
+        draft.pickupTime = parsed;
+        pickupJustCaptured = true;
+        anyMutation = true;
       }
     }
 
@@ -654,7 +705,22 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       return `Added: ${summary}. Total $${total}. ${next}`;
     }
 
-    const baseReply = (aiResponse.text || buildFallbackReply());
+    // If we just captured pickup time via the fallback parser (LLM didn't
+    // call set_pickup_time), echo it explicitly so the customer knows
+    // their time landed — and then ask to confirm. QA consistently
+    // flagged "silent capture" as confusing UX.
+    let baseReply = (aiResponse.text || buildFallbackReply());
+    if (pickupJustCaptured && draft.pickupTime) {
+      const summary = draft.items
+        .map((i) => `${i.quantity}× ${i.name}`)
+        .join(', ');
+      const total = computeTotal(draft).toFixed(2);
+      const head = summary
+        ? `Got it — pickup ${draft.pickupTime}. ${summary}. Total $${total}.`
+        : `Got it — pickup ${draft.pickupTime}.`;
+      const tail = summary ? ' Ready to confirm?' : ' What can I get you?';
+      baseReply = `${head}${tail}`;
+    }
 
     // Surface dropped modifiers as a customer-visible postscript.
     // Previously, when `resolveModifiers` failed on an item (e.g.
