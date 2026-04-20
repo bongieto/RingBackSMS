@@ -244,6 +244,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       draft,
       memory: callerMemory,
       pendingClarification: currentState?.pendingClarification ?? null,
+      inboundMessage,
     });
 
     const aiResponseRaw = await chatWithToolsFn({

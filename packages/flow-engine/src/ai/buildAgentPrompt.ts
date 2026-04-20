@@ -52,6 +52,121 @@ export interface BuildAgentPromptArgs {
   draft: OrderDraft | null;
   memory?: CallerMemory;
   pendingClarification?: { field: string; question: string } | null;
+  /** Raw inbound customer message, used for deterministic item-name
+   *  hinting. When the customer's text contains a menu-item name as a
+   *  contiguous phrase (e.g. "lumpia prito" → "Lumpia Prito"), we inject
+   *  a high-priority hint block pinning the LLM to the correct id.
+   *  Solves cross-language resolution drift: multilingual phrasing was
+   *  biasing the LLM to pick the first-word-match ("Lumpia Regular")
+   *  over the exact-phrase match ("Lumpia Prito"). */
+  inboundMessage?: string;
+}
+
+/** Normalize a string for substring comparison:
+ *  - lowercase
+ *  - strip parens-descriptor tails ("Lumpia Prito (Fried Lumpia)" → "lumpia prito")
+ *  - collapse whitespace and punctuation to single spaces */
+function normalizeForMatch(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Scan the inbound message for exact menu-item-name phrase matches.
+ *  Returns a list of (phrase, item) pairs, preferring longer/more-specific
+ *  names when multiple items match the same region (so "Lumpia Prito"
+ *  wins over "Lumpia" alone). Plural "s" tolerated. */
+function findItemPhraseMatches(
+  inbound: string,
+  menu: MenuItem[],
+): Array<{ phrase: string; item: MenuItem }> {
+  // Normalize inbound the same way AND generate a "-ng suffix dropped"
+  // variant so Tagalog ligature phrasing ("lumpiang prito") matches the
+  // menu name ("Lumpia Prito"). We search both spellings.
+  const normInboundBase = normalizeForMatch(inbound);
+  const normInboundNoNg = normInboundBase.replace(/(\w)ng\b/g, '$1');
+  const searchSpaces = [` ${normInboundBase} `];
+  if (normInboundNoNg !== normInboundBase) searchSpaces.push(` ${normInboundNoNg} `);
+  const normInbound = searchSpaces[0];
+  if (normInbound.trim().length === 0) return [];
+  // Consider name variants to match the customer's casual phrasing.
+  // "Lumpiang Prito" (with Tagalog ligature) should match "Lumpia Prito".
+  const candidates = menu
+    .map((item) => {
+      const base = normalizeForMatch(item.name);
+      if (!base) return null;
+      // Generate variants: base, base without "ng " before each word, and
+      // with/without trailing 's'. Small set — cheap.
+      const variants = new Set<string>([base]);
+      // "lumpiang prito" ↔ "lumpia prito": strip "ng" suffix from any word
+      const dropNg = base.replace(/(\w)ng\b/g, '$1');
+      if (dropNg !== base) variants.add(dropNg);
+      return { item, variants: Array.from(variants).filter((v) => v.length >= 3) };
+    })
+    .filter((x): x is { item: MenuItem; variants: string[] } => x !== null);
+
+  // Sort by longest variant first so more-specific names match before
+  // their prefixes ("lumpia prito" before "lumpia").
+  candidates.sort((a, b) => {
+    const la = Math.max(...a.variants.map((v) => v.length));
+    const lb = Math.max(...b.variants.map((v) => v.length));
+    return lb - la;
+  });
+
+  const matched: Array<{ phrase: string; item: MenuItem }> = [];
+  const seenIds = new Set<string>();
+  // Build a mutable copy of the message; as we match a region, blank it
+  // out so a shorter prefix (Lumpia Regular) doesn't also claim the
+  // same span that Lumpia Prito already owns.
+  // Search each spelling of the inbound in parallel; when any variant
+  // matches, record the hit and blank the region in ALL spellings so a
+  // less-specific name can't re-claim the same span.
+  const remainings = searchSpaces.slice();
+  for (const cand of candidates) {
+    if (seenIds.has(cand.item.id)) continue;
+    outer: for (const variant of cand.variants) {
+      const needle = ` ${variant} `;
+      const needlePlural = ` ${variant}s `;
+      for (let i = 0; i < remainings.length; i++) {
+        let idx = remainings[i].indexOf(needle);
+        let hit = needle;
+        if (idx === -1) {
+          idx = remainings[i].indexOf(needlePlural);
+          hit = needlePlural;
+        }
+        if (idx !== -1) {
+          matched.push({ phrase: variant, item: cand.item });
+          seenIds.add(cand.item.id);
+          for (let j = 0; j < remainings.length; j++) {
+            const r = remainings[j];
+            const jdx = r.indexOf(hit);
+            if (jdx !== -1) {
+              remainings[j] = r.slice(0, jdx + 1) + ' '.repeat(hit.length - 2) + r.slice(jdx + hit.length - 1);
+            }
+          }
+          break outer;
+        }
+      }
+    }
+  }
+  void normInbound;
+  return matched;
+}
+
+function formatItemHints(
+  inbound: string | undefined,
+  menu: MenuItem[],
+): string {
+  if (!inbound) return '';
+  const hits = findItemPhraseMatches(inbound, menu);
+  if (hits.length === 0) return '';
+  const lines = hits
+    .map((h) => `- Customer phrase "${h.phrase}" → use menu_item_id "${h.item.id}" (${h.item.name}, $${h.item.price.toFixed(2)})`)
+    .join('\n');
+  return `\n# Item resolution hints (DETERMINISTIC — follow exactly)\nThese phrase→id bindings were computed by exact-phrase match against the menu. They override any guess you might make from partial-word matching. Use these menu_item_id values verbatim:\n${lines}\n`;
 }
 
 function formatSoldOut(items: MenuItem[] | undefined): string {
@@ -63,7 +178,8 @@ function formatSoldOut(items: MenuItem[] | undefined): string {
 }
 
 export function buildOrderAgentSystemPrompt(args: BuildAgentPromptArgs): string {
-  const { tenantContext, filteredMenu, soldOutItems, draft, memory, pendingClarification } = args;
+  const { tenantContext, filteredMenu, soldOutItems, draft, memory, pendingClarification, inboundMessage } = args;
+  const itemHints = formatItemHints(inboundMessage, filteredMenu);
   const menuUrl =
     tenantContext.tenantSlug != null
       ? `/m/${tenantContext.tenantSlug}`
@@ -132,7 +248,7 @@ ${
 
 # Menu (use these EXACT ids)
 ${formatMenu(filteredMenu)}
-${formatSoldOut(soldOutItems)}
+${formatSoldOut(soldOutItems)}${itemHints}
 ${(() => {
   const custom = (tenantContext.config as { customAiInstructions?: string | null }).customAiInstructions;
   return custom && custom.trim().length > 0
@@ -151,7 +267,7 @@ ${(() => {
 4c. **If after processing the cart is empty BUT pickup time is now set**: reply like someone taking a counter order. "OK, what can I get you?" or "Great, what would you like?" Short, warm, human. Do NOT list categories or sample items unless asked. Tack on "And what name should I put on it?" if name is still missing. Use their name if known: "OK {Name}, what can I get you?"
 5. **TONE — write like a friendly human.** Never mention your internal logic. FORBIDDEN phrases: "your cart is empty", "this is a new order", "I need to know", "I'll need", "first I need", "since", "How can I help with your order?". Just ASK the question directly.
 6. Whenever you modify the cart, your reply MUST:
-   a. Confirm what was added/changed (items + qty + **modifiers in parens**, e.g. "1× Kanto Fries (Chili BBQ), 2× Cornedsilog (Extra Fried Rice)"). If an item has modifiers, ALWAYS include them in the confirmation — the customer needs to see that their add-on was captured. Only omit the parens when the item has no modifiers attached.
+   a. Confirm what was added/changed (items + qty + **modifiers in parens**, e.g. "1× Kanto Fries (Chili BBQ), 2× Cornedsilog (Extra Fried Rice)"). If an item has modifiers, ALWAYS include them in the confirmation — the customer needs to see that their add-on was captured. Only omit the parens when the item has no modifiers attached. **Always include the item code prefix** (e.g. "2× #A4 Lumpia Prito") when the menu shows codes — this is for operator/kitchen clarity, and applies in every language you reply in.
    b. State the running total in dollars
    c. Ask the next question (another item? confirm?)
    Example: "Added 1× Kanto Fries (Chili BBQ) and 2× Cornedsilog (Extra Fried Rice). Total $44.95. Anything else, or ready to confirm?"
