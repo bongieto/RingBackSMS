@@ -127,6 +127,97 @@ export async function processInboundSms(
     }
   }
 
+  // ── ENGLISH-ONLY GATE ─────────────────────────────────────────────────
+  // We don't support replies in languages other than English. When an
+  // inbound message is clearly in another language (Spanish or Tagalog
+  // today, by marker-word heuristic), send a fixed English apology and
+  // short-circuit the pipeline. This runs AFTER compliance/HUMAN-handoff
+  // checks (so STOP/HELP/START still work on a suppressed account) and
+  // BEFORE the flow engine / LLM, so no prompt ever sees a non-English
+  // message that might destabilize its reasoning.
+  //
+  // Why a gate instead of in-language replies: four rounds of
+  // multilingual patches kept moving the bug around (markers colliding
+  // with menu names, bilingual sentences flipping the session, LLM
+  // behavior varying under multilingual prompt load). Pulling back to
+  // English-only is a policy decision: say it clearly, let customers
+  // retry in English, and stop chasing translation fidelity.
+  //
+  // If the detector returns null, we treat the message as English (or
+  // too-short-to-judge) and fall through. The detector's marker lists
+  // are conservative by design — short English messages containing no
+  // Spanish or Tagalog function words won't trigger this branch.
+  {
+    const { detectLanguage } = await import('@ringback/flow-engine');
+    const nonEnglish = detectLanguage(inboundMessage, null);
+    if (nonEnglish === 'es' || nonEnglish === 'tl') {
+      const reply =
+        `Sorry, we only speak English here. Please text us in English and we'll help you out!`;
+      // Persist the turn so the conversation dashboard still shows
+      // the customer's message and our reply.
+      try {
+        const newMessages = [
+          { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },
+          { role: 'assistant', content: reply, timestamp: new Date(), sender: 'bot' },
+        ];
+        let convoId = existingConversationId;
+        if (convoId) {
+          const existing = await prisma.conversation.findUnique({
+            where: { id: convoId },
+            select: { messages: true },
+          });
+          const messages = decryptMessages(existing?.messages);
+          await prisma.conversation.update({
+            where: { id: convoId },
+            data: {
+              messages: encryptMessages([...messages, ...newMessages]) as unknown as Prisma.InputJsonValue,
+              updatedAt: new Date(),
+            },
+          });
+        } else {
+          const conv = await prisma.conversation.create({
+            data: {
+              tenantId,
+              callerPhone,
+              messages: encryptMessages(newMessages) as unknown as Prisma.InputJsonValue,
+              isActive: true,
+            },
+          });
+          convoId = conv.id;
+        }
+        await setCallerState({
+          tenantId,
+          callerPhone,
+          conversationId: convoId,
+          currentFlow: null,
+          flowStep: null,
+          orderDraft: null,
+          lastMessageAt: Date.now(),
+          messageCount: (currentState?.messageCount ?? 0) + 1,
+          dedupKey: messageSid,
+        });
+      } catch (err) {
+        logger.error('Failed to persist English-only gate turn', { err, tenantId });
+      }
+      if (!testMode) {
+        await sendSms(tenantId, callerPhone, reply).catch((err) =>
+          logger.error('Failed to send English-only gate SMS', { err, tenantId }),
+        );
+      }
+      logger.info('English-only gate fired', { tenantId, callerPhone, detected: nonEnglish });
+      if (testMode) {
+        const st = await getCallerState(tenantId, callerPhone);
+        return {
+          reply,
+          sideEffects: [],
+          nextState: (st as unknown as ProcessInboundSmsTestResult['nextState']),
+          flowType: FlowType.FALLBACK,
+        };
+      }
+      return;
+    }
+  }
+
   // Food-truck short-circuit: "where are you?" → reply with today's spot
   // without running the full flow engine / LLM roundtrip.
   if (matchesLocationKeyword(inboundMessage)) {
@@ -511,42 +602,12 @@ export async function processInboundSms(
       }
     }
 
-    // Language: use the stored Contact.preferredLanguage when set. Otherwise
-    // run the cheap marker heuristic on this inbound message; on a hit
-    // we'll persist it below so subsequent turns stay in that language.
-    //
-    // The detector also returns 'en' when the customer explicitly says
-    // "I don't speak Tagalog" / "English please" — in that case we
-    // OVERWRITE any prior stored value, since a sticky mis-detection
-    // is exactly what this path exists to undo.
-    let preferredLanguage: string | null = (callerContext.contact as { preferredLanguage?: string | null } | null)?.preferredLanguage ?? null;
-    const { detectLanguage } = await import('@ringback/flow-engine');
-    const detected = detectLanguage(inboundMessage, preferredLanguage);
-    if (detected === 'en' && preferredLanguage && preferredLanguage !== 'en') {
-      // Explicit reset — stored value was wrong, clear it.
-      preferredLanguage = 'en';
-      if (callerContext.contact?.id) {
-        prisma.contact
-          .update({
-            where: { id: callerContext.contact.id },
-            data: { preferredLanguage: 'en' },
-          })
-          .catch(() => {});
-      }
-    } else if (!preferredLanguage && detected && detected !== 'en') {
-      preferredLanguage = detected;
-      // Fire-and-forget backfill so subsequent turns pick it up. Skip
-      // when we don't have a contact row yet — happens before first
-      // consent capture — since upsert-by-phone is its own dance.
-      if (callerContext.contact?.id) {
-        prisma.contact
-          .update({
-            where: { id: callerContext.contact.id },
-            data: { preferredLanguage: detected },
-          })
-          .catch(() => {});
-      }
-    }
+    // Language detection + sticky preferredLanguage persistence used
+    // to live here. We dropped foreign-language support — inbound
+    // non-English messages are now intercepted earlier (see the
+    // English-only gate above) and the agent replies in English only.
+    // Contact.preferredLanguage still exists as a Prisma column for
+    // historical data but is no longer read or written here.
 
     // Active order: find the most recent non-terminal Order for this
     // caller. Lets fallback/chat replies quote the REAL pickup ETA
@@ -602,7 +663,6 @@ export async function processInboundSms(
       lastOrderSummary,
       lastOrderItems,
       lastConversationPreview: callerContext.lastConversation?.lastMessagePreview ?? null,
-      preferredLanguage,
       activeOrder,
     };
   }
@@ -948,18 +1008,11 @@ export async function processInboundSms(
       // Customer got the agent's "you'll get a payment link shortly"
       // reply already. If the link generation tanked, tell them now.
       const { sms: i18nSms } = await import('@/lib/server/i18n');
-      const contactLang = await prisma.contact
-        .findFirst({
-          where: { tenantId, phone: callerPhone },
-          select: { preferredLanguage: true },
-        })
-        .then((c) => c?.preferredLanguage ?? null)
-        .catch(() => null);
       if (!testMode) {
         await sendSms(
           tenantId,
           callerPhone,
-          i18nSms('orderProcessingFailed', contactLang, {}),
+          i18nSms('orderProcessingFailed', null, {}),
         ).catch(() => {});
       }
       // Mark any partially-created order as UNPAID (not stuck in PENDING)

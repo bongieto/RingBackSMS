@@ -62,9 +62,6 @@ export interface CallerMemory {
     itemsSummary?: string | null;
     total?: number | null;
   } | null;
-  /** BCP-47 language tag detected from prior messages. When set, the
-   *  agent replies in this language. */
-  preferredLanguage?: string | null;
 }
 
 /** Chat completion function injected by the web layer. The flow engine

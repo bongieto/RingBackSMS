@@ -884,22 +884,9 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       // If Claude's own reply already echoes the time, trust it.
       // Otherwise force an explicit echo so the customer sees their
       // time landed.
-      //
-      // Language-awareness: when preferredLanguage is set (tl/es), use
-      // a localized template instead of the English default. The LLM's
-      // own reply is also checked in the target language's common
-      // idioms so we don't clobber a good LLM reply that already
-      // echoed the time. Regression this guards: Tagalog customer
-      // asked for pickup, LLM wrote English fallback, we clobbered
-      // with more English — now we write Tagalog explicitly.
-      const preferredLang = callerMemory?.preferredLanguage;
       const replyHasTimeLiteral = baseReply.toLowerCase().includes(draft.pickupTime.toLowerCase());
       const enIdiomHit = /\b(got it|scheduled|pickup (at|for))\b/i.test(baseReply);
-      const tlIdiomHit = /\b(nakuha|sige po|para sa|para bukas|para sa)\b/i.test(baseReply);
-      const esIdiomHit = /\b(entendido|para recoger|para las)\b/i.test(baseReply);
-      const replyMentionsTime =
-        replyHasTimeLiteral ||
-        (preferredLang === 'tl' ? tlIdiomHit : preferredLang === 'es' ? esIdiomHit : enIdiomHit);
+      const replyMentionsTime = replyHasTimeLiteral || enIdiomHit;
       if (!replyMentionsTime) {
         const summary = draft.items
           .map((i) => {
@@ -913,25 +900,11 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           })
           .join(', ');
         const total = computeTotal(draft).toFixed(2);
-        if (preferredLang === 'tl') {
-          const head = summary
-            ? `Sige po — ${summary} para ${draft.pickupTime}. Total $${total}.`
-            : `Sige po — pickup ${draft.pickupTime}.`;
-          const tail = summary ? ' Kumpirmahin na po?' : ' Ano po ang gusto niyong i-order?';
-          baseReply = `${head}${tail}`;
-        } else if (preferredLang === 'es') {
-          const head = summary
-            ? `Entendido — ${summary} para las ${draft.pickupTime}. Total $${total}.`
-            : `Entendido — recoger ${draft.pickupTime}.`;
-          const tail = summary ? ' ¿Listo para confirmar?' : ' ¿Qué te gustaría ordenar?';
-          baseReply = `${head}${tail}`;
-        } else {
-          const head = summary
-            ? `Got it — pickup ${draft.pickupTime}. ${summary}. Total $${total}.`
-            : `Got it — pickup ${draft.pickupTime}.`;
-          const tail = summary ? ' Ready to confirm?' : ' What can I get you?';
-          baseReply = `${head}${tail}`;
-        }
+        const head = summary
+          ? `Got it — pickup ${draft.pickupTime}. ${summary}. Total $${total}.`
+          : `Got it — pickup ${draft.pickupTime}.`;
+        const tail = summary ? ' Ready to confirm?' : ' What can I get you?';
+        baseReply = `${head}${tail}`;
       }
     }
 

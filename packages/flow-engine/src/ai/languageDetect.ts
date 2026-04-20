@@ -1,19 +1,35 @@
 /**
- * Ultra-cheap language detection for inbound SMS. Not a full classifier —
- * matches against marker words that Claude's English-default model
- * reliably mis-detects otherwise. If no marker fires, return null so the
- * agent defaults to English.
+ * Cheap language detector used as a one-shot gate: does THIS inbound
+ * message appear to be in a language we don't support?
  *
- * Tested targets: Spanish (es) and Tagalog (tl). Easy to extend.
+ * History: we used to detect Spanish / Tagalog and reply in-language,
+ * with sticky per-contact language storage. That approach produced
+ * four consecutive regression rounds (markers colliding with menu
+ * item names, bilingual sentences flipping language mid-convo, LLM
+ * behavior varying under multilingual prompt load). We pulled the
+ * plug on foreign-language support — the bot now answers in English
+ * only, and when we detect a clearly non-English message we reply
+ * with a fixed "we only speak English" apology.
+ *
+ * This function is intentionally kept simple: scan the current
+ * message for marker tokens; no stickiness, no cross-turn state. The
+ * caller invokes it per-turn and acts on the result directly.
+ *
+ * Tested targets: Spanish (es) and Tagalog (tl). Adding another
+ * language is a matter of adding a marker list — the short-circuit
+ * behavior in the host app doesn't need to change.
  */
 // IMPORTANT: never include FOOD names here, even if they're loanwords
 // from the target language. "lumpia", "adobo", "pancit", "tacos",
-// "pollo", "arroz" etc. show up on English-language restaurant menus
-// and get ordered by customers of every background. Real-world bug
-// this caused: every customer of a Filipino restaurant named "The
-// Lumpia House" sent a first SMS containing "lumpia" and got flipped
-// to Tagalog for the rest of the session. Markers must be LANGUAGE
-// signals — greetings, particles, function words — not menu items.
+// "pollo", "arroz", "prito" etc. show up on English-language
+// restaurant menus and get ordered by customers of every background.
+// Real-world bugs this caused:
+//   - "The Lumpia House" customers sent first SMS containing "lumpia"
+//     and got flipped to Tagalog for the rest of the session.
+//   - "wheres my lumpia prito?" (plain English) detected as Tagalog
+//     because "prito" was in the marker list as a "cooking method".
+// Markers must be LANGUAGE signals — greetings, particles, function
+// words — not menu items or cooking verbs.
 const ES_MARKERS = [
   'hola', 'gracias', 'por favor', 'quiero', 'quisiera', 'necesito',
   'tengo', 'esta', 'estoy', 'está', 'pedido', 'cuánto', 'cuanto',
@@ -33,22 +49,8 @@ const TL_MARKERS = [
   'maraming', 'opo', 'hindi po', ' po ', ' po,', ' po.', ' po!', ' po?',
   // Common Tagalog particle. ("ang" deliberately omitted — collides
   // with English "hang on", "rang", etc.)
-  //
-  // "prito" was here briefly as a "cooking method, not a food name"
-  // — that rationale turned out to be wrong in practice. "Lumpia
-  // Prito" is the printed dish name on this tenant's menu, so every
-  // English SMS asking about it ("wheres my lumpia prito?") flipped
-  // language to Tagalog. Rule stands: markers must be LANGUAGE
-  // signals (greetings, particles, function words), never words that
-  // appear verbatim in menu item names, even if they're loan terms.
   'yung',
 ];
-
-// Explicit "don't assume my language" signals. When the customer says
-// "I don't speak X" or "English please", clear sticky detection so the
-// agent drops back to English on the next turn.
-const EN_RESET_RE =
-  /\b(?:i\s*don'?t\s*(?:speak|understand|know)\s*(?:tagalog|spanish|espanol|español|filipino|tl|es|that)|english\s*(?:please|only)|in english|speak english)\b/i;
 
 function scoreMarkers(text: string, markers: string[]): number {
   let score = 0;
@@ -59,16 +61,19 @@ function scoreMarkers(text: string, markers: string[]): number {
   return score;
 }
 
+/**
+ * Returns 'es' or 'tl' when the current inbound message contains
+ * strong markers for that language; null otherwise (including for
+ * English or for any message too short to judge).
+ *
+ * The `_previous` parameter is retained only for signature
+ * compatibility with older call sites — sticky language state has
+ * been removed and the argument is ignored.
+ */
 export function detectLanguage(
   inbound: string,
-  previous: string | null | undefined,
-): string | null {
-  // Explicit English reset always wins — lets the customer override a
-  // bad sticky detection by saying "I don't speak Tagalog" or
-  // "English please". We return 'en' (not null) so downstream code can
-  // distinguish "customer asked for English" from "no signal yet".
-  if (inbound && EN_RESET_RE.test(inbound)) return 'en';
-  if (previous) return previous; // sticky once detected
+  _previous?: string | null,
+): 'es' | 'tl' | null {
   if (!inbound || inbound.length < 3) return null;
   const es = scoreMarkers(inbound, ES_MARKERS);
   const tl = scoreMarkers(inbound, TL_MARKERS);
@@ -76,16 +81,4 @@ export function detectLanguage(
   if (tl > es) return 'tl';
   if (es > tl) return 'es';
   return null;
-}
-
-export function languageLabel(tag: string | null | undefined): string | null {
-  if (!tag) return null;
-  const map: Record<string, string> = {
-    en: 'English',
-    es: 'Spanish',
-    tl: 'Tagalog',
-    fr: 'French',
-    zh: 'Chinese',
-  };
-  return map[tag] ?? tag;
 }

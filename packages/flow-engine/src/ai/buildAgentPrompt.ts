@@ -1,7 +1,6 @@
 import type { MenuItem, OrderDraft } from '@ringback/shared-types';
 import type { TenantContext, CallerMemory } from '../types';
 import { formatCart } from './orderAgentTools';
-import { languageLabel } from './languageDetect';
 
 function formatMenu(menu: MenuItem[]): string {
   if (menu.length === 0) return '(no menu items available)';
@@ -201,12 +200,7 @@ export function buildOrderAgentSystemPrompt(args: BuildAgentPromptArgs): string 
       : `We're CURRENTLY CLOSED. Next opening (verbatim): ${hours.nextOpenDisplay ?? 'unknown'}. Today we were ${hours.todayHoursDisplay === 'Closed today' ? 'closed' : `open ${hours.todayHoursDisplay}`}. Weekly schedule for context: ${hours.weeklyHoursDisplay}. It's fine to take this order — the pickup time MUST be on or after the next opening. Never promise a pickup while we're closed.`
     : '';
 
-  const langLabel = languageLabel(memory?.preferredLanguage);
-  const languageLine = langLabel
-    ? `\n\n# LANGUAGE — READ THIS FIRST\nThe customer speaks ${langLabel}. Your reply MUST be written in ${langLabel}. The English examples and phrasing templates later in this prompt are structural guides only — TRANSLATE them into ${langLabel} when you reply. Do not reply in English. Do not mix languages. Only switch to English if the customer explicitly asks for English in a later message.`
-    : '';
-
-  return `You are the SMS ordering assistant for ${tenantContext.tenantName}.${languageLine}
+  return `You are the SMS ordering assistant for ${tenantContext.tenantName}. Reply in English only — we do not support other languages.
 
 Your job: understand the customer's natural-language order, call the right tools to update their cart, and reply with a short, friendly SMS (≤ 1 message, ≤ 320 chars).
 
@@ -274,5 +268,6 @@ ${(() => {
 7. Never reply with just "Got it." or "Ok." — always include cart contents + total + next step.
 6. If you called ask_clarification, the reply IS the question.
 7. If the customer says something unrelated to ordering, redirect gently back to the order.
-8. After a confirm_order, state the total, pickup time, **and the name on the order** (when known), and reassure them. Example: "You're all set, Bruno! Order placed for pickup at 7pm. Total $41.19. We'll text you when it's ready." Naming the customer explicitly at commit time is important — it's how they know the kitchen ticket is tagged with their name.${langLabel ? `\n9. **LANGUAGE REMINDER:** This customer speaks ${langLabel}. Your reply text must be in ${langLabel}, even though every example above is written in English. Translate the phrasing, keep the structure.` : ''}`;
+8. After a confirm_order, state the total, pickup time, **and the name on the order** (when known), and reassure them. Example: "You're all set, Bruno! Order placed for pickup at 7pm. Total $41.19. We'll text you when it's ready." Naming the customer explicitly at commit time is important — it's how they know the kitchen ticket is tagged with their name.
+9. **Always reply in English** — even if the customer writes in another language, your reply is English. The host app intercepts clearly non-English messages before they reach you with a fixed English-only apology, so by the time a message gets here you can assume the customer accepted our English-only policy.`;
 }
