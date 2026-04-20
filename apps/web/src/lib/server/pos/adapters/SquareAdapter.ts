@@ -730,6 +730,9 @@ export class SquareAdapter extends BasePosAdapter {
           tenantId,
           squareOrderId,
           err: payErr?.message,
+          statusCode: payErr?.statusCode,
+          squareErrors: payErr?.result?.errors ?? payErr?.errors ?? null,
+          amountCents: Number(squareOrderTotal),
         });
       }
     }
