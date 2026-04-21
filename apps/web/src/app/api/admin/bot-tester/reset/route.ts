@@ -66,11 +66,21 @@ export async function POST(request: NextRequest) {
       })
       .catch(() => {});
 
+    // If a previous test typed STOP / UNSUBSCRIBE / etc., the compliance
+    // pre-handler inserted an SmsSuppression row for the sentinel. Every
+    // subsequent tester turn then silently drops at checkSuppression and
+    // the UI shows "(no reply)". Clear it on reset so the tester is
+    // usable again without a DB dive.
+    const deletedSuppressions = await prisma.smsSuppression
+      .deleteMany({ where: { tenantId, callerPhone } })
+      .catch(() => ({ count: 0 }));
+
     logger.info('Bot tester session reset', {
       tenantId,
       callerPhone,
       deletedConversations: deleted.count,
       deletedOrders: deletedOrders.count,
+      deletedSuppressions: deletedSuppressions.count,
     });
 
     return apiSuccess({
