@@ -66,6 +66,19 @@ export async function detectIntent(
     ) {
       return { intent: FlowType.ORDER, confidence: 1.0 };
     }
+    // Bare greeting as the opener. Previously these fell through to the
+    // fallback LLM, whose prompt allowed it to emit `<silence>` — which
+    // produced a dead "(no reply)" response to "hello". For a business
+    // that sells food/goods, a bare-greeting opener is an invitation to
+    // engage, not chit-chat noise. Route to ORDER so the customer gets
+    // the warm "OK, what can I get you from {tenantName}?" greeting.
+    if (
+      /^(hi|hello|hey+|howdy|yo|hiya|hola|aloha|greetings|good\s+(morning|afternoon|evening|day))[\s!.,?]*$/i.test(
+        message.trim(),
+      )
+    ) {
+      return { intent: FlowType.ORDER, confidence: 1.0 };
+    }
   }
 
   if (enabledFlowTypes.includes(FlowType.INQUIRY)) {
