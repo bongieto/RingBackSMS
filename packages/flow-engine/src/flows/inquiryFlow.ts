@@ -1,5 +1,6 @@
 import { FlowInput, FlowOutput } from '../types';
 import { FlowType, MenuItem, SideEffect } from '@ringback/shared-types';
+import { pushDecision } from '../decisions';
 
 const STOP_WORDS = new Set([
   'a', 'an', 'the', 'do', 'you', 'have', 'any', 'got', 'is', 'are', 'in', 'stock',
@@ -72,6 +73,14 @@ function parseSelectionNumber(msg: string, max: number): number | null {
 export async function processInquiryFlow(input: FlowInput): Promise<FlowOutput> {
   const { tenantContext, inboundMessage, currentState, callerPhone } = input;
   const now = Date.now();
+
+  pushDecision(input, {
+    handler: 'processInquiryFlow',
+    phase: 'FLOW',
+    outcome: `step_${(currentState?.flowStep ?? 'match').toLowerCase()}`,
+    evidence: { step: currentState?.flowStep ?? null, menuItemCount: tenantContext.menuItems.length },
+    durationMs: 0,
+  });
   const baseState = {
     tenantId: tenantContext.tenantId,
     callerPhone,

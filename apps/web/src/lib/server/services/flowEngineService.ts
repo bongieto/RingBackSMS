@@ -18,6 +18,9 @@ import { prisma } from '../db';
 import { encryptMessages, decryptMessages } from '../encryption';
 import { ensureTenantSlug } from '../slugify';
 import { Prisma } from '@prisma/client';
+import { recordDecision, mergeDecisions, currentTurnId, setTurnSnapshots } from '../turn/TurnContext';
+import { withTurn } from '../turn/withTurn';
+import type { DecisionDraft, TurnOutcome } from '@ringback/shared-types';
 
 export interface ProcessInboundSmsInput {
   tenantId: string;
@@ -49,6 +52,51 @@ export async function processInboundSms(
   input: ProcessInboundSmsInput,
   options?: ProcessInboundSmsOptions,
 ): Promise<void | ProcessInboundSmsTestResult> {
+  // Turn Record wrapper: when TURN_RECORD_ENABLED=1, opens an ALS scope so
+  // pre-handler + flow-engine decisions land on a single Turn row. When
+  // disabled (default), this is a passthrough — no ALS, no DB write.
+  //
+  // The wrapper seeds outcome=ERROR_UNHANDLED and replaces it with what
+  // the inner body returns via `__turnOutcome`. Bot-tester returns
+  // ProcessInboundSmsTestResult; prod returns void — both paths converge
+  // through the same wrapper so Turn bookkeeping is identical.
+  return withTurn(
+    {
+      tenantId: input.tenantId,
+      callerPhone: input.callerPhone,
+      inboundMessageSid: input.messageSid,
+      inboundBody: input.inboundMessage,
+      inboundReceivedAt: new Date(),
+    },
+    async () => {
+      const result = await processInboundSmsInner(input, options);
+      // Shape the return into a TurnResult while preserving the caller's
+      // expected void | ProcessInboundSmsTestResult. The `outcome` fields
+      // land on the Turn row; the extra keys are ignored by testMode
+      // consumers at the edges.
+      const turnOutcome: TurnOutcome =
+        result && 'reply' in result
+          ? result.reply === ''
+            ? 'SUPPRESSED_COMPLIANCE'
+            : 'REPLIED'
+          : 'REPLIED';
+      const replyBody = result && 'reply' in result ? result.reply : undefined;
+      // We cast through `any` because withTurn's type signature requires
+      // TurnResult, but our public signature is `void | TestResult` — the
+      // extra `outcome`/`replyBody` fields are harmless to testMode
+      // consumers (they don't read them).
+      return Object.assign(result ?? {}, {
+        outcome: turnOutcome,
+        replyBody,
+      }) as any;
+    },
+  ) as Promise<void | ProcessInboundSmsTestResult>;
+}
+
+async function processInboundSmsInner(
+  input: ProcessInboundSmsInput,
+  options?: ProcessInboundSmsOptions,
+): Promise<void | ProcessInboundSmsTestResult> {
   const { tenantId, callerPhone, inboundMessage, messageSid } = input;
   const testMode = options?.testMode === true;
   const startTs = Date.now();
@@ -56,9 +104,22 @@ export async function processInboundSms(
   // Dedup check
   const duplicate = await isDuplicate(tenantId, messageSid);
   if (duplicate) {
+    recordDecision({
+      handler: 'dedup',
+      phase: 'PRE_HANDLER',
+      outcome: 'suppressed_duplicate',
+      evidence: { messageSid },
+      durationMs: Date.now() - startTs,
+    });
     logger.warn('Duplicate message received, skipping', { tenantId, messageSid });
     return;
   }
+  recordDecision({
+    handler: 'dedup',
+    phase: 'PRE_HANDLER',
+    outcome: 'miss',
+    durationMs: Date.now() - startTs,
+  });
 
   // Check if conversation is in HUMAN handoff mode
   let currentState = await getCallerState(tenantId, callerPhone);
@@ -73,6 +134,16 @@ export async function processInboundSms(
     currentState?.lastMessageAt &&
     Date.now() - currentState.lastMessageAt > STALE_STATE_MINUTES * 60 * 1000
   ) {
+    recordDecision({
+      handler: 'staleStateGuard',
+      phase: 'PRE_HANDLER',
+      outcome: 'discarded',
+      evidence: {
+        ageMinutes: Math.round((Date.now() - currentState.lastMessageAt) / 60000),
+        flowStep: currentState.flowStep,
+      },
+      durationMs: 0,
+    });
     logger.info('Discarding stale caller state', {
       tenantId,
       callerPhone,
@@ -115,6 +186,13 @@ export async function processInboundSms(
         }).catch((err) => logger.warn('Failed to send handoff notification', { error: err }));
       }
 
+      recordDecision({
+        handler: 'humanHandoff',
+        phase: 'PRE_HANDLER',
+        outcome: 'handed_off_to_human',
+        evidence: { conversationId: existingConversationId },
+        durationMs: 0,
+      });
       logger.info('Message received during human handoff, skipping AI', { tenantId, callerPhone, testMode });
       if (testMode) {
         return {
@@ -334,6 +412,18 @@ export async function processInboundSms(
     logger.error('Tenant or config not found', { tenantId });
     return;
   }
+
+  // Populate the Turn's snapshot fields now that we have the tenant in
+  // hand. Passing `currentState` on the contact snapshot ensures replays
+  // can see the caller's flowStep at the moment of the turn.
+  setTurnSnapshots({
+    tenantConfigSnapshot: tenant.config,
+    contactStateSnapshot: {
+      flowStep: currentState?.flowStep ?? null,
+      currentFlow: currentState?.currentFlow ?? null,
+      conversationId: currentState?.conversationId ?? null,
+    },
+  });
 
   // Lazily backfill slug for tenants that pre-date the slug feature
   const tenantSlug = tenant.slug ?? (await ensureTenantSlug(tenant.id).catch(() => null));
@@ -722,6 +812,11 @@ export async function processInboundSms(
     }
   }
 
+  // Sink for Decision drafts pushed by flow-engine handlers. Merged into
+  // the ALS-backed Turn context so all decisions land on the same Turn
+  // row. Safe when Turn Record is disabled — mergeDecisions no-ops.
+  const flowDecisions: DecisionDraft[] = [];
+
   const result = await runFlowEngine({
     tenantContext,
     callerPhone,
@@ -732,7 +827,9 @@ export async function processInboundSms(
     recentMessages,
     callerMemory,
     getActiveOrderCount,
+    decisions: flowDecisions,
   });
+  mergeDecisions(flowDecisions);
 
   // cal.com async side effects that mutate the outgoing SMS before it
   // ships. Handled here (not in processSideEffect) because they need to
@@ -901,6 +998,7 @@ export async function processInboundSms(
         flowType: result.flowType,
         messages: encryptMessages(newMessages) as unknown as Prisma.InputJsonValue,
         isActive: true,
+        causingTurnId: currentTurnId() ?? null,
         ...(isEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
       },
     });
@@ -920,6 +1018,7 @@ export async function processInboundSms(
         messages: encryptMessages(updatedMessages) as unknown as Prisma.InputJsonValue,
         flowType: result.flowType,
         updatedAt: new Date(),
+        causingTurnId: currentTurnId() ?? null,
         ...(isEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
       },
     });

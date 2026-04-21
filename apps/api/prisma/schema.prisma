@@ -162,6 +162,7 @@ model Tenant {
   locations          TenantLocation[]
   devices            Device[]
   devicePairingCodes DevicePairingCode[]
+  turns              Turn[]
 
   @@index([twilioPhoneNumber])
   @@index([clerkOrgId])
@@ -389,6 +390,9 @@ model Conversation {
   handoffStatus HandoffStatus @default(AI)
   handoffAt     DateTime?
   isActive      Boolean       @default(true)
+  /// Turn that most recently touched this Conversation's state. Nullable,
+  /// no FK (business data must outlive Turn retention).
+  causingTurnId String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -428,6 +432,9 @@ model Order {
   paymentStatus      String?      @default("UNPAID")
   printedAt          DateTime?    // set by the CloudPRNT POST callback after a successful print
   locationId         String?      // TenantLocation.id — nullable until multi-location is fully wired
+  /// Inbound Turn that caused this order to be created. Nullable, no FK —
+  /// orders must not cascade-delete when Turn rows are aged out.
+  causingTurnId      String?
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
@@ -906,6 +913,9 @@ model SmsSuppression {
   callerPhone  String
   reason       String   @default("opt_out")
   suppressedAt DateTime @default(now())
+  /// Inbound Turn whose handler decided to suppress this caller. Nullable,
+  /// no FK — suppression rows must survive Turn retention.
+  causingTurnId String?
 
   @@unique([tenantId, callerPhone])
 }
@@ -966,4 +976,92 @@ model AiUsageLog {
 
   @@index([tenantId, createdAt])
   @@index([provider, createdAt])
+}
+
+// ───────────────────────────── Turn Record ─────────────────────────────
+// One Turn = one inbound-SMS -> outcome cycle. Immutable audit row that
+// captures the full decision trail so "why did caller +1… get (no reply)"
+// is a single SELECT, not a log archaeology expedition. Observation layer
+// only — never on the request-serving hot path.
+
+enum TurnDirection {
+  INBOUND
+  OUTBOUND_PROACTIVE
+}
+
+enum DecisionPhase {
+  PRE_HANDLER
+  FLOW
+  POST_HANDLER
+}
+
+enum TurnOutcome {
+  REPLIED
+  DEFLECTED
+  SUPPRESSED_COMPLIANCE
+  SUPPRESSED_RATE_LIMIT
+  SUPPRESSED_DUPLICATE
+  HANDED_OFF_TO_HUMAN
+  QUEUED_FOR_BUSINESS_HOURS
+  ERROR_LLM_TIMEOUT
+  ERROR_LLM_REFUSED
+  ERROR_HANDLER_THREW
+  ERROR_UNHANDLED
+}
+
+model Turn {
+  id                   String        @id @default(cuid())
+  tenantId             String
+  tenant               Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  callerPhone          String
+  direction            TurnDirection @default(INBOUND)
+
+  // Input snapshot
+  inboundMessageSid    String?
+  /// AES-256-GCM encrypted; same scheme as Conversation.messages.
+  inboundBodyEncrypted String?       @db.Text
+  inboundReceivedAt    DateTime
+  /// Tenant.config snapshot at turn-time so replays survive config drift.
+  tenantConfigSnapshot Json
+  /// { suppressed, preferredLanguage, callerStateFlowStep, ... }
+  contactStateSnapshot Json?
+
+  decisions            Decision[]
+
+  // Outcome
+  outcome              TurnOutcome
+  outcomeReason        String?
+  /// Null for any SUPPRESSED_* or ERROR_* outcome.
+  replyBodyEncrypted   String?       @db.Text
+  replyMessageSid      String?
+
+  // Performance
+  durationMs           Int
+  llmCalled            Boolean       @default(false)
+  llmLatencyMs         Int?
+
+  createdAt            DateTime      @default(now())
+
+  @@index([tenantId, callerPhone, createdAt])
+  @@index([tenantId, outcome, createdAt])
+  @@index([createdAt])
+}
+
+model Decision {
+  id         String        @id @default(cuid())
+  turnId     String
+  turn       Turn          @relation(fields: [turnId], references: [id], onDelete: Cascade)
+
+  /// 0-based position in the handler chain.
+  sequence   Int
+  handler    String
+  phase      DecisionPhase
+  /// Handler-specific, e.g. "suppressed_silent", "hit", "miss".
+  outcome    String
+  reason     String?
+  evidence   Json?
+  durationMs Int
+
+  @@index([turnId, sequence])
+  @@index([handler, outcome])
 }

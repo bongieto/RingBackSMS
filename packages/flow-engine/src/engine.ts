@@ -6,6 +6,7 @@ import { processFallbackFlow } from './flows/fallbackFlow';
 import { processInquiryFlow } from './flows/inquiryFlow';
 import { runOrderAgent } from './ai/orderAgent';
 import { FlowType } from '@ringback/shared-types';
+import { pushDecision } from './decisions';
 
 function routeOrder(input: FlowInput): Promise<FlowOutput> {
   // AI order agent is the default when a tool-use chat fn is wired.
@@ -28,12 +29,26 @@ export async function runFlowEngine(input: FlowInput): Promise<FlowOutput> {
 
   // If in an active flow (not complete), continue it
   if (currentState?.currentFlow && currentState.flowStep !== 'ORDER_COMPLETE' && currentState.flowStep !== 'INQUIRY_COMPLETE') {
+    pushDecision(input, {
+      handler: 'engine.continueFlow',
+      phase: 'FLOW',
+      outcome: 'continue',
+      evidence: { flow: currentState.currentFlow, step: currentState.flowStep },
+      durationMs: 0,
+    });
     // If orders got paused while the caller was mid-order, bail out
     // cleanly so we don't silently drop their in-progress order.
     if (
       currentState.currentFlow === FlowType.ORDER &&
       tenantContext.config.ordersAcceptingEnabled === false
     ) {
+      pushDecision(input, {
+        handler: 'engine.ordersPaused',
+        phase: 'FLOW',
+        outcome: 'mid_order_paused',
+        reason: 'ordersAcceptingEnabled=false while caller was mid-order',
+        durationMs: 0,
+      });
       return {
         nextState: {
           tenantId: tenantContext.tenantId,
@@ -67,11 +82,19 @@ export async function runFlowEngine(input: FlowInput): Promise<FlowOutput> {
   }
 
   // Detect intent from message
+  const intentT0 = Date.now();
   const intentResult = await detectIntent(
     inboundMessage,
     tenantContext,
     input.chatFn,
   );
+  pushDecision(input, {
+    handler: 'detectIntent',
+    phase: 'FLOW',
+    outcome: intentResult.intent === 'UNCLEAR' ? 'unclear' : `intent_${intentResult.intent.toLowerCase()}`,
+    evidence: { confidence: intentResult.confidence },
+    durationMs: Date.now() - intentT0,
+  });
 
   const enabledFlowTypes = tenantContext.flows
     .filter((f) => f.isEnabled)
@@ -87,6 +110,14 @@ export async function runFlowEngine(input: FlowInput): Promise<FlowOutput> {
     intentResult.confidence < CONFIDENCE_THRESHOLD &&
     enabledFlowTypes.includes(FlowType.FALLBACK)
   ) {
+    pushDecision(input, {
+      handler: 'engine.confidenceGate',
+      phase: 'FLOW',
+      outcome: 'routed_to_fallback',
+      reason: `confidence ${intentResult.confidence} < ${CONFIDENCE_THRESHOLD}`,
+      evidence: { intent: intentResult.intent, confidence: intentResult.confidence },
+      durationMs: 0,
+    });
     return processFallbackFlow(input);
   }
 
@@ -98,6 +129,13 @@ export async function runFlowEngine(input: FlowInput): Promise<FlowOutput> {
       intentResult.intent === FlowType.ORDER &&
       tenantContext.config.ordersAcceptingEnabled === false
     ) {
+      pushDecision(input, {
+        handler: 'engine.ordersPaused',
+        phase: 'FLOW',
+        outcome: 'new_order_paused',
+        reason: 'ordersAcceptingEnabled=false at intent-route time',
+        durationMs: 0,
+      });
       return {
         nextState: {
           tenantId: tenantContext.tenantId,

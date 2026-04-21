@@ -1,5 +1,6 @@
 import { prisma } from '../db';
 import { logger } from '../logger';
+import { currentTurnId } from '../turn/TurnContext';
 import {
   renderGreetingTemplate,
   buildGreetingVars,
@@ -193,10 +194,13 @@ export async function suppressCaller(
   callerPhone: string,
   reason: string = 'opt_out',
 ): Promise<void> {
+  // Stamp the inbound Turn that caused this suppression, if any. Makes
+  // "why was this phone number suppressed?" one JOIN away.
+  const causingTurnId = currentTurnId() ?? null;
   await prisma.smsSuppression.upsert({
     where: { tenantId_callerPhone: { tenantId, callerPhone } },
-    create: { tenantId, callerPhone, reason },
-    update: { reason },
+    create: { tenantId, callerPhone, reason, causingTurnId },
+    update: { reason, causingTurnId },
   });
   // Close all pending consent rows for this caller
   await prisma.smsConsentRequest.updateMany({

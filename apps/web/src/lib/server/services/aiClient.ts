@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import { waitUntil } from '@vercel/functions';
 import { logger } from '../logger';
 import { prisma } from '../db';
+import { markLlmCall } from '../turn/TurnContext';
 
 const CLAUDE_MODEL =
   process.env.AI_PRIMARY_MODEL?.trim() || 'claude-sonnet-4-20250514';
@@ -121,6 +122,7 @@ export async function chatCompletion(
           ? response.content[0].text
           : '';
       const latencyMs = Date.now() - start;
+      markLlmCall(latencyMs);
       logger.info('[ai] claude completion', {
         model: CLAUDE_MODEL,
         latencyMs,
@@ -168,6 +170,7 @@ export async function chatCompletion(
       clearTimeout(timer);
       const text = response.choices[0]?.message?.content ?? '';
       const latencyMs = Date.now() - start;
+      markLlmCall(latencyMs);
       logger.info('[ai] minimax completion', { model: MINIMAX_MODEL, latencyMs });
       logAiUsage({
         tenantId, provider: 'minimax', model: MINIMAX_MODEL, purpose,
@@ -310,6 +313,7 @@ export async function chatWithTools(
       }
 
       const latencyMs = Date.now() - start;
+      markLlmCall(latencyMs);
       logger.info('[ai] claude tool-use', {
         model: CLAUDE_MODEL,
         latencyMs,
@@ -398,6 +402,7 @@ export async function chatWithTools(
         });
 
       const latencyMs = Date.now() - start;
+      markLlmCall(latencyMs);
       logger.info('[ai] minimax tool-use', {
         model: MINIMAX_MODEL,
         latencyMs,

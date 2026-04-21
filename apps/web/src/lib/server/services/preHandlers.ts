@@ -28,6 +28,7 @@ import { FlowType, SideEffect } from '@ringback/shared-types';
 import { prisma } from '../db';
 import { suppressCaller, isCallerSuppressed } from './consentService';
 import { logger } from '../logger';
+import { recordDecision } from '../turn/TurnContext';
 
 export interface PreHandlerResult {
   reply: string;
@@ -55,11 +56,13 @@ export async function handleComplianceKeyword(
   message: string,
   ctx: PreHandlerContext,
 ): Promise<PreHandlerResult | null> {
+  const t0 = Date.now();
   const trimmed = message.trim();
 
   // STOP → suppress caller + send single confirmation. Carriers require
   // EXACTLY one confirmation and then silence until START.
   if (STOP_RE.test(trimmed)) {
+    recordDecision({ handler: 'handleComplianceKeyword', phase: 'PRE_HANDLER', outcome: 'hit_stop', durationMs: Date.now() - t0 });
     await suppressCaller(ctx.tenantId, ctx.callerPhone, 'opt_out').catch((err) =>
       logger.warn('Failed to suppress caller on STOP', { err, tenantId: ctx.tenantId }),
     );
@@ -74,6 +77,7 @@ export async function handleComplianceKeyword(
   // START → unsuppress, confirm. Required by operator spec to pair with
   // STOP.
   if (START_RE.test(trimmed)) {
+    recordDecision({ handler: 'handleComplianceKeyword', phase: 'PRE_HANDLER', outcome: 'hit_start', durationMs: Date.now() - t0 });
     // Best-effort unsuppress. suppressCaller uses an upsert — the inverse
     // is a delete.
     await prisma.smsSuppression
@@ -98,6 +102,7 @@ export async function handleComplianceKeyword(
   // HELP → carrier-compliant info reply with business name + support
   // contact + STOP instructions.
   if (HELP_RE.test(trimmed)) {
+    recordDecision({ handler: 'handleComplianceKeyword', phase: 'PRE_HANDLER', outcome: 'hit_help', durationMs: Date.now() - t0 });
     const contactLine = ctx.tenantPhoneNumber
       ? ` Contact: ${ctx.tenantPhoneNumber}.`
       : '';
@@ -109,6 +114,7 @@ export async function handleComplianceKeyword(
     };
   }
 
+  recordDecision({ handler: 'handleComplianceKeyword', phase: 'PRE_HANDLER', outcome: 'miss', durationMs: Date.now() - t0 });
   return null;
 }
 
@@ -121,10 +127,43 @@ export async function handleComplianceKeyword(
 export async function checkSuppression(
   ctx: PreHandlerContext,
 ): Promise<PreHandlerResult | null> {
+  const t0 = Date.now();
   const suppressed = await isCallerSuppressed(ctx.tenantId, ctx.callerPhone).catch(
     () => false,
   );
-  if (!suppressed) return null;
+  if (!suppressed) {
+    recordDecision({
+      handler: 'checkSuppression',
+      phase: 'PRE_HANDLER',
+      outcome: 'miss',
+      durationMs: Date.now() - t0,
+    });
+    return null;
+  }
+  // When suppressed, fetch the row so we can attach its id + reason as
+  // evidence. This is what would have made the Lumpia incident a
+  // one-query diagnosis instead of hours of log archaeology.
+  const row = await prisma.smsSuppression
+    .findUnique({
+      where: { tenantId_callerPhone: { tenantId: ctx.tenantId, callerPhone: ctx.callerPhone } },
+      select: { id: true, reason: true, suppressedAt: true, causingTurnId: true },
+    })
+    .catch(() => null);
+  recordDecision({
+    handler: 'checkSuppression',
+    phase: 'PRE_HANDLER',
+    outcome: 'suppressed_silent',
+    reason: 'inbound dropped — caller is suppressed',
+    evidence: row
+      ? {
+          suppressionRowId: row.id,
+          reason: row.reason,
+          suppressedAt: row.suppressedAt.toISOString(),
+          causingTurnId: row.causingTurnId,
+        }
+      : {},
+    durationMs: Date.now() - t0,
+  });
   logger.info('Suppressed caller SMS dropped at pre-handler', {
     tenantId: ctx.tenantId,
     callerPhone: ctx.callerPhone,
@@ -153,7 +192,9 @@ export function handleAllergyIntent(
   message: string,
   ctx: PreHandlerContext,
 ): PreHandlerResult | null {
+  const t0 = Date.now();
   if (!ALLERGY_TRIGGERS.test(message) || !ALLERGY_QUALIFIERS.test(message)) {
+    recordDecision({ handler: 'handleAllergyIntent', phase: 'PRE_HANDLER', outcome: 'miss', durationMs: Date.now() - t0 });
     return null;
   }
 
@@ -162,9 +203,11 @@ export function handleAllergyIntent(
   // path will surface the ask. Rough heuristic: contains a digit + a
   // menu-like token.
   if (/\b\d+\s*[xX]?\s*(#|lumpia|rice|fries|siomai|pcs)/.test(message)) {
+    recordDecision({ handler: 'handleAllergyIntent', phase: 'PRE_HANDLER', outcome: 'miss_order_line_override', reason: 'trigger matched but message looks like an order line', durationMs: Date.now() - t0 });
     return null;
   }
 
+  recordDecision({ handler: 'handleAllergyIntent', phase: 'PRE_HANDLER', outcome: 'hit', durationMs: Date.now() - t0 });
   const phoneLine = ctx.tenantPhoneNumber
     ? `Please call us at ${ctx.tenantPhoneNumber}`
     : 'Please call us directly';
@@ -187,7 +230,9 @@ export function handleOpsCommand(
   message: string,
   _ctx: PreHandlerContext,
 ): PreHandlerResult | null {
+  const t0 = Date.now();
   if (PAUSE_RE.test(message) || RESUME_OPS_RE.test(message)) {
+    recordDecision({ handler: 'handleOpsCommand', phase: 'PRE_HANDLER', outcome: 'hit_refused', reason: 'pause/resume requested via SMS — refused', durationMs: Date.now() - t0 });
     return {
       // Honest refusal — we can't verify owner identity from an inbound
       // SMS, and we don't have a real "pause" state wired to the order
@@ -199,6 +244,7 @@ export function handleOpsCommand(
       terminal: true,
     };
   }
+  recordDecision({ handler: 'handleOpsCommand', phase: 'PRE_HANDLER', outcome: 'miss', durationMs: Date.now() - t0 });
   return null;
 }
 
@@ -211,7 +257,11 @@ export async function handleArrivalIntent(
   message: string,
   ctx: PreHandlerContext,
 ): Promise<PreHandlerResult | null> {
-  if (!ARRIVAL_RE.test(message)) return null;
+  const t0 = Date.now();
+  if (!ARRIVAL_RE.test(message)) {
+    recordDecision({ handler: 'handleArrivalIntent', phase: 'PRE_HANDLER', outcome: 'miss', durationMs: Date.now() - t0 });
+    return null;
+  }
 
   // Find the caller's most recent not-completed order.
   const order = await prisma.order
@@ -232,6 +282,7 @@ export async function handleArrivalIntent(
     .catch(() => null);
 
   if (!order) {
+    recordDecision({ handler: 'handleArrivalIntent', phase: 'PRE_HANDLER', outcome: 'hit_no_active_order', durationMs: Date.now() - t0 });
     return {
       reply:
         "I don't see an active order for this number. If you just placed one, give us a minute — otherwise reply with what you'd like to order.",
@@ -262,6 +313,7 @@ export async function handleArrivalIntent(
 
   // READY → confirmed: hand it over.
   if (order.status === 'READY') {
+    recordDecision({ handler: 'handleArrivalIntent', phase: 'PRE_HANDLER', outcome: 'hit_ready', evidence: { orderNumber: order.orderNumber }, durationMs: Date.now() - t0 });
     return {
       reply: `Thanks! Order #${order.orderNumber} is ready — come to the pickup window and we'll hand it over.`,
       flowType: FlowType.FALLBACK,
@@ -286,6 +338,7 @@ export async function handleArrivalIntent(
     readyAt != null ? Math.max(0, Math.round((readyAt - now) / 60000)) : null;
 
   if (minutesEarly != null && minutesEarly > 2) {
+    recordDecision({ handler: 'handleArrivalIntent', phase: 'PRE_HANDLER', outcome: 'hit_early', evidence: { orderNumber: order.orderNumber, minutesEarly, status: order.status }, durationMs: Date.now() - t0 });
     // Humanize the wait. Days > hours > minutes. Round 6 caught us
     // saying "about 1 hour to go" for a 24h-away pickup — the raw
     // hour bucket was overflowing without a day bucket above it.
@@ -319,6 +372,7 @@ export async function handleArrivalIntent(
   }
 
   // Within ~2 minutes of ready — acknowledge and notify.
+  recordDecision({ handler: 'handleArrivalIntent', phase: 'PRE_HANDLER', outcome: 'hit_near_ready', evidence: { orderNumber: order.orderNumber, status: order.status }, durationMs: Date.now() - t0 });
   return {
     reply: `Thanks — we'll have order #${order.orderNumber} out to you any minute.`,
     flowType: FlowType.FALLBACK,
@@ -351,7 +405,12 @@ export function handleHoursIntent(
     closesAtDisplay: string | null;
   },
 ): PreHandlerResult | null {
-  if (!HOURS_RE.test(message)) return null;
+  const t0 = Date.now();
+  if (!HOURS_RE.test(message)) {
+    recordDecision({ handler: 'handleHoursIntent', phase: 'PRE_HANDLER', outcome: 'miss', durationMs: Date.now() - t0 });
+    return null;
+  }
+  recordDecision({ handler: 'handleHoursIntent', phase: 'PRE_HANDLER', outcome: 'hit', evidence: { openNow: ctx.openNow }, durationMs: Date.now() - t0 });
 
   // todayHoursDisplay is sometimes a redundant phrase like "Closed today"
   // — in that case drop the "Today:" prefix so we don't render "Today:

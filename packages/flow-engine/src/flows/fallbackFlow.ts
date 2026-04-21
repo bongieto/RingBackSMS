@@ -1,6 +1,7 @@
 import { FlowInput, FlowOutput } from '../types';
 import { FlowType } from '@ringback/shared-types';
 import { CallerState } from '@ringback/shared-types';
+import { pushDecision } from '../decisions';
 
 function stripThinkTags(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
@@ -29,11 +30,20 @@ function matchClosure(body: string): { matched: true; reply: string | null } | {
 
 export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput> {
   const { tenantContext, inboundMessage, currentState, chatFn, callerMemory } = input;
+  const t0 = Date.now();
 
   // Short-circuit: if the customer is just politely closing out, don't run
   // the AI. Either stay silent (empty reply) or drop a one-liner.
   const closure = matchClosure(inboundMessage);
   if (closure.matched) {
+    pushDecision(input, {
+      handler: 'fallbackFlow',
+      phase: 'FLOW',
+      outcome: closure.reply === null ? 'closure_silent' : 'closure_reply',
+      reason: 'matched conversational closure',
+      evidence: { replyType: closure.reply === null ? 'silence' : 'template' },
+      durationMs: Date.now() - t0,
+    });
     const nextState: CallerState = {
       tenantId: tenantContext.tenantId,
       callerPhone: input.callerPhone,
@@ -207,16 +217,37 @@ ${capabilities}${businessAddress}${websiteContext}${catalogContext}${callerConte
     // Strip any lingering `<silence>` sentinel the model may still emit
     // despite the prompt no longer advertising it, then deflect if empty.
     if (replyText === '<silence>' || replyText === '') {
+      pushDecision(input, {
+        handler: 'fallbackFlow',
+        phase: 'FLOW',
+        outcome: 'deflected_empty_llm',
+        reason: 'LLM returned empty or <silence> — served deflection',
+        durationMs: Date.now() - t0,
+      });
       return { nextState, smsReply: deflection, sideEffects: [], flowType: FlowType.FALLBACK };
     }
 
     // Cap length just in case the model ignores instructions.
     if (replyText.length > 320) replyText = replyText.slice(0, 317) + '…';
 
+    pushDecision(input, {
+      handler: 'fallbackFlow',
+      phase: 'FLOW',
+      outcome: 'llm_replied',
+      evidence: { replyLen: replyText.length },
+      durationMs: Date.now() - t0,
+    });
     return { nextState, smsReply: replyText, sideEffects: [], flowType: FlowType.FALLBACK };
-  } catch {
+  } catch (err) {
     // AI provider failure: deflect instead of silent drop so the caller
     // gets a response on the same turn.
+    pushDecision(input, {
+      handler: 'fallbackFlow',
+      phase: 'FLOW',
+      outcome: 'deflected_llm_error',
+      reason: err instanceof Error ? err.message : String(err),
+      durationMs: Date.now() - t0,
+    });
     return { nextState, smsReply: deflection, sideEffects: [], flowType: FlowType.FALLBACK };
   }
 }

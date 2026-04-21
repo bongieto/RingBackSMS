@@ -1,5 +1,6 @@
 import { FlowInput, FlowOutput, FlowStep } from '../types';
 import { FlowType, CallerState, MeetingDraft } from '@ringback/shared-types';
+import { pushDecision } from '../decisions';
 
 // ── Date parsing (MVP — keyword-based, no LLM) ────────────────────────────
 
@@ -122,6 +123,14 @@ function isEmail(s: string): boolean {
 export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> {
   const { tenantContext, inboundMessage, currentState } = input;
   const upperMsg = inboundMessage.trim().toUpperCase();
+
+  pushDecision(input, {
+    handler: 'processMeetingFlow',
+    phase: 'FLOW',
+    outcome: `step_${(currentState?.flowStep ?? 'greeting').toLowerCase()}`,
+    evidence: { step: currentState?.flowStep ?? null },
+    durationMs: 0,
+  });
   const cfg = tenantContext.config as {
     calcomLink?: string | null;
     calcomApiKey?: string | null;

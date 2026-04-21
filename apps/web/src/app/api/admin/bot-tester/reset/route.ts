@@ -75,12 +75,20 @@ export async function POST(request: NextRequest) {
       .deleteMany({ where: { tenantId, callerPhone } })
       .catch(() => ({ count: 0 }));
 
+    // Turn rows for the sentinel — Decision rows cascade via FK.
+    // Wrapped in catch so an incomplete migration on a given env (Turn
+    // table absent) doesn't fail the reset the operator is depending on.
+    const deletedTurns = await prisma.turn
+      .deleteMany({ where: { tenantId, callerPhone } })
+      .catch(() => ({ count: 0 }));
+
     logger.info('Bot tester session reset', {
       tenantId,
       callerPhone,
       deletedConversations: deleted.count,
       deletedOrders: deletedOrders.count,
       deletedSuppressions: deletedSuppressions.count,
+      deletedTurns: deletedTurns.count,
     });
 
     return apiSuccess({
@@ -88,6 +96,8 @@ export async function POST(request: NextRequest) {
       callerPhone,
       deletedConversations: deleted.count,
       deletedOrders: deletedOrders.count,
+      deletedSuppressions: deletedSuppressions.count,
+      deletedTurns: deletedTurns.count,
     });
   } catch (err: any) {
     logger.error('Bot tester reset failed', { tenantId, err: err?.message });

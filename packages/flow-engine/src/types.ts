@@ -1,5 +1,6 @@
 import { CallerState, Flow, TenantConfig, MenuItem, SideEffect } from '@ringback/shared-types';
 import { FlowType } from '@ringback/shared-types';
+import type { DecisionDraft } from '@ringback/shared-types';
 
 export interface TenantContext {
   tenantId: string;
@@ -121,6 +122,15 @@ export interface FlowInput {
    *  surcharge the pickup ETA. Optional — when unset the flow engine
    *  behaves as if queue count is 0. */
   getActiveOrderCount?: (tenantId: string) => Promise<number>;
+  /**
+   * Optional decision sink for the Turn Record observation layer. When
+   * present, flow handlers push `DecisionDraft` entries onto this array
+   * via `pushDecision`. The host app (apps/web) threads a reference to
+   * its ALS-backed array in and reads the accumulated decisions after
+   * `runFlowEngine` returns. Absent = silent no-op; flow-engine has no
+   * hard dependency on observability.
+   */
+  decisions?: DecisionDraft[];
 }
 
 export interface FlowOutput {

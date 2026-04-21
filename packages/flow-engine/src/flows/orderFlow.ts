@@ -2,6 +2,7 @@ import { FlowInput, FlowOutput, FlowStep } from '../types';
 import { FlowType, OrderStatus } from '@ringback/shared-types';
 import { CallerState, SideEffect } from '@ringback/shared-types';
 import type { MenuItem, MenuItemModifierGroup } from '@ringback/shared-types';
+import { pushDecision } from '../decisions';
 
 interface PrepOverride {
   dayOfWeek: number;
@@ -101,6 +102,14 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
   const upperMsg = inboundMessage.trim().toUpperCase();
 
   const step = (currentState?.flowStep as FlowStep) ?? 'GREETING';
+
+  pushDecision(input, {
+    handler: 'processOrderFlow',
+    phase: 'FLOW',
+    outcome: `step_${step.toLowerCase()}`,
+    evidence: { step, menuItemCount: menuItems.length },
+    durationMs: 0,
+  });
 
   // Filter last-order items down to ones still on the current menu so we never
   // offer a reorder that contains removed/unavailable items.

@@ -3,6 +3,7 @@ import { waitUntil } from '@vercel/functions';
 import { logger } from '../logger';
 import { prisma } from '../db';
 import { autoCompleteTasksForEntity } from './taskService';
+import { currentTurnId } from '../turn/TurnContext';
 
 function generateOrderNumber(): string {
   const timestamp = Date.now().toString(36).toUpperCase();
@@ -209,6 +210,7 @@ export async function createOrder(input: CreateOrderInput) {
       ...(input.stripePaymentId && { stripePaymentId: input.stripePaymentId }),
       ...(input.stripePaymentUrl && { stripePaymentUrl: input.stripePaymentUrl }),
       ...(input.paymentStatus && { paymentStatus: input.paymentStatus }),
+      causingTurnId: currentTurnId() ?? null,
     },
   });
 

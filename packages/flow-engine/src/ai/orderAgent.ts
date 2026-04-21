@@ -2,6 +2,7 @@ import type { CallerState, OrderDraft } from '@ringback/shared-types';
 import { FlowType } from '@ringback/shared-types';
 import type { FlowInput, FlowOutput } from '../types';
 import { processOrderFlow } from '../flows/orderFlow';
+import { pushDecision } from '../decisions';
 import {
   ORDER_AGENT_TOOLS,
   computeTotal,
@@ -186,10 +187,26 @@ function buildOwnerOrderSummary(items: OrderDraft['items']): string {
  * never sees a broken experience.
  */
 export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
+  const agentT0 = Date.now();
   if (!input.chatWithToolsFn) {
+    pushDecision(input, {
+      handler: 'runOrderAgent',
+      phase: 'FLOW',
+      outcome: 'fallback_no_tool_client',
+      reason: 'chatWithToolsFn not injected — deferring to regex orderFlow',
+      durationMs: 0,
+    });
     // No tool-use client injected — fall back to regex flow
     return processOrderFlow(input);
   }
+
+  pushDecision(input, {
+    handler: 'runOrderAgent',
+    phase: 'FLOW',
+    outcome: 'entered',
+    evidence: { step: input.currentState?.flowStep ?? null },
+    durationMs: Date.now() - agentT0,
+  });
 
   try {
     const { tenantContext, inboundMessage, currentState, callerMemory, chatWithToolsFn, recentMessages } = input;
