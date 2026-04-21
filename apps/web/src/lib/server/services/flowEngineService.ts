@@ -51,6 +51,7 @@ export async function processInboundSms(
 ): Promise<void | ProcessInboundSmsTestResult> {
   const { tenantId, callerPhone, inboundMessage, messageSid } = input;
   const testMode = options?.testMode === true;
+  const startTs = Date.now();
 
   // Dedup check
   const duplicate = await isDuplicate(tenantId, messageSid);
@@ -462,6 +463,15 @@ export async function processInboundSms(
         closesAtDisplay: tenantContext.hoursInfo!.closesAtDisplay ?? null,
       });
 
+    if (!preResult) {
+      logger.info('Pre-handler miss', {
+        tenantId,
+        callerPhone,
+        body: inboundMessage.slice(0, 80),
+        hoursInfoPresent: tenantContext.hoursInfo != null,
+      });
+    }
+
     if (preResult) {
       logger.info('Pre-handler short-circuit', {
         tenantId,
@@ -526,6 +536,15 @@ export async function processInboundSms(
           logger.error('Failed to send pre-handler SMS', { err, tenantId }),
         );
       }
+      logger.info('Turn complete', {
+        tenantId,
+        callerPhone,
+        inboundLen: inboundMessage.length,
+        path: `pre_handler:${preResult.flowType}`,
+        replyLen: preResult.reply?.length ?? 0,
+        latencyMs: Date.now() - startTs,
+        testMode,
+      });
       if (testMode) {
         const st = await getCallerState(tenantId, callerPhone);
         return {
@@ -1108,6 +1127,17 @@ export async function processInboundSms(
       }).catch(() => {});
     }
   }
+
+  logger.info('Turn complete', {
+    tenantId,
+    callerPhone,
+    inboundLen: inboundMessage.length,
+    path: `flow:${result.flowType}`,
+    replyLen: result.smsReply?.length ?? 0,
+    sideEffectCount: result.sideEffects.length,
+    latencyMs: Date.now() - startTs,
+    testMode,
+  });
 
   if (testMode) {
     return {

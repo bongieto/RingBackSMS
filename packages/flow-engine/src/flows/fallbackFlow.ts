@@ -164,8 +164,9 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
 
 # Output rules
 - Reply in ONE short sentence, under 120 characters.
-- If the customer is just chit-chatting, acknowledging, emoji-ing, or sending noise with nothing actionable, reply warmly in 2–6 words (e.g. "No problem!", "Sounds good!", "Haha no worries", "Appreciate it!") OR output exactly the single token \`<silence>\` when a reply would feel forced.
+- If the customer is just chit-chatting, acknowledging, emoji-ing, or sending noise with nothing actionable, reply warmly in 2–6 words (e.g. "No problem!", "Sounds good!", "Haha no worries", "Appreciate it!").
 - If the customer is ACTIVELY asking something, answer briefly. Only mention ORDER / MEETING / etc. when they clearly ask about starting one — never as a forced CTA.
+- NEVER send an empty reply. Every message gets a response, even if it's just a short acknowledgement.
 - Never invent prices, hours, menu items, or policies not in the context below.
 - Never mention you're an AI, an assistant, or explain your reasoning.
 - Never repeat the customer's message back to them.${postOrderHint}
@@ -185,6 +186,15 @@ ${capabilities}${businessAddress}${websiteContext}${catalogContext}${callerConte
     dedupKey: null,
   };
 
+  // Deterministic deflection used whenever the LLM produces nothing
+  // useful (empty, `<silence>`, or the provider errors). Silence is
+  // architecturally forbidden — a customer-facing SMS system must never
+  // respond with nothing to a non-closure question.
+  const tenantPhone = tenantContext.tenantPhoneNumber?.trim();
+  const deflection = tenantPhone
+    ? `Sorry, I'm not sure what you're asking — text ${tenantPhone} or give us a call.`
+    : `Sorry, I'm not sure what you're asking — please give us a call.`;
+
   try {
     const raw = await chatFn({
       systemPrompt,
@@ -194,9 +204,10 @@ ${capabilities}${businessAddress}${websiteContext}${catalogContext}${callerConte
     });
     let replyText = stripThinkTags(raw).replace(/^["']|["']$/g, '').trim();
 
-    // Silence sentinel or empty → don't send anything.
+    // Strip any lingering `<silence>` sentinel the model may still emit
+    // despite the prompt no longer advertising it, then deflect if empty.
     if (replyText === '<silence>' || replyText === '') {
-      return { nextState, smsReply: '', sideEffects: [], flowType: FlowType.FALLBACK };
+      return { nextState, smsReply: deflection, sideEffects: [], flowType: FlowType.FALLBACK };
     }
 
     // Cap length just in case the model ignores instructions.
@@ -204,8 +215,8 @@ ${capabilities}${businessAddress}${websiteContext}${catalogContext}${callerConte
 
     return { nextState, smsReply: replyText, sideEffects: [], flowType: FlowType.FALLBACK };
   } catch {
-    // AI provider failure: stay silent rather than send a generic apology.
-    // The caller's next message will retry. Better than spamming "we'll get back".
-    return { nextState, smsReply: '', sideEffects: [], flowType: FlowType.FALLBACK };
+    // AI provider failure: deflect instead of silent drop so the caller
+    // gets a response on the same turn.
+    return { nextState, smsReply: deflection, sideEffects: [], flowType: FlowType.FALLBACK };
   }
 }
