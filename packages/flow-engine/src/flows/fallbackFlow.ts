@@ -151,70 +151,6 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
     ? '\nThe customer JUST completed an order — most messages right now are polite chit-chat ("ok", "see you", "thanks man"), questions ABOUT the existing order, or random non-requests. Treat casual messages as casual. Do NOT try to upsell or re-prompt for a new order.'
     : '';
 
-  // Business-hours block: "are you open?" / "what time do you close?" are
-  // the single most common fallback-flow questions, and without explicit
-  // hours in the prompt the LLM either hallucinates or (per the "never
-  // invent hours" rule) emits `<silence>` and the customer gets (no reply).
-  // Compute a small hours block from tenantContext.config so the model can
-  // answer deterministically.
-  let hoursBlock = '';
-  try {
-    const tz = tenantContext.config.timezone ?? 'America/Chicago';
-    const schedule = tenantContext.config.businessSchedule as
-      | Record<string, { open: string; close: string }>
-      | null
-      | undefined;
-    const closedDates = (tenantContext.config.closedDates ?? []) as string[];
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: tz,
-      weekday: 'short',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: 'numeric',
-      minute: 'numeric',
-      hour12: false,
-    }).formatToParts(new Date());
-    const part = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
-    const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-    const dow = dayMap[part('weekday')] ?? 0;
-    const today = `${part('year')}-${part('month')}-${part('day')}`;
-    const hour = Number(part('hour'));
-    const minute = Number(part('minute'));
-    const fmt12 = (hhmm: string) => {
-      const [h, m] = hhmm.split(':').map(Number);
-      const pm = h >= 12;
-      const h12 = ((h + 11) % 12) + 1;
-      return m === 0 ? `${h12}${pm ? 'pm' : 'am'}` : `${h12}:${String(m).padStart(2, '0')}${pm ? 'pm' : 'am'}`;
-    };
-    const isClosedDate = closedDates.includes(today);
-    let openNow = false;
-    let todayLine = 'Closed today';
-    if (!isClosedDate && schedule && schedule[String(dow)]) {
-      const d = schedule[String(dow)];
-      const [oh, om] = d.open.split(':').map(Number);
-      const [ch, cm] = d.close.split(':').map(Number);
-      const cur = hour * 60 + minute;
-      openNow = cur >= oh * 60 + om && cur < ch * 60 + cm;
-      todayLine = `Today's hours: ${fmt12(d.open)}–${fmt12(d.close)}`;
-    }
-    const dowNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const weekly = schedule
-      ? dowNames
-          .map((name, idx) => {
-            const d = schedule[String(idx)];
-            return d ? `${name} ${fmt12(d.open)}–${fmt12(d.close)}` : `${name} closed`;
-          })
-          .join(', ')
-      : '';
-    hoursBlock = `\n\nBusiness hours (authoritative — use THESE when the customer asks if we're open or what time we close):
-- Right now: ${openNow ? 'OPEN' : 'CLOSED'} (tenant timezone ${tz}).
-- ${todayLine}.${weekly ? `\n- Weekly schedule: ${weekly}.` : ''}
-- If asked "are you open?" / "what time do you close?" / "when do you open?" → answer directly from the facts above. Do NOT output <silence> for hours questions.`;
-  } catch {
-    // best-effort — if the clock/schedule math throws, skip the block
-  }
-
   // Tenant owner's custom instructions apply across ALL AI-generated
   // replies, not just the order agent. Appended last so they can
   // override-ish / layer on top of the base rules above.
@@ -235,7 +171,7 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
 - Never repeat the customer's message back to them.${postOrderHint}
 
 # Capabilities and context
-${capabilities}${businessAddress}${hoursBlock}${websiteContext}${catalogContext}${callerContextBlock}${activeOrderBlock}${customBlock}`;
+${capabilities}${businessAddress}${websiteContext}${catalogContext}${callerContextBlock}${activeOrderBlock}${customBlock}`;
 
   const nextState: CallerState = {
     tenantId: tenantContext.tenantId,
