@@ -221,6 +221,7 @@ describe('runOrderAgent', () => {
         items: [{ menuItemId: LUMPIA_ID, name: 'Lumpia Shanghai', quantity: 2, price: 8.99 }],
         pickupTime: '6:30pm',
       },
+      customerName: 'Bruno',
       lastMessageAt: Date.now(),
       messageCount: 1,
       dedupKey: null,
@@ -297,13 +298,13 @@ describe('runOrderAgent', () => {
     expect(result.sideEffects).toHaveLength(0); // not committed
 
     const captured = decisions.find(
-      (d) => d.handler === 'orderAgent' && d.outcome === 'slot_captured_at_confirm',
+      (d) => d.handler === 'orderAgent' && d.outcome === 'name_captured_by_regex',
     );
     expect(captured).toBeDefined();
-    expect(captured.evidence).toEqual({ slot: 'customerName', value: 'Maria' });
+    expect(captured.evidence).toEqual({ value: 'Maria' });
   });
 
-  test('slot capture at ORDER_CONFIRM does NOT steal a real "yes" confirm', async () => {
+  test('bare-name regex does NOT steal a real "yes" confirm', async () => {
     const state = {
       tenantId: TENANT_ID,
       callerPhone: '+12175550199',
@@ -314,7 +315,7 @@ describe('runOrderAgent', () => {
         items: [{ menuItemId: LUMPIA_ID, name: 'Lumpia Shanghai', quantity: 2, price: 8.99 }],
         pickupTime: '6:30pm',
       },
-      customerName: null,
+      customerName: 'Bruno',
       lastMessageAt: Date.now(),
       messageCount: 1,
       dedupKey: null,
@@ -345,6 +346,110 @@ describe('runOrderAgent', () => {
     expect(result.sideEffects).toHaveLength(0);
   });
 
+  // ─────────────────────────────────────────────────────────────────
+  // Strict sequence + hard closed-hours gate
+  // ─────────────────────────────────────────────────────────────────
+
+  test('closed-hours gate: refuses any inbound while openNow=false', async () => {
+    const closedCtx: TenantContext = {
+      ...tenantContext,
+      hoursInfo: {
+        openNow: false,
+        nextOpenDisplay: 'tomorrow 11:00 AM',
+        todayHoursDisplay: 'Closed today',
+        weeklyHoursDisplay: '',
+        closesAtDisplay: null,
+        minutesUntilClose: null,
+        closingSoon: false,
+      },
+    } as any;
+    const decisions: any[] = [];
+    const result = await runOrderAgent({
+      tenantContext: closedCtx,
+      callerPhone: '+12175550199',
+      inboundMessage: '2 lumpia',
+      currentState: null,
+      chatFn,
+      chatWithToolsFn: jest.fn(),
+      decisions,
+    } as any);
+    expect(result.smsReply).toMatch(/closed/i);
+    expect(result.smsReply).toContain('tomorrow 11:00 AM');
+    expect(result.nextState.flowStep).toBe('CLOSED_REFUSED');
+    expect(result.nextState.orderDraft).toBeNull();
+    const refused = decisions.find((d) => d.outcome === 'refused_closed');
+    expect(refused).toBeDefined();
+    expect(refused.evidence).toEqual({ nextOpenDisplay: 'tomorrow 11:00 AM' });
+  });
+
+  test('strict sequence: bare "Maria" on empty cart captures name and asks for items', async () => {
+    const decisions: any[] = [];
+    const input = mkInput('Maria', [], '', null);
+    input.decisions = decisions;
+    const result = await runOrderAgent(input);
+    expect(result.nextState.customerName).toBe('Maria');
+    expect(result.nextState.flowStep).toBe('MENU_DISPLAY');
+    expect(result.smsReply).toMatch(/Got it, Maria/);
+    expect(result.smsReply).toMatch(/what can i get you/i);
+    const captured = decisions.find((d) => d.outcome === 'name_captured_by_regex');
+    expect(captured).toBeDefined();
+  });
+
+  test('strict sequence: "yes" with items + name + NO pickup is blocked, asks for pickup', async () => {
+    const state = {
+      tenantId: TENANT_ID,
+      callerPhone: '+12175550199',
+      conversationId: null,
+      currentFlow: FlowType.ORDER,
+      flowStep: 'ORDER_CONFIRM',
+      orderDraft: {
+        items: [{ menuItemId: LUMPIA_ID, name: 'Lumpia Shanghai', quantity: 2, price: 8.99 }],
+        // pickupTime intentionally missing
+      },
+      customerName: 'Bruno',
+      lastMessageAt: Date.now(),
+      messageCount: 1,
+      dedupKey: null,
+    } as any;
+    const decisions: any[] = [];
+    const input = mkInput('yes', [{ name: 'confirm_order', input: {} }], 'Placed!', state);
+    input.decisions = decisions;
+    const result = await runOrderAgent(input);
+    expect(result.sideEffects).toHaveLength(0);
+    expect(result.nextState.flowStep).toBe('PICKUP_TIME');
+    expect(result.smsReply).toMatch(/pick up/i);
+    const blocked = decisions.find((d) => d.outcome === 'confirm_blocked_missing_slot');
+    expect(blocked).toBeDefined();
+    expect(blocked.evidence).toEqual({ missingName: false, missingPickup: true });
+  });
+
+  test('strict sequence: "yes" with items + pickup + NO name is blocked, asks for name', async () => {
+    const state = {
+      tenantId: TENANT_ID,
+      callerPhone: '+12175550199',
+      conversationId: null,
+      currentFlow: FlowType.ORDER,
+      flowStep: 'ORDER_CONFIRM',
+      orderDraft: {
+        items: [{ menuItemId: LUMPIA_ID, name: 'Lumpia Shanghai', quantity: 2, price: 8.99 }],
+        pickupTime: '6:30pm',
+      },
+      customerName: null,
+      lastMessageAt: Date.now(),
+      messageCount: 1,
+      dedupKey: null,
+    } as any;
+    const decisions: any[] = [];
+    // Use a lowercase confirm so bare-name regex doesn't mask it, and no
+    // tool calls (simulating LLM also failing to confirm).
+    const input = mkInput('yes please', [], '', state);
+    input.decisions = decisions;
+    const result = await runOrderAgent(input);
+    expect(result.sideEffects).toHaveLength(0);
+    expect(result.nextState.flowStep).toBe('ORDER_NAME');
+    expect(result.smsReply).toMatch(/name/i);
+  });
+
   test('confirm reply includes "N orders ahead" when queue > 0', async () => {
     const state = {
       tenantId: TENANT_ID,
@@ -356,6 +461,7 @@ describe('runOrderAgent', () => {
         items: [{ menuItemId: LUMPIA_ID, name: 'Lumpia Shanghai', quantity: 2, price: 8.99 }],
         pickupTime: '6:30pm',
       },
+      customerName: 'Bruno',
       lastMessageAt: Date.now(),
       messageCount: 1,
       dedupKey: null,
@@ -382,6 +488,7 @@ describe('runOrderAgent', () => {
         items: [{ menuItemId: LUMPIA_ID, name: 'Lumpia Shanghai', quantity: 2, price: 8.99 }],
         pickupTime: '6:30pm',
       },
+      customerName: 'Bruno',
       lastMessageAt: Date.now(),
       messageCount: 1,
       dedupKey: null,

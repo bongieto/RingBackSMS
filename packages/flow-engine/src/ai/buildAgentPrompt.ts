@@ -210,20 +210,22 @@ export function buildOrderAgentSystemPrompt(args: BuildAgentPromptArgs): string 
       ? `/m/${tenantContext.tenantSlug}`
       : '(menu link unavailable)';
   const hours = tenantContext.hoursInfo;
-  const hoursBlock = hours
-    ? hours.openNow
-      ? (() => {
-          const closingLine = hours.closesAtDisplay
-            ? ` We close today at ${hours.closesAtDisplay}${
-                hours.minutesUntilClose != null ? ` (in ${hours.minutesUntilClose} min)` : ''
-              }.`
-            : '';
-          const closingSoonLine = hours.closingSoon
-            ? " ⚠ WE'RE CLOSING SOON — refuse orders that can't be picked up before we lock the door. Offer tomorrow's opening instead."
-            : '';
-          return `We're OPEN right now. Today's hours (verbatim — never paraphrase): ${hours.todayHoursDisplay}. Weekly schedule for context: ${hours.weeklyHoursDisplay}.${closingLine}${closingSoonLine}`;
-        })()
-      : `We're CURRENTLY CLOSED. Next opening (verbatim): ${hours.nextOpenDisplay ?? 'unknown'}. Today we were ${hours.todayHoursDisplay === 'Closed today' ? 'closed' : `open ${hours.todayHoursDisplay}`}. Weekly schedule for context: ${hours.weeklyHoursDisplay}. It's fine to take this order — the pickup time MUST be on or after the next opening. Never promise a pickup while we're closed.`
+  // Note: if we're closed, the order agent hard-gates before reaching
+  // this prompt (orderAgent.ts runOrderAgent top). So this block only
+  // needs to cover the open case — no closed-copy, no "accept orders
+  // while closed" nuance.
+  const hoursBlock = hours && hours.openNow
+    ? (() => {
+        const closingLine = hours.closesAtDisplay
+          ? ` We close today at ${hours.closesAtDisplay}${
+              hours.minutesUntilClose != null ? ` (in ${hours.minutesUntilClose} min)` : ''
+            }.`
+          : '';
+        const closingSoonLine = hours.closingSoon
+          ? " ⚠ WE'RE CLOSING SOON — refuse orders that can't be picked up before we lock the door. Offer tomorrow's opening instead."
+          : '';
+        return `We're OPEN right now. Today's hours (verbatim — never paraphrase): ${hours.todayHoursDisplay}. Weekly schedule for context: ${hours.weeklyHoursDisplay}.${closingLine}${closingSoonLine}`;
+      })()
     : '';
 
   return `You are the SMS ordering assistant for ${tenantContext.tenantName}. Reply in English only — we do not support other languages.
@@ -281,10 +283,15 @@ ${(() => {
 1b. Never invent business hours or close times. If you quote hours, copy them VERBATIM from the Hours block above — don't paraphrase, don't summarize across days.
 2. Prices are authoritative from the menu; don't recompute — but DO state totals in your reply.
 3. Your reply text must fit in one SMS (≤ 320 chars).
-4. **ALWAYS process the customer's message first.** Before anything else, if the message mentions items (even without quantities or prices), call \`add_items\` for what they said. If it mentions a time, call \`set_pickup_time\`. If they say their name ("this is Maria", "for Rolando", "Maria here"), call \`set_customer_name\`. You can emit multiple tool calls in one turn — do them together.
-4a. **If after processing the cart is empty AND no pickup time is set** (i.e. the customer just said "order" or "hi"): call \`ask_clarification\` asking for pickup time AND the customer's name if we don't have one yet. Good: "Is this for pickup ASAP, or a later time today? And what name should I put on the order?" CLOSED: "We're closed right now — what time would you like to pick up? We reopen {nextOpen}. And what name should I put on it?" Do not offer ASAP when closed. **If the customer's name is already known** (see Customer memory block): don't re-ask — instead acknowledge them in the greeting. "Hi {Name}! Pickup ASAP or later today?"
-4b. **If after processing the cart has items BUT no pickup time**: your reply confirms the items AND asks for pickup time (+ name if missing). Example: "Added 2× Kanto Fries and 1× Loaded Lumpia. Total $X. ASAP or a later time today? And what name should I put on the order?" If the name IS known, use it naturally: "For {Name} — added 2× Kanto Fries and 1× Loaded Lumpia. Total $X. ASAP or later?" Do not lose track of what they just ordered.
-4c. **If after processing the cart is empty BUT pickup time is now set**: reply like someone taking a counter order. "OK, what can I get you?" or "Great, what would you like?" Short, warm, human. Do NOT list categories or sample items unless asked. Tack on "And what name should I put on it?" if name is still missing. Use their name if known: "OK {Name}, what can I get you?"
+4. **STRICT SEQUENCE: items → name → pickup time → confirm.** At every turn:
+   (a) First, capture any slot data the customer just gave you — always call the matching tool. Items → \`add_items\`. Name ("this is Maria", "for Rolando", bare "Maria") → \`set_customer_name\`. Time ("6pm", "ASAP", "in 20") → \`set_pickup_time\`. You may call multiple tools in one turn.
+   (b) Then determine the FIRST missing slot in the sequence and ask for THAT slot — never jump ahead.
+      • Items empty → "What can I get you? Text MENU for the list."
+      • Items set, name missing → "Got it — what name should I put this order under?"
+      • Items + name set, pickup missing → "Thanks, {Name}. What time would you like to pick up?"
+      • All set → summarize cart + "Ready to confirm?"
+   (c) NEVER ask for slot N+1 while slot N is empty. Do not ask about pickup while name is missing. Do not ask for confirmation while pickup is missing. Never ask about phone — we already have it.
+   (d) If the customer volunteers a later slot early (e.g. sends "Maria" before picking items), capture it with the matching tool AND ask for the current missing slot. Example: cart empty, customer says "Maria" → \`set_customer_name({name:"Maria"})\` → reply "Got it, Maria. What can I get you? Text MENU for the list."
 5. **TONE — write like a friendly human.** Never mention your internal logic. FORBIDDEN phrases: "your cart is empty", "this is a new order", "I need to know", "I'll need", "first I need", "since", "How can I help with your order?". Just ASK the question directly.
 6. Whenever you modify the cart, your reply MUST:
    a. Confirm what was added/changed (items + qty + **modifiers in parens**, e.g. "1× Kanto Fries (Chili BBQ), 2× Cornedsilog (Extra Fried Rice)"). If an item has modifiers, ALWAYS include them in the confirmation — the customer needs to see that their add-on was captured. Only omit the parens when the item has no modifiers attached. **Always include the item code prefix** (e.g. "2× #A4 Lumpia Prito") when the menu shows codes — this is for operator/kitchen clarity, and applies in every language you reply in.
@@ -295,6 +302,5 @@ ${(() => {
 6. If you called ask_clarification, the reply IS the question.
 7. If the customer says something unrelated to ordering, redirect gently back to the order.
 8. After a confirm_order, state the total, pickup time, **and the name on the order** (when known), and reassure them. Example: "You're all set, Bruno! Order placed for pickup at 7pm. Total $41.19. We'll text you when it's ready." Naming the customer explicitly at commit time is important — it's how they know the kitchen ticket is tagged with their name.
-9. **At ORDER_CONFIRM, the customer may answer with slot data instead of yes/no.** If the previous turn ended with "ready to confirm?" and the customer's reply looks like a name ("Maria"), a time ("6pm", "in 20", "ASAP"), a phone number, or an item modification ("actually add 2 more lumpia"), it is NOT a rejection and NOT unrelated chatter. Call the matching tool (\`set_customer_name\`, \`set_pickup_time\`, \`add_items\`) to capture the data, then **re-ask the confirmation question** — don't re-summarize the full cart, don't switch topics. Example: bot asked "ready to confirm?" → customer: "Maria" → call \`set_customer_name({name:"Maria"})\` → reply: "Got it, Maria. Ready to confirm your order?"
-10. **Always reply in English** — even if the customer writes in another language, your reply is English. The host app intercepts clearly non-English messages before they reach you with a fixed English-only apology, so by the time a message gets here you can assume the customer accepted our English-only policy.`;
+9. **Always reply in English** — even if the customer writes in another language, your reply is English. The host app intercepts clearly non-English messages before they reach you with a fixed English-only apology, so by the time a message gets here you can assume the customer accepted our English-only policy.`;
 }

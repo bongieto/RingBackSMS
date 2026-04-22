@@ -169,6 +169,33 @@ function buildBaseState(input: FlowInput, draft: OrderDraft, overrides: Partial<
   };
 }
 
+/**
+ * Canonical per-slot prompt text. Used by the strict-sequence enforcer when
+ * the LLM's proposed reply doesn't match the first-missing-slot question.
+ * Keep these short — they're the bot's voice at each step of the ladder.
+ */
+function canonicalPrompt(
+  missing: 'items' | 'name' | 'pickup' | 'confirm',
+  draft: OrderDraft,
+  name: string | null,
+): string {
+  switch (missing) {
+    case 'items':
+      return name
+        ? `Got it, ${name}. What can I get you? Text MENU for the list.`
+        : `What can I get you? Text MENU for the list.`;
+    case 'name':
+      return `What name should I put this order under?`;
+    case 'pickup':
+      return `What time would you like to pick up?`;
+    case 'confirm': {
+      const summary = buildOwnerOrderSummary(draft.items).replace(/\n/g, ', ');
+      const pickup = draft.pickupTime ? ` Pickup ${draft.pickupTime}.` : '';
+      return `${summary}.${pickup} Ready to confirm?`;
+    }
+  }
+}
+
 function buildOwnerOrderSummary(items: OrderDraft['items']): string {
   return items
     .map((i) => {
@@ -188,6 +215,31 @@ function buildOwnerOrderSummary(items: OrderDraft['items']): string {
  */
 export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
   const agentT0 = Date.now();
+
+  // ── HARD CLOSED-HOURS GATE ──
+  // Operator direction: never take an order while closed. Overrides the
+  // tenant's `acceptClosedHourOrders` flag. Fires before the LLM call so
+  // we don't spend tokens on a refusal.
+  {
+    const hours = input.tenantContext?.hoursInfo;
+    if (hours && hours.openNow === false) {
+      pushDecision(input, {
+        handler: 'orderAgent',
+        phase: 'PRE_HANDLER',
+        outcome: 'refused_closed',
+        evidence: { nextOpenDisplay: hours.nextOpenDisplay ?? null },
+        durationMs: Date.now() - agentT0,
+      });
+      const nextOpen = hours.nextOpenDisplay ?? 'when we reopen';
+      return {
+        nextState: buildBaseState(input, { items: [] }, { flowStep: 'CLOSED_REFUSED', orderDraft: null }),
+        smsReply: `Sorry — we're closed right now. Please text us back ${nextOpen} to place your order.`,
+        sideEffects: [],
+        flowType: FlowType.ORDER,
+      };
+    }
+  }
+
   if (!input.chatWithToolsFn) {
     pushDecision(input, {
       handler: 'runOrderAgent',
@@ -638,54 +690,51 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       wantsConfirm = true;
     }
 
-    // ── OUT-OF-ORDER SLOT CAPTURE AT ORDER_CONFIRM ──
-    // Customer is at ORDER_CONFIRM but their reply is slot data (a
-    // bare name or a pickup-time phrase) rather than yes/no. Without
-    // this safety net the LLM occasionally treats "Maria" as a
-    // rejection or unrelated chatter and re-asks something generic —
-    // destroying trust in a live ordering session.
-    //
-    // Fill the slot deterministically and re-ask confirm. Guards:
-    //   - !wantsConfirm: never steal a real commit (CONFIRM_RE block
-    //     above has already flipped wantsConfirm if it was a yes/ok).
-    //   - !wantsCancel: never steal a cancellation.
-    //   - draft.items.length > 0: only meaningful mid-order.
-    if (
-      !wantsConfirm &&
-      !wantsCancel &&
-      currentState?.flowStep === 'ORDER_CONFIRM' &&
-      draft.items.length > 0
-    ) {
+    // ── DETERMINISTIC NAME CAPTURE ──
+    // Fallback for when the LLM failed to recognize a bare capitalized
+    // word as a name (e.g. customer sends just "Maria"). Captures into
+    // capturedName so the sequencer downstream sees name as filled and
+    // advances to the pickup/confirm step instead of re-asking for a
+    // name. Never steals a real confirm/cancel.
+    if (!wantsConfirm && !wantsCancel && !capturedName) {
       const NAME_RE = /^\s*([A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]{1,20})?)\s*[.!?]*\s*$/;
       const nameMatch = inboundMessage.match(NAME_RE);
-      const nameAlreadySet = Boolean(capturedName);
-
-      if (nameMatch && !nameAlreadySet) {
-        const name = nameMatch[1];
+      if (nameMatch) {
+        capturedName = nameMatch[1];
         pushDecision(input, {
           handler: 'orderAgent',
           phase: 'FLOW',
-          outcome: 'slot_captured_at_confirm',
-          evidence: { slot: 'customerName', value: name },
+          outcome: 'name_captured_by_regex',
+          evidence: { value: capturedName },
           durationMs: 0,
         });
+        // Customer volunteered a bare name. Acknowledge them by name and
+        // ask the canonical next-step question (computed below via
+        // canonicalPrompt). Short-circuit here so the reply is always
+        // "Got it, {name}. {next step}" regardless of what the LLM did.
+        const missingNext: 'items' | 'name' | 'pickup' | 'confirm' =
+          draft.items.length === 0
+            ? 'items'
+            : !draft.pickupTime
+              ? 'pickup'
+              : 'confirm';
+        const expectedStepNext =
+          missingNext === 'items'
+            ? 'MENU_DISPLAY'
+            : missingNext === 'pickup'
+              ? 'PICKUP_TIME'
+              : 'ORDER_CONFIRM';
+        const nextQ = canonicalPrompt(missingNext, draft, null);
         return {
-          nextState: buildBaseState(
-            input,
-            draft,
-            { flowStep: 'ORDER_CONFIRM', customerName: name },
-          ),
-          smsReply: `Got it, ${name}. Ready to confirm your order?`,
+          nextState: buildBaseState(input, draft, {
+            flowStep: expectedStepNext,
+            customerName: capturedName,
+          }),
+          smsReply: `Got it, ${capturedName}. ${nextQ}`.slice(0, 320),
           sideEffects: [],
           flowType: FlowType.ORDER,
         };
       }
-
-      // Note: pickup-time at ORDER_CONFIRM is already handled by the
-      // main-path pickup parser (fires before this block). Name was the
-      // gap — the LLM's only signal for "Maria" was a bare capitalized
-      // word, which is why we need this deterministic mirror for name
-      // but not for pickup time.
     }
 
     // ── CANCEL ──
@@ -734,6 +783,22 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
     }
 
     // ── CONFIRM ──
+    // Strict sequence: block commit until name + pickup are set. If the
+    // customer says "yes" before providing them, fall through to the
+    // sequencer below which will ask for the first missing slot.
+    if (wantsConfirm && draft.items.length > 0 && (!capturedName || !draft.pickupTime)) {
+      pushDecision(input, {
+        handler: 'orderAgent',
+        phase: 'POST_HANDLER',
+        outcome: 'confirm_blocked_missing_slot',
+        evidence: {
+          missingName: !capturedName,
+          missingPickup: !draft.pickupTime,
+        },
+        durationMs: 0,
+      });
+      wantsConfirm = false;
+    }
     if (wantsConfirm && draft.items.length > 0) {
       // Refuse to lock in an order if we're closed AND the customer hasn't
       // specified a future-scheduled pickup. QA caught us happily accepting
@@ -959,9 +1024,37 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
     const hasAnyToolCall = aiResponse.toolCalls.length > 0;
     if (!hasAnyToolCall && !aiResponse.text && !anyMutation) {
       // No signal at all AND our deterministic safety nets didn't
-      // mutate anything — let the regex flow handle it this turn.
-      // (Previously: checked only LLM output, which discarded
-      // safety-net-added items when the LLM also stayed silent.)
+      // mutate anything. Before handing off to the regex flow, let the
+      // strict sequencer steer the conversation if there's an obvious
+      // missing slot — we don't want "yes please" at a pickup-missing
+      // state to slip through as a fallback.
+      const missingX: 'items' | 'name' | 'pickup' | 'confirm' =
+        draft.items.length === 0
+          ? 'items'
+          : !capturedName
+            ? 'name'
+            : !draft.pickupTime
+              ? 'pickup'
+              : 'confirm';
+      if (missingX !== 'items' && missingX !== 'confirm') {
+        const stepX = missingX === 'name' ? 'ORDER_NAME' : 'PICKUP_TIME';
+        pushDecision(input, {
+          handler: 'orderAgent',
+          phase: 'POST_HANDLER',
+          outcome: 'sequence_corrected',
+          evidence: { llmStep: 'none', forcedStep: stepX, missing: missingX },
+          durationMs: 0,
+        });
+        return {
+          nextState: buildBaseState(input, draft, {
+            flowStep: stepX,
+            customerName: capturedName,
+          }),
+          smsReply: canonicalPrompt(missingX, draft, capturedName).slice(0, 320),
+          sideEffects: [],
+          flowType: FlowType.ORDER,
+        };
+      }
       return processOrderFlow(input);
     }
 
@@ -1074,12 +1167,55 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       console.warn('[orderAgent] tool errors', toolErrors.join('; '));
     }
 
-    const nextStep =
-      clarification
-        ? (currentState?.flowStep ?? 'MENU_DISPLAY')
-        : draft.items.length
-          ? 'ORDER_CONFIRM'
-          : (currentState?.flowStep ?? 'MENU_DISPLAY');
+    // ── STRICT SEQUENCE ENFORCER ──
+    // Canonical ladder: items → name → pickup time → confirm. Determine
+    // the first missing slot and force the flowStep + reply to match, so
+    // the LLM cannot skip ahead and the customer can't land in a weird
+    // intermediate state. Skipped when `clarification` is active — the
+    // LLM explicitly asked a disambiguation question; don't stomp it.
+    const missing: 'items' | 'name' | 'pickup' | 'confirm' =
+      draft.items.length === 0
+        ? 'items'
+        : !capturedName
+          ? 'name'
+          : !draft.pickupTime
+            ? 'pickup'
+            : 'confirm';
+    const expectedStep =
+      missing === 'items'
+        ? 'MENU_DISPLAY'
+        : missing === 'name'
+          ? 'ORDER_NAME'
+          : missing === 'pickup'
+            ? 'PICKUP_TIME'
+            : 'ORDER_CONFIRM';
+
+    const llmStep = clarification
+      ? (currentState?.flowStep ?? 'MENU_DISPLAY')
+      : draft.items.length
+        ? 'ORDER_CONFIRM'
+        : (currentState?.flowStep ?? 'MENU_DISPLAY');
+
+    if (!clarification && llmStep !== expectedStep) {
+      pushDecision(input, {
+        handler: 'orderAgent',
+        phase: 'POST_HANDLER',
+        outcome: 'sequence_corrected',
+        evidence: { llmStep, forcedStep: expectedStep, missing },
+        durationMs: 0,
+      });
+      return {
+        nextState: buildBaseState(input, draft, {
+          flowStep: expectedStep,
+          customerName: capturedName,
+        }),
+        smsReply: canonicalPrompt(missing, draft, capturedName).slice(0, 320),
+        sideEffects: [],
+        flowType: FlowType.ORDER,
+      };
+    }
+
+    const nextStep = clarification ? llmStep : expectedStep;
 
     return {
       nextState: buildBaseState(input, draft, {
