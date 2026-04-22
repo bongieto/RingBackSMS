@@ -266,6 +266,66 @@ describe('runOrderAgent', () => {
     expect(result.nextState.pendingClarification?.field).toBe('generic');
   });
 
+  test('slot capture at ORDER_CONFIRM: bare "Maria" fills customerName + re-asks confirm', async () => {
+    const state = {
+      tenantId: TENANT_ID,
+      callerPhone: '+12175550199',
+      conversationId: null,
+      currentFlow: FlowType.ORDER,
+      flowStep: 'ORDER_CONFIRM',
+      orderDraft: {
+        items: [{ menuItemId: LUMPIA_ID, name: 'Lumpia Shanghai', quantity: 2, price: 8.99 }],
+        pickupTime: '6:30pm',
+      },
+      customerName: null,
+      lastMessageAt: Date.now(),
+      messageCount: 1,
+      dedupKey: null,
+    } as any;
+    // LLM returns no tool calls — the precise failure we're guarding
+    // against (LLM didn't recognize "Maria" as slot data).
+    const input = mkInput('Maria', [], '', state);
+    const decisions: any[] = [];
+    input.decisions = decisions;
+    const result = await runOrderAgent(input);
+
+    expect(result.nextState.customerName).toBe('Maria');
+    expect(result.nextState.flowStep).toBe('ORDER_CONFIRM'); // unchanged
+    expect(result.nextState.orderDraft?.items).toHaveLength(1); // cart intact
+    expect(result.smsReply).toMatch(/Got it, Maria/);
+    expect(result.smsReply).toMatch(/confirm/i);
+    expect(result.sideEffects).toHaveLength(0); // not committed
+
+    const captured = decisions.find(
+      (d) => d.handler === 'orderAgent' && d.outcome === 'slot_captured_at_confirm',
+    );
+    expect(captured).toBeDefined();
+    expect(captured.evidence).toEqual({ slot: 'customerName', value: 'Maria' });
+  });
+
+  test('slot capture at ORDER_CONFIRM does NOT steal a real "yes" confirm', async () => {
+    const state = {
+      tenantId: TENANT_ID,
+      callerPhone: '+12175550199',
+      conversationId: null,
+      currentFlow: FlowType.ORDER,
+      flowStep: 'ORDER_CONFIRM',
+      orderDraft: {
+        items: [{ menuItemId: LUMPIA_ID, name: 'Lumpia Shanghai', quantity: 2, price: 8.99 }],
+        pickupTime: '6:30pm',
+      },
+      customerName: null,
+      lastMessageAt: Date.now(),
+      messageCount: 1,
+      dedupKey: null,
+    } as any;
+    const input = mkInput('yes', [{ name: 'confirm_order', input: {} }], 'Your order is placed!', state);
+    const result = await runOrderAgent(input);
+    // confirm path still wins — SAVE_ORDER fires, flowStep advances to COMPLETE.
+    expect(result.sideEffects.map((s) => s.type).sort()).toEqual(['NOTIFY_OWNER', 'SAVE_ORDER']);
+    expect(result.nextState.flowStep).toBe('ORDER_COMPLETE');
+  });
+
   test('cancel_order clears cart', async () => {
     const state = {
       tenantId: TENANT_ID,

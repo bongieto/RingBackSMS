@@ -638,6 +638,56 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       wantsConfirm = true;
     }
 
+    // ── OUT-OF-ORDER SLOT CAPTURE AT ORDER_CONFIRM ──
+    // Customer is at ORDER_CONFIRM but their reply is slot data (a
+    // bare name or a pickup-time phrase) rather than yes/no. Without
+    // this safety net the LLM occasionally treats "Maria" as a
+    // rejection or unrelated chatter and re-asks something generic —
+    // destroying trust in a live ordering session.
+    //
+    // Fill the slot deterministically and re-ask confirm. Guards:
+    //   - !wantsConfirm: never steal a real commit (CONFIRM_RE block
+    //     above has already flipped wantsConfirm if it was a yes/ok).
+    //   - !wantsCancel: never steal a cancellation.
+    //   - draft.items.length > 0: only meaningful mid-order.
+    if (
+      !wantsConfirm &&
+      !wantsCancel &&
+      currentState?.flowStep === 'ORDER_CONFIRM' &&
+      draft.items.length > 0
+    ) {
+      const NAME_RE = /^\s*([A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]{1,20})?)\s*[.!?]*\s*$/;
+      const nameMatch = inboundMessage.match(NAME_RE);
+      const nameAlreadySet = Boolean(capturedName);
+
+      if (nameMatch && !nameAlreadySet) {
+        const name = nameMatch[1];
+        pushDecision(input, {
+          handler: 'orderAgent',
+          phase: 'FLOW',
+          outcome: 'slot_captured_at_confirm',
+          evidence: { slot: 'customerName', value: name },
+          durationMs: 0,
+        });
+        return {
+          nextState: buildBaseState(
+            input,
+            draft,
+            { flowStep: 'ORDER_CONFIRM', customerName: name },
+          ),
+          smsReply: `Got it, ${name}. Ready to confirm your order?`,
+          sideEffects: [],
+          flowType: FlowType.ORDER,
+        };
+      }
+
+      // Note: pickup-time at ORDER_CONFIRM is already handled by the
+      // main-path pickup parser (fires before this block). Name was the
+      // gap — the LLM's only signal for "Maria" was a bare capitalized
+      // word, which is why we need this deterministic mirror for name
+      // but not for pickup time.
+    }
+
     // ── CANCEL ──
     if (wantsCancel) {
       const reply = (aiResponse.text || 'Order canceled. Text us again anytime!').slice(0, 320);
