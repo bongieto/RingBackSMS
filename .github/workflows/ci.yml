@@ -1,0 +1,115 @@
+name: CI
+
+# Runs on every PR (so problems show up in code review) and on
+# push-to-main (so a direct merge doesn't land breakage). Split into
+# small jobs with a shared install step so a typecheck failure in
+# apps/api doesn't hide a test failure in the flow-engine — both lanes
+# report independently.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  # Cancel redundant runs when someone pushes a new commit to the same
+  # PR. Doesn't affect push-to-main — those share a single group keyed
+  # on the ref so concurrent merges serialize.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  install:
+    name: Install + cache deps
+    runs-on: ubuntu-latest
+    outputs:
+      cache-hit: ${{ steps.install.outputs.cache-hit }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+      - id: install
+        run: pnpm install --frozen-lockfile
+      - name: Generate Prisma client (apps/api owns the schema)
+        run: pnpm --filter=@ringbacksms/api exec prisma generate
+      - name: Pre-build workspace packages consumed by tests
+        # shared-types and flow-engine produce .d.ts files the other
+        # apps consume via workspace protocol. Building them once here
+        # means downstream typecheck jobs don't each redo the work.
+        run: |
+          pnpm --filter=@ringback/shared-types build
+          pnpm --filter=@ringback/flow-engine build
+
+  typecheck:
+    name: Typecheck (${{ matrix.workspace }})
+    needs: install
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace:
+          - '@ringback/shared-types'
+          - '@ringback/flow-engine'
+          - '@ringbacksms/api'
+          - '@ringbacksms/web'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter=@ringbacksms/api exec prisma generate
+      - name: tsc --noEmit
+        # Each package has its own tsconfig. Passing --noEmit avoids
+        # writing dist/ artifacts; we just want the compile check.
+        run: pnpm --filter=${{ matrix.workspace }} exec tsc --noEmit --skipLibCheck
+
+  test:
+    name: Tests (${{ matrix.workspace }})
+    needs: install
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace:
+          - '@ringbacksms/api'
+          - '@ringback/flow-engine'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter=@ringbacksms/api exec prisma generate
+      - run: pnpm --filter=@ringback/shared-types build
+      - run: pnpm --filter=@ringback/flow-engine build
+      - run: pnpm --filter=${{ matrix.workspace }} test
+
+  # NOTE: Lint is intentionally omitted here until we migrate the
+  # per-package ESLint 8 configs to the ESLint 9+ flat-config form
+  # (eslint.config.js). The current installed ESLint is 10.x and the
+  # old-style `.eslintrc.*` configs don't exist, so `pnpm lint` fails
+  # to load config in every workspace. Migrating is its own change;
+  # tracking as a DX follow-up.
+  #
+  # Prettier format-check is also deferred — the existing codebase has
+  # ~55 files off-format, and a blanket `prettier --write` would
+  # generate a massive diff that obliterates git blame. A future PR
+  # should either format the world in one stroke (with .git-blame-
+  # ignore-revs) or switch to a "only-new-files" check keyed on
+  # git diff base..HEAD.
