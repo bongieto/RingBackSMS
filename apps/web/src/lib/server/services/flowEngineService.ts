@@ -1404,7 +1404,7 @@ async function processInboundSmsBody(
   }
 }
 
-async function processSideEffect(
+export async function processSideEffect(
   effect: SideEffect,
   tenantId: string,
   conversationId: string,
