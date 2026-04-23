@@ -240,7 +240,16 @@ export function constructStripeEvent(
     throw new Error('STRIPE_WEBHOOK_SECRET not configured — refusing webhook');
   }
   const stripe = new Stripe(getStripeKey(), { apiVersion: '2023-10-16' });
-  return stripe.webhooks.constructEvent(payload, signature, secret);
+  // Replay protection: Stripe's SDK defaults tolerance to 300s (5 min)
+  // but passing it explicitly makes it auditable at the call site and
+  // lets operators tighten it via env var for high-value endpoints.
+  // Stripe signs `t=<epoch>,v1=<hmac>` — `constructEvent` rejects any
+  // event older than `tolerance` seconds, which stops an attacker who
+  // steals a previously-valid request body + signature from replaying
+  // it hours later.
+  const toleranceRaw = process.env.STRIPE_WEBHOOK_TOLERANCE_SECONDS?.trim();
+  const tolerance = toleranceRaw ? Math.max(30, Number(toleranceRaw)) : 300;
+  return stripe.webhooks.constructEvent(payload, signature, secret, tolerance);
 }
 
 // ── Stripe Connect (agency payouts) ─────────────────────────────────────

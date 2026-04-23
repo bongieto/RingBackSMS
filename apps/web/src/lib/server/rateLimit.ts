@@ -96,3 +96,45 @@ export function getClientIp(headers: Headers): string {
   if (cf) return cf;
   return 'unknown';
 }
+
+/**
+ * Per-user rate limit for authenticated routes. Returns a 429
+ * NextResponse when the caller has exceeded the budget, else null to
+ * proceed.
+ *
+ * Bucket naming convention is free-form but should be coarse (e.g.
+ * `admin`, `tenant-config`, `billing-portal`) — finer granularity
+ * means operators trip their own quota with normal dashboard use.
+ *
+ * Falls back to IP when userId is missing (unauthenticated hits that
+ * slipped past the auth gate). The IP-side limit is deliberately
+ * tighter than the user-side one because a caller bypassing auth is
+ * already suspicious.
+ *
+ * Typical call shape:
+ *
+ *     const limited = await checkAuthRateLimit(userId, req.headers, 'admin');
+ *     if (limited) return limited;
+ *
+ * Wire this into any authenticated mutation route (PATCH / POST /
+ * DELETE) where abuse would matter — config writes, billing portal
+ * creation, admin endpoints. Read-only listing endpoints don't need
+ * it unless they're expensive.
+ */
+export async function checkAuthRateLimit(
+  userId: string | null | undefined,
+  headers: Headers,
+  bucket: string = 'auth',
+  opts: { userLimit?: number; ipLimit?: number; windowSec?: number } = {},
+): Promise<NextResponse | null> {
+  const userLimit = opts.userLimit ?? 120;  // 120 req/min/user — generous for a busy dashboard user
+  const ipLimit = opts.ipLimit ?? 60;        // 60 req/min/ip for unauthenticated fallback
+  const windowSec = opts.windowSec ?? 60;
+  const key = userId ? `${bucket}:user:${userId}` : `${bucket}:ip:${getClientIp(headers)}`;
+  const limit = userId ? userLimit : ipLimit;
+  const result = await checkRateLimit(key, limit, windowSec);
+  if (!result.allowed) {
+    return rateLimitResponse(result);
+  }
+  return null;
+}

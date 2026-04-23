@@ -8,6 +8,8 @@ import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
 import { sanitizeTenantResponse } from '@/lib/server/services/tenantService';
 import { invalidateTenantContext } from '@/lib/server/services/tenantContextCache';
+import { checkAuthRateLimit } from '@/lib/server/rateLimit';
+import { recordConfigAudit, diffRecords, actorFromClerk } from '@/lib/server/services/configAuditLog';
 
 
 export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
@@ -86,6 +88,10 @@ const UpdateSchema = z.object({
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   const { userId } = await auth();
   if (!isSuperAdmin(userId)) return apiError('Forbidden', 403);
+  // Per-user rate limit on admin mutations — protects against a
+  // compromised admin session being used to scrape or grief at scale.
+  const limited = await checkAuthRateLimit(userId, request.headers, 'admin-tenant-mutate');
+  if (limited) return limited;
 
   let body: z.infer<typeof UpdateSchema>;
   try {
@@ -125,6 +131,38 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   // way to change live config, so propagating immediately (instead of
   // waiting for the 60s TTL) matters here especially.
   await invalidateTenantContext(params.id);
+
+  // Audit — super-admin edits are the highest-trust mutation path, so
+  // an explicit trail is non-negotiable. Diff against the pre-update
+  // Tenant row so we record exactly which fields an admin touched.
+  const tenantDiff = diffRecords(
+    existing as unknown as Record<string, unknown>,
+    { ...(existing as unknown as Record<string, unknown>), ...(tenantFields as Record<string, unknown>) },
+    { only: Object.keys(tenantFields) },
+  );
+  await recordConfigAudit({
+    tenantId: params.id,
+    actor: actorFromClerk(userId),
+    action: 'tenant.update',
+    entity: 'Tenant',
+    entityId: params.id,
+    changes: tenantDiff,
+  });
+  if (Object.keys(configUpdate).length > 0) {
+    await recordConfigAudit({
+      tenantId: params.id,
+      actor: actorFromClerk(userId),
+      action: 'config.update',
+      entity: 'TenantConfig',
+      entityId: params.id,
+      // We don't have a pre-image of TenantConfig for the admin path
+      // (upsert → might be creating). Record the target values; a
+      // follow-up pass can add a findUnique for diffs.
+      changes: Object.fromEntries(
+        Object.entries(configUpdate).map(([k, v]) => [k, { before: null, after: v }]),
+      ),
+    });
+  }
 
   logger.info('Admin updated tenant', {
     adminAction: true,

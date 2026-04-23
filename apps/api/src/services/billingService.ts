@@ -167,9 +167,14 @@ export function constructStripeEvent(
   signature: string
 ): Stripe.Event {
   const stripe = getStripe();
+  // Replay protection — explicit tolerance matches the apps/web
+  // implementation. See billingService.ts in apps/web for rationale.
+  const toleranceRaw = process.env.STRIPE_WEBHOOK_TOLERANCE_SECONDS?.trim();
+  const tolerance = toleranceRaw ? Math.max(30, Number(toleranceRaw)) : 300;
   return stripe.webhooks.constructEvent(
     payload,
     signature,
-    process.env.STRIPE_WEBHOOK_SECRET ?? ''
+    process.env.STRIPE_WEBHOOK_SECRET ?? '',
+    tolerance,
   );
 }

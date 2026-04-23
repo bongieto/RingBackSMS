@@ -22,6 +22,7 @@ import { prisma } from '@/lib/server/db';
 import { processSideEffect } from '@/lib/server/services/flowEngineService';
 import type { SideEffect } from '@ringback/shared-types';
 import { logger } from '@/lib/server/logger';
+import { checkAuthRateLimit } from '@/lib/server/rateLimit';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,6 +66,13 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const { userId } = await auth();
   if (!isSuperAdmin(userId)) return apiError('Forbidden', 403);
+  // Operator retry/dismiss on the DLQ — rate-limited so a stuck
+  // automation can't hammer the endpoint and replay every failure
+  // repeatedly.
+  const limited = await checkAuthRateLimit(userId, req.headers, 'admin-dlq-mutate', {
+    userLimit: 30,
+  });
+  if (limited) return limited;
 
   let body: { id?: unknown; action?: unknown };
   try {

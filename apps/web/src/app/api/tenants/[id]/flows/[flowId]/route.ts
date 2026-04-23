@@ -1,10 +1,12 @@
 import { NextRequest } from 'next/server';
+import { auth } from '@clerk/nextjs/server';
 import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { invalidateTenantContext } from '@/lib/server/services/tenantContextCache';
+import { checkAuthRateLimit } from '@/lib/server/rateLimit';
 
 const FlowUpdateSchema = z.object({
   isEnabled: z.boolean().optional(),
@@ -14,6 +16,9 @@ const FlowUpdateSchema = z.object({
 export async function PATCH(req: NextRequest, { params }: { params: { id: string; flowId: string } }) {
   const authResult = await verifyTenantAccess(params.id);
   if (isNextResponse(authResult)) return authResult;
+  const { userId } = await auth();
+  const limited = await checkAuthRateLimit(userId, req.headers, 'tenant-flow-mutate');
+  if (limited) return limited;
   try {
     const body = FlowUpdateSchema.parse(await req.json());
     const flow = await prisma.flow.update({
