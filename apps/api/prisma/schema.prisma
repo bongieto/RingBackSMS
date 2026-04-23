@@ -959,6 +959,46 @@ model WebhookEventLog {
   @@index([processedAt])
 }
 
+/// Persistent dedup for inbound Twilio SMS webhooks. Redis has a 5-min TTL
+/// for the hot path, but Twilio retries up to 24h — so a retry after the
+/// Redis window expires would double-process the message (and in the
+/// happy-path, double-charge the customer). This table is the source of
+/// truth: presence of a row means "we've seen this MessageSid, do not
+/// reprocess." Pruned by a periodic job after ~7 days.
+model InboundSmsDedup {
+  id         String   @id @default(cuid())
+  tenantId   String
+  messageSid String
+  receivedAt DateTime @default(now())
+
+  @@unique([tenantId, messageSid])
+  @@index([receivedAt])
+}
+
+/// Durable record of a side-effect execution failure (SAVE_ORDER,
+/// CREATE_PAYMENT_LINK, NOTIFY_OWNER, etc.). Populated when the in-request
+/// retry loop gives up. Consumed by an operator dashboard + a periodic
+/// reprocessor. `resolvedAt` is set when either (a) the operator marks the
+/// row handled, or (b) the reprocessor successfully replays it.
+model SideEffectFailure {
+  id             String    @id @default(cuid())
+  tenantId       String
+  effectType     String                             // SAVE_ORDER | CREATE_PAYMENT_LINK | NOTIFY_OWNER | ...
+  payload        Json                               // the original effect.payload
+  conversationId String?
+  callerPhone    String?
+  error          String    @db.Text
+  attempts       Int       @default(1)
+  lastAttemptAt  DateTime  @default(now())
+  resolvedAt     DateTime?
+  resolvedBy     String?                            // 'operator:<clerkUserId>' | 'reprocessor' | null
+  createdAt      DateTime  @default(now())
+
+  @@index([tenantId, resolvedAt])
+  @@index([createdAt])
+  @@index([effectType, resolvedAt])
+}
+
 /// Per-call AI token usage. One row per Claude / MiniMax / OpenAI request
 /// so we can bill tenants by real usage and debug cost spikes.
 model AiUsageLog {
