@@ -1,6 +1,7 @@
 import type { MenuItem, OrderDraft } from '@ringback/shared-types';
 import type { TenantContext, CallerMemory } from '../types';
 import { formatCart } from './orderAgentTools';
+import { SLOT_SEQUENCE } from './slotSequence';
 
 function formatMenu(menu: MenuItem[]): string {
   if (menu.length === 0) return '(no menu items available)';
@@ -283,7 +284,7 @@ ${(() => {
 1b. Never invent business hours or close times. If you quote hours, copy them VERBATIM from the Hours block above — don't paraphrase, don't summarize across days.
 2. Prices are authoritative from the menu; don't recompute — but DO state totals in your reply.
 3. Your reply text must fit in one SMS (≤ 320 chars).
-4. **STRICT SEQUENCE: items → name → pickup time → confirm.** At every turn:
+4. **STRICT SEQUENCE: ${SLOT_SEQUENCE.join(' → ')}.** At every turn:
    (a) First, capture any slot data the customer just gave you — always call the matching tool. Items → \`add_items\`. Name ("this is Maria", "for Rolando", bare "Maria") → \`set_customer_name\`. Time ("6pm", "ASAP", "in 20") → \`set_pickup_time\`. You may call multiple tools in one turn.
    (b) Then determine the FIRST missing slot in the sequence and ask for THAT slot — never jump ahead.
       • Items empty → "What can I get you? Text MENU for the list."

@@ -1,8 +1,9 @@
 import type { CallerState, OrderDraft } from '@ringback/shared-types';
-import { FlowType } from '@ringback/shared-types';
+import { FlowType, DecisionOutcomes } from '@ringback/shared-types';
 import type { FlowInput, FlowOutput } from '../types';
 import { processOrderFlow } from '../flows/orderFlow';
 import { pushDecision } from '../decisions';
+import { firstMissingSlot, SLOT_TO_FLOW_STEP, type SlotName } from './slotSequence';
 import {
   ORDER_AGENT_TOOLS,
   computeTotal,
@@ -226,7 +227,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       pushDecision(input, {
         handler: 'orderAgent',
         phase: 'PRE_HANDLER',
-        outcome: 'refused_closed',
+        outcome: DecisionOutcomes.REFUSED_CLOSED,
         evidence: { nextOpenDisplay: hours.nextOpenDisplay ?? null },
         durationMs: Date.now() - agentT0,
       });
@@ -244,7 +245,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
     pushDecision(input, {
       handler: 'runOrderAgent',
       phase: 'FLOW',
-      outcome: 'fallback_no_tool_client',
+      outcome: DecisionOutcomes.FALLBACK_NO_TOOL_CLIENT,
       reason: 'chatWithToolsFn not injected — deferring to regex orderFlow',
       durationMs: 0,
     });
@@ -704,7 +705,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         pushDecision(input, {
           handler: 'orderAgent',
           phase: 'FLOW',
-          outcome: 'name_captured_by_regex',
+          outcome: DecisionOutcomes.NAME_CAPTURED_BY_REGEX,
           evidence: { value: capturedName },
           durationMs: 0,
         });
@@ -790,7 +791,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       pushDecision(input, {
         handler: 'orderAgent',
         phase: 'POST_HANDLER',
-        outcome: 'confirm_blocked_missing_slot',
+        outcome: DecisionOutcomes.CONFIRM_BLOCKED_MISSING_SLOT,
         evidence: {
           missingName: !capturedName,
           missingPickup: !draft.pickupTime,
@@ -1028,20 +1029,13 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       // strict sequencer steer the conversation if there's an obvious
       // missing slot — we don't want "yes please" at a pickup-missing
       // state to slip through as a fallback.
-      const missingX: 'items' | 'name' | 'pickup' | 'confirm' =
-        draft.items.length === 0
-          ? 'items'
-          : !capturedName
-            ? 'name'
-            : !draft.pickupTime
-              ? 'pickup'
-              : 'confirm';
+      const missingX = firstMissingSlot(draft, capturedName);
       if (missingX !== 'items' && missingX !== 'confirm') {
-        const stepX = missingX === 'name' ? 'ORDER_NAME' : 'PICKUP_TIME';
+        const stepX = SLOT_TO_FLOW_STEP[missingX];
         pushDecision(input, {
           handler: 'orderAgent',
           phase: 'POST_HANDLER',
-          outcome: 'sequence_corrected',
+          outcome: DecisionOutcomes.SEQUENCE_CORRECTED,
           evidence: { llmStep: 'none', forcedStep: stepX, missing: missingX },
           durationMs: 0,
         });
@@ -1168,27 +1162,15 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
     }
 
     // ── STRICT SEQUENCE ENFORCER ──
-    // Canonical ladder: items → name → pickup time → confirm. Determine
-    // the first missing slot and force the flowStep + reply to match, so
-    // the LLM cannot skip ahead and the customer can't land in a weird
-    // intermediate state. Skipped when `clarification` is active — the
-    // LLM explicitly asked a disambiguation question; don't stomp it.
-    const missing: 'items' | 'name' | 'pickup' | 'confirm' =
-      draft.items.length === 0
-        ? 'items'
-        : !capturedName
-          ? 'name'
-          : !draft.pickupTime
-            ? 'pickup'
-            : 'confirm';
-    const expectedStep =
-      missing === 'items'
-        ? 'MENU_DISPLAY'
-        : missing === 'name'
-          ? 'ORDER_NAME'
-          : missing === 'pickup'
-            ? 'PICKUP_TIME'
-            : 'ORDER_CONFIRM';
+    // Canonical ladder lives in `slotSequence.ts` and is shared with the
+    // system prompt so the LLM's rules and the enforcer's rules can
+    // never drift. Determine the first missing slot and force the
+    // flowStep + reply to match, so the LLM cannot skip ahead and the
+    // customer can't land in a weird intermediate state. Skipped when
+    // `clarification` is active — the LLM explicitly asked a
+    // disambiguation question; don't stomp it.
+    const missing: SlotName = firstMissingSlot(draft, capturedName);
+    const expectedStep = SLOT_TO_FLOW_STEP[missing];
 
     const llmStep = clarification
       ? (currentState?.flowStep ?? 'MENU_DISPLAY')
@@ -1200,7 +1182,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       pushDecision(input, {
         handler: 'orderAgent',
         phase: 'POST_HANDLER',
-        outcome: 'sequence_corrected',
+        outcome: DecisionOutcomes.SEQUENCE_CORRECTED,
         evidence: { llmStep, forcedStep: expectedStep, missing },
         durationMs: 0,
       });
