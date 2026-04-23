@@ -47,6 +47,11 @@ export const DecisionOutcomes = {
   SEQUENCE_CORRECTED: 'sequence_corrected',
   /** Bare-name regex captured a customer name the LLM missed. */
   NAME_CAPTURED_BY_REGEX: 'name_captured_by_regex',
+
+  // ── ORDER: clarification loop ───────────────────────────────────────
+  /** Agent asked the same clarifying question too many turns in a row
+   *  without getting a parseable answer — escalating to a human. */
+  CLARIFICATION_LOOP_EXCEEDED: 'clarification_loop_exceeded',
 } as const;
 
 export type DecisionOutcome =

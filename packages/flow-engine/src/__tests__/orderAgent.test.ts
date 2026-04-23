@@ -267,6 +267,89 @@ describe('runOrderAgent', () => {
     expect(result.nextState.pendingClarification?.field).toBe('generic');
   });
 
+  test('clarification loop cap: 4th re-ask of the same field escalates to human', async () => {
+    // State entering this turn: agent has already asked the same
+    // `quantity` clarification 3 times. One more ask = 4th attempt,
+    // which trips the MAX_CLARIFICATION_ATTEMPTS cap and escalates.
+    const state = {
+      tenantId: TENANT_ID,
+      callerPhone: '+12175550199',
+      conversationId: null,
+      currentFlow: FlowType.ORDER,
+      flowStep: 'MENU_DISPLAY',
+      orderDraft: { items: [] },
+      pendingClarification: {
+        field: 'quantity',
+        question: 'How many?',
+        askedAt: Date.now() - 60_000,
+        attemptCount: 3,
+      },
+      lastMessageAt: Date.now(),
+      messageCount: 4,
+      dedupKey: null,
+    } as any;
+    const input = mkInput(
+      'sure',
+      [
+        {
+          name: 'ask_clarification',
+          input: { question: 'How many Adobo Chicken?', missing_field: 'quantity' },
+        },
+      ],
+      'How many Adobo Chicken?',
+      state,
+    );
+    const result = await runOrderAgent(input);
+
+    // Escalation FlowOutput: ESCALATE_TO_HUMAN side effect, canonical
+    // apology reply, pendingClarification cleared so the next message
+    // starts fresh if handoff fails upstream.
+    const escalations = result.sideEffects.filter((e) => e.type === 'ESCALATE_TO_HUMAN');
+    expect(escalations).toHaveLength(1);
+    expect((escalations[0] as any).payload.reason).toBe('clarification_loop_exceeded');
+    expect(result.smsReply).toMatch(/team member/);
+    expect(result.nextState.pendingClarification).toBeNull();
+  });
+
+  test('clarification loop cap: different fields do NOT accumulate toward the cap', async () => {
+    // Prior state shows 3 asks of `quantity`. The agent now asks about
+    // a different field (`modifier_size`). Counter should RESET, no
+    // escalation.
+    const state = {
+      tenantId: TENANT_ID,
+      callerPhone: '+12175550199',
+      conversationId: null,
+      currentFlow: FlowType.ORDER,
+      flowStep: 'MENU_DISPLAY',
+      orderDraft: { items: [] },
+      pendingClarification: {
+        field: 'quantity',
+        question: 'How many?',
+        askedAt: Date.now() - 60_000,
+        attemptCount: 3,
+      },
+      lastMessageAt: Date.now(),
+      messageCount: 4,
+      dedupKey: null,
+    } as any;
+    const input = mkInput(
+      '2 pancit',
+      [
+        {
+          name: 'ask_clarification',
+          input: { question: 'Spicy or not spicy?', missing_field: 'modifier_size' },
+        },
+      ],
+      'Spicy or not spicy?',
+      state,
+    );
+    const result = await runOrderAgent(input);
+
+    const escalations = result.sideEffects.filter((e) => e.type === 'ESCALATE_TO_HUMAN');
+    expect(escalations).toHaveLength(0);
+    expect(result.nextState.pendingClarification?.attemptCount).toBe(1);
+  });
+
   test('slot capture at ORDER_CONFIRM: bare "Maria" fills customerName + re-asks confirm', async () => {
     const state = {
       tenantId: TENANT_ID,

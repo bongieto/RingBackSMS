@@ -1078,11 +1078,29 @@ async function processInboundSmsBody(
     result.smsReply = `${afterHoursNotice}\n\n${result.smsReply}`;
   }
 
-  // Check for escalation intent
+  // Two escalation paths converge here:
+  //   1. Customer-initiated — they said "talk to a human" / "agent" /
+  //      similar. detectEscalationIntent matches inbound text.
+  //   2. Agent-initiated — flow engine emitted an ESCALATE_TO_HUMAN
+  //      side effect (currently the clarification-loop cap is the only
+  //      emitter). The agent's smsReply is already the apology; we
+  //      keep it, just flip handoff state.
   const isEscalation = detectEscalationIntent(inboundMessage);
+  const isAgentEscalation = result.sideEffects.some(
+    (e) => e.type === 'ESCALATE_TO_HUMAN',
+  );
+  const shouldHandoff = isEscalation || isAgentEscalation;
   if (isEscalation) {
     result.smsReply = "I'm connecting you with a team member who can help. Someone will follow up with you shortly!";
     logger.info('Escalation detected, handing off to human', { tenantId, callerPhone });
+  } else if (isAgentEscalation) {
+    logger.info('Agent-initiated escalation — handing off to human', {
+      tenantId,
+      callerPhone,
+      reasons: result.sideEffects
+        .filter((e) => e.type === 'ESCALATE_TO_HUMAN')
+        .map((e) => (e as { payload: { reason: string } }).payload.reason),
+    });
   }
 
   // Strip emoji + non-GSM-7 pictographs before sending. A single emoji
@@ -1119,7 +1137,7 @@ async function processInboundSmsBody(
         messages: encryptMessages(newMessages) as unknown as Prisma.InputJsonValue,
         isActive: true,
         causingTurnId: currentTurnId() ?? null,
-        ...(isEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
+        ...(shouldHandoff && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
       },
     });
     conversationId = conversation.id;
@@ -1139,7 +1157,7 @@ async function processInboundSmsBody(
         flowType: result.flowType,
         updatedAt: new Date(),
         causingTurnId: currentTurnId() ?? null,
-        ...(isEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
+        ...(shouldHandoff && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
       },
     });
   }
@@ -1164,16 +1182,30 @@ async function processInboundSmsBody(
     logger.error('Failed to set firstReplyAt', { err, tenantId, callerPhone });
   }
 
-  // Notify owner if escalation
-  if (isEscalation && !testMode) {
+  // Notify owner on either flavor of escalation. The notification copy
+  // varies: customer-initiated reads one way, agent-initiated (e.g.
+  // clarification loop exceeded) reads another so the operator knows
+  // whether to expect a clear ask or a confused thread.
+  if (shouldHandoff && !testMode) {
+    const escalationPayloads = result.sideEffects
+      .filter((e): e is Extract<typeof e, { type: 'ESCALATE_TO_HUMAN' }> =>
+        e.type === 'ESCALATE_TO_HUMAN',
+      )
+      .map((e) => e.payload);
+    const subject = isEscalation
+      ? 'Customer requested human assistance'
+      : 'AI handed off to human (' + (escalationPayloads[0]?.reason ?? 'unknown') + ')';
+    const message = isEscalation
+      ? `Customer ${callerPhone} requested to speak with a human. Please check the conversation in your dashboard.`
+      : `AI gave up on caller ${callerPhone}. Reason: ${escalationPayloads[0]?.reason ?? 'unknown'}. Context: ${escalationPayloads[0]?.context ?? 'n/a'}`;
+
     await sendNotification({
       tenantId,
-      subject: 'Customer requested human assistance',
-      message: `Customer ${callerPhone} requested to speak with a human. Please check the conversation in your dashboard.`,
+      subject,
+      message,
       channel: 'email',
     }).catch((err) => logger.warn('Failed to send escalation notification', { error: err }));
 
-    // Create an action item for the owner
     await createTask({
       tenantId,
       source: 'CONVERSATION',
@@ -1227,6 +1259,11 @@ async function processInboundSmsBody(
     for (const effect of result.sideEffects) {
       if (criticalFailure) break; // abort chain once a critical effect fails
       if (testMode && !TEST_MODE_EXECUTABLE.has(effect.type)) continue;
+      // ESCALATE_TO_HUMAN is handled inline above (handoffStatus flip,
+      // owner notification, task creation). Skip it in the side-effect
+      // executor — there's no processSideEffect branch for it, and
+      // running it through the retry/DLQ would just generate noise.
+      if (effect.type === 'ESCALATE_TO_HUMAN') continue;
 
       const isCritical = CRITICAL_EFFECTS.has(effect.type);
       // Critical effects get slightly longer backoff before DLQ; a 200ms

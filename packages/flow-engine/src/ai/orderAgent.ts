@@ -1,10 +1,11 @@
-import type { CallerState, OrderDraft } from '@ringback/shared-types';
+import type { CallerState, OrderDraft, PendingClarification } from '@ringback/shared-types';
 import { FlowType, DecisionOutcomes } from '@ringback/shared-types';
 import type { FlowInput, FlowOutput } from '../types';
 import { processOrderFlow } from '../flows/orderFlow';
 import { pushDecision } from '../decisions';
 import { firstMissingSlot, SLOT_TO_FLOW_STEP, type SlotName } from './slotSequence';
 import { validatePickupPhrase } from './pickupTimeValidator';
+import { advanceClarification, ESCALATION_SMS_REPLY } from './clarificationLoop';
 import {
   ORDER_AGENT_TOOLS,
   computeTotal,
@@ -168,6 +169,66 @@ function buildBaseState(input: FlowInput, draft: OrderDraft, overrides: Partial<
     messageCount: (prev?.messageCount ?? 0) + 1,
     dedupKey: null,
     ...overrides,
+  };
+}
+
+/**
+ * If the agent is about to re-ask the same clarification field past the
+ * loop-cap, return an escalation FlowOutput instead. Otherwise return
+ * `null` and the caller proceeds with `guard.clarification` as the new
+ * pendingClarification (attemptCount already bumped).
+ *
+ * Every `pendingClarification: {...}` emission site in this file runs
+ * through here so the cap is enforced uniformly whether the clarification
+ * comes from the LLM's ask_clarification tool or from a deterministic
+ * refusal path (closed hours, pickup validator, missing-pickup at
+ * confirm).
+ */
+function checkClarificationLoopOrEscalate(
+  input: FlowInput,
+  draft: OrderDraft,
+  capturedName: string | null | undefined,
+  field: string,
+  question: string,
+): { escalate: FlowOutput | null; clarification: PendingClarification } {
+  const guard = advanceClarification(
+    input.currentState?.pendingClarification ?? null,
+    { field, question },
+  );
+  if (!guard.exceeded) {
+    return { escalate: null, clarification: guard.clarification };
+  }
+  pushDecision(input, {
+    handler: 'orderAgent',
+    phase: 'POST_HANDLER',
+    outcome: DecisionOutcomes.CLARIFICATION_LOOP_EXCEEDED,
+    evidence: { field, attemptCount: guard.attemptCount },
+    durationMs: 0,
+  });
+  return {
+    clarification: guard.clarification,
+    escalate: {
+      // Keep the draft so a human taking over can see what the customer
+      // already asked for. Clear pendingClarification + flowStep so the
+      // AI doesn't re-enter this question on the next message if handoff
+      // fails upstream.
+      nextState: buildBaseState(input, draft, {
+        flowStep: null,
+        customerName: capturedName,
+        pendingClarification: null,
+      }),
+      smsReply: ESCALATION_SMS_REPLY,
+      sideEffects: [
+        {
+          type: 'ESCALATE_TO_HUMAN',
+          payload: {
+            reason: 'clarification_loop_exceeded',
+            context: `Customer answered "${field}" clarification ${guard.attemptCount - 1} times without a parseable response. Last question: ${question}`,
+          },
+        },
+      ],
+      flowType: FlowType.ORDER,
+    },
   };
 }
 
@@ -816,15 +877,16 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         const whenOpen = hours.nextOpenDisplay
           ? ` We open ${hours.nextOpenDisplay}.`
           : '';
+        const question = `We're currently closed.${whenOpen} What time would you like to schedule pickup for?`;
+        const guard = checkClarificationLoopOrEscalate(
+          input, draft, capturedName, 'pickup_time', question,
+        );
+        if (guard.escalate) return guard.escalate;
         return {
           nextState: buildBaseState(input, draft, {
             flowStep: 'PICKUP_TIME',
             customerName: capturedName,
-            pendingClarification: {
-              field: 'pickup_time',
-              question: `We're currently closed.${whenOpen} What time would you like to schedule pickup for?`,
-              askedAt: Date.now(),
-            },
+            pendingClarification: guard.clarification,
           }),
           smsReply: `We're currently closed, so I can't place this right now.${whenOpen} What time would you like to schedule pickup for?`.slice(0, 320),
           sideEffects: [],
@@ -865,17 +927,18 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           };
           // Clear the bogus pickup time from the draft so the LLM re-asks fresh.
           draft.pickupTime = undefined;
+          const question = reasonCopy[validation.reason];
+          const guard = checkClarificationLoopOrEscalate(
+            input, draft, capturedName, 'pickup_time', question,
+          );
+          if (guard.escalate) return guard.escalate;
           return {
             nextState: buildBaseState(input, draft, {
               flowStep: 'PICKUP_TIME',
               customerName: capturedName,
-              pendingClarification: {
-                field: 'pickup_time',
-                question: reasonCopy[validation.reason],
-                askedAt: Date.now(),
-              },
+              pendingClarification: guard.clarification,
             }),
-            smsReply: reasonCopy[validation.reason].slice(0, 320),
+            smsReply: question.slice(0, 320),
             sideEffects: [],
             flowType: FlowType.ORDER,
           };
@@ -883,17 +946,18 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       }
       if (!draft.pickupTime) {
         // Don't commit without a pickup time — ask for it.
+        const question = 'What time would you like to pick up?';
+        const guard = checkClarificationLoopOrEscalate(
+          input, draft, capturedName, 'pickup_time', question,
+        );
+        if (guard.escalate) return guard.escalate;
         return {
           nextState: buildBaseState(input, draft, {
             flowStep: 'PICKUP_TIME',
             customerName: capturedName,
-            pendingClarification: {
-              field: 'pickup_time',
-              question: 'What time would you like to pick up?',
-              askedAt: Date.now(),
-            },
+            pendingClarification: guard.clarification,
           }),
-          smsReply: (aiResponse.text || 'What time would you like to pick up?').slice(0, 320),
+          smsReply: (aiResponse.text || question).slice(0, 320),
           sideEffects: [],
           flowType: FlowType.ORDER,
         };
@@ -1250,13 +1314,24 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
 
     const nextStep = clarification ? llmStep : expectedStep;
 
+    // Guard the LLM-originated clarification the same way we guard the
+    // deterministic ones above. If the LLM keeps re-asking the same
+    // field, escalate — no amount of LLM cleverness will fix a
+    // customer who isn't parsing the question.
+    let finalClarification: PendingClarification | null = null;
+    if (clarification) {
+      const guard = checkClarificationLoopOrEscalate(
+        input, draft, capturedName, clarification.field, clarification.question,
+      );
+      if (guard.escalate) return guard.escalate;
+      finalClarification = guard.clarification;
+    }
+
     return {
       nextState: buildBaseState(input, draft, {
         flowStep: nextStep,
         customerName: capturedName,
-        pendingClarification: clarification
-          ? { field: clarification.field, question: clarification.question, askedAt: Date.now() }
-          : null,
+        pendingClarification: finalClarification,
       }),
       smsReply: reply,
       sideEffects: [],

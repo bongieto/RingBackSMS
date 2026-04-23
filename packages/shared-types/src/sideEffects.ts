@@ -10,7 +10,8 @@ export type SideEffectType =
   | 'CREATE_POS_ORDER'
   | 'CREATE_PAYMENT_LINK'
   | 'FETCH_CALCOM_SLOTS'
-  | 'CREATE_CALCOM_BOOKING';
+  | 'CREATE_CALCOM_BOOKING'
+  | 'ESCALATE_TO_HUMAN';
 
 export interface SaveOrderSideEffect {
   type: 'SAVE_ORDER';
@@ -104,6 +105,24 @@ export interface CreateCalcomBookingSideEffect {
   };
 }
 
+/**
+ * Emitted when the ORDER agent gives up on a stuck clarification loop
+ * and wants the host app to hand the conversation to a human. The host
+ * flips Conversation.handoffStatus to HUMAN, notifies the owner, and
+ * suppresses the AI for subsequent messages (same plumbing as the
+ * existing detectEscalationIntent path). Payload carries context for
+ * the owner notification.
+ */
+export interface EscalateToHumanSideEffect {
+  type: 'ESCALATE_TO_HUMAN';
+  payload: {
+    /** Short machine-readable reason, e.g. "clarification_loop_exceeded". */
+    reason: string;
+    /** Human-readable context for the owner notification. */
+    context: string;
+  };
+}
+
 export type SideEffect =
   | SaveOrderSideEffect
   | BookMeetingSideEffect
@@ -112,4 +131,5 @@ export type SideEffect =
   | CreatePosOrderSideEffect
   | CreatePaymentLinkSideEffect
   | FetchCalcomSlotsSideEffect
-  | CreateCalcomBookingSideEffect;
+  | CreateCalcomBookingSideEffect
+  | EscalateToHumanSideEffect;

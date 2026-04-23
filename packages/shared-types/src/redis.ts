@@ -66,6 +66,12 @@ export const PendingClarificationSchema = z.object({
   field: z.string(),            // e.g. "pickup_time", "side_for_combo_1"
   question: z.string(),         // the exact wording Claude asked
   askedAt: z.number(),          // unix ms
+  // How many times the agent has asked this SAME field. Bumped when the
+  // customer replies without resolving the slot (agent re-asks); reset
+  // when the slot is filled or a new field is asked. Used by the order
+  // agent to escalate to a human after too many failed tries instead
+  // of re-asking the same question forever.
+  attemptCount: z.number().int().nonnegative().optional(),
 });
 
 export type PendingClarification = z.infer<typeof PendingClarificationSchema>;
