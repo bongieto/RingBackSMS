@@ -47,7 +47,11 @@ export function firstMissingSlot(
   capturedName: string | null | undefined,
 ): SlotName {
   if (draft.items.length === 0) return 'items';
-  if (!capturedName) return 'name';
-  if (!draft.pickupTime) return 'pickup';
+  // Trim before the truthiness check — a stray whitespace-only value
+  // ("   ") is semantically empty. Both name and pickupTime can land
+  // here from the LLM tool layer where Zod's .min(1) lets whitespace
+  // through, so the canonical sequencer is the right place to enforce it.
+  if (!capturedName || capturedName.trim().length === 0) return 'name';
+  if (!draft.pickupTime || String(draft.pickupTime).trim().length === 0) return 'pickup';
   return 'confirm';
 }
