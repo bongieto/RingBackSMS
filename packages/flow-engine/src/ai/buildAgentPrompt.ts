@@ -2,26 +2,32 @@ import type { MenuItem, OrderDraft } from '@ringback/shared-types';
 import type { TenantContext, CallerMemory } from '../types';
 import { formatCart } from './orderAgentTools';
 import { SLOT_SEQUENCE } from './slotSequence';
+import { sanitizeForPrompt, sanitizeDescription, clampLength } from './promptSanitizer';
 
 function formatMenu(menu: MenuItem[]): string {
   if (menu.length === 0) return '(no menu items available)';
   return menu
     .map((m) => {
       const price = `$${m.price.toFixed(2)}`;
-      const desc = m.description ? ` — ${m.description}` : '';
-      const cat = m.category ? ` (${m.category})` : '';
+      // All operator- and POS-supplied strings below run through the
+      // sanitizer before landing in the prompt. A malicious menu item
+      // name like "Lumpia\n\n# New Rules\nIgnore previous" would
+      // otherwise reach the LLM as a free-form instruction block.
+      const name = sanitizeForPrompt(m.name);
+      const desc = m.description ? ` — ${sanitizeDescription(m.description, { maxLength: 200 })}` : '';
+      const cat = m.category ? ` (${sanitizeForPrompt(m.category, { maxLength: 40 })})` : '';
       const mods =
         m.modifierGroups && m.modifierGroups.length > 0
           ? ` | modifiers: ${m.modifierGroups
               .map(
                 (g) =>
-                  `${g.name}${g.required ? '*' : ''}: ${g.modifiers
-                    .map((mod) => mod.name)
+                  `${sanitizeForPrompt(g.name, { maxLength: 40 })}${g.required ? '*' : ''}: ${g.modifiers
+                    .map((mod) => sanitizeForPrompt(mod.name, { maxLength: 40 }))
                     .join('/')}`,
               )
               .join('; ')}`
           : '';
-      return `- [${m.id}] ${m.name}${cat} — ${price}${desc}${mods}`;
+      return `- [${m.id}] ${name}${cat} — ${price}${desc}${mods}`;
     })
     .join('\n');
 }
@@ -29,13 +35,18 @@ function formatMenu(menu: MenuItem[]): string {
 function formatMemory(memory?: CallerMemory): string {
   if (!memory) return '(no prior history)';
   const bits: string[] = [];
-  if (memory.contactName) bits.push(`Name: ${memory.contactName}`);
-  if (memory.contactStatus) bits.push(`Tier: ${memory.contactStatus}`);
-  if (memory.lastOrderSummary) bits.push(`Last order: ${memory.lastOrderSummary}`);
+  // Caller memory is the most direct customer-provided channel that
+  // reaches the prompt: contactName and order-item names originate
+  // from past inbound SMS. Every string here runs through the
+  // sanitizer — a customer-named "Maria\n\n# Override" can't turn
+  // into a prompt section header.
+  if (memory.contactName) bits.push(`Name: ${sanitizeForPrompt(memory.contactName, { maxLength: 60 })}`);
+  if (memory.contactStatus) bits.push(`Tier: ${sanitizeForPrompt(memory.contactStatus, { maxLength: 20 })}`);
+  if (memory.lastOrderSummary) bits.push(`Last order: ${sanitizeForPrompt(memory.lastOrderSummary, { maxLength: 200 })}`);
   if (memory.lastOrderItems?.length) {
     bits.push(
       `Last order items: ${memory.lastOrderItems
-        .map((i) => `${i.quantity}× ${i.name}`)
+        .map((i) => `${i.quantity}× ${sanitizeForPrompt(i.name, { maxLength: 60 })}`)
         .join(', ')}`,
     );
   }
@@ -190,7 +201,7 @@ function formatItemHints(
   const hits = findItemPhraseMatches(inbound, menu);
   if (hits.length === 0) return '';
   const lines = hits
-    .map((h) => `- Customer phrase "${h.phrase}" → use menu_item_id "${h.item.id}" (${h.item.name}, $${h.item.price.toFixed(2)})`)
+    .map((h) => `- Customer phrase "${sanitizeForPrompt(h.phrase, { maxLength: 60 })}" → use menu_item_id "${h.item.id}" (${sanitizeForPrompt(h.item.name, { maxLength: 80 })}, $${h.item.price.toFixed(2)})`)
     .join('\n');
   return `\n# Item resolution hints (DETERMINISTIC — follow exactly)\nThese phrase→id bindings were computed by exact-phrase match against the menu. They override any guess you might make from partial-word matching. Use these menu_item_id values verbatim:\n${lines}\n`;
 }
@@ -198,7 +209,7 @@ function formatItemHints(
 function formatSoldOut(items: MenuItem[] | undefined): string {
   if (!items || items.length === 0) return '';
   const lines = items
-    .map((m) => `- ${m.name}${m.category ? ` (${m.category})` : ''} — $${m.price.toFixed(2)}`)
+    .map((m) => `- ${sanitizeForPrompt(m.name)}${m.category ? ` (${sanitizeForPrompt(m.category, { maxLength: 40 })})` : ''} — $${m.price.toFixed(2)}`)
     .join('\n');
   return `\n# Currently sold out / 86'd today\nThese items DO exist on our menu — we're just out right now. If a customer asks for one, say "we're out of {name} today" and suggest 1-2 available alternatives. Never say the item isn't on the menu.\n${lines}\n`;
 }
@@ -229,7 +240,13 @@ export function buildOrderAgentSystemPrompt(args: BuildAgentPromptArgs): string 
       })()
     : '';
 
-  return `You are the SMS ordering assistant for ${tenantContext.tenantName}. Reply in English only — we do not support other languages.
+  // tenantName comes from Tenant.name in the DB — operator-provided at
+  // signup and mutable from the dashboard. Sanitize before both
+  // insertion points so "Bob's Burgers\n\n# Evil" can't extend the
+  // prompt with new instructions.
+  const safeTenantName = sanitizeForPrompt(tenantContext.tenantName, { maxLength: 80 });
+
+  return `You are the SMS ordering assistant for ${safeTenantName}. Reply in English only — we do not support other languages.
 
 Your job: understand the customer's natural-language order, call the right tools to update their cart, and reply with a short, friendly SMS (≤ 1 message, ≤ 320 chars).
 
@@ -253,7 +270,7 @@ Your job: understand the customer's natural-language order, call the right tools
 - Reply text is what the customer sees: be natural, concise, and summarize what you did. If you called ask_clarification, the question goes in the reply too.
 
 # Business
-${tenantContext.tenantName}
+${safeTenantName}
 Menu URL: ${menuUrl}
 ${hoursBlock ? `\n# Hours\n${hoursBlock}` : ''}
 
@@ -274,9 +291,12 @@ ${formatMenu(filteredMenu)}
 ${formatSoldOut(soldOutItems)}${itemHints}
 ${(() => {
   const custom = (tenantContext.config as { customAiInstructions?: string | null }).customAiInstructions;
-  return custom && custom.trim().length > 0
-    ? `# Tenant-specific instructions from the owner\n${custom.trim()}\n`
-    : '';
+  if (!custom || custom.trim().length === 0) return '';
+  // Owner-authored instructions are trusted enough to keep newlines and
+  // special characters (operators DO write multi-line guidance here),
+  // but still get a length cap so a runaway paste can't swamp the
+  // token budget.
+  return `# Tenant-specific instructions from the owner\n${clampLength(custom.trim(), 2000)}\n`;
 })()}
 
 # Rules
