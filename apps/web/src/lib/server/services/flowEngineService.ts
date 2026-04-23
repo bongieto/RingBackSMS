@@ -13,7 +13,7 @@ import { createOrderPaymentSession } from './paymentService';
 import { incrementSmsUsage } from './usageMeterService';
 import { logger } from '../logger';
 import { withTimeout, withTimeoutFallback, TimeoutError } from '../timeout';
-import { isWithinBusinessHours, getBusinessHoursDisplay, getNextOpenDisplay, getTodayHoursDisplay, getMinutesUntilClose, getClosesAtDisplay } from '../businessHours';
+import { isWithinBusinessHours, getBusinessHoursDisplay, getNextOpenDisplay, getTodayHoursDisplay, getMinutesUntilClose, getClosesAtDisplay, getTodayHoursRaw } from '../businessHours';
 import { getActiveOrderCount } from './queueService';
 import { prisma } from '../db';
 import { encryptMessages, decryptMessages } from '../encryption';
@@ -556,6 +556,7 @@ async function processInboundSmsBody(
   // is the industry default (matches Toast, Square).
   const lastOrdersGrace =
     (tenant.config as { lastOrdersGraceMinutes?: number | null }).lastOrdersGraceMinutes ?? 15;
+  const todayRaw = getTodayHoursRaw(hoursConfig);
   tenantContext.hoursInfo = {
     openNow: withinBusinessHours,
     nextOpenDisplay: withinBusinessHours ? null : getNextOpenDisplay(hoursConfig),
@@ -565,6 +566,11 @@ async function processInboundSmsBody(
     closesAtDisplay: withinBusinessHours ? getClosesAtDisplay(hoursConfig) : null,
     closingSoon:
       minutesUntilClose != null && minutesUntilClose > 0 && minutesUntilClose <= lastOrdersGrace,
+    todayOpenHHmm: todayRaw.open,
+    todayCloseHHmm: todayRaw.close,
+    nowHour: todayRaw.nowHour,
+    nowMinute: todayRaw.nowMinute,
+    lastOrdersGraceMinutes: lastOrdersGrace,
   };
 
   // If we're closed AND the tenant has opted out of accepting closed-hour

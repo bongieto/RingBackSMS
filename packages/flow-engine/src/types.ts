@@ -28,6 +28,18 @@ export interface TenantContext {
      *  agent should refuse new orders past close+grace; operators usually
      *  want the grace to be 15 minutes. */
     closingSoon?: boolean;
+    /** Today's raw open time as "HH:mm" (24-hour) — for deterministic
+     *  validators (pickupTimeValidator) that need to resolve concrete
+     *  clock phrases against today's window. Null when closed today. */
+    todayOpenHHmm?: string | null;
+    /** Today's raw close time as "HH:mm" (24-hour). See todayOpenHHmm. */
+    todayCloseHHmm?: string | null;
+    /** Tenant-local hour (0-23) right now. */
+    nowHour?: number;
+    /** Tenant-local minute (0-59) right now. */
+    nowMinute?: number;
+    /** Operator-configured last-orders grace window in minutes. */
+    lastOrdersGraceMinutes?: number;
   };
 }
 

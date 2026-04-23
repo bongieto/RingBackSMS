@@ -4,6 +4,7 @@ import type { FlowInput, FlowOutput } from '../types';
 import { processOrderFlow } from '../flows/orderFlow';
 import { pushDecision } from '../decisions';
 import { firstMissingSlot, SLOT_TO_FLOW_STEP, type SlotName } from './slotSequence';
+import { validatePickupPhrase } from './pickupTimeValidator';
 import {
   ORDER_AGENT_TOOLS,
   computeTotal,
@@ -829,6 +830,56 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           sideEffects: [],
           flowType: FlowType.ORDER,
         };
+      }
+
+      // Second pickup-time gate: we ARE open, but the pickup phrase the
+      // customer gave resolves to a concrete clock time that falls outside
+      // today's window (before open, after close, or inside the last-orders
+      // grace). Future-scheduled phrases ("tomorrow 6pm", "wednesday")
+      // skip this gate — they're validated elsewhere. Ambiguous phrases
+      // ("in 30 min", "whenever") default to accept. See
+      // pickupTimeValidator.ts for the full truth table.
+      if (
+        hours &&
+        hours.openNow === true &&
+        !pickupIsFutureScheduled &&
+        draft.pickupTime &&
+        hours.nowHour != null &&
+        hours.nowMinute != null
+      ) {
+        const validation = validatePickupPhrase({
+          phrase: draft.pickupTime,
+          nowHour: hours.nowHour,
+          nowMinute: hours.nowMinute,
+          todayOpen: hours.todayOpenHHmm ?? null,
+          todayClose: hours.todayCloseHHmm ?? null,
+          lastOrdersGraceMinutes: hours.lastOrdersGraceMinutes,
+        });
+        if (!validation.ok) {
+          const closesAt = hours.closesAtDisplay ? ` We close at ${hours.closesAtDisplay}.` : '';
+          const reasonCopy: Record<typeof validation.reason, string> = {
+            after_close: `That's after we close today.${closesAt} What earlier time works?`,
+            before_open: `That's before we open today — we open at ${hours.todayHoursDisplay.split('-')[0]?.trim() ?? 'our usual time'}. What time works?`,
+            inside_last_orders_grace: `We stop taking orders a bit before close so the kitchen can wind down.${closesAt} What earlier time works?`,
+            closed_today: `We're closed today. What time would you like to pick up when we reopen?`,
+          };
+          // Clear the bogus pickup time from the draft so the LLM re-asks fresh.
+          draft.pickupTime = undefined;
+          return {
+            nextState: buildBaseState(input, draft, {
+              flowStep: 'PICKUP_TIME',
+              customerName: capturedName,
+              pendingClarification: {
+                field: 'pickup_time',
+                question: reasonCopy[validation.reason],
+                askedAt: Date.now(),
+              },
+            }),
+            smsReply: reasonCopy[validation.reason].slice(0, 320),
+            sideEffects: [],
+            flowType: FlowType.ORDER,
+          };
+        }
       }
       if (!draft.pickupTime) {
         // Don't commit without a pickup time — ask for it.

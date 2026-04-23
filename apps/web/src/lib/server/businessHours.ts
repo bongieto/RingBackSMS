@@ -140,7 +140,26 @@ function isTimeInRange(hour: number, minute: number, start: string, end: string)
 
   const currentMinutes = hour * 60 + minute;
   const startMinutes = startH * 60 + startM;
-  const endMinutes = endH * 60 + endM;
+  let endMinutes = endH * 60 + endM;
+
+  // Two special cases the previous straight `current >= start && current < end`
+  // got wrong:
+  //   1. Close at midnight stored as "24:00" or "00:00". Both mean "end of
+  //      the day" but the arithmetic turned "00:00" into endMinutes=0, so
+  //      at 11 PM we compared 1380 < 0 and reported closed — for shops that
+  //      close exactly at midnight, we were always closed.
+  //   2. Overnight hours like open 22:00, close 02:00. The naive comparison
+  //      required start < end, so a shop open from 10 PM to 2 AM would be
+  //      reported closed at every hour.
+  // Both shapes normalize to "treat end as a time on the following day":
+  // if end <= start we add 24h, and wrap `currentMinutes` forward too
+  // if we're in the early-morning window (current < start).
+  if (endMinutes <= startMinutes) {
+    endMinutes += 24 * 60;
+    if (currentMinutes < startMinutes) {
+      return currentMinutes + 24 * 60 < endMinutes;
+    }
+  }
 
   return currentMinutes >= startMinutes && currentMinutes < endMinutes;
 }
@@ -300,6 +319,48 @@ export function getTodayHoursDisplay(
     return 'Closed today';
   }
   return `${formatTime(businessHoursStart)} - ${formatTime(businessHoursEnd)}`;
+}
+
+/**
+ * Raw "HH:mm" open + close for TODAY in the tenant's timezone (plus the
+ * tenant-local wall-clock hour/minute). Used by deterministic validators
+ * that need concrete numeric bounds, not the human-readable pretty strings
+ * returned by getTodayHoursDisplay / getClosesAtDisplay.
+ *
+ * Returns `{ open: null, close: null }` when the tenant is closed today
+ * (closedDates hit, weekday not in businessDays, no schedule for this day).
+ */
+export function getTodayHoursRaw(
+  config: BusinessHoursConfig,
+  now: Date = new Date(),
+): { open: string | null; close: string | null; nowHour: number; nowMinute: number } {
+  const tz = config.timezone ?? 'America/Chicago';
+  const parts = localDateParts(now, tz);
+  const ymd = `${parts.year}-${parts.month}-${parts.day}`;
+
+  if (config.closedDates?.includes(ymd)) {
+    return { open: null, close: null, nowHour: parts.hour, nowMinute: parts.minute };
+  }
+
+  const { businessSchedule, businessHoursStart, businessHoursEnd, businessDays } = config;
+  if (businessSchedule && Object.keys(businessSchedule).length > 0) {
+    const today = businessSchedule[String(parts.dayOfWeek)];
+    if (!today) return { open: null, close: null, nowHour: parts.hour, nowMinute: parts.minute };
+    return { open: today.open, close: today.close, nowHour: parts.hour, nowMinute: parts.minute };
+  }
+
+  if (!businessHoursStart || !businessHoursEnd) {
+    return { open: null, close: null, nowHour: parts.hour, nowMinute: parts.minute };
+  }
+  if (businessDays && businessDays.length > 0 && !businessDays.includes(parts.dayOfWeek)) {
+    return { open: null, close: null, nowHour: parts.hour, nowMinute: parts.minute };
+  }
+  return {
+    open: businessHoursStart,
+    close: businessHoursEnd,
+    nowHour: parts.hour,
+    nowMinute: parts.minute,
+  };
 }
 
 /**
