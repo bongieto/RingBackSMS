@@ -356,23 +356,34 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       draft.items = [];
     }
 
+    // Filter + cap the menu at 25 items in the prompt. filterMenuForPrompt
+    // picks the most-relevant by keyword score AND always includes items
+    // already in the cart. For larger tenants, the prompt gets a
+    // "+ N more items — call send_menu_link if asked" hint so the LLM
+    // doesn't try to reason from an incomplete catalog.
+    const MENU_CAP = 25;
     const filteredMenu = filterMenuForPrompt(
       tenantContext.menuItems,
       inboundMessage,
       recentMessages?.filter((m) => m.role === 'assistant').slice(-1)[0]?.content ?? null,
       draft,
+      MENU_CAP,
     );
+    const totalMenuCount = tenantContext.menuItems.filter((m) => m.isAvailable !== false).length;
 
     // 86'd items still go into the prompt (as a separate block) so the
     // agent can say "we're out of X today" instead of "we don't carry X".
-    // Cap at 25 to avoid ballooning the prompt on giant menus.
+    // Capped tightly — 10 is plenty for "today's 86'd list" without
+    // chewing prompt budget. Giant sold-out menus usually point at a
+    // POS sync problem rather than a real operator signal.
     const soldOutItems = tenantContext.menuItems
       .filter((m) => m.isAvailable === false)
-      .slice(0, 25);
+      .slice(0, 10);
     const systemPrompt = buildOrderAgentSystemPrompt({
       tenantContext,
       filteredMenu,
       soldOutItems,
+      totalMenuCount,
       draft,
       memory: callerMemory,
       pendingClarification: currentState?.pendingClarification ?? null,

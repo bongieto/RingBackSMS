@@ -4,8 +4,14 @@ import { formatCart } from './orderAgentTools';
 import { SLOT_SEQUENCE } from './slotSequence';
 import { sanitizeForPrompt, sanitizeDescription, clampLength } from './promptSanitizer';
 
-function formatMenu(menu: MenuItem[]): string {
+function formatMenu(menu: MenuItem[], opts: { compact?: boolean } = {}): string {
   if (menu.length === 0) return '(no menu items available)';
+  // Compact mode (for larger menus): drop descriptions, keep the rest.
+  // Descriptions are the biggest-per-line token cost and the LLM uses
+  // them for flavor text more than matching — the item name + modifier
+  // list carry the resolution weight.
+  const compact = opts.compact === true;
+  const descLimit = compact ? 0 : 140;
   return menu
     .map((m) => {
       const price = `$${m.price.toFixed(2)}`;
@@ -14,7 +20,10 @@ function formatMenu(menu: MenuItem[]): string {
       // name like "Lumpia\n\n# New Rules\nIgnore previous" would
       // otherwise reach the LLM as a free-form instruction block.
       const name = sanitizeForPrompt(m.name);
-      const desc = m.description ? ` — ${sanitizeDescription(m.description, { maxLength: 200 })}` : '';
+      const desc =
+        descLimit > 0 && m.description
+          ? ` — ${sanitizeDescription(m.description, { maxLength: descLimit })}`
+          : '';
       const cat = m.category ? ` (${sanitizeForPrompt(m.category, { maxLength: 40 })})` : '';
       const mods =
         m.modifierGroups && m.modifierGroups.length > 0
@@ -60,6 +69,11 @@ export interface BuildAgentPromptArgs {
    *  today. Included in the prompt as a separate section so the agent
    *  can distinguish "we're out today" from "we don't carry that". */
   soldOutItems?: MenuItem[];
+  /** Total count of available items on the tenant's menu. When
+   *  `filteredMenu.length` is smaller, we add a "+ N more items —
+   *  customer can text MENU for the full list" hint so the LLM knows
+   *  it doesn't have the whole catalog. */
+  totalMenuCount?: number;
   draft: OrderDraft | null;
   memory?: CallerMemory;
   pendingClarification?: { field: string; question: string } | null;
@@ -215,7 +229,7 @@ function formatSoldOut(items: MenuItem[] | undefined): string {
 }
 
 export function buildOrderAgentSystemPrompt(args: BuildAgentPromptArgs): string {
-  const { tenantContext, filteredMenu, soldOutItems, draft, memory, pendingClarification, inboundMessage } = args;
+  const { tenantContext, filteredMenu, soldOutItems, totalMenuCount, draft, memory, pendingClarification, inboundMessage } = args;
   const itemHints = formatItemHints(inboundMessage, filteredMenu);
   const menuUrl =
     tenantContext.tenantSlug != null
@@ -286,8 +300,25 @@ ${
     : ''
 }
 
-# Menu (use these EXACT ids)
-${formatMenu(filteredMenu)}
+${(() => {
+  // Switch to compact rendering (no descriptions) when the filtered
+  // menu is large — descriptions are the biggest per-line token cost
+  // and the LLM uses them for flavor text more than for item
+  // matching. Threshold chosen so typical small-menu tenants (≤ 15
+  // items) still get descriptions; larger ones trade flavor for
+  // tokens.
+  const useCompact = filteredMenu.length > 15;
+  const menuBlock = formatMenu(filteredMenu, { compact: useCompact });
+  const totalAvailable = totalMenuCount ?? filteredMenu.length;
+  // Let the LLM know it doesn't have the full catalog when we filtered
+  // down. The 'send_menu_link' tool then becomes the right move if the
+  // customer asks for something not shown.
+  const overflow =
+    totalAvailable > filteredMenu.length
+      ? `\n(+ ${totalAvailable - filteredMenu.length} more items in full menu — if the customer asks for something not listed here, call send_menu_link.)`
+      : '';
+  return `# Menu (use these EXACT ids)\n${menuBlock}${overflow}`;
+})()}
 ${formatSoldOut(soldOutItems)}${itemHints}
 ${(() => {
   const custom = (tenantContext.config as { customAiInstructions?: string | null }).customAiInstructions;
