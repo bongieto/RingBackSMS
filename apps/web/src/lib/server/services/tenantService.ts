@@ -1,5 +1,6 @@
 import { BusinessType, Plan } from '@prisma/client';
 import { invalidateTenantContext } from './tenantContextCache';
+import { recordConfigAudit, diffRecords, actorFromClerk } from './configAuditLog';
 import { FlowType } from '@ringback/shared-types';
 import { clerkClient } from '@clerk/nextjs/server';
 import { logger } from '../logger';
@@ -215,9 +216,16 @@ export async function updateTenantConfig(
     consentMessage: string | null;
     salesTaxRate: number | null;
     passStripeFeesToCustomer: boolean;
-  }>
+  }>,
+  /** Clerk user id of the operator making this change, or null for
+   *  system-driven updates (cron-generated greetings, token refreshes).
+   *  Surfaces in ConfigAuditLog so "who changed this?" is one query. */
+  actorUserId?: string | null,
 ) {
-  // Fetch current config to detect what changed (for TTS regeneration)
+  // Fetch current config to detect what changed (for TTS regeneration
+  // AND for the audit diff). We pull a broad set of columns so the
+  // diff is precise; narrower tracking would hide greeting edits that
+  // don't touch voice.
   const currentConfig = await prisma.tenantConfig.findUnique({
     where: { tenantId },
     select: {
@@ -226,6 +234,26 @@ export async function updateTenantConfig(
       voiceGreetingAfterHours: true,
       voiceGreetingRapidRedial: true,
       voiceGreetingReturning: true,
+      timezone: true,
+      businessHoursStart: true,
+      businessHoursEnd: true,
+      businessDays: true,
+      businessSchedule: true,
+      closedDates: true,
+      aiPersonality: true,
+      ownerEmail: true,
+      ownerPhone: true,
+      requirePayment: true,
+      dailyDigestEnabled: true,
+      dailyDigestHour: true,
+      defaultPrepTimeMinutes: true,
+      largeOrderThresholdItems: true,
+      largeOrderExtraMinutes: true,
+      prepTimeOverrides: true,
+      ordersAcceptingEnabled: true,
+      customAiInstructions: true,
+      salesTaxRate: true,
+      passStripeFeesToCustomer: true,
     },
   });
 
@@ -234,6 +262,24 @@ export async function updateTenantConfig(
     where: { tenantId },
     data: updates as any,
   });
+
+  // Audit trail. Diff the keys the caller actually touched against the
+  // pre-update snapshot so we don't log every unchanged column.
+  if (currentConfig) {
+    const changes = diffRecords(
+      currentConfig as unknown as Record<string, unknown>,
+      { ...(currentConfig as unknown as Record<string, unknown>), ...(updates as Record<string, unknown>) },
+      { only: Object.keys(updates) },
+    );
+    await recordConfigAudit({
+      tenantId,
+      actor: actorFromClerk(actorUserId ?? null),
+      action: 'config.update',
+      entity: 'TenantConfig',
+      entityId: tenantId,
+      changes,
+    });
+  }
 
   // Flow-engine reads most of these fields (hours, tax rate, AI
   // instructions, accept-closed-hours flag). Invalidate the cache so

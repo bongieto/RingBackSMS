@@ -975,6 +975,28 @@ model InboundSmsDedup {
   @@index([receivedAt])
 }
 
+/// Audit trail for changes to tenant-level configuration. Populated by
+/// every write path that mutates Tenant or TenantConfig — dashboard
+/// saves, super-admin edits, POS OAuth connections, etc. Purely
+/// additive: `actor` identifies the Clerk user (or 'system' for
+/// automated updates), `entity` is the table name, `entityId` is the
+/// row id, and `changes` is a JSON patch `{ field: { before, after } }`.
+/// Queried from the tenant audit drawer on the dashboard.
+model ConfigAuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String
+  actor     String                                     // 'clerk:user_xxx' | 'system:cron' | 'system:square-webhook'
+  action    String                                     // 'tenant.update' | 'config.update' | 'menu.item.create' | ...
+  entity    String                                     // 'Tenant' | 'TenantConfig' | 'MenuItem' | ...
+  entityId  String?
+  changes   Json                                       // { fieldName: { before: X, after: Y } }
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([actor, createdAt])
+  @@index([createdAt])
+}
+
 /// Durable record of a side-effect execution failure (SAVE_ORDER,
 /// CREATE_PAYMENT_LINK, NOTIFY_OWNER, etc.). Populated when the in-request
 /// retry loop gives up. Consumed by an operator dashboard + a periodic
