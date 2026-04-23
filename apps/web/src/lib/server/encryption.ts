@@ -4,6 +4,36 @@ const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12; // 96-bit IV for GCM
 const TAG_LENGTH = 16; // 128-bit auth tag
 
+/**
+ * Typed error for decryption failures. Gives callers a way to
+ * distinguish "this ciphertext is malformed" from "the key rotated and
+ * left us unable to read old rows" from "the tag doesn't authenticate"
+ * — three very different operational situations that used to surface
+ * as the same generic Error. Downstream handlers can log the `reason`
+ * and decide whether to fail open, fail closed, or alert.
+ *
+ * Values for `reason`:
+ *   - 'empty'        — input was null / empty / whitespace
+ *   - 'malformed'    — not the iv:tag:ciphertext base64 shape
+ *   - 'auth_failed'  — ciphertext parsed but GCM authentication failed
+ *                       (wrong key, corruption, or tampering)
+ *   - 'unknown'      — crypto threw something we didn't classify
+ */
+export type DecryptionFailureReason =
+  | 'empty'
+  | 'malformed'
+  | 'auth_failed'
+  | 'unknown';
+
+export class DecryptionError extends Error {
+  public readonly reason: DecryptionFailureReason;
+  constructor(reason: DecryptionFailureReason, message?: string) {
+    super(message ?? `Decryption failed: ${reason}`);
+    this.name = 'DecryptionError';
+    this.reason = reason;
+  }
+}
+
 function getEncryptionKey(): Buffer {
   const key = process.env.ENCRYPTION_KEY;
   if (!key) throw new Error('ENCRYPTION_KEY environment variable is not set');
@@ -33,20 +63,64 @@ export function encrypt(plaintext: string): string {
 
 /**
  * Decrypts a base64-encoded string previously produced by encrypt().
+ * Throws DecryptionError with a classified `reason` on failure so
+ * callers can distinguish operational cases (malformed input, wrong
+ * key, tampering).
  */
 export function decrypt(encryptedData: string): string {
+  if (!encryptedData) throw new DecryptionError('empty');
   const key = getEncryptionKey();
   const parts = encryptedData.split(':');
-  if (parts.length !== 3) throw new Error('Invalid encrypted data format');
+  if (parts.length !== 3) throw new DecryptionError('malformed', 'expected iv:tag:ciphertext');
 
   const iv = Buffer.from(parts[0], 'base64');
   const tag = Buffer.from(parts[1], 'base64');
   const ciphertext = Buffer.from(parts[2], 'base64');
 
-  const decipher = createDecipheriv(ALGORITHM, key, iv);
-  decipher.setAuthTag(tag);
+  // Reject obvious shape mismatches before we hand bad buffers to
+  // OpenSSL. A 0-length IV or wrong tag length would throw a less
+  // informative error from createDecipheriv.
+  if (iv.length !== IV_LENGTH || tag.length !== TAG_LENGTH) {
+    throw new DecryptionError('malformed', `iv=${iv.length}B tag=${tag.length}B`);
+  }
 
-  return decipher.update(ciphertext) + decipher.final('utf8');
+  try {
+    const decipher = createDecipheriv(ALGORITHM, key, iv);
+    decipher.setAuthTag(tag);
+    return decipher.update(ciphertext) + decipher.final('utf8');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // GCM auth failure surfaces as "Unsupported state or unable to
+    // authenticate data" on Node. Treat any throw from
+    // createDecipheriv/setAuthTag/final as an auth failure — if it
+    // were a shape issue, we'd have caught it above.
+    throw new DecryptionError('auth_failed', msg);
+  }
+}
+
+/**
+ * Non-throwing variant. Returns a result object so call sites on the
+ * hot path (Twilio webhook signature re-verification, POS token
+ * resolution) can log the specific reason without wrapping a try/catch
+ * around every call. Callers that WANT to throw — which is most of
+ * them, since a bad token is a real 500 — should keep using `decrypt`.
+ */
+export type DecryptResult =
+  | { ok: true; value: string }
+  | { ok: false; reason: DecryptionFailureReason; message: string };
+
+export function safeDecrypt(encryptedData: string | null | undefined): DecryptResult {
+  if (encryptedData == null || encryptedData === '') {
+    return { ok: false, reason: 'empty', message: 'input was null/empty' };
+  }
+  try {
+    return { ok: true, value: decrypt(encryptedData) };
+  } catch (err) {
+    if (err instanceof DecryptionError) {
+      return { ok: false, reason: err.reason, message: err.message };
+    }
+    return { ok: false, reason: 'unknown', message: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /**

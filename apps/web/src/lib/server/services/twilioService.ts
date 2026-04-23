@@ -1,5 +1,5 @@
 import twilio from 'twilio';
-import { encrypt, decrypt, encryptNullable, decryptNullable } from '../encryption';
+import { encrypt, decrypt, encryptNullable, decryptNullable, safeDecrypt } from '../encryption';
 import { logger } from '../logger';
 import { prisma } from '../db';
 
@@ -24,15 +24,31 @@ function getMessagingServiceSid(): string {
  * Returns the correct Twilio auth token to use for webhook signature
  * validation for a given tenant. Master-owned tenants (no sub-account)
  * use the master auth token; legacy sub-account tenants use their own.
+ *
+ * On decryption failure for a sub-account token, logs a classified
+ * reason (see DecryptionError) instead of returning a generic null —
+ * 'auth_failed' means the ENCRYPTION_KEY has probably rotated and the
+ * ciphertext is now unreadable (different ops action than 'malformed'
+ * which means the stored column is corrupt).
  */
 export function getValidationToken(tenant: {
   twilioSubAccountSid: string | null;
   twilioAuthToken: string | null;
 }): string | null {
-  if (tenant.twilioSubAccountSid) {
-    return decryptNullable(tenant.twilioAuthToken);
+  if (!tenant.twilioSubAccountSid) {
+    return process.env.TWILIO_MASTER_AUTH_TOKEN ?? null;
   }
-  return process.env.TWILIO_MASTER_AUTH_TOKEN ?? null;
+  const result = safeDecrypt(tenant.twilioAuthToken);
+  if (result.ok) return result.value;
+  // 'empty' is expected (tenant configured but token not yet stored).
+  // The other reasons are real operational signals.
+  if (result.reason !== 'empty') {
+    logger.error('Sub-account Twilio token decrypt failed', {
+      reason: result.reason,
+      twilioSubAccountSid: tenant.twilioSubAccountSid,
+    });
+  }
+  return null;
 }
 
 /**
