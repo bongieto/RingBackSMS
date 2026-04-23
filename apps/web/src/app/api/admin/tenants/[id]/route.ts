@@ -7,6 +7,7 @@ import { prisma } from '@/lib/server/db';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
 import { sanitizeTenantResponse } from '@/lib/server/services/tenantService';
+import { invalidateTenantContext } from '@/lib/server/services/tenantContextCache';
 
 
 export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
@@ -119,6 +120,11 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       },
     });
   }
+
+  // Cache invalidation — admin edits are the operator's most direct
+  // way to change live config, so propagating immediately (instead of
+  // waiting for the 60s TTL) matters here especially.
+  await invalidateTenantContext(params.id);
 
   logger.info('Admin updated tenant', {
     adminAction: true,

@@ -422,30 +422,17 @@ async function processInboundSmsBody(
   // null and let the flow proceed with a cold caller view.
   const TENANT_LOAD_TIMEOUT_MS = 4000;
   const CALLER_CONTEXT_TIMEOUT_MS = 2000;
+  const { getCachedTenantForFlowEngine } = await import('./tenantContextCache');
   const [tenant, callerContext] = await Promise.all([
+    // Redis-backed cache (60s TTL, invalidated explicitly by the big
+    // mutation paths — greeting copy, hours, POS tokens, menu items,
+    // flow enable/disable). Cache read is fast; the withTimeout + DB
+    // fallback below still protects us when Redis is slow or the DB
+    // read-through itself stalls.
     withTimeout(
-      prisma.tenant.findUnique({
-        where: { id: tenantId },
-        include: {
-          config: true,
-          flows: { where: { isEnabled: true } },
-          menuItems: {
-            // Include category availability so we can filter below — Prisma
-            // doesn't support OR on relation fields inline, so we filter
-            // after the query rather than at the SQL layer.
-            where: { isAvailable: true, posDeletedAt: null },
-            include: {
-              categoryRef: { select: { isAvailable: true } },
-              modifierGroups: {
-                include: { modifiers: { orderBy: { sortOrder: 'asc' } } },
-                orderBy: { sortOrder: 'asc' },
-              },
-            },
-          },
-        },
-      }),
+      getCachedTenantForFlowEngine(tenantId),
       TENANT_LOAD_TIMEOUT_MS,
-      'prisma.tenant.findUnique',
+      'getCachedTenantForFlowEngine',
     ).catch((err) => {
       logger.error('Tenant load failed/timed out', {
         err: err instanceof Error ? err.message : err,
@@ -524,12 +511,20 @@ async function processInboundSmsBody(
       squareCatalogId: m.squareCatalogId,
       squareVariationId: m.squareVariationId,
       lastSyncedAt: m.lastSyncedAt,
-      modifierGroups: (m.modifierGroups ?? []).map((g) => ({
+      // The cache deserializes to `any[]` (see tenantContextCache.ts —
+      // we trade tight typing for cacheability) so we annotate the
+      // callback params here to keep downstream flow-engine types
+      // honest. The runtime shape matches the prior Prisma query.
+      modifierGroups: (m.modifierGroups ?? []).map((g: {
+        selectionType: string;
+        modifiers: Array<{ priceAdjust: number | string }>;
+        [k: string]: unknown;
+      }) => ({
         ...g,
         // QUANTITY / PIZZA / MIXED are stored but not yet honored by the SMS
         // agent — downgrade them to SINGLE so the prompt stays understandable.
         selectionType: (g.selectionType === 'MULTIPLE' ? 'MULTIPLE' : 'SINGLE') as 'SINGLE' | 'MULTIPLE',
-        modifiers: g.modifiers.map((mod) => ({
+        modifiers: g.modifiers.map((mod: { priceAdjust: number | string; [k: string]: unknown }) => ({
           ...mod,
           priceAdjust: Number(mod.priceAdjust),
         })),

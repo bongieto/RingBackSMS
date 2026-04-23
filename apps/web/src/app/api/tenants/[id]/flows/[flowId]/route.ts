@@ -4,6 +4,7 @@ import { prisma } from '@/lib/server/db';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
+import { invalidateTenantContext } from '@/lib/server/services/tenantContextCache';
 
 const FlowUpdateSchema = z.object({
   isEnabled: z.boolean().optional(),
@@ -22,6 +23,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         ...(body.config !== undefined && { config: body.config as Prisma.InputJsonValue }),
       },
     });
+    // Enabling/disabling the ORDER flow changes how processInboundSms
+    // routes — drop the tenant cache so it takes effect on the next SMS.
+    await invalidateTenantContext(params.id);
     return apiSuccess(flow);
   } catch (err: any) {
     return apiError('Internal server error', 500);

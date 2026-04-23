@@ -1,4 +1,5 @@
 import { BusinessType, Plan } from '@prisma/client';
+import { invalidateTenantContext } from './tenantContextCache';
 import { FlowType } from '@ringback/shared-types';
 import { clerkClient } from '@clerk/nextjs/server';
 import { logger } from '../logger';
@@ -234,6 +235,12 @@ export async function updateTenantConfig(
     data: updates as any,
   });
 
+  // Flow-engine reads most of these fields (hours, tax rate, AI
+  // instructions, accept-closed-hours flag). Invalidate the cache so
+  // the next inbound SMS sees the fresh config immediately instead of
+  // waiting out the 60s TTL.
+  await invalidateTenantContext(tenantId);
+
   // Fire-and-forget TTS regeneration when greeting text or voice changes
   if (currentConfig) {
     const { isOpenAIVoice } = await import('@ringback/shared-types');
@@ -383,6 +390,7 @@ export async function upsertMenuItem(
     else categoryId = null;
   }
 
+  let saved;
   if (item.id) {
     const existing = await prisma.menuItem.findUnique({
       where: { id: item.id },
@@ -391,7 +399,7 @@ export async function upsertMenuItem(
     if (!existing || existing.tenantId !== tenantId) {
       throw new NotFoundError('Menu item');
     }
-    return prisma.menuItem.update({
+    saved = await prisma.menuItem.update({
       where: { id: item.id },
       data: {
         name: item.name,
@@ -405,22 +413,24 @@ export async function upsertMenuItem(
         requiresBooking: item.requiresBooking ?? false,
       },
     });
+  } else {
+    saved = await prisma.menuItem.create({
+      data: {
+        tenantId,
+        name: item.name,
+        description: item.description,
+        price: item.price,
+        category: categoryName,
+        categoryId,
+        imageUrl: item.imageUrl ?? null,
+        isAvailable: item.isAvailable ?? true,
+        duration: item.duration ?? null,
+        requiresBooking: item.requiresBooking ?? false,
+      },
+    });
   }
-
-  return prisma.menuItem.create({
-    data: {
-      tenantId,
-      name: item.name,
-      description: item.description,
-      price: item.price,
-      category: categoryName,
-      categoryId,
-      imageUrl: item.imageUrl ?? null,
-      isAvailable: item.isAvailable ?? true,
-      duration: item.duration ?? null,
-      requiresBooking: item.requiresBooking ?? false,
-    },
-  });
+  await invalidateTenantContext(tenantId);
+  return saved;
 }
 
 // ── Menu categories ──────────────────────────────────────────────────────────
@@ -469,9 +479,10 @@ export async function upsertMenuCategory(
         data: { category: input.name },
       });
     }
+    await invalidateTenantContext(tenantId);
     return updated;
   }
-  return prisma.menuCategory.create({
+  const created = await prisma.menuCategory.create({
     data: {
       tenantId,
       name: input.name,
@@ -479,6 +490,8 @@ export async function upsertMenuCategory(
       isAvailable: input.isAvailable ?? true,
     },
   });
+  await invalidateTenantContext(tenantId);
+  return created;
 }
 
 export async function deleteMenuCategory(tenantId: string, id: string) {
@@ -494,6 +507,7 @@ export async function deleteMenuCategory(tenantId: string, id: string) {
     data: { category: null },
   });
   await prisma.menuCategory.delete({ where: { id } });
+  await invalidateTenantContext(tenantId);
 }
 
 export async function bulkSetCategoriesAvailability(
@@ -505,6 +519,7 @@ export async function bulkSetCategoriesAvailability(
     where: { tenantId, id: { in: ids } },
     data: { isAvailable },
   });
+  await invalidateTenantContext(tenantId);
   return { count: result.count };
 }
 
@@ -517,5 +532,6 @@ export async function bulkSetItemsAvailability(
     where: { tenantId, id: { in: ids } },
     data: { isAvailable },
   });
+  await invalidateTenantContext(tenantId);
   return { count: result.count };
 }
