@@ -2,7 +2,7 @@ import { runFlowEngine, TenantContext, detectEscalationIntent, type CallerMemory
 import { chatCompletion, chatWithTools } from './aiClient';
 import { getCallerContext } from './callerContextService';
 import { FlowType, SideEffect } from '@ringback/shared-types';
-import { getCallerState, setCallerState, isDuplicate } from './stateService';
+import { getCallerState, setCallerState, isDuplicate, withCallerLock } from './stateService';
 import { createOrder } from './orderService';
 import { createMeeting } from './schedulingService';
 import { sendNotification } from './notificationService';
@@ -12,6 +12,7 @@ import { matchesLocationKeyword, buildLocationReply } from './foodTruckLocationS
 import { createOrderPaymentSession } from './paymentService';
 import { incrementSmsUsage } from './usageMeterService';
 import { logger } from '../logger';
+import { withTimeout, withTimeoutFallback, TimeoutError } from '../timeout';
 import { isWithinBusinessHours, getBusinessHoursDisplay, getNextOpenDisplay, getTodayHoursDisplay, getMinutesUntilClose, getClosesAtDisplay } from '../businessHours';
 import { getActiveOrderCount } from './queueService';
 import { prisma } from '../db';
@@ -94,6 +95,39 @@ export async function processInboundSms(
 }
 
 async function processInboundSmsInner(
+  input: ProcessInboundSmsInput,
+  options?: ProcessInboundSmsOptions,
+): Promise<void | ProcessInboundSmsTestResult> {
+  const { tenantId, callerPhone, inboundMessage, messageSid } = input;
+  const testMode = options?.testMode === true;
+
+  // Bot-tester runs the full compute path in-process and does NOT touch
+  // Twilio, so there's no concurrency risk — skip the caller lock in
+  // testMode. In production, serialize per-caller so two rapid messages
+  // from the same phone can't race their read-modify-write of Redis state.
+  if (testMode) {
+    return processInboundSmsBody(input, options);
+  }
+
+  const lockResult = await withCallerLock(
+    tenantId,
+    callerPhone,
+    () => processInboundSmsBody(input, options),
+  );
+  if (!lockResult.acquired) {
+    // Prior message from the same caller is still processing. Twilio
+    // already got 200 OK on the webhook; if the customer genuinely
+    // needed a response to this message, they'll resend. The dedup
+    // layer will then decide whether to process or skip.
+    logger.warn('processInboundSms: skipped — caller lock held by prior turn', {
+      tenantId, callerPhone, messageSid,
+    });
+    return;
+  }
+  return lockResult.result;
+}
+
+async function processInboundSmsBody(
   input: ProcessInboundSmsInput,
   options?: ProcessInboundSmsOptions,
 ): Promise<void | ProcessInboundSmsTestResult> {
@@ -381,31 +415,59 @@ async function processInboundSmsInner(
   // Load tenant context and caller context in parallel — these are independent
   // queries, and the caller context has historically been a noticeable serial
   // step on every inbound SMS. Parallelizing saves ~200-300ms per reply.
+  //
+  // Both queries run under a 4s timeout. Tenant is critical: if it times
+  // out we can't do anything (return early). Caller context is nice-to-have
+  // (name memory, tier, last order summary) — on timeout we treat it as
+  // null and let the flow proceed with a cold caller view.
+  const TENANT_LOAD_TIMEOUT_MS = 4000;
+  const CALLER_CONTEXT_TIMEOUT_MS = 2000;
   const [tenant, callerContext] = await Promise.all([
-    prisma.tenant.findUnique({
-      where: { id: tenantId },
-      include: {
-        config: true,
-        flows: { where: { isEnabled: true } },
-        menuItems: {
-          // Include category availability so we can filter below — Prisma
-          // doesn't support OR on relation fields inline, so we filter
-          // after the query rather than at the SQL layer.
-          where: { isAvailable: true, posDeletedAt: null },
-          include: {
-            categoryRef: { select: { isAvailable: true } },
-            modifierGroups: {
-              include: { modifiers: { orderBy: { sortOrder: 'asc' } } },
-              orderBy: { sortOrder: 'asc' },
+    withTimeout(
+      prisma.tenant.findUnique({
+        where: { id: tenantId },
+        include: {
+          config: true,
+          flows: { where: { isEnabled: true } },
+          menuItems: {
+            // Include category availability so we can filter below — Prisma
+            // doesn't support OR on relation fields inline, so we filter
+            // after the query rather than at the SQL layer.
+            where: { isAvailable: true, posDeletedAt: null },
+            include: {
+              categoryRef: { select: { isAvailable: true } },
+              modifierGroups: {
+                include: { modifiers: { orderBy: { sortOrder: 'asc' } } },
+                orderBy: { sortOrder: 'asc' },
+              },
             },
           },
         },
-      },
-    }),
-    getCallerContext(tenantId, callerPhone).catch((err) => {
-      logger.warn('getCallerContext failed in processInboundSms', { err, tenantId });
+      }),
+      TENANT_LOAD_TIMEOUT_MS,
+      'prisma.tenant.findUnique',
+    ).catch((err) => {
+      logger.error('Tenant load failed/timed out', {
+        err: err instanceof Error ? err.message : err,
+        tenantId,
+        isTimeout: err instanceof TimeoutError,
+      });
       return null;
     }),
+    withTimeoutFallback(
+      () => getCallerContext(tenantId, callerPhone),
+      CALLER_CONTEXT_TIMEOUT_MS,
+      null,
+      {
+        label: 'getCallerContext',
+        onError: (err, isTimeout) =>
+          logger.warn('getCallerContext failed in processInboundSms', {
+            err: err instanceof Error ? err.message : err,
+            tenantId,
+            isTimeout,
+          }),
+      },
+    ),
   ]);
 
   if (!tenant || !tenant.config) {
@@ -817,18 +879,70 @@ async function processInboundSmsInner(
   // row. Safe when Turn Record is disabled — mergeDecisions no-ops.
   const flowDecisions: DecisionDraft[] = [];
 
-  const result = await runFlowEngine({
-    tenantContext,
-    callerPhone,
-    inboundMessage,
-    currentState,
-    chatFn,
-    chatWithToolsFn,
-    recentMessages,
-    callerMemory,
-    getActiveOrderCount,
-    decisions: flowDecisions,
-  });
+  // Hard deadline on the entire flow-engine run. The inner LLM call
+  // already has its own 8s timeout (aiClient.ts), but a misbehaving
+  // handler (retry loop, lost Promise, etc.) could still stall the turn.
+  // 18s leaves ~12s of the serverless budget for side effects and SMS
+  // sending after we emerge.
+  const FLOW_ENGINE_TIMEOUT_MS = 18000;
+  let result: Awaited<ReturnType<typeof runFlowEngine>>;
+  try {
+    result = await withTimeout(
+      runFlowEngine({
+        tenantContext,
+        callerPhone,
+        inboundMessage,
+        currentState,
+        chatFn,
+        chatWithToolsFn,
+        recentMessages,
+        callerMemory,
+        getActiveOrderCount,
+        decisions: flowDecisions,
+      }),
+      FLOW_ENGINE_TIMEOUT_MS,
+      'runFlowEngine',
+    );
+  } catch (err) {
+    mergeDecisions(flowDecisions);
+    const isTimeout = err instanceof TimeoutError;
+    logger.error('runFlowEngine failed/timed out — sending fallback', {
+      err: err instanceof Error ? err.message : err,
+      isTimeout,
+      tenantId,
+      callerPhone,
+    });
+    if (!testMode) {
+      await sendSms(
+        tenantId,
+        callerPhone,
+        `Sorry, I'm having trouble responding right now. A team member has been notified and will follow up shortly.`,
+      ).catch(() => { /* best-effort */ });
+    }
+    // Reset flow state so the next inbound message starts fresh.
+    try {
+      await setCallerState({
+        tenantId,
+        callerPhone,
+        conversationId: existingConversationId ?? null,
+        currentFlow: null,
+        flowStep: null,
+        orderDraft: null,
+        lastMessageAt: Date.now(),
+        messageCount: (currentState?.messageCount ?? 0) + 1,
+        dedupKey: messageSid,
+      });
+    } catch { /* best-effort */ }
+    if (testMode) {
+      return {
+        reply: '',
+        sideEffects: [],
+        nextState: (currentState as unknown as ProcessInboundSmsTestResult['nextState']),
+        flowType: FlowType.FALLBACK,
+      };
+    }
+    return;
+  }
   mergeDecisions(flowDecisions);
 
   // cal.com async side effects that mutate the outgoing SMS before it
@@ -1090,6 +1204,11 @@ async function processInboundSmsInner(
     //     customer hasn't paid yet): failure is non-fatal; log and move
     //     on so the customer gets their payment link even if the owner
     //     didn't get their Slack ping.
+    //
+    // Both classes retry up to 3x with exponential backoff (see
+    // sideEffectRetry.ts). On final failure, every effect — critical or
+    // not — writes a DLQ row to SideEffectFailure so ops can replay it
+    // instead of finding out from a support ticket.
     const CRITICAL_EFFECTS = new Set(['SAVE_ORDER', 'CREATE_PAYMENT_LINK']);
     const sideEffectContext: Record<string, any> = {};
     let criticalFailure: { effect: string; error: string } | null = null;
@@ -1098,27 +1217,58 @@ async function processInboundSmsInner(
     // Everything that talks to external systems (Stripe, Square, Twilio,
     // email/Slack notifications) stays skipped.
     const TEST_MODE_EXECUTABLE = new Set(['SAVE_ORDER']);
+    const { runWithRetry, recordSideEffectFailure } = await import('./sideEffectRetry');
     for (const effect of result.sideEffects) {
       if (criticalFailure) break; // abort chain once a critical effect fails
       if (testMode && !TEST_MODE_EXECUTABLE.has(effect.type)) continue;
-      try {
-        await processSideEffect(effect, tenantId, conversationId as string, callerPhone, sideEffectContext);
-      } catch (effectErr: any) {
-        const msg = effectErr?.message ?? String(effectErr);
-        if (CRITICAL_EFFECTS.has(effect.type)) {
-          criticalFailure = { effect: effect.type, error: msg };
-          logger.error('Critical side effect failed — aborting chain', {
-            tenantId,
-            effect: effect.type,
-            err: msg,
-          });
-        } else {
-          logger.warn('Non-critical side effect failed — continuing', {
-            tenantId,
-            effect: effect.type,
-            err: msg,
-          });
-        }
+
+      const isCritical = CRITICAL_EFFECTS.has(effect.type);
+      // Critical effects get slightly longer backoff before DLQ; a 200ms
+      // first retry is usually enough to clear Postgres contention and
+      // Stripe's occasional 5xx bursts.
+      const outcome = await runWithRetry(
+        () => processSideEffect(effect, tenantId, conversationId as string, callerPhone, sideEffectContext),
+        {
+          attempts: isCritical ? 3 : 2,
+          baseDelayMs: isCritical ? 250 : 150,
+        },
+      );
+
+      if (outcome.succeeded) continue;
+
+      const msg = outcome.error instanceof Error
+        ? outcome.error.message
+        : String(outcome.error);
+
+      // Durable DLQ record — never inside testMode so bot-tester sessions
+      // don't pollute the operator dashboard.
+      if (!testMode) {
+        await recordSideEffectFailure({
+          tenantId,
+          effectType: effect.type,
+          payload: (effect as { payload?: unknown }).payload ?? null,
+          conversationId: conversationId ?? null,
+          callerPhone,
+          error: msg,
+          attempts: outcome.attempts,
+        });
+      }
+
+      if (isCritical) {
+        criticalFailure = { effect: effect.type, error: msg };
+        logger.error('Critical side effect failed after retries — aborting chain + DLQ written', {
+          tenantId,
+          effect: effect.type,
+          err: msg,
+          attempts: outcome.attempts,
+        });
+      } else {
+        logger.warn('Non-critical side effect failed after retries — DLQ written, continuing', {
+          tenantId,
+          effect: effect.type,
+          err: msg,
+          attempts: outcome.attempts,
+        });
       }
     }
 
