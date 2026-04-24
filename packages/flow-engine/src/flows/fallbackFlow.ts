@@ -32,6 +32,44 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
   const { tenantContext, inboundMessage, currentState, chatFn, callerMemory } = input;
   const t0 = Date.now();
 
+  // Hard guard against hallucinated order confirmations. If the caller
+  // sends a bare confirmation phrase ("yes", "yes confirm", "confirm",
+  // "sure", "ok confirm") to FALLBACK — meaning there's no ORDER flow
+  // in progress and no in-flight order to confirm against — the LLM
+  // would gleefully fabricate an order confirmation plus a "[Stripe
+  // payment link would be sent here]" template leak. Short-circuit
+  // instead: ask what they want to confirm. Anchor to whole-message
+  // match so we don't catch "yes can I get 2 lumpia" which is a real
+  // order request the ORDER flow should handle.
+  const hasActiveOrder = Boolean(callerMemory?.activeOrder);
+  const bareConfirmRe = /^(y|yes|yep|yeah|yup|sure|ok|okay|confirm|yes[\s,!.]*confirm|ok[\s,!.]*confirm|confirm[\s,!.]*(it|that|please)?|go ahead|please|please do)[\s!.?]*$/i;
+  if (!hasActiveOrder && bareConfirmRe.test(inboundMessage.trim())) {
+    pushDecision(input, {
+      handler: 'fallbackFlow',
+      phase: 'FLOW',
+      outcome: 'deflected_bare_confirm',
+      reason: 'bare confirmation with no active order — refuse to hallucinate',
+      durationMs: Date.now() - t0,
+    });
+    const nextState: CallerState = {
+      tenantId: tenantContext.tenantId,
+      callerPhone: input.callerPhone,
+      conversationId: currentState?.conversationId ?? null,
+      currentFlow: FlowType.FALLBACK,
+      flowStep: 'FALLBACK',
+      orderDraft: currentState?.orderDraft ?? null,
+      lastMessageAt: Date.now(),
+      messageCount: (currentState?.messageCount ?? 0) + 1,
+      dedupKey: null,
+    };
+    return {
+      nextState,
+      smsReply: `Not sure what you'd like to confirm — want to place an order? Just tell me what you'd like!`,
+      sideEffects: [],
+      flowType: FlowType.FALLBACK,
+    };
+  }
+
   // Short-circuit: if the customer is just politely closing out, don't run
   // the AI. Either stay silent (empty reply) or drop a one-liner.
   const closure = matchClosure(inboundMessage);
@@ -179,7 +217,9 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
 - NEVER send an empty reply. Every message gets a response, even if it's just a short acknowledgement.
 - Never invent prices, hours, menu items, or policies not in the context below.
 - Never mention you're an AI, an assistant, or explain your reasoning.
-- Never repeat the customer's message back to them.${postOrderHint}
+- Never repeat the customer's message back to them.
+- NEVER confirm an order, payment, booking, or reservation. You are not wired to the order or payment system. If the customer says "yes", "confirm", "sure", etc. with nothing to confirm against (no in-flight order in the context below), respond by asking what they'd like — e.g. "Not sure what you're confirming — want to place an order?". If there IS an in-flight order in the context, just state its current status; don't claim a new confirmation or that a payment link is being sent.
+- NEVER emit bracketed placeholder text like "[payment link would be sent here]", "[link]", "[name]", etc. These are template markers, not real output. If you don't have a real URL or value, don't mention one.${postOrderHint}
 
 # Capabilities and context
 ${capabilities}${businessAddress}${websiteContext}${catalogContext}${callerContextBlock}${activeOrderBlock}${customBlock}`;
@@ -213,6 +253,20 @@ ${capabilities}${businessAddress}${websiteContext}${catalogContext}${callerConte
       temperature: 0.6,
     });
     let replyText = stripThinkTags(raw).replace(/^["']|["']$/g, '').trim();
+
+    // Strip template-placeholder leaks like "[Stripe payment link would be
+    // sent here]" — the LLM sometimes emits these even though our prompt
+    // never shows one. Remove any bracketed span containing the word
+    // "would" or "here" (meta-template hallmarks) without nuking legit
+    // brackets around, say, item numbers. Whole-line deletion when the
+    // line is nothing but the placeholder.
+    replyText = replyText
+      .split('\n')
+      .filter((line) => !/^\s*\[[^\]]*\b(would\s+be|goes\s+here|placeholder|insert|link\s+here)\b[^\]]*\]\s*$/i.test(line))
+      .join('\n')
+      .replace(/\[[^\]]*\b(would\s+be|goes\s+here|placeholder|insert|link\s+here)\b[^\]]*\]/gi, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
 
     // Strip any lingering `<silence>` sentinel the model may still emit
     // despite the prompt no longer advertising it, then deflect if empty.
