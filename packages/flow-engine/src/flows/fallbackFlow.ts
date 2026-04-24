@@ -2,6 +2,92 @@ import { FlowInput, FlowOutput } from '../types';
 import { FlowType } from '@ringback/shared-types';
 import { CallerState } from '@ringback/shared-types';
 import { pushDecision } from '../decisions';
+import type { CallerMemory } from '../types';
+
+/**
+ * Ungrounded-action guards. Each rule pairs a whole-message inbound
+ * pattern with a groundedness check (does the state needed for this
+ * action actually exist?). If the pattern matches but the state is
+ * missing, we return a deflection instead of letting the LLM
+ * fabricate a response. Narrowly-scoped by design — these only fire
+ * on bare messages ("cancel my order", "refund please") so real
+ * compound intents still flow through to the LLM.
+ *
+ * Exported for unit testing.
+ */
+export interface UngroundedGuardRule {
+  name: string;
+  outcome: string; // Decision outcome label
+  reason: string;
+  re: RegExp;
+  /**
+   * Return true when the caller has the state this action needs
+   * (e.g. an active order for a cancel request). When false, the
+   * guard fires and deflects.
+   */
+  isGrounded: (memory?: CallerMemory) => boolean;
+  /** Deflection text; function form for tenant-specific interpolation. */
+  reply:
+    | string
+    | ((ctx: { tenantName: string; tenantPhone: string | null }) => string);
+}
+
+export const UNGROUNDED_GUARDS: UngroundedGuardRule[] = [
+  {
+    name: 'bare_confirm',
+    outcome: 'deflected_bare_confirm',
+    reason: 'bare confirmation with no active order — refuse to hallucinate',
+    re: /^(y|yes|yep|yeah|yup|sure|confirm|yes[\s,!.]*confirm|ok[\s,!.]*confirm|confirm[\s,!.]*(it|that|please)?|go ahead|please do)[\s!.?]*$/i,
+    isGrounded: (mem) => Boolean(mem?.activeOrder),
+    reply: `Not sure what you'd like to confirm — want to place an order? Just tell me what you'd like!`,
+  },
+  {
+    name: 'cancel_without_order',
+    outcome: 'deflected_cancel_no_order',
+    reason: 'cancel intent with no active order — refuse to hallucinate',
+    // Bare cancel intents. Not "cancel my reservation" (different flow)
+    // or compound messages like "cancel the lumpia I just added".
+    re: /^(cancel|cancel (my|the) (order|last order)?|nvm cancel|nevermind cancel|never mind cancel)[\s!.?]*$/i,
+    isGrounded: (mem) => Boolean(mem?.activeOrder),
+    reply: ({ tenantPhone }) =>
+      tenantPhone
+        ? `I don't see a pending order to cancel. If it's from a past visit, please call ${tenantPhone}.`
+        : `I don't see a pending order to cancel. If it's from a past visit, please give us a call.`,
+  },
+  {
+    name: 'order_status_without_order',
+    outcome: 'deflected_status_no_order',
+    reason: 'order status ask with no active order — refuse to hallucinate',
+    // "where's my order", "is my order ready", "how's my order"
+    re: /^(where['']?s my order\??|is my order ready\??|order status\??|status of my order\??|how['']?s my order\??|hows my order\??)[\s!.?]*$/i,
+    isGrounded: (mem) => Boolean(mem?.activeOrder),
+    reply: `I don't see an active order for you. Want to place one? Just tell me what you'd like!`,
+  },
+  {
+    name: 'refund_request',
+    outcome: 'deflected_refund_request',
+    reason: 'refund request — always deflect to human',
+    // Refunds always go to humans — never have the LLM promise one.
+    re: /^(i want (a|my) refund\.?|refund(\s+me)?(\s+please)?\.?|can i get a refund\??|where['']?s my refund\??|i need (a|my) refund\.?)[\s!.?]*$/i,
+    isGrounded: () => false, // always deflect
+    reply: ({ tenantPhone, tenantName }) =>
+      tenantPhone
+        ? `For refunds please call ${tenantName} directly at ${tenantPhone} — we can't process those over text.`
+        : `For refunds please call ${tenantName} directly — we can't process those over text.`,
+  },
+];
+
+export function findUngroundedGuard(
+  inboundTrimmed: string,
+  memory?: CallerMemory,
+): UngroundedGuardRule | null {
+  for (const rule of UNGROUNDED_GUARDS) {
+    if (!rule.re.test(inboundTrimmed)) continue;
+    if (rule.isGrounded(memory)) continue; // state present → let LLM handle
+    return rule;
+  }
+  return null;
+}
 
 function stripThinkTags(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
@@ -65,24 +151,25 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
     };
   }
 
-  // Hard guard against hallucinated order confirmations. If the caller
-  // sends a bare confirmation phrase ("yes", "yes confirm", "confirm",
-  // "sure") to FALLBACK — meaning there's no ORDER flow in progress
-  // and no in-flight order to confirm against — the LLM would gleefully
-  // fabricate an order confirmation plus a "[Stripe payment link would
-  // be sent here]" template leak. Short-circuit instead: ask what they
-  // want to confirm. Anchor to whole-message match so we don't catch
-  // "yes can I get 2 lumpia" which is a real order request the ORDER
-  // flow should handle. Runs AFTER the closure matcher so polite "ok"
-  // / "okay" stay on the closure path.
-  const hasActiveOrder = Boolean(callerMemory?.activeOrder);
-  const bareConfirmRe = /^(y|yes|yep|yeah|yup|sure|confirm|yes[\s,!.]*confirm|ok[\s,!.]*confirm|confirm[\s,!.]*(it|that|please)?|go ahead|please do)[\s!.?]*$/i;
-  if (!hasActiveOrder && bareConfirmRe.test(inboundMessage.trim())) {
+  // Ungrounded-action guard bank. When the caller's message implies
+  // an action against stateful context (confirm / cancel / status /
+  // refund) but the matching state doesn't exist, the LLM happily
+  // invents one — "Order cancelled!", "Refund processed!", "Your
+  // order is out for delivery" — which strands the customer.
+  // Short-circuit each pattern with a deflection so the LLM never
+  // gets a chance to hallucinate.
+  //
+  // Rules are whole-message anchored so multi-intent messages like
+  // "yes can I get 2 lumpia" still route to ORDER. Runs AFTER the
+  // closure matcher so polite "ok" / "okay" stay on the closure
+  // path instead of tripping the confirm guard.
+  const guard = findUngroundedGuard(inboundMessage.trim(), callerMemory);
+  if (guard) {
     pushDecision(input, {
       handler: 'fallbackFlow',
       phase: 'FLOW',
-      outcome: 'deflected_bare_confirm',
-      reason: 'bare confirmation with no active order — refuse to hallucinate',
+      outcome: guard.outcome,
+      reason: guard.reason,
       durationMs: Date.now() - t0,
     });
     const nextState: CallerState = {
@@ -96,9 +183,13 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
       messageCount: (currentState?.messageCount ?? 0) + 1,
       dedupKey: null,
     };
+    const reply =
+      typeof guard.reply === 'function'
+        ? guard.reply({ tenantName: tenantContext.tenantName, tenantPhone: tenantContext.tenantPhoneNumber ?? null })
+        : guard.reply;
     return {
       nextState,
-      smsReply: `Not sure what you'd like to confirm — want to place an order? Just tell me what you'd like!`,
+      smsReply: reply,
       sideEffects: [],
       flowType: FlowType.FALLBACK,
     };
