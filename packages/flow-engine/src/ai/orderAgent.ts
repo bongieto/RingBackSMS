@@ -1230,15 +1230,25 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         handler: 'orderAgent',
         phase: 'POST_HANDLER',
         outcome: 'sequence_corrected',
-        evidence: { llmStep, forcedStep: expectedStep, missing },
+        evidence: { llmStep, forcedStep: expectedStep, missing, anyMutation },
         durationMs: 0,
       });
+      // If the customer's turn included a cart mutation (add/remove/update
+      // quantity) while we were mid-flow at a non-items step, the raw
+      // canonical prompt ("What name should I put this order under?")
+      // silently drops the mutation echo, so the customer thinks their
+      // edit was ignored. Prepend a short cart summary so they see what
+      // changed before we re-ask the missing slot.
+      const cartEcho =
+        anyMutation && draft.items.length > 0 && missing !== 'items'
+          ? `Updated: ${buildOwnerOrderSummary(draft.items).replace(/\n/g, ', ')}. `
+          : '';
       return {
         nextState: buildBaseState(input, draft, {
           flowStep: expectedStep,
           customerName: capturedName,
         }),
-        smsReply: capSmsReply(canonicalPrompt(missing, draft, capturedName)),
+        smsReply: capSmsReply(cartEcho + canonicalPrompt(missing, draft, capturedName)),
         sideEffects: [],
         flowType: FlowType.ORDER,
       };
