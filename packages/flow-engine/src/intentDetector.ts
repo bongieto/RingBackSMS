@@ -72,11 +72,22 @@ export async function detectIntent(
     // that sells food/goods, a bare-greeting opener is an invitation to
     // engage, not chit-chat noise. Route to ORDER so the customer gets
     // the warm "OK, what can I get you from {tenantName}?" greeting.
+    //
+    // Exception: when the business is closed, routing "hi" to ORDER
+    // triggers orderAgent's hard closed-hours refusal — a brusque
+    // "Sorry — we're closed right now" reply to a plain greeting.
+    // Send closed-hours greetings to FALLBACK instead, where they
+    // get a friendly acknowledgment + the prepended after-hours
+    // notice from processInboundSms. Safe now that <silence> is
+    // gone (commit d760c1e).
     if (
       /^(hi|hello|hey+|howdy|yo|hiya|hola|aloha|greetings|good\s+(morning|afternoon|evening|day))[\s!.,?]*$/i.test(
         message.trim(),
       )
     ) {
+      if (tenantContext.hoursInfo?.openNow === false) {
+        return { intent: FlowType.FALLBACK, confidence: 1.0 };
+      }
       return { intent: FlowType.ORDER, confidence: 1.0 };
     }
   }

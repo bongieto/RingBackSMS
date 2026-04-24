@@ -231,8 +231,15 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         durationMs: Date.now() - agentT0,
       });
       const nextOpen = hours.nextOpenDisplay ?? 'when we reopen';
+      // Clear currentFlow/flowStep so the caller isn't trapped in ORDER —
+      // their next message (e.g. "book a meeting", "what are your hours")
+      // gets re-classified from scratch instead of re-running this refusal.
       return {
-        nextState: buildBaseState(input, { items: [] }, { flowStep: 'CLOSED_REFUSED', orderDraft: null }),
+        nextState: buildBaseState(input, { items: [] }, {
+          currentFlow: null,
+          flowStep: null,
+          orderDraft: null,
+        }),
         smsReply: `Sorry — we're closed right now. Please text us back ${nextOpen} to place your order.`,
         sideEffects: [],
         flowType: FlowType.ORDER,
