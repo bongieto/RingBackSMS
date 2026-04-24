@@ -281,8 +281,26 @@ ${capabilities}${businessAddress}${websiteContext}${catalogContext}${callerConte
       return { nextState, smsReply: deflection, sideEffects: [], flowType: FlowType.FALLBACK };
     }
 
-    // Cap length just in case the model ignores instructions.
-    if (replyText.length > 320) replyText = replyText.slice(0, 317) + '…';
+    // Cap length just in case the model ignores instructions. URL-aware:
+    // if the message ends with a URL, trim the prose before the URL so
+    // the link stays clickable instead of slicing mid-URL.
+    if (replyText.length > 320) {
+      const urlMatch = replyText.match(/(https?:\/\/\S+)\s*$/);
+      if (urlMatch) {
+        const url = urlMatch[1];
+        if (url.length < 320) {
+          const prose = replyText.slice(0, replyText.length - url.length).trimEnd();
+          const budget = 320 - url.length - 1;
+          const trimmedProse =
+            prose.length <= budget ? prose : prose.slice(0, budget - 1).trimEnd() + '…';
+          replyText = `${trimmedProse}\n${url}`;
+        } else {
+          replyText = url;
+        }
+      } else {
+        replyText = replyText.slice(0, 317) + '…';
+      }
+    }
 
     pushDecision(input, {
       handler: 'fallbackFlow',

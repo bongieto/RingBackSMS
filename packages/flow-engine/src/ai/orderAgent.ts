@@ -22,6 +22,28 @@ import { filterMenuForPrompt } from './menuFilter';
 import { buildOrderAgentSystemPrompt, findItemPhraseMatches } from './buildAgentPrompt';
 import { calculateFlowPrepTime, formatReadyTime } from '../flows/orderFlow';
 
+const SMS_REPLY_CAP = 320;
+
+/**
+ * Cap the SMS reply to ~2 segments without cutting a URL in half. If the
+ * reply ends with a URL and raw `.slice()` would truncate it, we trim
+ * the prose BEFORE the URL instead so the link stays clickable. Falls
+ * back to plain slice when there's no trailing URL.
+ */
+function capSmsReply(reply: string, cap: number = SMS_REPLY_CAP): string {
+  if (reply.length <= cap) return reply;
+  // Match a URL at end-of-message (optional trailing whitespace allowed).
+  const urlMatch = reply.match(/(https?:\/\/\S+)\s*$/);
+  if (!urlMatch) return reply.slice(0, cap - 1) + '…';
+  const url = urlMatch[1];
+  // If the URL itself is longer than the cap, give up and send raw URL.
+  if (url.length >= cap) return url;
+  const prosePart = reply.slice(0, reply.length - url.length).trimEnd();
+  const budget = cap - url.length - 1; // -1 for the newline
+  if (prosePart.length <= budget) return `${prosePart}\n${url}`;
+  return `${prosePart.slice(0, budget - 1).trimEnd()}…\n${url}`;
+}
+
 // Cheap heuristic: did the customer just explicitly confirm?
 // Anchored to start-and-end of message so phrases like "I can confirm
 // that's not right" or "yes but change X" don't accidentally commit the
@@ -737,7 +759,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
             flowStep: expectedStepNext,
             customerName: capturedName,
           }),
-          smsReply: `Got it, ${capturedName}. ${nextQ}`.slice(0, 320),
+          smsReply: capSmsReply(`Got it, ${capturedName}. ${nextQ}`),
           sideEffects: [],
           flowType: FlowType.ORDER,
         };
@@ -746,7 +768,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
 
     // ── CANCEL ──
     if (wantsCancel) {
-      const reply = (aiResponse.text || 'Order canceled. Text us again anytime!').slice(0, 320);
+      const reply = capSmsReply(aiResponse.text || 'Order canceled. Text us again anytime!');
       return {
         nextState: buildBaseState(input, { items: [] }, { flowStep: 'ORDER_COMPLETE', customerName: capturedName }),
         smsReply: reply,
@@ -761,7 +783,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       const menuUrl = slug
         ? `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.ringbacksms.com'}/m/${slug}`
         : null;
-      const reply = (aiResponse.text && menuUrl ? `${aiResponse.text}\n${menuUrl}` : menuUrl ?? aiResponse.text ?? 'Menu link coming shortly.').slice(0, 320);
+      const reply = capSmsReply(aiResponse.text && menuUrl ? `${aiResponse.text}\n${menuUrl}` : menuUrl ?? aiResponse.text ?? 'Menu link coming shortly.');
       return {
         nextState: buildBaseState(input, draft, { flowStep: currentState?.flowStep ?? 'MENU_DISPLAY', customerName: capturedName }),
         smsReply: reply,
@@ -831,7 +853,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
               askedAt: Date.now(),
             },
           }),
-          smsReply: `We're currently closed, so I can't place this right now.${whenOpen} What time would you like to schedule pickup for?`.slice(0, 320),
+          smsReply: capSmsReply(`We're currently closed, so I can't place this right now.${whenOpen} What time would you like to schedule pickup for?`),
           sideEffects: [],
           flowType: FlowType.ORDER,
         };
@@ -848,7 +870,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
               askedAt: Date.now(),
             },
           }),
-          smsReply: (aiResponse.text || 'What time would you like to pick up?').slice(0, 320),
+          smsReply: capSmsReply(aiResponse.text || 'What time would you like to pick up?'),
           sideEffects: [],
           flowType: FlowType.ORDER,
         };
@@ -941,7 +963,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
             flowStep: 'AWAITING_PAYMENT',
             customerName: capturedName,
           }),
-          smsReply: paymentReply.slice(0, 320),
+          smsReply: capSmsReply(paymentReply),
           sideEffects: [
             {
               type: 'SAVE_ORDER',
@@ -999,7 +1021,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           flowStep: 'ORDER_COMPLETE',
           customerName: capturedName,
         }),
-        smsReply: baseReply.slice(0, 320),
+        smsReply: capSmsReply(baseReply),
         sideEffects: [
           {
             type: 'SAVE_ORDER',
@@ -1057,7 +1079,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
             flowStep: stepX,
             customerName: capturedName,
           }),
-          smsReply: canonicalPrompt(missingX, draft, capturedName).slice(0, 320),
+          smsReply: capSmsReply(canonicalPrompt(missingX, draft, capturedName)),
           sideEffects: [],
           flowType: FlowType.ORDER,
         };
@@ -1167,7 +1189,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       return ` (couldn't find ${dropped.join(', ')} — let me know if that's important)`;
     }
 
-    const reply = (baseReply + formatNotices()).slice(0, 320);
+    const reply = capSmsReply(baseReply + formatNotices());
 
     if (toolErrors.length > 0) {
       // eslint-disable-next-line no-console
@@ -1216,7 +1238,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           flowStep: expectedStep,
           customerName: capturedName,
         }),
-        smsReply: canonicalPrompt(missing, draft, capturedName).slice(0, 320),
+        smsReply: capSmsReply(canonicalPrompt(missing, draft, capturedName)),
         sideEffects: [],
         flowType: FlowType.ORDER,
       };
