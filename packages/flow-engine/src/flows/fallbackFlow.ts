@@ -32,46 +32,10 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
   const { tenantContext, inboundMessage, currentState, chatFn, callerMemory } = input;
   const t0 = Date.now();
 
-  // Hard guard against hallucinated order confirmations. If the caller
-  // sends a bare confirmation phrase ("yes", "yes confirm", "confirm",
-  // "sure", "ok confirm") to FALLBACK — meaning there's no ORDER flow
-  // in progress and no in-flight order to confirm against — the LLM
-  // would gleefully fabricate an order confirmation plus a "[Stripe
-  // payment link would be sent here]" template leak. Short-circuit
-  // instead: ask what they want to confirm. Anchor to whole-message
-  // match so we don't catch "yes can I get 2 lumpia" which is a real
-  // order request the ORDER flow should handle.
-  const hasActiveOrder = Boolean(callerMemory?.activeOrder);
-  const bareConfirmRe = /^(y|yes|yep|yeah|yup|sure|ok|okay|confirm|yes[\s,!.]*confirm|ok[\s,!.]*confirm|confirm[\s,!.]*(it|that|please)?|go ahead|please|please do)[\s!.?]*$/i;
-  if (!hasActiveOrder && bareConfirmRe.test(inboundMessage.trim())) {
-    pushDecision(input, {
-      handler: 'fallbackFlow',
-      phase: 'FLOW',
-      outcome: 'deflected_bare_confirm',
-      reason: 'bare confirmation with no active order — refuse to hallucinate',
-      durationMs: Date.now() - t0,
-    });
-    const nextState: CallerState = {
-      tenantId: tenantContext.tenantId,
-      callerPhone: input.callerPhone,
-      conversationId: currentState?.conversationId ?? null,
-      currentFlow: FlowType.FALLBACK,
-      flowStep: 'FALLBACK',
-      orderDraft: currentState?.orderDraft ?? null,
-      lastMessageAt: Date.now(),
-      messageCount: (currentState?.messageCount ?? 0) + 1,
-      dedupKey: null,
-    };
-    return {
-      nextState,
-      smsReply: `Not sure what you'd like to confirm — want to place an order? Just tell me what you'd like!`,
-      sideEffects: [],
-      flowType: FlowType.FALLBACK,
-    };
-  }
-
   // Short-circuit: if the customer is just politely closing out, don't run
   // the AI. Either stay silent (empty reply) or drop a one-liner.
+  // Runs BEFORE the bare-confirm guard so polite "ok" / "thanks" get
+  // the closure path, not the "what are you confirming?" deflection.
   const closure = matchClosure(inboundMessage);
   if (closure.matched) {
     pushDecision(input, {
@@ -96,6 +60,45 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
     return {
       nextState,
       smsReply: closure.reply ?? '',
+      sideEffects: [],
+      flowType: FlowType.FALLBACK,
+    };
+  }
+
+  // Hard guard against hallucinated order confirmations. If the caller
+  // sends a bare confirmation phrase ("yes", "yes confirm", "confirm",
+  // "sure") to FALLBACK — meaning there's no ORDER flow in progress
+  // and no in-flight order to confirm against — the LLM would gleefully
+  // fabricate an order confirmation plus a "[Stripe payment link would
+  // be sent here]" template leak. Short-circuit instead: ask what they
+  // want to confirm. Anchor to whole-message match so we don't catch
+  // "yes can I get 2 lumpia" which is a real order request the ORDER
+  // flow should handle. Runs AFTER the closure matcher so polite "ok"
+  // / "okay" stay on the closure path.
+  const hasActiveOrder = Boolean(callerMemory?.activeOrder);
+  const bareConfirmRe = /^(y|yes|yep|yeah|yup|sure|confirm|yes[\s,!.]*confirm|ok[\s,!.]*confirm|confirm[\s,!.]*(it|that|please)?|go ahead|please do)[\s!.?]*$/i;
+  if (!hasActiveOrder && bareConfirmRe.test(inboundMessage.trim())) {
+    pushDecision(input, {
+      handler: 'fallbackFlow',
+      phase: 'FLOW',
+      outcome: 'deflected_bare_confirm',
+      reason: 'bare confirmation with no active order — refuse to hallucinate',
+      durationMs: Date.now() - t0,
+    });
+    const nextState: CallerState = {
+      tenantId: tenantContext.tenantId,
+      callerPhone: input.callerPhone,
+      conversationId: currentState?.conversationId ?? null,
+      currentFlow: FlowType.FALLBACK,
+      flowStep: 'FALLBACK',
+      orderDraft: currentState?.orderDraft ?? null,
+      lastMessageAt: Date.now(),
+      messageCount: (currentState?.messageCount ?? 0) + 1,
+      dedupKey: null,
+    };
+    return {
+      nextState,
+      smsReply: `Not sure what you'd like to confirm — want to place an order? Just tell me what you'd like!`,
       sideEffects: [],
       flowType: FlowType.FALLBACK,
     };

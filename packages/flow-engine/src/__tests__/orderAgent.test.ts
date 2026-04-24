@@ -375,7 +375,11 @@ describe('runOrderAgent', () => {
     } as any);
     expect(result.smsReply).toMatch(/closed/i);
     expect(result.smsReply).toContain('tomorrow 11:00 AM');
-    expect(result.nextState.flowStep).toBe('CLOSED_REFUSED');
+    // Closed-refusal clears currentFlow / flowStep so the caller's next
+    // message (e.g. "book a meeting") can re-classify instead of being
+    // stuck in the ORDER flow re-running the refusal. See fix #2.
+    expect(result.nextState.currentFlow).toBeNull();
+    expect(result.nextState.flowStep).toBeNull();
     expect(result.nextState.orderDraft).toBeNull();
     const refused = decisions.find((d) => d.outcome === 'refused_closed');
     expect(refused).toBeDefined();

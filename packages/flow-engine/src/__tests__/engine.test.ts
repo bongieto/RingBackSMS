@@ -186,8 +186,11 @@ describe('Flow Engine', () => {
       // New behavior: short prompt + MENU hint, not a full menu dump
       expect(result.smsReply.toLowerCase()).toContain('what can i get you');
       expect(result.smsReply).toContain('MENU');
-      // And it should NOT include the entire item list in the SMS
-      expect(result.smsReply).not.toContain('Pancit Bihon');
+      // And it should NOT dump the entire item list. The reply may
+      // include 1–2 item names as an order-format example ("like '1
+      // Lumpia Shanghai, 2 Pancit Bihon'"), but the 3rd item must
+      // never leak — that would be the slippery slope to a menu dump.
+      expect(result.smsReply).not.toContain('Adobo Chicken');
       expect(result.nextState.flowStep).toBeTruthy();
     });
 
