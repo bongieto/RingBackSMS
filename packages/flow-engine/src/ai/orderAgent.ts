@@ -779,6 +779,37 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
 
     // ── CANCEL ──
     if (wantsCancel) {
+      // Groundedness check: only actually "cancel" when there's
+      // something to cancel — either an in-flight draft (items OR
+      // captured name/pickup) OR an active DB order. Without this,
+      // "cancel my order" from a first-time caller with no state
+      // produces a cheerful "Order canceled. Text us again anytime!"
+      // which makes the customer think a real order was cancelled.
+      const hasDraft =
+        draft.items.length > 0 ||
+        Boolean(capturedName) ||
+        Boolean(draft.pickupTime);
+      const hasActiveOrder = Boolean(input.callerMemory?.activeOrder);
+      if (!hasDraft && !hasActiveOrder) {
+        pushDecision(input, {
+          handler: 'orderAgent',
+          phase: 'POST_HANDLER',
+          outcome: 'deflected_cancel_no_order',
+          reason: 'cancel with no draft and no active order — refuse to confirm cancellation',
+          durationMs: 0,
+        });
+        return {
+          nextState: buildBaseState(input, { items: [] }, {
+            currentFlow: null,
+            flowStep: null,
+            orderDraft: null,
+            customerName: capturedName,
+          }),
+          smsReply: `I don't see a pending order to cancel. Want to place one? Just tell me what you'd like!`,
+          sideEffects: [],
+          flowType: FlowType.ORDER,
+        };
+      }
       const reply = capSmsReply(aiResponse.text || 'Order canceled. Text us again anytime!');
       return {
         nextState: buildBaseState(input, { items: [] }, { flowStep: 'ORDER_COMPLETE', customerName: capturedName }),
