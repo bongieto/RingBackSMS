@@ -19,7 +19,7 @@ import {
   type ToolResult,
 } from './orderAgentTools';
 import { filterMenuForPrompt } from './menuFilter';
-import { buildOrderAgentSystemPrompt, findItemPhraseMatches } from './buildAgentPrompt';
+import { buildOrderAgentSystemPrompt, findItemPhraseMatches, findItemFuzzyMatches } from './buildAgentPrompt';
 import { calculateFlowPrepTime, formatReadyTime } from '../flows/orderFlow';
 
 const SMS_REPLY_CAP = 320;
@@ -545,7 +545,18 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
     // state of the cart.
     let safetyNetAddedItems = false;
     if (!anyMutation || draft.items.length === 0) {
-      const phraseHits = findItemPhraseMatches(inboundMessage, tenantContext.menuItems);
+      // First try exact phrase matching. If it finds nothing, fall
+      // back to Levenshtein-1 fuzzy matching so SMS typos like "siomi"
+      // → "siomai" or "pansit bihon" → "pancit bihon" still land on
+      // the right menu item. Distance-1 is deliberately tight; a
+      // distance-2 net produces too many false positives on short
+      // menu names (e.g. "pepsi" → "pansi"). Real customers who
+      // spell items wildly differently than the menu are better
+      // served by the clarification path than by aggressive fuzz.
+      let phraseHits = findItemPhraseMatches(inboundMessage, tenantContext.menuItems);
+      if (phraseHits.length === 0) {
+        phraseHits = findItemFuzzyMatches(inboundMessage, tenantContext.menuItems);
+      }
       if (phraseHits.length > 0) {
         // Tokenize the inbound for quantity lookup. Lowercase + strip
         // punctuation; keep digit and word tokens.

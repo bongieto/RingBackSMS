@@ -90,6 +90,130 @@ function stripMenuCodePrefix(s: string): string {
   return s.replace(/^\s*(?:#[a-z]{0,3}\d+|[a-z]{1,3}\d+)\.?\s+/i, '').trim();
 }
 
+/** Levenshtein distance with early bail-out. Used for 1-edit typo
+ *  matching on item names. We don't need full distance when we only
+ *  care whether it's within `max` — bail as soon as the row minimum
+ *  exceeds the threshold.
+ *
+ *  Exported so the scenario harness can assert behavior directly. */
+export function levenshteinWithinBudget(a: string, b: string, max: number): number {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  if (a === b) return 0;
+  const m = a.length;
+  const n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prev = new Array(n + 1).fill(0).map((_, i) => i);
+  let curr = new Array(n + 1).fill(0);
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    let rowMin = curr[0];
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j] + 1,       // deletion
+        curr[j - 1] + 1,   // insertion
+        prev[j - 1] + cost // substitution
+      );
+      if (curr[j] < rowMin) rowMin = curr[j];
+    }
+    if (rowMin > max) return max + 1;
+    [prev, curr] = [curr, prev];
+  }
+  return prev[n];
+}
+
+/** Token-level fuzzy matcher used as a fallback when
+ *  `findItemPhraseMatches` finds nothing. Walks each inbound token
+ *  ≥4 chars, compares against each menu-item's tokens (stripped
+ *  variants included), and returns matches with Levenshtein distance
+ *  exactly 1. One-character edits cover realistic SMS typos ("siomi"
+ *  → "siomai", "pancti" → "pancit") without opening the floodgates
+ *  to false positives from two-char distance ("pizza" vs "piata").
+ *
+ *  Multi-word items ("Lumpia Prito") need ALL words within budget
+ *  — single-word typo matches would be too loose.
+ *
+ *  Returns the same shape as `findItemPhraseMatches` so the safety
+ *  net can handle both results uniformly. */
+export function findItemFuzzyMatches(
+  inbound: string,
+  menu: MenuItem[],
+): Array<{ phrase: string; item: MenuItem }> {
+  const inboundTokens = normalizeForMatch(inbound)
+    .split(' ')
+    .filter((t) => t.length >= 4);
+  if (inboundTokens.length === 0) return [];
+
+  const matches: Array<{ phrase: string; item: MenuItem; score: number }> = [];
+
+  for (const item of menu) {
+    // Same variant generation as findItemPhraseMatches so fuzzy
+    // matching works against "siomai" (stripped) as well as
+    // "a7 siomai" (raw).
+    const base = normalizeForMatch(item.name);
+    if (!base) continue;
+    const stripped = normalizeForMatch(stripMenuCodePrefix(item.name));
+    const variants = stripped && stripped !== base ? [base, stripped] : [base];
+
+    let bestMatch: { phrase: string; score: number } | null = null;
+    for (const variant of variants) {
+      const variantTokens = variant.split(' ').filter((t) => t.length >= 3);
+      if (variantTokens.length === 0) continue;
+
+      // For each variant, every variant token must match some inbound
+      // token within distance ≤ 1. Otherwise skip. Prevents "pancit
+      // bihon" from fuzzy-matching "pancit" alone.
+      let totalDist = 0;
+      let allMatched = true;
+      const matchedTokens: string[] = [];
+      for (const vt of variantTokens) {
+        let bestTokDist = Infinity;
+        let bestTok = '';
+        for (const it of inboundTokens) {
+          const d = levenshteinWithinBudget(vt, it, 1);
+          if (d < bestTokDist) {
+            bestTokDist = d;
+            bestTok = it;
+          }
+          if (d === 0) break;
+        }
+        if (bestTokDist > 1) {
+          allMatched = false;
+          break;
+        }
+        totalDist += bestTokDist;
+        matchedTokens.push(bestTok);
+      }
+      // Require at least one actual typo (totalDist ≥ 1) — a totalDist
+      // of 0 means exact match, which the phrase matcher should've
+      // caught. Falling through here would just duplicate its hits.
+      if (allMatched && totalDist >= 1) {
+        if (!bestMatch || totalDist < bestMatch.score) {
+          bestMatch = { phrase: matchedTokens.join(' '), score: totalDist };
+        }
+      }
+    }
+
+    if (bestMatch) {
+      matches.push({ phrase: bestMatch.phrase, item, score: bestMatch.score });
+    }
+  }
+
+  // Prefer lowest-distance match per item (already chosen above).
+  // Drop duplicate items (shouldn't happen since we already loop per
+  // item, but belt-and-suspenders).
+  matches.sort((a, b) => a.score - b.score);
+  const seen = new Set<string>();
+  const out: Array<{ phrase: string; item: MenuItem }> = [];
+  for (const m of matches) {
+    if (seen.has(m.item.id)) continue;
+    seen.add(m.item.id);
+    out.push({ phrase: m.phrase, item: m.item });
+  }
+  return out;
+}
+
 /** Scan the inbound message for exact menu-item-name phrase matches.
  *  Returns a list of (phrase, item) pairs, preferring longer/more-specific
  *  names when multiple items match the same region (so "Lumpia Prito"
