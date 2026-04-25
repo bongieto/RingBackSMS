@@ -5,7 +5,7 @@ import { FlowType, SideEffect } from '@ringback/shared-types';
 import { getCallerState, setCallerState, isDuplicate } from './stateService';
 import { createOrder } from './orderService';
 import { createMeeting } from './schedulingService';
-import { sendNotification } from './notificationService';
+import { sendNotification, sendOwnerNotification } from './notificationService';
 import { createTask } from './taskService';
 import { sendSms } from './twilioService';
 import { matchesLocationKeyword, buildLocationReply } from './foodTruckLocationService';
@@ -1485,15 +1485,17 @@ async function processSideEffect(
       break;
 
     case 'NOTIFY_OWNER':
-      // Belt-and-suspenders: the caller wraps us in a try/catch, but
-      // also log here so the warning names NOTIFY_OWNER specifically
-      // rather than the generic "non-critical side effect failed".
+      // Fan out to every configured channel (SMS + email + Slack) by
+      // default. Small-business owners are in the field; email-only
+      // alerts get missed and the lead goes cold. The legacy `channel`
+      // param is preserved on the side effect for back-compat but no
+      // longer gates the notification — every caller of NOTIFY_OWNER
+      // needs the operator to act, otherwise it wouldn't fire.
       try {
-        await sendNotification({
+        await sendOwnerNotification({
           tenantId,
           subject: effect.payload.subject,
           message: effect.payload.message,
-          channel: effect.payload.channel,
         });
       } catch (err: any) {
         logger.warn('NOTIFY_OWNER send failed (non-fatal, customer flow continues)', {

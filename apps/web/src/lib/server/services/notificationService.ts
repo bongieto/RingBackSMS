@@ -104,6 +104,75 @@ async function sendSlackNotification(
 }
 
 /**
+ * Fans an owner-targeted notification out to every configured channel
+ * (SMS to ownerPhone + email + Slack), without the "URGENT" prefix used
+ * by sendHighPriorityAlert. This is the right shape for ~every
+ * NOTIFY_OWNER side effect (new booking, customer arrived, escalation,
+ * etc.) — operators are out in the field and need the alert to reach
+ * their phone, not just their inbox.
+ */
+export async function sendOwnerNotification(payload: {
+  tenantId: string;
+  subject: string;
+  message: string;
+}): Promise<void> {
+  const config = await prisma.tenantConfig.findUnique({
+    where: { tenantId: payload.tenantId },
+  });
+  if (!config) {
+    logger.warn('No config for owner notification', { tenantId: payload.tenantId });
+    return;
+  }
+
+  const tasks: Promise<unknown>[] = [];
+
+  if (config.ownerPhone) {
+    tasks.push(
+      sendSms(payload.tenantId, config.ownerPhone, `${payload.subject}\n${payload.message}`).catch(
+        (error) =>
+          logger.warn('Owner SMS notification failed', {
+            error: (error as Error).message,
+            tenantId: payload.tenantId,
+          }),
+      ),
+    );
+  }
+
+  if (config.ownerEmail) {
+    tasks.push(
+      sendEmailNotification(config.ownerEmail, payload.subject, payload.message).catch((error) =>
+        logger.warn('Owner email notification failed', {
+          error: (error as Error).message,
+          tenantId: payload.tenantId,
+        }),
+      ),
+    );
+  }
+
+  if (config.slackWebhook) {
+    tasks.push(
+      sendSlackNotification(config.slackWebhook, payload.subject, payload.message).catch((error) =>
+        logger.warn('Owner Slack notification failed', {
+          error: (error as Error).message,
+          tenantId: payload.tenantId,
+        }),
+      ),
+    );
+  }
+
+  await Promise.all(tasks);
+  logger.info('Owner notification fanned out', {
+    tenantId: payload.tenantId,
+    subject: payload.subject,
+    channels: {
+      sms: !!config.ownerPhone,
+      email: !!config.ownerEmail,
+      slack: !!config.slackWebhook,
+    },
+  });
+}
+
+/**
  * Fans a high-priority alert out to every channel the tenant has configured
  * (SMS to ownerPhone + Slack with @channel mention + email). Used for things
  * like rapid-redial detection where the owner needs to act now.
