@@ -13,22 +13,23 @@ import { billingApi, tenantApi, analyticsApi } from '@/lib/api';
 import { PLAN_LIMITS, Plan } from '@ringback/shared-types';
 
 const PLAN_PRICES: Record<string, { monthly: string; annual: string }> = {
-  STARTER: { monthly: 'Free', annual: 'Free' },
-  GROWTH: { monthly: '$79/mo', annual: '$790/yr' },
-  SCALE: { monthly: '$199/mo', annual: '$1,990/yr' },
-  ENTERPRISE: { monthly: 'Custom', annual: 'Custom' },
+  FREE: { monthly: 'Free', annual: 'Free' },
+  PRO: { monthly: '$49/mo', annual: '$490/yr' },
+  BUSINESS: { monthly: '$129/mo', annual: '$1,290/yr' },
+  SCALE: { monthly: '$299/mo', annual: '$2,990/yr' },
 };
 
 const ANNUAL_SAVINGS: Record<string, string> = {
-  GROWTH: '$158',
-  SCALE: '$398',
+  PRO: '$98',
+  BUSINESS: '$258',
+  SCALE: '$598',
 };
 
 const PLAN_ICONS: Record<string, React.ElementType> = {
-  STARTER: Zap,
-  GROWTH: TrendingUp,
+  FREE: Zap,
+  PRO: TrendingUp,
+  BUSINESS: Building2,
   SCALE: Building2,
-  ENTERPRISE: Building2,
 };
 
 export default function BillingPage() {
@@ -42,7 +43,7 @@ export default function BillingPage() {
     enabled: !!tenantId,
   });
 
-  const currentPlan: Plan = (tenant?.plan as Plan) ?? Plan.STARTER;
+  const currentPlan: Plan = (tenant?.plan as Plan) ?? Plan.FREE;
   const limits = PLAN_LIMITS[currentPlan];
 
   const { data: analytics } = useQuery({
@@ -95,7 +96,7 @@ export default function BillingPage() {
         title="Billing"
         description="Manage your plan and usage"
         action={
-          currentPlan !== Plan.STARTER && (
+          currentPlan !== Plan.FREE && (
             <Button variant="outline" onClick={() => portalMutation.mutate()} disabled={portalMutation.isPending}>
               <CreditCard className="h-4 w-4 mr-2" />
               Manage Billing
@@ -208,7 +209,7 @@ export default function BillingPage() {
                   <div>{limits.squareIntegration ? '✓ POS Integration' : '✗ POS Integration'}</div>
                   <div>{limits.calcomIntegration ? '✓ Cal.com' : '✗ Cal.com'}</div>
                 </div>
-                {!isCurrent && plan !== Plan.ENTERPRISE && plan !== Plan.STARTER && (
+                {!isCurrent && plan !== Plan.FREE && (
                   <Button
                     className="w-full mt-3"
                     size="sm"
@@ -218,7 +219,7 @@ export default function BillingPage() {
                     {pendingPlan === plan ? 'Opening checkout…' : 'Upgrade'}
                   </Button>
                 )}
-                {!isCurrent && plan === Plan.STARTER && currentPlan !== Plan.STARTER && (
+                {!isCurrent && plan === Plan.FREE && currentPlan !== Plan.FREE && (
                   <Button
                     variant="outline"
                     className="w-full mt-3"
@@ -227,11 +228,6 @@ export default function BillingPage() {
                     disabled={portalMutation.isPending}
                   >
                     Downgrade via Portal
-                  </Button>
-                )}
-                {plan === Plan.ENTERPRISE && !isCurrent && (
-                  <Button variant="outline" className="w-full mt-3" size="sm" asChild>
-                    <a href="mailto:sales@ringback.app">Contact Sales</a>
                   </Button>
                 )}
               </CardContent>

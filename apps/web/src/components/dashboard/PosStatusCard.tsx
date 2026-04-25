@@ -14,8 +14,8 @@ interface PosStatusCardProps {
 }
 
 export function PosStatusCard({ posProvider, posMerchantId, posTokenExpiresAt, plan }: PosStatusCardProps) {
-  // Don't show for STARTER plan (POS is plan-gated)
-  if (plan === 'STARTER') return null;
+  // POS is plan-gated to BUSINESS and SCALE
+  if (plan !== 'BUSINESS' && plan !== 'SCALE') return null;
 
   const isConnected = !!posProvider && !!posMerchantId;
 

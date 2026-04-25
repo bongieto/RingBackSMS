@@ -150,10 +150,13 @@ All variables are required unless marked optional.
 |----------|-------------|
 | `STRIPE_SECRET_KEY` | Stripe API secret key |
 | `STRIPE_WEBHOOK_SECRET` | Webhook signing secret |
-| `STRIPE_STARTER_PRICE_ID` | Price ID for STARTER plan |
-| `STRIPE_GROWTH_PRICE_ID` | Price ID for GROWTH plan |
+| `STRIPE_FREE_PRICE_ID` | Price ID for FREE plan |
+| `STRIPE_PRO_PRICE_ID` | Price ID for PRO plan |
+| `STRIPE_BUSINESS_PRICE_ID` | Price ID for BUSINESS plan |
 | `STRIPE_SCALE_PRICE_ID` | Price ID for SCALE plan |
-| `STRIPE_ENTERPRISE_PRICE_ID` | Price ID for ENTERPRISE plan |
+| `STRIPE_PRO_ANNUAL_PRICE_ID` | (Optional) Annual price ID for PRO plan |
+| `STRIPE_BUSINESS_ANNUAL_PRICE_ID` | (Optional) Annual price ID for BUSINESS plan |
+| `STRIPE_SCALE_ANNUAL_PRICE_ID` | (Optional) Annual price ID for SCALE plan |
 | `STRIPE_SMS_METERED_PRICE_ID` | (Optional) Metered price ID for SMS overage |
 
 ### Square
@@ -188,12 +191,14 @@ All variables are required unless marked optional.
 
 ## Plans
 
-| Plan | SMS/mo | AI Calls/mo | Square | Price |
-|------|--------|-------------|--------|-------|
-| STARTER | 25 | 25 | No | Free |
-| GROWTH | 750 | 500 | Yes | $79/mo |
-| SCALE | 5,000 | 2,500 | Yes | $199/mo |
-| ENTERPRISE | Unlimited | Unlimited | Yes | Custom |
+| Plan | SMS/mo | AI Calls/mo | Phones | Team | POS | Price |
+|------|--------|-------------|--------|------|-----|-------|
+| FREE | 50 | 25 | 1 | 1 | No | $0 |
+| PRO | 1,000 | 500 | 1 | 3 | No | $49/mo |
+| BUSINESS | 5,000 | 2,500 | 3 | 10 | Yes | $129/mo |
+| SCALE | 20,000 | Unlimited | Unlimited | Unlimited | Yes | $299/mo |
+
+Overage SMS (above plan limit) are billed at $0.03 each.
 
 ---
 
@@ -261,7 +266,7 @@ vercel --prod
 
 The seed script creates **The Lumpia House & Truck** as the first tenant:
 - Business type: RESTAURANT
-- Plan: GROWTH
+- Plan: PRO
 - Hours: Wed–Sun 11am–8pm (America/Chicago)
 - Flows: ORDER, MEETING, FALLBACK all enabled
 - 8 Filipino cuisine menu items (placeholder — owner customizes via dashboard)

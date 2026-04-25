@@ -13,7 +13,7 @@ async function main() {
       id: '10000000-0000-0000-0000-000000000001',
       name: 'The Lumpia House & Truck',
       businessType: BusinessType.RESTAURANT,
-      plan: Plan.GROWTH,
+      plan: Plan.PRO,
       isActive: true,
     },
   });

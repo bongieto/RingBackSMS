@@ -5,56 +5,78 @@ export interface PlanLimits {
   aiCallsPerMonth: number;
   overagePricePerSms: number; // in cents
   maxFlows: number;
+  maxPhoneNumbers: number;
+  maxTeamMembers: number;
   squareIntegration: boolean;
   posIntegration: boolean;
   calcomIntegration: boolean;
   slackNotifications: boolean;
   prioritySupport: boolean;
+  apiAccess: boolean;
+  multiLocation: boolean;
 }
 
+const UNLIMITED = 999999;
+
 export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
-  [Plan.STARTER]: {
-    smsPerMonth: 25,
+  [Plan.FREE]: {
+    smsPerMonth: 50,
     aiCallsPerMonth: 25,
-    overagePricePerSms: 5, // $0.05
-    maxFlows: 2,
+    overagePricePerSms: 3, // $0.03
+    maxFlows: 1, // FALLBACK only
+    maxPhoneNumbers: 1,
+    maxTeamMembers: 1,
     squareIntegration: false,
     posIntegration: false,
     calcomIntegration: false,
     slackNotifications: false,
     prioritySupport: false,
+    apiAccess: false,
+    multiLocation: false,
   },
-  [Plan.GROWTH]: {
-    smsPerMonth: 750,
+  [Plan.PRO]: {
+    smsPerMonth: 1000,
     aiCallsPerMonth: 500,
-    overagePricePerSms: 4, // $0.04
-    maxFlows: 5,
-    squareIntegration: true,
-    posIntegration: true,
+    overagePricePerSms: 3, // $0.03
+    maxFlows: 5, // all flows
+    maxPhoneNumbers: 1,
+    maxTeamMembers: 3,
+    squareIntegration: false,
+    posIntegration: false,
     calcomIntegration: true,
     slackNotifications: true,
     prioritySupport: false,
+    apiAccess: false,
+    multiLocation: false,
   },
-  [Plan.SCALE]: {
+  [Plan.BUSINESS]: {
     smsPerMonth: 5000,
     aiCallsPerMonth: 2500,
     overagePricePerSms: 3, // $0.03
-    maxFlows: 20,
+    maxFlows: 20, // all flows + custom
+    maxPhoneNumbers: 3,
+    maxTeamMembers: 10,
     squareIntegration: true,
     posIntegration: true,
     calcomIntegration: true,
     slackNotifications: true,
     prioritySupport: true,
+    apiAccess: false,
+    multiLocation: false,
   },
-  [Plan.ENTERPRISE]: {
-    smsPerMonth: 999999,
-    aiCallsPerMonth: 999999,
-    overagePricePerSms: 2, // $0.02
-    maxFlows: 999,
+  [Plan.SCALE]: {
+    smsPerMonth: 20000,
+    aiCallsPerMonth: UNLIMITED,
+    overagePricePerSms: 3, // $0.03
+    maxFlows: UNLIMITED,
+    maxPhoneNumbers: UNLIMITED,
+    maxTeamMembers: UNLIMITED,
     squareIntegration: true,
     posIntegration: true,
     calcomIntegration: true,
     slackNotifications: true,
     prioritySupport: true,
+    apiAccess: true,
+    multiLocation: true,
   },
 };

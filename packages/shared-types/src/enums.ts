@@ -9,10 +9,10 @@ export enum BusinessType {
 }
 
 export enum Plan {
-  STARTER = 'STARTER',
-  GROWTH = 'GROWTH',
+  FREE = 'FREE',
+  PRO = 'PRO',
+  BUSINESS = 'BUSINESS',
   SCALE = 'SCALE',
-  ENTERPRISE = 'ENTERPRISE',
 }
 
 export enum FlowType {

@@ -28,7 +28,7 @@ export async function createTenant(input: CreateTenantInput) {
       name: input.name,
       slug,
       businessType: input.businessType,
-      plan: input.plan ?? Plan.STARTER,
+      plan: input.plan ?? Plan.FREE,
       clerkOrgId: input.clerkOrgId,
       isActive: true,
     },
@@ -108,7 +108,7 @@ export async function ensureTenantForClerkOrg(input: {
   return createTenant({
     name,
     businessType: BusinessType.OTHER,
-    plan: Plan.STARTER,
+    plan: Plan.FREE,
     clerkOrgId: input.clerkOrgId,
     ownerEmail: input.ownerEmail,
   });

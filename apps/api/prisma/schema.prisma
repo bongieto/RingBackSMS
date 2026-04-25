@@ -19,10 +19,10 @@ enum BusinessType {
 }
 
 enum Plan {
-  STARTER
-  GROWTH
+  FREE
+  PRO
+  BUSINESS
   SCALE
-  ENTERPRISE
 }
 
 enum FlowType {
@@ -111,7 +111,7 @@ model Tenant {
   name                  String
   slug                  String?          @unique // URL-safe public identifier for menu page (ringbacksms.com/m/{slug})
   businessType          BusinessType
-  plan                  Plan             @default(STARTER)
+  plan                  Plan             @default(FREE)
   twilioSubAccountSid   String?          @unique
   twilioAuthToken       String? // AES-256-GCM encrypted
   twilioPhoneNumber     String?          @unique

@@ -78,7 +78,10 @@ export default function ServicesPage() {
     mutationFn: (data: ServiceFormData) =>
       tenantApi.upsertMenuItem(tenantId!, {
         ...data,
-        price: parseFloat(data.price),
+        // Only `name` is required; everything else is optional. Schema-level
+        // `price` is non-nullable (Decimal) so blank → 0.00 ("price on
+        // request" / "set in person"). Owner can fill it in later.
+        price: data.price.trim() ? parseFloat(data.price) : 0,
         duration: data.duration ? parseInt(data.duration, 10) : null,
         requiresBooking: true,
       }),
@@ -121,8 +124,8 @@ export default function ServicesPage() {
                 <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Men's Haircut" />
               </div>
               <div className="space-y-1.5">
-                <Label>Price *</Label>
-                <Input type="number" step="0.01" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="25.00" />
+                <Label>Price</Label>
+                <Input type="number" step="0.01" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="25.00 (optional)" />
               </div>
               <div className="space-y-1.5">
                 <Label>Duration (minutes)</Label>
@@ -134,7 +137,16 @@ export default function ServicesPage() {
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label>Description</Label>
-                <Input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Includes wash, cut, and style" />
+                <textarea
+                  value={form.description}
+                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                  placeholder="What's included, who it's for, prep work, contraindications, time estimates, add-ons, etc. The AI references this when callers ask about the service."
+                  rows={4}
+                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Used by the AI when answering caller questions about this service. The more detail you give, the better the answers.
+                </p>
               </div>
               <div className="flex items-center gap-3">
                 <Switch checked={form.isAvailable} onCheckedChange={v => setForm(f => ({ ...f, isAvailable: v }))} />
@@ -142,7 +154,7 @@ export default function ServicesPage() {
               </div>
             </div>
             <div className="flex gap-3 mt-4">
-              <Button onClick={() => saveMutation.mutate(form)} disabled={!form.name || !form.price || saveMutation.isPending}>
+              <Button onClick={() => saveMutation.mutate(form)} disabled={!form.name.trim() || saveMutation.isPending}>
                 {saveMutation.isPending ? 'Saving...' : 'Save Service'}
               </Button>
               <Button variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>

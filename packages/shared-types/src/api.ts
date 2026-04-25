@@ -7,7 +7,7 @@ import { BusinessScheduleSchema } from './models';
 export const CreateTenantRequestSchema = z.object({
   name: z.string().min(1).max(255),
   businessType: z.nativeEnum(BusinessType),
-  plan: z.nativeEnum(Plan).optional().default(Plan.STARTER),
+  plan: z.nativeEnum(Plan).optional().default(Plan.FREE),
   clerkOrgId: z.string().optional(),
   ownerEmail: z.string().email().optional(),
   ownerPhone: z.string().optional(),

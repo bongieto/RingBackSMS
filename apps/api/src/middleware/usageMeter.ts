@@ -125,8 +125,8 @@ export async function checkSmsLimit(
     const planLimits = PLAN_LIMITS[tenant.plan as Plan];
     const currentCount = await getMonthlySmCount(tenantId);
 
-    // ENTERPRISE plan has effectively unlimited SMS
-    if (currentCount >= planLimits.smsPerMonth && tenant.plan !== 'ENTERPRISE') {
+    // All plans have a hard SMS cap; overage is billed via Stripe metered pricing.
+    if (currentCount >= planLimits.smsPerMonth) {
       throw new PlanLimitError(
         'Monthly SMS limit reached. Please upgrade your plan or wait until next month.'
       );

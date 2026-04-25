@@ -40,7 +40,7 @@ const baseTenant: TenantContext = {
     voiceType: 'nova',
     squareSyncEnabled: false,
     businessType: BusinessType.RESTAURANT,
-    plan: Plan.STARTER,
+    plan: Plan.FREE,
   } as unknown as TenantContext['config'],
   flows: [
     {

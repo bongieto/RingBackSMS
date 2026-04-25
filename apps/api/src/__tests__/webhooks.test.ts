@@ -72,7 +72,7 @@ describe('Webhook routes', () => {
       jest.clearAllMocks();
       __mocks.findUnique.mockResolvedValue({
         id: 'tenant-test',
-        plan: 'GROWTH',
+        plan: 'PRO',
         stripeSubscriptionId: null,
         config: { greeting: 'Hi there!', timezone: 'America/Chicago' },
       });

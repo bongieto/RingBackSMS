@@ -43,9 +43,9 @@ export async function GET(_request: NextRequest) {
     mrr: p._count.plan * (PLAN_MRR[p.plan] ?? 0),
   }));
 
-  // Paying customers (non-STARTER active)
-  const payingCustomers = activeTenants.filter((t) => t.plan !== 'STARTER').length;
-  const freeCustomers = activeTenants.filter((t) => t.plan === 'STARTER').length;
+  // Paying customers (non-FREE active)
+  const payingCustomers = activeTenants.filter((t) => t.plan !== 'FREE').length;
+  const freeCustomers = activeTenants.filter((t) => t.plan === 'FREE').length;
 
   // New MRR from tenants added this month
   const newMrr = activeTenants

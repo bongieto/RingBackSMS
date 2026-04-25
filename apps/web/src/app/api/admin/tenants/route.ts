@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
   const CreateSchema = z.object({
     name: z.string().min(1).max(255),
     businessType: z.nativeEnum(BusinessType),
-    plan: z.nativeEnum(Plan).default('STARTER'),
+    plan: z.nativeEnum(Plan).default('FREE'),
     ownerEmail: z.string().email().optional(),
     ownerPhone: z.string().optional(),
     greeting: z.string().optional(),

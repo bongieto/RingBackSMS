@@ -399,7 +399,7 @@ export default function HelpPage() {
               <li><strong>Toast</strong> — Pull your Toast menu structure and items.</li>
               <li><strong>Shopify</strong> — Import products from your Shopify store.</li>
             </ul>
-            <p className="text-sm text-gray-600 mt-3">POS integrations are available on the <strong>Growth</strong> plan and above. Go to <strong>Integrations</strong> to connect. You can pull your catalog from the POS or push RingBackSMS items the other way, and every sync is logged with item counts and status.</p>
+            <p className="text-sm text-gray-600 mt-3">POS integrations are available on the <strong>Business</strong> plan and above. Go to <strong>Integrations</strong> to connect. You can pull your catalog from the POS or push RingBackSMS items the other way, and every sync is logged with item counts and status.</p>
           </SubSection>
 
           <SubSection title="Other integrations">
@@ -426,28 +426,28 @@ export default function HelpPage() {
                 </thead>
                 <tbody className="text-gray-700">
                   <tr className="border-b">
-                    <td className="py-2 pr-4 font-medium">Starter</td>
-                    <td className="py-2 pr-4">Free</td>
-                    <td className="py-2 pr-4">25</td>
-                    <td className="py-2">1 phone number, AI auto-responses, basic analytics</td>
+                    <td className="py-2 pr-4 font-medium">Free</td>
+                    <td className="py-2 pr-4">$0</td>
+                    <td className="py-2 pr-4">50</td>
+                    <td className="py-2">1 phone, 1 team member, Fallback flow only</td>
                   </tr>
                   <tr className="border-b">
-                    <td className="py-2 pr-4 font-medium">Growth</td>
-                    <td className="py-2 pr-4">$79/mo</td>
-                    <td className="py-2 pr-4">750</td>
-                    <td className="py-2">+ Order, Meeting &amp; Inquiry flows, POS integrations, daily digest</td>
+                    <td className="py-2 pr-4 font-medium">Pro</td>
+                    <td className="py-2 pr-4">$49/mo</td>
+                    <td className="py-2 pr-4">1,000</td>
+                    <td className="py-2">+ 3 team members, all flow types, basic analytics</td>
                   </tr>
                   <tr className="border-b">
-                    <td className="py-2 pr-4 font-medium">Scale</td>
-                    <td className="py-2 pr-4">$199/mo</td>
+                    <td className="py-2 pr-4 font-medium">Business</td>
+                    <td className="py-2 pr-4">$129/mo</td>
                     <td className="py-2 pr-4">5,000</td>
-                    <td className="py-2">+ Slack, two-way POS sync, recovery funnel, urgency escalation</td>
+                    <td className="py-2">+ 3 phones, 10 team members, POS integration, full analytics</td>
                   </tr>
                   <tr>
-                    <td className="py-2 pr-4 font-medium">Enterprise</td>
-                    <td className="py-2 pr-4">Custom</td>
-                    <td className="py-2 pr-4">Unlimited</td>
-                    <td className="py-2">+ White-label, dedicated support, custom dev</td>
+                    <td className="py-2 pr-4 font-medium">Scale</td>
+                    <td className="py-2 pr-4">$299/mo</td>
+                    <td className="py-2 pr-4">20,000</td>
+                    <td className="py-2">+ Unlimited phones &amp; team, unlimited AI calls, API access, multi-location</td>
                   </tr>
                 </tbody>
               </table>
@@ -611,7 +611,7 @@ export default function HelpPage() {
           </FAQ>
 
           <FAQ question="Can I import my menu from Square or another POS?">
-            <p>Yes. Go to <strong>Integrations</strong> and connect your POS system. We support Square, Clover, Toast, and Shopify. Your menu syncs automatically. POS integrations require the Scale plan or above.</p>
+            <p>Yes. Go to <strong>Integrations</strong> and connect your POS system. We support Square, Clover, Toast, and Shopify. Your menu syncs automatically. POS integrations require the Business plan or above.</p>
           </FAQ>
 
           <FAQ question="What if my area code has no available phone numbers?">
@@ -623,7 +623,7 @@ export default function HelpPage() {
           </FAQ>
 
           <FAQ question="How do I cancel my subscription?">
-            <p>Go to <strong>Billing &rarr; Manage Billing</strong> to access the Stripe customer portal. You can cancel anytime — your account stays active until the end of the billing period, then downgrades to the free Starter plan.</p>
+            <p>Go to <strong>Billing &rarr; Manage Billing</strong> to access the Stripe customer portal. You can cancel anytime — your account stays active until the end of the billing period, then downgrades to the Free plan.</p>
           </FAQ>
 
           <FAQ question="Can I use RingBackSMS for multiple businesses?">
