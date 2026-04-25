@@ -41,11 +41,16 @@ export async function POST(request: NextRequest) {
   try {
     await deleteCallerState(tenantId, callerPhone);
 
-    // Order has an FK → Conversation (Order_conversationId_fkey). Orders
-    // placed by the sentinel must be deleted BEFORE the Conversation row,
-    // otherwise Prisma throws a foreign-key violation. These are tester
-    // orders (sentinel phone only), so hard-delete is safe.
+    // Order and Meeting both have FK → Conversation (their respective
+    // {Order,Meeting}_conversationId_fkey constraints). Rows placed by
+    // the sentinel must be deleted BEFORE the Conversation row, otherwise
+    // Prisma throws a foreign-key violation. These are tester rows
+    // (sentinel phone only), so hard-delete is safe.
     const deletedOrders = await prisma.order.deleteMany({
+      where: { tenantId, callerPhone },
+    });
+
+    const deletedMeetings = await prisma.meeting.deleteMany({
       where: { tenantId, callerPhone },
     });
 
@@ -87,6 +92,7 @@ export async function POST(request: NextRequest) {
       callerPhone,
       deletedConversations: deleted.count,
       deletedOrders: deletedOrders.count,
+      deletedMeetings: deletedMeetings.count,
       deletedSuppressions: deletedSuppressions.count,
       deletedTurns: deletedTurns.count,
     });
@@ -96,6 +102,7 @@ export async function POST(request: NextRequest) {
       callerPhone,
       deletedConversations: deleted.count,
       deletedOrders: deletedOrders.count,
+      deletedMeetings: deletedMeetings.count,
       deletedSuppressions: deletedSuppressions.count,
       deletedTurns: deletedTurns.count,
     });
