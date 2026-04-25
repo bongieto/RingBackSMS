@@ -937,47 +937,76 @@ async function processInboundSmsInner(
       }
     } else if (effect.type === 'FETCH_LOCAL_SLOTS') {
       try {
-        const { computeAvailableSlots } = await import('@ringback/flow-engine');
+        const { computeAvailableSlots, zonedDateToUtc } = await import('@ringback/flow-engine');
         const { fetchAvailabilityInputs } = await import('./calendarService');
         const tz = calConfig.timezone ?? 'America/Chicago';
-        const dayStart = new Date(effect.payload.startUtc);
-        const dayEnd = new Date(effect.payload.endUtc);
-        // Re-derive Y/M/D in tenant TZ so the engine can compute open/close
-        // boundaries from the per-day schedule.
+        const duration = calConfig.meetingDurationMinutes ?? 30;
+        const buffer = calConfig.meetingBufferMinutes ?? 15;
+        const leadTime = calConfig.meetingLeadTimeMinutes ?? 60;
+        const maxDaysOut = calConfig.meetingMaxDaysOut ?? 30;
+
+        // Re-derive the starting Y/M/D in tenant TZ from startUtc.
         const fmt = new Intl.DateTimeFormat('en-US', {
           timeZone: tz,
           year: 'numeric',
           month: '2-digit',
           day: '2-digit',
         });
-        const parts = fmt.formatToParts(new Date(dayStart.getTime() + 12 * 60 * 60_000));
-        const requestedDateLocal = {
-          year: Number(parts.find((p) => p.type === 'year')?.value ?? '0'),
-          month: Number(parts.find((p) => p.type === 'month')?.value ?? '0'),
-          day: Number(parts.find((p) => p.type === 'day')?.value ?? '0'),
+        const startDayParts = fmt.formatToParts(
+          new Date(new Date(effect.payload.startUtc).getTime() + 12 * 60 * 60_000),
+        );
+        const startDate = {
+          year: Number(startDayParts.find((p) => p.type === 'year')?.value ?? '0'),
+          month: Number(startDayParts.find((p) => p.type === 'month')?.value ?? '0'),
+          day: Number(startDayParts.find((p) => p.type === 'day')?.value ?? '0'),
         };
 
-        const duration = calConfig.meetingDurationMinutes ?? 30;
-        const inputs = await fetchAvailabilityInputs(tenantId, dayStart, dayEnd, duration);
+        // Walk forward day-by-day. For a fixed date the loop runs once; for
+        // findEarliest it walks up to maxDaysOut days until it finds slots.
+        const maxIterations = effect.payload.findEarliest ? maxDaysOut : 1;
+        let slots: Array<{ start: string; end: string }> = [];
+        let resolvedDateLocal = startDate;
 
-        const slots = computeAvailableSlots({
-          requestedDateLocal,
-          timezone: tz,
-          durationMinutes: duration,
-          bufferMinutes: calConfig.meetingBufferMinutes ?? 15,
-          leadTimeMinutes: calConfig.meetingLeadTimeMinutes ?? 60,
-          businessSchedule: (calConfig.businessSchedule ?? null) as Record<string, { open: string; close: string }> | null,
-          businessHoursStart: calConfig.businessHoursStart,
-          businessHoursEnd: calConfig.businessHoursEnd,
-          businessDays: calConfig.businessDays as number[],
-          closedDates: calConfig.closedDates ?? [],
-          existingMeetings: inputs.existingMeetings,
-          blackouts: inputs.blackouts,
-          now: new Date(),
-        });
+        for (let offset = 0; offset < maxIterations; offset++) {
+          const cursorUtc = new Date(Date.UTC(startDate.year, startDate.month - 1, startDate.day));
+          cursorUtc.setUTCDate(cursorUtc.getUTCDate() + offset);
+          const cursorDate = {
+            year: cursorUtc.getUTCFullYear(),
+            month: cursorUtc.getUTCMonth() + 1,
+            day: cursorUtc.getUTCDate(),
+          };
+          const dayStart = zonedDateToUtc(cursorDate.year, cursorDate.month, cursorDate.day, 0, 0, tz);
+          const dayEnd = zonedDateToUtc(cursorDate.year, cursorDate.month, cursorDate.day, 23, 59, tz);
+          const inputs = await fetchAvailabilityInputs(tenantId, dayStart, dayEnd, duration);
+
+          slots = computeAvailableSlots({
+            requestedDateLocal: cursorDate,
+            timezone: tz,
+            durationMinutes: duration,
+            bufferMinutes: buffer,
+            leadTimeMinutes: leadTime,
+            businessSchedule: (calConfig.businessSchedule ?? null) as Record<string, { open: string; close: string }> | null,
+            businessHoursStart: calConfig.businessHoursStart,
+            businessHoursEnd: calConfig.businessHoursEnd,
+            businessDays: calConfig.businessDays as number[],
+            closedDates: calConfig.closedDates ?? [],
+            existingMeetings: inputs.existingMeetings,
+            blackouts: inputs.blackouts,
+            now: new Date(),
+          });
+
+          if (slots.length > 0) {
+            resolvedDateLocal = cursorDate;
+            break;
+          }
+        }
 
         if (slots.length === 0) {
-          result.smsReply = `Sorry, no open slots on ${effect.payload.dateLabel}. What other day works?`;
+          if (effect.payload.findEarliest) {
+            result.smsReply = `Sorry, no open slots in the next ${maxDaysOut} days. Please contact us directly so we can find a time.`;
+          } else {
+            result.smsReply = `Sorry, no open slots on ${effect.payload.dateLabel}. What other day works?`;
+          }
           result.nextState.flowStep = 'MEETING_DATE_PROMPT';
         } else {
           const lines = slots.map((s, i) => {
@@ -989,7 +1018,17 @@ async function processInboundSmsInner(
             }).format(new Date(s.start));
             return `${i + 1}. ${t}`;
           });
-          result.smsReply = `Here are open slots for ${effect.payload.dateLabel}:\n${lines.join('\n')}\n\nReply with the number you want.`;
+          // For findEarliest we render the resolved date so the caller knows
+          // which day they're picking from.
+          const dayLabel = effect.payload.findEarliest
+            ? new Intl.DateTimeFormat('en-US', {
+                timeZone: 'UTC',
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+              }).format(new Date(Date.UTC(resolvedDateLocal.year, resolvedDateLocal.month - 1, resolvedDateLocal.day, 12)))
+            : effect.payload.dateLabel;
+          result.smsReply = `Here are open slots for ${dayLabel}:\n${lines.join('\n')}\n\nReply with the number you want.`;
           result.nextState.meetingDraft = {
             ...(result.nextState.meetingDraft ?? {}),
             slots,

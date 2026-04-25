@@ -26,12 +26,22 @@ export function parseDateExpression(
   endUtc: Date;
   label: string;
   requestedDateLocal: { year: number; month: number; day: number };
+  findEarliest?: boolean;
 } | null {
   const t = input.trim().toLowerCase();
   const today = todayInTz(now, timezone);
   let target: { year: number; month: number; day: number } | null = null;
+  let findEarliest = false;
 
-  if (/\btoday\b|\btdy\b/.test(t)) {
+  // "earliest" / "soonest" / "asap" / "first available" — caller doesn't
+  // care about a specific date, just the next open slot. Anchor at today
+  // and let the handler walk forward up to meetingMaxDaysOut days.
+  if (
+    /\bearliest\b|\bsoonest\b|\basap\b|\b(first|next)\s+available\b|\bany ?time\b/.test(t)
+  ) {
+    target = today;
+    findEarliest = true;
+  } else if (/\btoday\b|\btdy\b/.test(t)) {
     target = today;
   } else if (/\btomorrow\b|\btmrw\b|\btommor?ow\b/.test(t)) {
     target = addDays(today, 1);
@@ -66,8 +76,9 @@ export function parseDateExpression(
   return {
     startUtc: zonedDateToUtc(target.year, target.month, target.day, 0, 0, timezone),
     endUtc: zonedDateToUtc(target.year, target.month, target.day, 23, 59, timezone),
-    label: formatDateLabel(target),
+    label: findEarliest ? 'the earliest available time' : formatDateLabel(target),
     requestedDateLocal: target,
+    findEarliest,
   };
 }
 
@@ -259,6 +270,7 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
             startUtc: parsed.startUtc.toISOString(),
             endUtc: parsed.endUtc.toISOString(),
             dateLabel: parsed.label,
+            ...(parsed.findEarliest && !isCalcom ? { findEarliest: true } : {}),
           },
         },
       ],

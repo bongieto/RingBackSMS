@@ -63,6 +63,24 @@ describe('parseDateExpression', () => {
     expect(parseDateExpression('', TZ, FRI_APR_24_8PM_CHICAGO_AS_UTC)).toBeNull();
   });
 
+  it.each([
+    'When is the earliest available',
+    'earliest',
+    'soonest',
+    'asap',
+    'first available',
+    'next available',
+    'anytime',
+    'any time',
+  ])('flags findEarliest for "%s"', (input) => {
+    const result = parseDateExpression(input, TZ, FRI_APR_24_8PM_CHICAGO_AS_UTC);
+    expect(result).not.toBeNull();
+    expect(result!.findEarliest).toBe(true);
+    expect(result!.label).toBe('the earliest available time');
+    // Anchor date is today — handler walks forward from there.
+    expect(result!.requestedDateLocal).toEqual({ year: 2026, month: 4, day: 24 });
+  });
+
   it('produces startUtc/endUtc that bracket the local day in tenant TZ', () => {
     const result = parseDateExpression('tomorrow', TZ, FRI_APR_24_8PM_CHICAGO_AS_UTC)!;
     // Saturday April 25, 00:00 Chicago = April 25 05:00 UTC (CDT, UTC-5).

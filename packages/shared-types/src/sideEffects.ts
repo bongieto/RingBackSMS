@@ -108,13 +108,17 @@ export interface CreateCalcomBookingSideEffect {
 
 /** Native (built-in calendar) equivalent of FETCH_CALCOM_SLOTS. The handler
  *  reads tenant calendar config, existing meetings, and blackouts, then
- *  calls computeAvailableSlots() and writes the result onto the draft. */
+ *  calls computeAvailableSlots() and writes the result onto the draft.
+ *  When findEarliest is true, the handler walks forward up to
+ *  meetingMaxDaysOut days and returns slots from the first day that has
+ *  any — for callers who say "earliest available" / "asap". */
 export interface FetchLocalSlotsSideEffect {
   type: 'FETCH_LOCAL_SLOTS';
   payload: {
     startUtc: string;
     endUtc: string;
     dateLabel: string;
+    findEarliest?: boolean;
   };
 }
 
