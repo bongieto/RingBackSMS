@@ -206,21 +206,23 @@ async function processInboundSmsInner(
     }
   }
 
-  // ── ENGLISH-ONLY GATE ─────────────────────────────────────────────────
-  // We don't support replies in languages other than English. When an
-  // inbound message is clearly in another language (Spanish or Tagalog
-  // today, by marker-word heuristic), send a fixed English apology and
-  // short-circuit the pipeline. This runs AFTER compliance/HUMAN-handoff
-  // checks (so STOP/HELP/START still work on a suppressed account) and
-  // BEFORE the flow engine / LLM, so no prompt ever sees a non-English
-  // message that might destabilize its reasoning.
+  // ── ENGLISH-ONLY GATE (with Spanish bilingual fallback) ──────────────
+  // The LLM/flow path runs in English only — multilingual prompt loads
+  // historically destabilized reasoning (markers colliding with menu
+  // names, bilingual sentences flipping the session, etc). We keep that
+  // policy decision intact: no non-English message ever reaches the
+  // flow engine.
   //
-  // Why a gate instead of in-language replies: four rounds of
-  // multilingual patches kept moving the bug around (markers colliding
-  // with menu names, bilingual sentences flipping the session, LLM
-  // behavior varying under multilingual prompt load). Pulling back to
-  // English-only is a policy decision: say it clearly, let customers
-  // retry in English, and stop chasing translation fidelity.
+  // What changed: when Spanish is detected, send a *bilingual* reply
+  // (Spanish + English) and create a HIGH-priority Task so the owner
+  // can call the lead back personally. This recovers the lead instead
+  // of throwing it away with a hard English wall — Hispanic markets
+  // are a meaningful slice of the small-business customer base and the
+  // owner being told to ring them is the real path forward.
+  //
+  // Tagalog and any other detected language continue to get the
+  // English-only apology — they're a much smaller market and we don't
+  // have native copy for them.
   //
   // If the detector returns null, we treat the message as English (or
   // too-short-to-judge) and fall through. The detector's marker lists
@@ -231,23 +233,26 @@ async function processInboundSmsInner(
     const nonEnglish = detectLanguage(inboundMessage, null);
     if (nonEnglish === 'es' || nonEnglish === 'tl') {
       const reply =
-        `Sorry, we only speak English here. Please text us in English and we'll help you out!`;
+        nonEnglish === 'es'
+          ? `Hola — aquí no hablamos español por mensaje, pero le devolveremos la llamada pronto. ` +
+            `(We don't speak Spanish here by text, but we'll call you back shortly.)`
+          : `Sorry, we only speak English here. Please text us in English and we'll help you out!`;
       // Persist the turn so the conversation dashboard still shows
       // the customer's message and our reply.
+      let gateConvoId: string | null = existingConversationId ?? null;
       try {
         const newMessages = [
           { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },
           { role: 'assistant', content: reply, timestamp: new Date(), sender: 'bot' },
         ];
-        let convoId = existingConversationId;
-        if (convoId) {
+        if (gateConvoId) {
           const existing = await prisma.conversation.findUnique({
-            where: { id: convoId },
+            where: { id: gateConvoId },
             select: { messages: true },
           });
           const messages = decryptMessages(existing?.messages);
           await prisma.conversation.update({
-            where: { id: convoId },
+            where: { id: gateConvoId },
             data: {
               messages: encryptMessages([...messages, ...newMessages]) as unknown as Prisma.InputJsonValue,
               updatedAt: new Date(),
@@ -262,12 +267,12 @@ async function processInboundSmsInner(
               isActive: true,
             },
           });
-          convoId = conv.id;
+          gateConvoId = conv.id;
         }
         await setCallerState({
           tenantId,
           callerPhone,
-          conversationId: convoId,
+          conversationId: gateConvoId,
           currentFlow: null,
           flowStep: null,
           orderDraft: null,
@@ -282,6 +287,29 @@ async function processInboundSmsInner(
         await sendSms(tenantId, callerPhone, reply).catch((err) =>
           logger.error('Failed to send English-only gate SMS', { err, tenantId }),
         );
+      }
+      // Spanish-speaker callback task: bilingual reply alone leaves the
+      // lead stranded — give the owner a HIGH-priority Action Item so
+      // they actually pick up the phone. Idempotent on (CONVERSATION,
+      // conversationId) so repeated Spanish messages in the same thread
+      // don't spam the queue.
+      if (nonEnglish === 'es' && !testMode && gateConvoId) {
+        try {
+          await createTask({
+            tenantId,
+            source: 'CONVERSATION',
+            priority: 'HIGH',
+            title: `Spanish-speaking lead — call back ${callerPhone}`,
+            description: `Caller texted in Spanish. We replied bilingually and asked them to expect a call. Original message: "${inboundMessage.slice(0, 200)}"`,
+            callerPhone,
+            conversationId: gateConvoId,
+          });
+        } catch (err) {
+          logger.warn('Failed to create Spanish callback task', {
+            err: (err as Error).message,
+            tenantId,
+          });
+        }
       }
       logger.info('English-only gate fired', { tenantId, callerPhone, detected: nonEnglish });
       if (testMode) {
