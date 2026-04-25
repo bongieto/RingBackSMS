@@ -23,6 +23,7 @@ import { acquireAlertLock } from '@/lib/server/services/stateService';
 import { createTask } from '@/lib/server/services/taskService';
 import { maskPhone } from '@/lib/server/phoneUtils';
 import { waitUntil } from '@/lib/server/waitUntil';
+import { classifyCaller } from '@/lib/server/services/spamLookupService';
 
 // Give the handler 30s so background SMS/TTS work can finish on Vercel
 export const maxDuration = 30;
@@ -335,6 +336,25 @@ export async function POST(request: NextRequest) {
       const suppressed = await isCallerSuppressed(tenant.id, from);
       console.log('[consent-sms] suppressed-check', JSON.stringify({ suppressed }));
       if (suppressed) return;
+
+      // Spam/robocall gate: Twilio Lookup tells us when the inbound
+      // number is invalid or matches the unbranded-VoIP fingerprint
+      // typical of robocallers. Cached 30d/global so a returning
+      // legit caller doesn't trigger a paid lookup every time.
+      const spam = await classifyCaller(from);
+      if (!spam.allow) {
+        console.log('[consent-sms] spam-blocked', JSON.stringify({
+          from,
+          reason: spam.reason,
+          lineType: spam.lineType,
+          cached: spam.cached,
+        }));
+        await logConsentEvent(tenant.id, from, 'sms_send_failed', {
+          errorCode: 'spam_blocked',
+          errorMessage: spam.reason,
+        }).catch(() => {});
+        return;
+      }
 
       const { id: consentRequestId, alreadyPending } = await createConsentRequest(tenant.id, from, to);
       console.log('[consent-sms] create-result', JSON.stringify({ consentRequestId, alreadyPending }));
