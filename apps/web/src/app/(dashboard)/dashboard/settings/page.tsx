@@ -1327,13 +1327,16 @@ function PhoneNumberCard({ tenantId }: { tenantId: string | undefined }) {
       </CardHeader>
       <CardContent>
         {phoneStatus?.hasPhoneNumber ? (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
               <span className="text-lg font-mono font-semibold">{phoneStatus.phoneNumber}</span>
               <Badge variant="success">Active</Badge>
             </div>
             <Link href="/dashboard/settings/phone">
-              <Button variant="ghost" size="sm">Manage</Button>
+              <Button size="sm">
+                <Phone className="h-4 w-4 mr-1.5" />
+                Forward your number
+              </Button>
             </Link>
           </div>
         ) : (
