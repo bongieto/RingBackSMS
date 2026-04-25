@@ -2,6 +2,8 @@ export { runFlowEngine } from './engine';
 export { detectEscalationIntent } from './intentDetector';
 export { runOrderAgent } from './ai/orderAgent';
 export { detectLanguage } from './ai/languageDetect';
+export { detectCallbackIntent, parseCallbackTime } from './callbackIntent';
+export type { CallbackParse } from './callbackIntent';
 export { pushDecision, timeAsync, timeSync } from './decisions';
 export { computeAvailableSlots, zonedDateToUtc } from './calendar/localAvailability';
 export type { ComputeSlotsParams, AvailableSlot, DaySchedule } from './calendar/localAvailability';

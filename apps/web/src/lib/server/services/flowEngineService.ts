@@ -325,6 +325,157 @@ async function processInboundSmsInner(
     }
   }
 
+  // ── CALLBACK REQUEST SHORT-CIRCUIT ────────────────────────────────────
+  // "Call me back at 3 PM" / "ring me in an hour" / "give me a call
+  // tonight" — caller is asking the human owner to dial them at a
+  // specific time. Don't route this through MEETING (different
+  // semantics — they're not booking a service appointment, they want
+  // a phone callback) and don't waste an LLM roundtrip on a templated
+  // request the regex can pin in <1ms.
+  //
+  // Outcome: confirm the time by SMS, create a HIGH-priority Task with
+  // snoozedUntil = requested time, and fan-out a NOTIFY_OWNER alert
+  // immediately so the owner sees the request in real time and the
+  // task resurfaces on the dashboard at the requested moment.
+  {
+    const { detectCallbackIntent, parseCallbackTime } = await import('@ringback/flow-engine');
+    if (detectCallbackIntent(inboundMessage)) {
+      const cbTenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { name: true, config: { select: { timezone: true } } },
+      });
+      const tz = cbTenant?.config?.timezone ?? 'America/Chicago';
+      const parsed = parseCallbackTime(inboundMessage, tz);
+      if (parsed) {
+        const reply = parsed.approximate
+          ? `Got it — we'll call you back ${parsed.label.toLowerCase()}. Talk soon!`
+          : `Got it — we'll call you back at ${parsed.label}. Talk soon!`;
+
+        // Persist the exchange.
+        let cbConvoId: string | null = existingConversationId ?? null;
+        try {
+          const newMessages = [
+            { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },
+            { role: 'assistant', content: reply, timestamp: new Date(), sender: 'bot' },
+          ];
+          if (cbConvoId) {
+            const existing = await prisma.conversation.findUnique({
+              where: { id: cbConvoId },
+              select: { messages: true },
+            });
+            const messages = decryptMessages(existing?.messages);
+            await prisma.conversation.update({
+              where: { id: cbConvoId },
+              data: {
+                messages: encryptMessages([...messages, ...newMessages]) as unknown as Prisma.InputJsonValue,
+                updatedAt: new Date(),
+              },
+            });
+          } else {
+            const conv = await prisma.conversation.create({
+              data: {
+                tenantId,
+                callerPhone,
+                messages: encryptMessages(newMessages) as unknown as Prisma.InputJsonValue,
+                isActive: true,
+              },
+            });
+            cbConvoId = conv.id;
+          }
+          await setCallerState({
+            tenantId,
+            callerPhone,
+            conversationId: cbConvoId,
+            currentFlow: null,
+            flowStep: null,
+            orderDraft: null,
+            lastMessageAt: Date.now(),
+            messageCount: (currentState?.messageCount ?? 0) + 1,
+            dedupKey: messageSid,
+          });
+        } catch (err) {
+          logger.error('Failed to persist callback-request conversation', { err, tenantId });
+        }
+
+        if (!testMode) {
+          await sendSms(tenantId, callerPhone, reply).catch((err) =>
+            logger.error('Failed to send callback-request SMS', { err, tenantId }),
+          );
+
+          // Create the snoozed task. Idempotent on (CONVERSATION,
+          // conversationId) — repeated callback requests in the same
+          // thread update the existing task rather than spamming a
+          // queue.
+          if (cbConvoId) {
+            try {
+              await createTask({
+                tenantId,
+                source: 'CONVERSATION',
+                priority: 'HIGH',
+                title: `Call back ${callerPhone} at ${parsed.label}`,
+                description: `Caller asked for a phone callback. Their words: "${inboundMessage.slice(0, 200)}"`,
+                callerPhone,
+                conversationId: cbConvoId,
+              });
+              // Stamp snoozedUntil so the reopen-snoozed cron resurfaces
+              // it at the requested time. createTask doesn't take this
+              // field today (intentional — it's reserved for explicit
+              // snooze actions), so we patch directly.
+              await prisma.task.updateMany({
+                where: {
+                  tenantId,
+                  conversationId: cbConvoId,
+                  source: 'CONVERSATION',
+                  status: 'OPEN',
+                  snoozedUntil: null,
+                },
+                data: { snoozedUntil: parsed.whenUtc, status: 'SNOOZED' },
+              });
+            } catch (err) {
+              logger.warn('Failed to create callback task', {
+                err: (err as Error).message,
+                tenantId,
+              });
+            }
+          }
+
+          // Fire owner alert immediately — operator wants to know NOW
+          // that someone asked for a callback, even though the task
+          // resurfaces later.
+          await sendOwnerNotification({
+            tenantId,
+            subject: `Callback requested — ${callerPhone}`,
+            message: `${callerPhone} asked us to call back at ${parsed.label}. Their message: "${inboundMessage.slice(0, 160)}"`,
+          }).catch((err) =>
+            logger.warn('Owner notification for callback failed', {
+              err: (err as Error).message,
+              tenantId,
+            }),
+          );
+        }
+
+        logger.info('Callback request short-circuit fired', {
+          tenantId,
+          callerPhone,
+          when: parsed.whenUtc.toISOString(),
+          approximate: parsed.approximate,
+        });
+        if (testMode) {
+          const st = await getCallerState(tenantId, callerPhone);
+          return {
+            reply,
+            sideEffects: [],
+            nextState: (st as unknown as ProcessInboundSmsTestResult['nextState']),
+            flowType: FlowType.FALLBACK,
+          };
+        }
+        return;
+      }
+      // detector matched but parser couldn't pin a time — fall through
+      // to the LLM/flow path so it can ask the customer to clarify.
+    }
+  }
+
   // Food-truck short-circuit: "where are you?" → reply with today's spot
   // without running the full flow engine / LLM roundtrip.
   if (matchesLocationKeyword(inboundMessage)) {
