@@ -5,17 +5,17 @@ import { prisma } from '../db';
 import { sendWelcomeEmail, sendSubscriptionCancelledEmail, sendPaymentFailedEmail } from './emailService';
 
 const PLAN_PRICE_IDS: Record<Plan, string | undefined> = {
-  [Plan.STARTER]: process.env.STRIPE_STARTER_PRICE_ID?.trim(),
-  [Plan.GROWTH]: process.env.STRIPE_GROWTH_PRICE_ID?.trim(),
+  [Plan.FREE]: process.env.STRIPE_FREE_PRICE_ID?.trim(),
+  [Plan.PRO]: process.env.STRIPE_PRO_PRICE_ID?.trim(),
+  [Plan.BUSINESS]: process.env.STRIPE_BUSINESS_PRICE_ID?.trim(),
   [Plan.SCALE]: process.env.STRIPE_SCALE_PRICE_ID?.trim(),
-  [Plan.ENTERPRISE]: process.env.STRIPE_ENTERPRISE_PRICE_ID?.trim(),
 };
 
 const ANNUAL_PLAN_PRICE_IDS: Record<Plan, string | undefined> = {
-  [Plan.STARTER]: undefined,
-  [Plan.GROWTH]: process.env.STRIPE_GROWTH_ANNUAL_PRICE_ID?.trim(),
+  [Plan.FREE]: undefined,
+  [Plan.PRO]: process.env.STRIPE_PRO_ANNUAL_PRICE_ID?.trim(),
+  [Plan.BUSINESS]: process.env.STRIPE_BUSINESS_ANNUAL_PRICE_ID?.trim(),
   [Plan.SCALE]: process.env.STRIPE_SCALE_ANNUAL_PRICE_ID?.trim(),
-  [Plan.ENTERPRISE]: undefined,
 };
 
 /** All known price IDs (monthly + annual) mapped back to their plan */
@@ -171,7 +171,7 @@ export async function handleSubscriptionUpdated(
     return;
   }
 
-  let plan: Plan = Plan.STARTER;
+  let plan: Plan = Plan.FREE;
   for (const item of subscription.items.data) {
     const matched = planFromPriceId(item.price.id);
     if (matched) { plan = matched; break; }
@@ -216,7 +216,7 @@ export async function handleSubscriptionDeleted(
   await prisma.tenant.update({
     where: { id: tenantId },
     data: {
-      plan: Plan.STARTER,
+      plan: Plan.FREE,
       stripeSubscriptionId: null,
     },
   });

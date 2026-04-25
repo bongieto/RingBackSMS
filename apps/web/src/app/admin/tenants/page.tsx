@@ -23,14 +23,14 @@ interface AdminTenant {
   _count: { conversations: number; orders: number; contacts: number };
 }
 
-const PLANS = ['STARTER', 'GROWTH', 'SCALE', 'ENTERPRISE'];
+const PLANS = ['FREE', 'PRO', 'BUSINESS', 'SCALE'];
 const BUSINESS_TYPES = ['RESTAURANT', 'FOOD_TRUCK', 'SERVICE', 'CONSULTANT', 'MEDICAL', 'RETAIL', 'OTHER'];
 
 const PLAN_BADGE: Record<string, string> = {
-  STARTER:    'bg-slate-700 text-slate-300',
-  GROWTH:     'bg-blue-900 text-blue-300',
-  SCALE:      'bg-purple-900 text-purple-300',
-  ENTERPRISE: 'bg-yellow-900 text-yellow-300',
+  FREE:     'bg-slate-700 text-slate-300',
+  PRO:      'bg-blue-900 text-blue-300',
+  BUSINESS: 'bg-purple-900 text-purple-300',
+  SCALE:    'bg-yellow-900 text-yellow-300',
 };
 
 // ── Add Tenant Modal ──────────────────────────────────────────────────────────
@@ -44,7 +44,7 @@ function AddTenantModal({ onClose, onCreated }: AddTenantModalProps) {
   const [form, setForm] = useState({
     name: '',
     businessType: 'RESTAURANT',
-    plan: 'STARTER',
+    plan: 'FREE',
     ownerEmail: '',
     ownerPhone: '',
     greeting: '',

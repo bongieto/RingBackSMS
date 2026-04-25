@@ -25,17 +25,17 @@ interface FinanceData {
 }
 
 const PLAN_COLORS: Record<string, string> = {
-  STARTER:    'bg-slate-600',
-  GROWTH:     'bg-blue-600',
-  SCALE:      'bg-purple-600',
-  ENTERPRISE: 'bg-yellow-500',
+  FREE:     'bg-slate-600',
+  PRO:      'bg-blue-600',
+  BUSINESS: 'bg-purple-600',
+  SCALE:    'bg-yellow-500',
 };
 
 const PLAN_TEXT: Record<string, string> = {
-  STARTER:    'text-slate-400',
-  GROWTH:     'text-blue-400',
-  SCALE:      'text-purple-400',
-  ENTERPRISE: 'text-yellow-400',
+  FREE:     'text-slate-400',
+  PRO:      'text-blue-400',
+  BUSINESS: 'text-purple-400',
+  SCALE:    'text-yellow-400',
 };
 
 function formatCurrency(n: number) {

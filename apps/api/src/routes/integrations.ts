@@ -24,9 +24,9 @@ async function requirePosAccess(req: Request, res: Response, next: Function): Pr
     sendError(res, 'Tenant not found', 404);
     return;
   }
-  // STARTER plan cannot use POS integrations
-  if (tenant.plan === 'STARTER') {
-    sendError(res, 'POS integration requires Growth plan or above', 403);
+  // POS integration is BUSINESS and SCALE only
+  if (tenant.plan !== 'BUSINESS' && tenant.plan !== 'SCALE') {
+    sendError(res, 'POS integration requires the Business plan or above', 403);
     return;
   }
   next();
@@ -50,7 +50,7 @@ router.get('/providers', requireOrgAuth, async (req: Request, res: Response) => 
     merchantId: tenant?.posProvider === adapter.provider ? tenant?.posMerchantId : null,
     locationId: tenant?.posProvider === adapter.provider ? tenant?.posLocationId : null,
     tokenExpiresAt: tenant?.posProvider === adapter.provider ? tenant?.posTokenExpiresAt : null,
-    planGated: tenant?.plan === 'STARTER',
+    planGated: tenant?.plan !== 'BUSINESS' && tenant?.plan !== 'SCALE',
   }));
 
   sendSuccess(res, providers);

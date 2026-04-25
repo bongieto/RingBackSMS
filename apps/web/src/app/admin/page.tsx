@@ -19,10 +19,10 @@ interface AdminStats {
 }
 
 const PLAN_COLORS: Record<string, string> = {
-  STARTER:    'bg-slate-600',
-  GROWTH:     'bg-blue-600',
-  SCALE:      'bg-purple-600',
-  ENTERPRISE: 'bg-yellow-500',
+  FREE:     'bg-slate-600',
+  PRO:      'bg-blue-600',
+  BUSINESS: 'bg-purple-600',
+  SCALE:    'bg-yellow-500',
 };
 
 export default function AdminOverviewPage() {

@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import api from '@/lib/api';
 import { ArrowLeft, Phone, MessageSquare, ShoppingBag, Users, Trash2, Save, Settings, X } from 'lucide-react';
 
-const PLANS = ['STARTER', 'GROWTH', 'SCALE', 'ENTERPRISE'];
+const PLANS = ['FREE', 'PRO', 'BUSINESS', 'SCALE'];
 const BUSINESS_TYPES = ['RESTAURANT', 'FOOD_TRUCK', 'SERVICE', 'CONSULTANT', 'MEDICAL', 'RETAIL', 'OTHER'];
 
 interface AgencyOption {
@@ -151,7 +151,7 @@ export default function AdminTenantDetailPage() {
     setSettingsForm({
       name: tenant.name ?? '',
       businessType: tenant.businessType ?? 'RESTAURANT',
-      plan: tenant.plan ?? 'STARTER',
+      plan: tenant.plan ?? 'FREE',
       greeting: tenant.config?.greeting ?? '',
       timezone: tenant.config?.timezone ?? 'America/Chicago',
       businessHoursStart: tenant.config?.businessHoursStart ?? '11:00',
@@ -434,7 +434,7 @@ export default function AdminTenantDetailPage() {
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Plan</label>
                 <select
-                  value={settingsForm.plan ?? 'STARTER'}
+                  value={settingsForm.plan ?? 'FREE'}
                   onChange={(e) => setField('plan', e.target.value)}
                   className="w-full h-10 rounded-md border border-slate-700 bg-slate-800 text-white px-3 text-sm"
                 >

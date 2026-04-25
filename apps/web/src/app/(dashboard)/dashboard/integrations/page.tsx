@@ -565,7 +565,7 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
               {PROVIDER_ICONS[provider.provider]}
               <div>
                 <CardTitle className="text-base">{provider.displayName}</CardTitle>
-                <CardDescription>POS integration requires Growth plan or above</CardDescription>
+                <CardDescription>POS integration requires Business plan or above</CardDescription>
               </div>
             </div>
             <Badge variant="outline" className="gap-1">

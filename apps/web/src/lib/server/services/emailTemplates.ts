@@ -112,7 +112,7 @@ export function subscriptionCancelledEmail(businessName: string): { subject: str
         Your subscription has been cancelled. Here's what happens next:
       </p>
       <ul style="color:#64748b;font-size:14px;line-height:1.8;padding-left:20px;">
-        <li>Your account has been downgraded to the <strong>Starter</strong> (free) plan</li>
+        <li>Your account has been downgraded to the <strong>Free</strong> plan</li>
         <li>Existing conversations and data are preserved</li>
         <li>Advanced features (POS integration, custom flows) are paused</li>
         <li>You can resubscribe anytime from the Billing page</li>

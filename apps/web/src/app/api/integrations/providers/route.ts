@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     merchantId: tenant?.posProvider === a.provider ? tenant?.posMerchantId : null,
     locationId: tenant?.posProvider === a.provider ? tenant?.posLocationId : null,
     tokenExpiresAt: tenant?.posProvider === a.provider ? tenant?.posTokenExpiresAt : null,
-    planGated: tenant?.plan === 'STARTER',
+    planGated: tenant?.plan !== 'BUSINESS' && tenant?.plan !== 'SCALE',
   }));
   return apiSuccess(providers);
 }

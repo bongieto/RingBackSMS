@@ -6,10 +6,10 @@ import { logger } from '../utils/logger';
 const prisma = new PrismaClient();
 
 const PLAN_PRICE_IDS: Record<Plan, string | undefined> = {
-  [Plan.STARTER]: process.env.STRIPE_STARTER_PRICE_ID,
-  [Plan.GROWTH]: process.env.STRIPE_GROWTH_PRICE_ID,
+  [Plan.FREE]: process.env.STRIPE_FREE_PRICE_ID,
+  [Plan.PRO]: process.env.STRIPE_PRO_PRICE_ID,
+  [Plan.BUSINESS]: process.env.STRIPE_BUSINESS_PRICE_ID,
   [Plan.SCALE]: process.env.STRIPE_SCALE_PRICE_ID,
-  [Plan.ENTERPRISE]: process.env.STRIPE_ENTERPRISE_PRICE_ID,
 };
 
 let stripeInstance: Stripe | null = null;
@@ -131,7 +131,7 @@ export async function handleSubscriptionUpdated(
     subscription.items.data.some((item) => item.price.id === priceId)
   );
 
-  const plan = planEntry ? (planEntry[0] as Plan) : Plan.STARTER;
+  const plan = planEntry ? (planEntry[0] as Plan) : Plan.FREE;
 
   await prisma.tenant.update({
     where: { id: tenantId },
@@ -154,7 +154,7 @@ export async function handleSubscriptionDeleted(
   await prisma.tenant.update({
     where: { id: tenantId },
     data: {
-      plan: Plan.STARTER,
+      plan: Plan.FREE,
       stripeSubscriptionId: null,
     },
   });
