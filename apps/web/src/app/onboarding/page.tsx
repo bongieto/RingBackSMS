@@ -84,6 +84,15 @@ export default function OnboardingPage() {
     if (bt) setForm((f) => (f.businessType ? f : { ...f, businessType: bt }));
   }, [searchParams]);
 
+  // Clerk's useUser() returns null on first render and hydrates async, so
+  // useState's initializer above runs before user/org are available. Once
+  // they load, populate empty fields the user hasn't typed into yet.
+  const userEmail = user?.emailAddresses[0]?.emailAddress;
+  useEffect(() => {
+    if (!userEmail) return;
+    setForm((f) => (f.ownerEmail ? f : { ...f, ownerEmail: userEmail }));
+  }, [userEmail]);
+
   const createTenantMutation = useMutation({
     mutationFn: () =>
       webApi.post('/tenants', {
@@ -121,7 +130,13 @@ export default function OnboardingPage() {
       toast.success('Account created! Welcome to RingBackSMS 🎉');
       setStep(3);
     },
-    onError: () => toast.error('Setup failed. Please try again.'),
+    onError: (err: unknown) => {
+      const message =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+        (err as { message?: string })?.message ??
+        'Setup failed. Please try again.';
+      toast.error(message);
+    },
   });
 
   const profile = getProfile(form.businessType as BusinessType);

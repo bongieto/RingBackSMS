@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { z } from 'zod';
 import { auth, clerkClient } from '@clerk/nextjs/server';
 import { createTenant, sanitizeTenantResponse } from '@/lib/server/services/tenantService';
 import { CreateTenantRequestSchema } from '@ringback/shared-types';
@@ -198,6 +199,9 @@ export async function POST(request: NextRequest) {
     return apiCreated(sanitizeTenantResponse(tenant));
   } catch (err) {
     if (err instanceof AppError) return apiError(err.message, err.statusCode);
+    if (err instanceof z.ZodError) {
+      return apiError(err.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join('; '), 400);
+    }
     console.error('[POST /api/tenants] failed', err);
     return apiError('Internal server error', 500);
   }
