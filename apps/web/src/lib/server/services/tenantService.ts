@@ -216,7 +216,8 @@ export async function updateTenantConfig(
     passStripeFeesToCustomer: boolean;
   }>
 ) {
-  // Fetch current config to detect what changed (for TTS regeneration)
+  // Fetch current config to detect what changed (for TTS regeneration +
+  // website-context extraction).
   const currentConfig = await prisma.tenantConfig.findUnique({
     where: { tenantId },
     select: {
@@ -225,6 +226,8 @@ export async function updateTenantConfig(
       voiceGreetingAfterHours: true,
       voiceGreetingRapidRedial: true,
       voiceGreetingReturning: true,
+      websiteUrl: true,
+      websiteContext: true,
     },
   });
 
@@ -233,6 +236,32 @@ export async function updateTenantConfig(
     where: { tenantId },
     data: updates as any,
   });
+
+  // Fire-and-forget website-context extraction when the URL is set,
+  // changed, or has never been extracted. The fallback flow's LLM
+  // prompt reads `websiteContext` to ground replies in the tenant's
+  // actual offering, so the sooner this populates the better.
+  if (currentConfig) {
+    const newUrl = updates.websiteUrl ?? currentConfig.websiteUrl;
+    const urlChanged =
+      updates.websiteUrl !== undefined &&
+      updates.websiteUrl !== currentConfig.websiteUrl;
+    const needsExtraction =
+      newUrl && newUrl.trim().length > 0 && (urlChanged || !currentConfig.websiteContext);
+    if (needsExtraction) {
+      import('./websiteContextService')
+        .then(({ extractAndStoreWebsiteContext }) =>
+          extractAndStoreWebsiteContext(tenantId, newUrl as string),
+        )
+        .catch((err) =>
+          logger.warn('Website context extraction failed', {
+            err: (err as Error).message,
+            tenantId,
+            url: newUrl,
+          }),
+        );
+    }
+  }
 
   // Fire-and-forget TTS regeneration when greeting text or voice changes
   if (currentConfig) {
