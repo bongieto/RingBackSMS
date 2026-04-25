@@ -935,6 +935,136 @@ async function processInboundSmsInner(
         result.nextState.flowStep = 'MEETING_DATE_PROMPT';
         result.nextState.meetingDraft = { ...(result.nextState.meetingDraft ?? {}), slots: undefined, pickedSlotStart: undefined };
       }
+    } else if (effect.type === 'FETCH_LOCAL_SLOTS') {
+      try {
+        const { computeAvailableSlots } = await import('@ringback/flow-engine');
+        const { fetchAvailabilityInputs } = await import('./calendarService');
+        const tz = calConfig.timezone ?? 'America/Chicago';
+        const dayStart = new Date(effect.payload.startUtc);
+        const dayEnd = new Date(effect.payload.endUtc);
+        // Re-derive Y/M/D in tenant TZ so the engine can compute open/close
+        // boundaries from the per-day schedule.
+        const fmt = new Intl.DateTimeFormat('en-US', {
+          timeZone: tz,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        });
+        const parts = fmt.formatToParts(new Date(dayStart.getTime() + 12 * 60 * 60_000));
+        const requestedDateLocal = {
+          year: Number(parts.find((p) => p.type === 'year')?.value ?? '0'),
+          month: Number(parts.find((p) => p.type === 'month')?.value ?? '0'),
+          day: Number(parts.find((p) => p.type === 'day')?.value ?? '0'),
+        };
+
+        const duration = calConfig.meetingDurationMinutes ?? 30;
+        const inputs = await fetchAvailabilityInputs(tenantId, dayStart, dayEnd, duration);
+
+        const slots = computeAvailableSlots({
+          requestedDateLocal,
+          timezone: tz,
+          durationMinutes: duration,
+          bufferMinutes: calConfig.meetingBufferMinutes ?? 15,
+          leadTimeMinutes: calConfig.meetingLeadTimeMinutes ?? 60,
+          businessSchedule: (calConfig.businessSchedule ?? null) as Record<string, { open: string; close: string }> | null,
+          businessHoursStart: calConfig.businessHoursStart,
+          businessHoursEnd: calConfig.businessHoursEnd,
+          businessDays: calConfig.businessDays as number[],
+          closedDates: calConfig.closedDates ?? [],
+          existingMeetings: inputs.existingMeetings,
+          blackouts: inputs.blackouts,
+          now: new Date(),
+        });
+
+        if (slots.length === 0) {
+          result.smsReply = `Sorry, no open slots on ${effect.payload.dateLabel}. What other day works?`;
+          result.nextState.flowStep = 'MEETING_DATE_PROMPT';
+        } else {
+          const lines = slots.map((s, i) => {
+            const t = new Intl.DateTimeFormat('en-US', {
+              timeZone: tz,
+              hour: 'numeric',
+              minute: '2-digit',
+              hour12: true,
+            }).format(new Date(s.start));
+            return `${i + 1}. ${t}`;
+          });
+          result.smsReply = `Here are open slots for ${effect.payload.dateLabel}:\n${lines.join('\n')}\n\nReply with the number you want.`;
+          result.nextState.meetingDraft = {
+            ...(result.nextState.meetingDraft ?? {}),
+            slots,
+          };
+        }
+      } catch (err: any) {
+        logger.error('FETCH_LOCAL_SLOTS failed', { tenantId, err: err?.message });
+        result.smsReply = `Sorry, I had trouble checking availability. Please try again in a moment.`;
+      }
+    } else if (effect.type === 'CREATE_LOCAL_BOOKING') {
+      try {
+        const { createLocalBooking, SlotConflictError } = await import('./calendarService');
+        const { sendGuestMeetingConfirmationEmail } = await import('./emailService');
+        const tz = calConfig.timezone ?? 'America/Chicago';
+        const duration = calConfig.meetingDurationMinutes ?? 30;
+        const start = new Date(effect.payload.start);
+
+        try {
+          await createLocalBooking({
+            tenantId,
+            conversationId: existingConversationId ?? '',
+            callerPhone: effect.payload.callerPhone,
+            start,
+            durationMinutes: duration,
+            guestName: effect.payload.name,
+            guestEmail: effect.payload.email,
+          });
+
+          // Guest confirmation email — non-fatal if it fails.
+          sendGuestMeetingConfirmationEmail(tenantId, effect.payload.email, {
+            guestName: effect.payload.name,
+            scheduledAt: effect.payload.start,
+            timezone: tz,
+            durationMinutes: duration,
+          }).catch((err) =>
+            logger.warn('Guest confirmation email failed', { tenantId, err: err?.message }),
+          );
+
+          // Owner notification — fired inline via NOTIFY_OWNER side effect
+          // pattern. Push onto result.sideEffects so processSideEffect picks
+          // it up in the post-handler loop.
+          const friendly = new Intl.DateTimeFormat('en-US', {
+            timeZone: tz,
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+          }).format(start);
+          result.sideEffects.push({
+            type: 'NOTIFY_OWNER',
+            payload: {
+              subject: `New meeting booked: ${effect.payload.name}`,
+              message: `${effect.payload.name} (${effect.payload.callerPhone}) booked a meeting for ${friendly}.\nEmail: ${effect.payload.email}`,
+              channel: 'email',
+            },
+          });
+
+          result.smsReply = `Booked! You're on the calendar for ${friendly}. We've sent a confirmation to ${effect.payload.email}.`;
+          result.nextState.meetingDraft = null;
+        } catch (err: any) {
+          if (err instanceof SlotConflictError) {
+            result.smsReply = `That slot was just taken — reply with another day to try again.`;
+            result.nextState.flowStep = 'MEETING_DATE_PROMPT';
+            result.nextState.meetingDraft = { ...(result.nextState.meetingDraft ?? {}), slots: undefined, pickedSlotStart: undefined };
+          } else {
+            throw err;
+          }
+        }
+      } catch (err: any) {
+        logger.error('CREATE_LOCAL_BOOKING failed', { tenantId, err: err?.message });
+        result.smsReply = `Sorry, I couldn't book that slot. Please try again in a moment.`;
+        result.nextState.flowStep = 'MEETING_DATE_PROMPT';
+      }
     }
   }
 
@@ -954,7 +1084,10 @@ async function processInboundSmsInner(
       businessSchedule: tenant.config.businessSchedule as Record<string, { open: string; close: string }> | null,
       timezone: tenant.config.timezone,
     });
-    const afterHoursNotice = `Thanks for reaching out! We're currently closed. Our hours are ${hoursDisplay}. We'll get back to you when we open. In the meantime, feel free to text us your question!`;
+    const afterHoursNotice =
+      result.flowType === FlowType.MEETING
+        ? `Thanks for reaching out! We're currently closed (our hours are ${hoursDisplay}), but I can help schedule a meeting for when we reopen.`
+        : `Thanks for reaching out! We're currently closed. Our hours are ${hoursDisplay}. We'll get back to you when we open. In the meantime, feel free to text us your question!`;
     result.smsReply = `${afterHoursNotice}\n\n${result.smsReply}`;
   }
 

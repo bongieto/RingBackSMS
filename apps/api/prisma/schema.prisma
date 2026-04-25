@@ -163,6 +163,7 @@ model Tenant {
   devices            Device[]
   devicePairingCodes DevicePairingCode[]
   turns              Turn[]
+  calendarBlackouts  CalendarBlackout[]
 
   @@index([twilioPhoneNumber])
   @@index([clerkOrgId])
@@ -310,6 +311,12 @@ model TenantConfig {
   minutesPerQueuedOrder          Int       @default(4)     // added to ETA for every order currently CONFIRMED or PREPARING
   salesTaxRate                   Decimal?  @db.Decimal(5, 4) // e.g. 0.0825 for 8.25%. Null = no tax applied.
   passStripeFeesToCustomer       Boolean   @default(false) // when true, add 2.9% + $0.30 processing fee as a line item on the checkout
+  // Built-in calendar (used when cal.com isn't configured)
+  meetingEnabled                 Boolean   @default(true) // master on/off for built-in calendar
+  meetingDurationMinutes         Int       @default(30)
+  meetingBufferMinutes           Int       @default(15)
+  meetingLeadTimeMinutes         Int       @default(60)  // earliest a slot can be from now()
+  meetingMaxDaysOut              Int       @default(30)  // furthest day-out a caller can request
   // cal.com integration (OAuth 2.0 authorization code)
   calcomAccessToken              String? // AES-256-GCM encrypted
   calcomRefreshToken             String? // AES-256-GCM encrypted
@@ -623,6 +630,9 @@ model Meeting {
   calcomBookingId  String?
   calcomBookingUid String?
   scheduledAt      DateTime?
+  durationMinutes  Int?          // populated for built-in bookings; null for legacy/cal.com rows
+  guestName        String?
+  guestEmail       String?
   status           MeetingStatus @default(PENDING)
   notes            String?       @db.Text
   createdAt        DateTime      @default(now())
@@ -630,6 +640,22 @@ model Meeting {
 
   @@index([tenantId, status])
   @@index([tenantId, callerPhone])
+  @@index([tenantId, scheduledAt])
+}
+
+/// Manual block-out windows on the built-in calendar (holidays, team
+/// off-sites, owner-only days). Slot generation in localAvailability
+/// rejects any candidate slot that overlaps a blackout.
+model CalendarBlackout {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  startAt   DateTime
+  endAt     DateTime
+  label     String?
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, startAt, endAt])
 }
 
 model MenuItem {

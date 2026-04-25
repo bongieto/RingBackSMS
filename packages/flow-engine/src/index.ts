@@ -3,6 +3,8 @@ export { detectEscalationIntent } from './intentDetector';
 export { runOrderAgent } from './ai/orderAgent';
 export { detectLanguage } from './ai/languageDetect';
 export { pushDecision, timeAsync, timeSync } from './decisions';
+export { computeAvailableSlots, zonedDateToUtc } from './calendar/localAvailability';
+export type { ComputeSlotsParams, AvailableSlot, DaySchedule } from './calendar/localAvailability';
 export type {
   TenantContext,
   FlowInput,

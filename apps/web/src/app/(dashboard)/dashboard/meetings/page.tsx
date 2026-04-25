@@ -36,6 +36,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { meetingApi } from '@/lib/api';
 import { maskPhone, cn } from '@/lib/utils';
+import { CalendarSettingsCard } from '@/components/meetings/CalendarSettingsCard';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -249,6 +250,8 @@ export default function MeetingsPage() {
           </Button>
         }
       />
+
+      <CalendarSettingsCard tenantId={tenantId} />
 
       {/* New Meeting Form */}
       {showNewForm && (

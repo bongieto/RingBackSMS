@@ -9,6 +9,7 @@ import {
   usageLimitWarningEmail,
   weeklyDigestEmail,
   meetingConfirmationEmail,
+  guestMeetingConfirmationEmail,
   meetingRequestEmail,
   dailyTaskDigestEmail,
   agencyApprovedEmail,
@@ -109,6 +110,21 @@ export async function sendMeetingConfirmationEmail(
   if (!email) return;
   const { subject, html } = meetingConfirmationEmail(name, meeting);
   await sendEmail(email, subject, html);
+}
+
+export async function sendGuestMeetingConfirmationEmail(
+  tenantId: string,
+  guestEmail: string,
+  guest: {
+    guestName: string;
+    scheduledAt: string;
+    timezone?: string;
+    durationMinutes?: number;
+  }
+): Promise<boolean> {
+  const { name: businessName } = await getTenantEmail(tenantId);
+  const { subject, html } = guestMeetingConfirmationEmail(businessName, guest);
+  return sendEmail(guestEmail, subject, html);
 }
 
 export async function sendDailyTaskDigestEmail(

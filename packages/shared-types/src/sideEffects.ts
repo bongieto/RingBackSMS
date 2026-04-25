@@ -10,7 +10,9 @@ export type SideEffectType =
   | 'CREATE_POS_ORDER'
   | 'CREATE_PAYMENT_LINK'
   | 'FETCH_CALCOM_SLOTS'
-  | 'CREATE_CALCOM_BOOKING';
+  | 'CREATE_CALCOM_BOOKING'
+  | 'FETCH_LOCAL_SLOTS'
+  | 'CREATE_LOCAL_BOOKING';
 
 export interface SaveOrderSideEffect {
   type: 'SAVE_ORDER';
@@ -104,6 +106,31 @@ export interface CreateCalcomBookingSideEffect {
   };
 }
 
+/** Native (built-in calendar) equivalent of FETCH_CALCOM_SLOTS. The handler
+ *  reads tenant calendar config, existing meetings, and blackouts, then
+ *  calls computeAvailableSlots() and writes the result onto the draft. */
+export interface FetchLocalSlotsSideEffect {
+  type: 'FETCH_LOCAL_SLOTS';
+  payload: {
+    startUtc: string;
+    endUtc: string;
+    dateLabel: string;
+  };
+}
+
+/** Native (built-in calendar) equivalent of CREATE_CALCOM_BOOKING. The
+ *  handler does an atomic conflict check + Meeting insert and fires the
+ *  owner-notification side effect. */
+export interface CreateLocalBookingSideEffect {
+  type: 'CREATE_LOCAL_BOOKING';
+  payload: {
+    start: string;
+    name: string;
+    email: string;
+    callerPhone: string;
+  };
+}
+
 export type SideEffect =
   | SaveOrderSideEffect
   | BookMeetingSideEffect
@@ -112,4 +139,6 @@ export type SideEffect =
   | CreatePosOrderSideEffect
   | CreatePaymentLinkSideEffect
   | FetchCalcomSlotsSideEffect
-  | CreateCalcomBookingSideEffect;
+  | CreateCalcomBookingSideEffect
+  | FetchLocalSlotsSideEffect
+  | CreateLocalBookingSideEffect;

@@ -294,6 +294,68 @@ export function meetingConfirmationEmail(
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// 6b. Guest Meeting Confirmation — sent to the guest after a built-in
+//     calendar booking. Mirrors meetingConfirmationEmail but addressed to
+//     the guest, and includes the business name + a generic CTA.
+// ────────────────────────────────────────────────────────────────────────────
+
+export function guestMeetingConfirmationEmail(
+  businessName: string,
+  meeting: {
+    guestName: string;
+    scheduledAt: string;
+    timezone?: string;
+    durationMinutes?: number;
+  }
+): { subject: string; html: string } {
+  const tz = meeting.timezone ?? 'America/Chicago';
+  const date = new Date(meeting.scheduledAt);
+  const dateStr = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(date);
+  const timeStr = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(date);
+
+  return {
+    subject: `Your meeting with ${businessName} — ${dateStr} at ${timeStr}`,
+    html: layout(`
+      <h2 style="color:#1a1a1a;font-size:22px;margin:0 0 8px;">Meeting Confirmed</h2>
+      <p style="color:#64748b;font-size:15px;line-height:1.6;margin:0 0 24px;">
+        Hi ${meeting.guestName}, your meeting with <strong>${businessName}</strong> is on the books.
+      </p>
+
+      <table style="width:100%;border-collapse:collapse;border:1px solid ${BORDER_COLOR};border-radius:8px;overflow:hidden;">
+        <tr>
+          <td style="padding:12px 16px;color:#64748b;font-size:14px;border-bottom:1px solid ${BORDER_COLOR};width:120px;">Date</td>
+          <td style="padding:12px 16px;color:#1a1a1a;font-size:14px;font-weight:600;border-bottom:1px solid ${BORDER_COLOR};">${dateStr}</td>
+        </tr>
+        <tr>
+          <td style="padding:12px 16px;color:#64748b;font-size:14px;${meeting.durationMinutes ? `border-bottom:1px solid ${BORDER_COLOR};` : ''}">Time</td>
+          <td style="padding:12px 16px;color:#1a1a1a;font-size:14px;font-weight:600;${meeting.durationMinutes ? `border-bottom:1px solid ${BORDER_COLOR};` : ''}">${timeStr}</td>
+        </tr>
+        ${meeting.durationMinutes ? `
+        <tr>
+          <td style="padding:12px 16px;color:#64748b;font-size:14px;">Duration</td>
+          <td style="padding:12px 16px;color:#1a1a1a;font-size:14px;">${meeting.durationMinutes} minutes</td>
+        </tr>` : ''}
+      </table>
+
+      <p style="color:#64748b;font-size:13px;line-height:1.6;margin:24px 0 0;">
+        Need to reschedule? Just reply to the SMS thread and we'll take care of it.
+      </p>
+    `),
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // 7. Meeting Request — sent when a new meeting is created with a scheduled date
 // ────────────────────────────────────────────────────────────────────────────
 

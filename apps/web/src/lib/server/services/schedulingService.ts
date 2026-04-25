@@ -11,6 +11,9 @@ export interface CreateMeetingInput {
   preferredTime?: string | null;
   notes: string | null;
   scheduledAt?: Date | null;
+  durationMinutes?: number | null;
+  guestName?: string | null;
+  guestEmail?: string | null;
   status?: MeetingStatus;
   calcomBookingId?: string | null;
   calcomBookingUid?: string | null;
@@ -40,6 +43,9 @@ export async function createMeeting(input: CreateMeetingInput) {
       callerPhone: input.callerPhone,
       status: input.status ?? MeetingStatus.PENDING,
       scheduledAt: input.scheduledAt ?? null,
+      durationMinutes: input.durationMinutes ?? null,
+      guestName: input.guestName ?? null,
+      guestEmail: input.guestEmail ?? null,
       notes: input.notes ?? input.preferredTime ?? null,
       calcomBookingId: input.calcomBookingId ?? null,
       calcomBookingUid: input.calcomBookingUid ?? null,

@@ -63,6 +63,12 @@ export const UpdateTenantConfigRequestSchema = z.object({
   // Pricing / pass-through
   salesTaxRate: z.number().min(0).max(0.5).nullable().optional(), // 0–50% sanity cap
   passStripeFeesToCustomer: z.boolean().optional(),
+  // Built-in calendar
+  meetingEnabled: z.boolean().optional(),
+  meetingDurationMinutes: z.number().int().min(5).max(480).optional(),
+  meetingBufferMinutes: z.number().int().min(0).max(240).optional(),
+  meetingLeadTimeMinutes: z.number().int().min(0).max(10080).optional(), // up to 1 week
+  meetingMaxDaysOut: z.number().int().min(1).max(365).optional(),
 });
 
 export type UpdateTenantConfigRequest = z.infer<typeof UpdateTenantConfigRequestSchema>;

@@ -136,10 +136,16 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
     calcomApiKey?: string | null;
     calcomEventTypeId?: number | null;
     calcomEventTypeSlug?: string | null;
+    meetingEnabled?: boolean;
     timezone: string;
   };
   const calcomLink = cfg.calcomLink ?? null;
-  const hasFullIntegration = Boolean(cfg.calcomApiKey && cfg.calcomEventTypeId);
+  const isCalcom = Boolean(cfg.calcomApiKey && cfg.calcomEventTypeId);
+  // Built-in calendar is the default. Activates when cal.com isn't
+  // configured AND the operator hasn't explicitly disabled the native flow
+  // (meetingEnabled defaults to true).
+  const hasBuiltIn = !isCalcom && cfg.meetingEnabled !== false;
+  const hasCalendar = isCalcom || hasBuiltIn;
 
   const step = (currentState?.flowStep as FlowStep) ?? 'MEETING_GREETING';
 
@@ -162,8 +168,10 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
     !currentState ||
     currentState.currentFlow !== FlowType.MEETING
   ) {
-    // Tier 1: full integration — kick off conversational booking.
-    if (hasFullIntegration) {
+    // Tier 1: full integration (cal.com OR built-in) — kick off
+    // conversational booking. Both paths share the same date-prompt step;
+    // the side-effect emitted later branches on isCalcom.
+    if (hasCalendar) {
       return {
         nextState: {
           ...baseInitial(),
@@ -193,8 +201,8 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
     };
   }
 
-  // ── MEETING_DATE_PROMPT → ask cal.com for slots ───────────────────────
-  if (step === 'MEETING_DATE_PROMPT' && hasFullIntegration) {
+  // ── MEETING_DATE_PROMPT → ask calendar provider for slots ─────────────
+  if (step === 'MEETING_DATE_PROMPT' && hasCalendar) {
     const parsed = parseDateExpression(
       inboundMessage,
       cfg.timezone ?? 'America/Chicago',
@@ -223,7 +231,7 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
       smsReply: `Checking availability for ${parsed.label}…`,
       sideEffects: [
         {
-          type: 'FETCH_CALCOM_SLOTS',
+          type: isCalcom ? 'FETCH_CALCOM_SLOTS' : 'FETCH_LOCAL_SLOTS',
           payload: {
             startUtc: parsed.startUtc.toISOString(),
             endUtc: parsed.endUtc.toISOString(),
@@ -236,7 +244,7 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
   }
 
   // ── MEETING_SLOT_PICK → customer picks a slot number ──────────────────
-  if (step === 'MEETING_SLOT_PICK' && hasFullIntegration) {
+  if (step === 'MEETING_SLOT_PICK' && hasCalendar) {
     const draft: MeetingDraft = currentState.meetingDraft ?? {};
     const slots = draft.slots ?? [];
     if (slots.length === 0) {
@@ -282,7 +290,7 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
   }
 
   // ── MEETING_COLLECT_NAME → collect name ───────────────────────────────
-  if (step === 'MEETING_COLLECT_NAME' && hasFullIntegration) {
+  if (step === 'MEETING_COLLECT_NAME' && hasCalendar) {
     const name = inboundMessage.trim();
     if (name.length < 2) {
       return {
@@ -302,14 +310,14 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
         },
         lastMessageAt: Date.now(),
       },
-      smsReply: `Thanks ${name}! What's your email address? (cal.com needs it to send the calendar invite)`,
+      smsReply: `Thanks ${name}! What's your email address? We'll send the calendar invite there.`,
       sideEffects: [],
       flowType: FlowType.MEETING,
     };
   }
 
   // ── MEETING_COLLECT_EMAIL → collect email + book ──────────────────────
-  if (step === 'MEETING_COLLECT_EMAIL' && hasFullIntegration) {
+  if (step === 'MEETING_COLLECT_EMAIL' && hasCalendar) {
     const email = inboundMessage.trim();
     if (!isEmail(email)) {
       return {
@@ -335,8 +343,9 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
       };
     }
 
-    // Emit CREATE_CALCOM_BOOKING — flowEngineService makes the API call
-    // and sends the confirmation SMS with the exact scheduled time.
+    // Emit CREATE_CALCOM_BOOKING (cal.com path) or CREATE_LOCAL_BOOKING
+    // (built-in path). flowEngineService makes the API/DB call and sends
+    // the confirmation SMS with the exact scheduled time.
     return {
       nextState: {
         ...currentState,
@@ -347,7 +356,7 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
       smsReply: `Booking your appointment…`,
       sideEffects: [
         {
-          type: 'CREATE_CALCOM_BOOKING',
+          type: isCalcom ? 'CREATE_CALCOM_BOOKING' : 'CREATE_LOCAL_BOOKING',
           payload: {
             start: draft.pickedSlotStart,
             name: draft.name,

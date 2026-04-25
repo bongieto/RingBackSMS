@@ -258,6 +258,23 @@ export const posApi = {
       .then((r) => r.data.data as { locationId: string; name: string; address: string | null }),
 };
 
+export const calendarApi = {
+  listBlackouts: (tenantId: string) =>
+    webApi
+      .get('/calendar/blackouts', { params: { tenantId } })
+      .then((r) => r.data.data as {
+        blackouts: Array<{ id: string; startAt: string; endAt: string; label: string | null }>;
+      }),
+  createBlackout: (tenantId: string, body: { startAt: string; endAt: string; label?: string }) =>
+    webApi
+      .post('/calendar/blackouts', body, { params: { tenantId } })
+      .then((r) => r.data.data as {
+        blackout: { id: string; startAt: string; endAt: string; label: string | null };
+      }),
+  deleteBlackout: (id: string) =>
+    webApi.delete(`/calendar/blackouts/${id}`).then((r) => r.data.data),
+};
+
 export const calcomApi = {
   getStatus: (tenantId: string) =>
     webApi

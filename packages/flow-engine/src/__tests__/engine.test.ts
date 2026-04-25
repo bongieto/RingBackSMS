@@ -333,13 +333,35 @@ describe('Flow Engine', () => {
       expect(result.smsReply).toBeTruthy();
     });
 
-    it('processes scheduling request with side effects', async () => {
+    it('emits FETCH_LOCAL_SLOTS when caller picks a date on the built-in calendar', async () => {
+      // Default config (no cal.com, meetingEnabled defaults to true) →
+      // built-in calendar path. Caller picks a day → flow emits the
+      // FETCH_LOCAL_SLOTS side effect for the host to resolve.
       const greetingResult = await runFlowEngine({
         ...baseInput,
         inboundMessage: 'MEETING',
       });
       const scheduleResult = await runFlowEngine({
         ...baseInput,
+        inboundMessage: 'tomorrow',
+        currentState: greetingResult.nextState,
+      });
+      expect(scheduleResult.sideEffects.some((e) => e.type === 'FETCH_LOCAL_SLOTS')).toBe(true);
+    });
+
+    it('falls back to legacy manual booking when meetingEnabled is false and cal.com is unset', async () => {
+      const tier3Context = {
+        ...mockTenantContext,
+        config: { ...mockTenantContext.config, meetingEnabled: false } as any,
+      };
+      const greetingResult = await runFlowEngine({
+        ...baseInput,
+        tenantContext: tier3Context,
+        inboundMessage: 'MEETING',
+      });
+      const scheduleResult = await runFlowEngine({
+        ...baseInput,
+        tenantContext: tier3Context,
         inboundMessage: 'Tomorrow at 2pm to discuss catering',
         currentState: greetingResult.nextState,
       });
