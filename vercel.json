@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/meeting-confirmations",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/daily-recap",
+      "schedule": "0 * * * *"
     }
   ]
 }

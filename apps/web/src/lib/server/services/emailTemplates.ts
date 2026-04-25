@@ -539,6 +539,94 @@ export function payoutConfirmationEmail(
   };
 }
 
+// ── Daily recap ─────────────────────────────────────────────────────────────
+// Sent every morning to the tenant owner. Quantifies what the bot did
+// yesterday so the operator sees concrete ROI without having to dig
+// through the dashboard.
+
+export interface DailyRecapStats {
+  date: string;                  // "Monday, April 27"
+  missedCalls: number;
+  conversations: number;
+  meetingsBooked: number;
+  meetingsConfirmed: number;
+  ordersCompleted: number;
+  ordersRevenue: number;         // sum of Order.total for COMPLETED yesterday
+  pendingMeetings: Array<{
+    name: string | null;
+    callerPhone: string;
+    scheduledAt: string;         // pre-formatted, e.g. "Mon Apr 28 9:00 AM"
+  }>;
+}
+
+export function dailyRecapEmail(
+  businessName: string,
+  stats: DailyRecapStats,
+): { subject: string; html: string } {
+  const fmtMoney = (n: number) =>
+    n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+
+  const totalActivity =
+    stats.missedCalls +
+    stats.conversations +
+    stats.meetingsBooked +
+    stats.ordersCompleted;
+
+  const statRow = (label: string, value: string | number, sub?: string) => `
+    <tr>
+      <td style="padding:14px 16px;border-bottom:1px solid ${BORDER_COLOR};font-size:14px;color:#64748b;">${label}${sub ? `<div style="font-size:12px;color:#94a3b8;margin-top:2px;">${sub}</div>` : ''}</td>
+      <td style="padding:14px 16px;border-bottom:1px solid ${BORDER_COLOR};font-size:18px;font-weight:600;color:#1a1a1a;text-align:right;">${value}</td>
+    </tr>`;
+
+  const pendingHtml =
+    stats.pendingMeetings.length > 0
+      ? `
+        <h3 style="color:#1a1a1a;font-size:16px;margin:24px 0 8px;">Pending appointments to confirm</h3>
+        <p style="color:#64748b;font-size:13px;margin:0 0 12px;">These customers booked but haven't replied to their day-before confirmation. A quick personal call could save the appointment.</p>
+        <table style="width:100%;border-collapse:collapse;border:1px solid ${BORDER_COLOR};border-radius:8px;overflow:hidden;">
+          ${stats.pendingMeetings
+            .map(
+              (m) => `
+            <tr>
+              <td style="padding:10px 14px;border-bottom:1px solid ${BORDER_COLOR};font-size:13px;color:#1a1a1a;">${escapeHtml(m.name ?? 'Unknown caller')}</td>
+              <td style="padding:10px 14px;border-bottom:1px solid ${BORDER_COLOR};font-size:13px;color:#64748b;">${escapeHtml(m.callerPhone)}</td>
+              <td style="padding:10px 14px;border-bottom:1px solid ${BORDER_COLOR};font-size:13px;color:#64748b;text-align:right;">${escapeHtml(m.scheduledAt)}</td>
+            </tr>`,
+            )
+            .join('')}
+        </table>`
+      : '';
+
+  return {
+    subject: `${businessName} — yesterday's recap`,
+    html: layout(`
+      <h2 style="color:#1a1a1a;font-size:22px;margin:0 0 8px;">Yesterday at ${escapeHtml(businessName)}</h2>
+      <p style="color:#64748b;font-size:14px;margin:0 0 24px;">${escapeHtml(stats.date)}</p>
+
+      ${
+        totalActivity === 0
+          ? '<p style="color:#64748b;font-size:14px;margin:0 0 24px;">Quiet day — no missed calls or conversations to report.</p>'
+          : `
+        <table style="width:100%;border-collapse:collapse;border:1px solid ${BORDER_COLOR};border-radius:8px;overflow:hidden;">
+          ${statRow('Missed calls', stats.missedCalls, 'Calls the bot auto-replied to')}
+          ${statRow('Conversations', stats.conversations, 'New SMS threads started')}
+          ${statRow('Meetings booked', stats.meetingsBooked)}
+          ${statRow('Meetings confirmed', stats.meetingsConfirmed, 'Customers replied "C" to confirm')}
+          ${stats.ordersCompleted > 0 ? statRow('Orders completed', stats.ordersCompleted) : ''}
+          ${stats.ordersRevenue > 0 ? statRow('Revenue (orders)', fmtMoney(stats.ordersRevenue), 'Captured by the bot via SMS') : ''}
+        </table>
+      `
+      }
+
+      ${pendingHtml}
+
+      <div style="text-align:center;margin-top:28px;">
+        ${button('Open Dashboard', `${DASHBOARD_URL}/dashboard`)}
+      </div>
+    `),
+  };
+}
+
 // ── Tenant owner invite ─────────────────────────────────────────────────────
 
 export function tenantOwnerInviteEmail(

@@ -12,10 +12,12 @@ import {
   guestMeetingConfirmationEmail,
   meetingRequestEmail,
   dailyTaskDigestEmail,
+  dailyRecapEmail,
   agencyApprovedEmail,
   agencyRejectedEmail,
   payoutConfirmationEmail,
   tenantOwnerInviteEmail,
+  type DailyRecapStats,
 } from './emailTemplates';
 
 let resendClient: Resend | null = null;
@@ -141,6 +143,16 @@ export async function sendDailyTaskDigestEmail(
   const { email, name } = await getTenantEmail(tenantId);
   if (!email) return false;
   const { subject, html } = dailyTaskDigestEmail(name, tasks);
+  return sendEmail(email, subject, html);
+}
+
+export async function sendDailyRecapEmail(
+  tenantId: string,
+  stats: DailyRecapStats,
+): Promise<boolean> {
+  const { email, name } = await getTenantEmail(tenantId);
+  if (!email) return false;
+  const { subject, html } = dailyRecapEmail(name, stats);
   return sendEmail(email, subject, html);
 }
 
