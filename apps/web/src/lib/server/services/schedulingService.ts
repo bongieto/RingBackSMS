@@ -135,6 +135,91 @@ export async function updateMeetingWithBooking(
   return updated;
 }
 
+/**
+ * Match a customer SMS like "C" / "yes" / "confirmed" against a recent
+ * meeting where we sent a confirmation prompt and they haven't replied
+ * yet. Stamps confirmedAt and sends a thank-you SMS. Returns true when
+ * the message was consumed (caller-SMS handler skips the AI flow).
+ *
+ * "R" / "reschedule" goes through a sister handler that sends the
+ * reschedule ack and clears CallerState so the next message restarts
+ * the booking flow.
+ */
+const CONFIRM_RE = /^\s*(c|y|yes|yeah|yep|ok|okay|confirm(?:ed|ing)?|sure)[\s!.,]*$/i;
+const RESCHEDULE_RE = /^\s*(r|reschedule|change|move|different\s+(?:day|time))[\s!.,]*$/i;
+
+export async function tryConsumeMeetingConfirmReply(
+  tenantId: string,
+  callerPhone: string,
+  body: string,
+): Promise<{ consumed: boolean; rescheduled?: boolean }> {
+  const isConfirm = CONFIRM_RE.test(body);
+  const isReschedule = RESCHEDULE_RE.test(body);
+  if (!isConfirm && !isReschedule) return { consumed: false };
+
+  // Match a meeting where:
+  //   - the confirmation prompt was sent (confirmationSentAt non-null),
+  //   - it's still upcoming (scheduledAt > now - 1hr buffer),
+  //   - the caller hasn't replied yet (confirmedAt is null),
+  //   - status is CONFIRMED (not already CANCELLED).
+  // The 1hr buffer past scheduledAt lets a "thanks see you in a bit"
+  // reply still register as a confirmation just before the appointment.
+  const now = new Date();
+  const since = new Date(now.getTime() - 60 * 60_000);
+  const meeting = await prisma.meeting.findFirst({
+    where: {
+      tenantId,
+      callerPhone,
+      status: MeetingStatus.CONFIRMED,
+      confirmationSentAt: { not: null },
+      confirmedAt: null,
+      scheduledAt: { gte: since },
+    },
+    orderBy: { scheduledAt: 'asc' },
+    select: { id: true, scheduledAt: true, tenant: { select: { name: true, config: { select: { timezone: true } } } } },
+  });
+  if (!meeting) return { consumed: false };
+
+  if (isReschedule) {
+    // Don't change status; clearing CallerState (handled by caller) lets
+    // the next inbound message restart the MEETING flow naturally.
+    const { sms: i18nSms } = await import('../i18n');
+    const { sendSms } = await import('./twilioService');
+    await sendSms(tenantId, callerPhone, i18nSms('meetingRescheduleAck', null, {})).catch(() => {});
+    logger.info('Meeting reschedule requested via SMS', { meetingId: meeting.id });
+    return { consumed: true, rescheduled: true };
+  }
+
+  // Confirm path
+  await prisma.meeting.update({
+    where: { id: meeting.id },
+    data: { confirmedAt: new Date() },
+  });
+  const tz = meeting.tenant.config?.timezone ?? 'America/Chicago';
+  const timeLabel = meeting.scheduledAt
+    ? new Intl.DateTimeFormat('en-US', {
+        timeZone: tz,
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      })
+        .format(meeting.scheduledAt)
+        .replace(/,/g, '')
+    : 'soon';
+  const { sms: i18nSms } = await import('../i18n');
+  const { sendSms } = await import('./twilioService');
+  await sendSms(
+    tenantId,
+    callerPhone,
+    i18nSms('meetingConfirmThanks', null, { timeLabel }),
+  ).catch(() => {});
+  logger.info('Meeting confirmed via SMS', { meetingId: meeting.id });
+  return { consumed: true };
+}
+
 export async function getTenantMeetings(
   tenantId: string,
   status?: MeetingStatus,

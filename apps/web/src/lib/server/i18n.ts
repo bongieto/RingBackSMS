@@ -27,7 +27,10 @@ type CopyKey =
   | 'reviewThanksHigh'
   | 'reviewThanksLow'
   | 'paymentExpired'
-  | 'orderProcessingFailed';
+  | 'orderProcessingFailed'
+  | 'meetingConfirmPrompt'
+  | 'meetingConfirmThanks'
+  | 'meetingRescheduleAck';
 
 // Small helper: format "Hi {name}! " prefix if name is known and safe.
 function greet(v: Vars): string {
@@ -64,6 +67,12 @@ const COPY: Record<CopyKey, (v: Vars) => string> = {
     `Your payment link has expired. Text us to start a new order.`,
   orderProcessingFailed: () =>
     `Sorry — something went wrong processing your order. Please text us again to retry.`,
+  meetingConfirmPrompt: (v) =>
+    `Reminder: your appointment with ${v.businessName} is ${v.timeLabel}. Reply C to confirm or R to reschedule.`,
+  meetingConfirmThanks: (v) =>
+    `Got it — see you ${v.timeLabel}!`,
+  meetingRescheduleAck: () =>
+    `No problem — what day works better for you?`,
 };
 
 export function pickLanguage(_lang: string | null | undefined): 'en' {

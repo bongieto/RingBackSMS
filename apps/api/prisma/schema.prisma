@@ -640,6 +640,14 @@ model Meeting {
   guestEmail       String?
   status           MeetingStatus @default(PENDING)
   notes            String?       @db.Text
+  /// Timestamp when the day-before confirmation SMS was sent. NULL until
+  /// the cron picks the meeting up. Once set, the cron skips it on
+  /// future ticks so we never double-send a confirmation.
+  confirmationSentAt DateTime?
+  /// Set when the caller replies "C" / "yes" / etc. to the confirmation
+  /// SMS. Operators see "confirmed" status in the dashboard so they
+  /// know which appointments are truly locked in.
+  confirmedAt        DateTime?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 

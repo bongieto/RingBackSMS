@@ -190,6 +190,28 @@ export async function POST(request: NextRequest) {
         const consumed = await tryConsumeReviewReply(tenant.id, From, Body);
         if (consumed) return;
 
+        // Day-before meeting confirmations. A bare "C" / "yes" reply
+        // when the caller has a pending confirmation prompt becomes a
+        // confirmation; "R" / "reschedule" sends a friendly ack and
+        // clears the booking state so the next message starts fresh.
+        const { tryConsumeMeetingConfirmReply } = await import(
+          '@/lib/server/services/schedulingService'
+        );
+        const meetingConfirm = await tryConsumeMeetingConfirmReply(
+          tenant.id,
+          From,
+          Body,
+        );
+        if (meetingConfirm.consumed) {
+          if (meetingConfirm.rescheduled) {
+            const { deleteCallerState } = await import(
+              '@/lib/server/services/stateService'
+            );
+            await deleteCallerState(tenant.id, From).catch(() => {});
+          }
+          return;
+        }
+
         // Check escalation keywords before AI processes the message.
         // If triggered, the escalation service sends a holding message
         // and notifies the tenant — we skip the AI flow entirely.
