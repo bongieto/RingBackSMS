@@ -56,17 +56,42 @@ export function parseDateExpression(
       if (match[1] && delta < 7) delta += 7;
       target = addDays(today, delta);
     } else {
+      // Worded month + day: "May 1", "May 1st", "January 15", "next Jan 15".
+      // Try this BEFORE numeric MM/DD because callers say "May 1" much more
+      // naturally than "5/1" — and a bare "1" wouldn't match the numeric
+      // regex anyway (requires a separator).
+      const monthWordMatch = t.match(
+        /\b(?:next\s+)?(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?\b/,
+      );
+      if (monthWordMatch) {
+        const monthIdx: Record<string, number> = {
+          jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+          jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+        };
+        const mm = monthIdx[monthWordMatch[1].slice(0, 3)];
+        const dd = Number(monthWordMatch[2]);
+        if (mm && dd >= 1 && dd <= 31) {
+          // If the resolved date has already passed this year, assume the
+          // caller means next year. ("May 1" said in June → next May.)
+          let yyyy = today.year;
+          const currentMmDd = today.month * 100 + today.day;
+          if (mm * 100 + dd < currentMmDd) yyyy += 1;
+          target = { year: yyyy, month: mm, day: dd };
+        }
+      }
       // MM/DD or MM/DD/YYYY (or with dashes). US-format only.
-      const numMatch = t.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
-      if (numMatch) {
-        const yyyy = numMatch[3]
-          ? numMatch[3].length === 2
-            ? 2000 + Number(numMatch[3])
-            : Number(numMatch[3])
-          : today.year;
-        const mm = Number(numMatch[1]);
-        const dd = Number(numMatch[2]);
-        target = { year: yyyy, month: mm, day: dd };
+      if (!target) {
+        const numMatch = t.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
+        if (numMatch) {
+          const yyyy = numMatch[3]
+            ? numMatch[3].length === 2
+              ? 2000 + Number(numMatch[3])
+              : Number(numMatch[3])
+            : today.year;
+          const mm = Number(numMatch[1]);
+          const dd = Number(numMatch[2]);
+          target = { year: yyyy, month: mm, day: dd };
+        }
       }
     }
   }

@@ -64,6 +64,26 @@ describe('parseDateExpression', () => {
   });
 
   it.each([
+    ['May 1', { year: 2026, month: 5, day: 1 }],
+    ['May 1st', { year: 2026, month: 5, day: 1 }],
+    ['May the 5th', { year: 2026, month: 5, day: 5 }],
+    ['January 15', { year: 2026, month: 1, day: 15 }], // Jan 15 has passed → next year
+    ['Jan 15', { year: 2026, month: 1, day: 15 }],
+    ['next May 3', { year: 2026, month: 5, day: 3 }],
+    ['Sept 22', { year: 2026, month: 9, day: 22 }],
+    ['december 31st', { year: 2026, month: 12, day: 31 }],
+  ])('parses worded month "%s" → %j', (input, expected) => {
+    const r = parseDateExpression(input, TZ, FRI_APR_24_8PM_CHICAGO_AS_UTC);
+    expect(r).not.toBeNull();
+    // January passed (today is April 24), so next year:
+    if (input.toLowerCase().includes('jan')) {
+      expect(r!.requestedDateLocal).toEqual({ ...expected, year: 2027 });
+    } else {
+      expect(r!.requestedDateLocal).toEqual(expected);
+    }
+  });
+
+  it.each([
     'When is the earliest available',
     'earliest',
     'soonest',
