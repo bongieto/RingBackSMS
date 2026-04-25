@@ -177,9 +177,27 @@ export async function detectIntent(
       /\b(my\s+(mom|mother|dad|father|parent|parents|grandma|grandmother|grandpa|grandfather|husband|wife|spouse|partner|son|daughter|brother|sister))\b/;
     const serviceVerbs =
       /\b(hire|need|looking\s+for|interested\s+in|want\s+(?:to\s+(?:hire|get|find)|help|info))\b/;
-    const serviceNouns =
+    // Caregiver / consulting nouns
+    const careNouns =
       /\b(caregiver|caretaker|nurse|aide|companion|in-home|in\s+home|home\s+care|home\s+health|hospice|consultation|consult|services?|estimate|quote)\b/;
-    if (familyTerms.test(lower) || serviceVerbs.test(lower) || serviceNouns.test(lower)) {
+    // Trade vocabulary — covers HVAC, plumbing, electrical, locksmith,
+    // landscaping, roofing, pest control, cleaning, handyman. Caller
+    // mentioning any of these is functionally a service request, so
+    // route to MEETING and let the booking flow take over. Anchored on
+    // word boundaries to avoid false positives ("electricity bill" etc.
+    // are filtered by the prefix forms).
+    const tradeNouns =
+      /\b(hvac|a\.?c\.?|air\s*conditioner|air\s*conditioning|furnace|thermostat|duct(?:work)?|boiler|heat\s*pump|heater|condenser|plumb(?:er|ing)?|drain|faucet|pipe|leak(?:ing|y)?|clog(?:ged)?|water\s*heater|sewer|sump\s*pump|garbage\s*disposal|toilet|sink|shower|electric(?:al|ian)?|outlet|breaker|circuit|wiring|fuse|panel|generator|locksmith|deadbolt|rekey|lawn|landscap(?:e|ing|er)|mow(?:er|ing)?|sprinkler|irrigation|roof(?:er|ing)?|shingle|gutter|pest|exterminator|termite|roach|bedbug|handyman|contractor)\b/;
+    // Damage/state vocabulary — caller describing a broken thing.
+    const tradeStates =
+      /\b(broken|busted|not\s*working|won'?t\s*(?:turn|work|start)|malfunction(?:ing)?|won'?t\s+(?:heat|cool)|no\s*(?:heat|hot\s*water|cold\s*water|power)|flood(?:ed|ing)?|burst)\b/;
+    if (
+      familyTerms.test(lower) ||
+      serviceVerbs.test(lower) ||
+      careNouns.test(lower) ||
+      tradeNouns.test(lower) ||
+      tradeStates.test(lower)
+    ) {
       return { intent: FlowType.MEETING, confidence: 0.9 };
     }
   }
