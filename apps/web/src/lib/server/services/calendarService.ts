@@ -10,7 +10,6 @@
 import { Prisma, MeetingStatus } from '@prisma/client';
 import { prisma } from '../db';
 import { logger } from '../logger';
-import { createMeeting } from './schedulingService';
 
 interface AvailabilityInputs {
   existingMeetings: Array<{ scheduledAt: Date; durationMinutes: number | null }>;
@@ -87,6 +86,28 @@ export async function createLocalBooking(input: {
   const start = input.start;
   const end = new Date(start.getTime() + input.durationMinutes * 60_000);
 
+  // The meeting flow always runs at least 5 turns before booking (greeting
+  // → date → slot pick → name → email), so by the time we get here the
+  // caller already has a Conversation row. If conversationId is missing
+  // we create a placeholder so the FK is satisfied — same shape as the
+  // cal.com path's createMeeting.
+  let conversationId = input.conversationId;
+  if (!conversationId) {
+    const placeholder = await prisma.conversation.create({
+      data: {
+        tenantId: input.tenantId,
+        callerPhone: input.callerPhone,
+        flowType: 'MEETING',
+        isActive: true,
+      },
+    });
+    conversationId = placeholder.id;
+  }
+
+  // Single SERIALIZABLE transaction for the conflict check + insert. All
+  // queries use `tx` so we don't deadlock on connection-pool exhaustion
+  // (the earlier version mixed `tx` reads with global-`prisma` writes,
+  // which timed out the interactive transaction at 5s).
   return prisma.$transaction(
     async (tx) => {
       // Conflict check: any active meeting whose [scheduledAt, scheduledAt
@@ -113,7 +134,6 @@ export async function createLocalBooking(input: {
       });
       if (overlap) throw new SlotConflictError();
 
-      // Blackout check
       const blackoutHit = await tx.calendarBlackout.findFirst({
         where: {
           tenantId: input.tenantId,
@@ -124,16 +144,19 @@ export async function createLocalBooking(input: {
       });
       if (blackoutHit) throw new SlotConflictError('Slot is in a blackout window');
 
-      const meeting = await createMeeting({
-        tenantId: input.tenantId,
-        conversationId: input.conversationId,
-        callerPhone: input.callerPhone,
-        scheduledAt: start,
-        durationMinutes: input.durationMinutes,
-        guestName: input.guestName,
-        guestEmail: input.guestEmail,
-        notes: `Booked via SMS: ${input.guestName} <${input.guestEmail}>`,
-        status: MeetingStatus.CONFIRMED,
+      const meeting = await tx.meeting.create({
+        data: {
+          tenantId: input.tenantId,
+          conversationId,
+          callerPhone: input.callerPhone,
+          scheduledAt: start,
+          durationMinutes: input.durationMinutes,
+          guestName: input.guestName,
+          guestEmail: input.guestEmail,
+          notes: `Booked via SMS: ${input.guestName} <${input.guestEmail}>`,
+          status: MeetingStatus.CONFIRMED,
+        },
+        select: { id: true },
       });
 
       return { id: meeting.id };
@@ -141,7 +164,13 @@ export async function createLocalBooking(input: {
     { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
   ).catch((err) => {
     if (err instanceof SlotConflictError) throw err;
-    logger.error('createLocalBooking failed', { tenantId: input.tenantId, err: err?.message });
+    logger.error('createLocalBooking failed', {
+      tenantId: input.tenantId,
+      errMessage: err?.message,
+      errName: err?.name,
+      errCode: err?.code,
+      errStack: err?.stack?.slice(0, 1500),
+    });
     throw err;
   });
 }

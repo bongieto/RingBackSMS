@@ -1100,7 +1100,18 @@ async function processInboundSmsInner(
           }
         }
       } catch (err: any) {
-        logger.error('CREATE_LOCAL_BOOKING failed', { tenantId, err: err?.message });
+        // Surface the full error so we can debug — message alone gets
+        // truncated in Vercel's summary view.
+        logger.error('CREATE_LOCAL_BOOKING failed', {
+          tenantId,
+          errMessage: err?.message,
+          errName: err?.name,
+          errCode: err?.code,
+          errStack: err?.stack?.slice(0, 1500),
+          payloadStart: effect.payload.start,
+          payloadName: effect.payload.name,
+          payloadEmail: effect.payload.email,
+        });
         result.smsReply = `Sorry, I couldn't book that slot. Please try again in a moment.`;
         result.nextState.flowStep = 'MEETING_DATE_PROMPT';
       }
