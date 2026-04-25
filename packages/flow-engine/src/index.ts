@@ -4,6 +4,15 @@ export { runOrderAgent } from './ai/orderAgent';
 export { detectLanguage } from './ai/languageDetect';
 export { detectCallbackIntent, parseCallbackTime } from './callbackIntent';
 export type { CallbackParse } from './callbackIntent';
+export {
+  ymdInTz,
+  addDaysYmd,
+  dayOfWeekYmd,
+  formatPrettyDate,
+  parseDateOnly,
+  ymdToIso,
+} from './dateParse';
+export type { Ymd, ParsedDate } from './dateParse';
 export { pushDecision, timeAsync, timeSync } from './decisions';
 export { computeAvailableSlots, zonedDateToUtc } from './calendar/localAvailability';
 export type { ComputeSlotsParams, AvailableSlot, DaySchedule } from './calendar/localAvailability';

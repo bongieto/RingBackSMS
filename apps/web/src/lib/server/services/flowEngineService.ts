@@ -486,6 +486,7 @@ async function processInboundSmsInner(
     if (ftTenant?.businessType === 'FOOD_TRUCK') {
       const reply = await buildLocationReply(
         tenantId,
+        inboundMessage,
         new Date(),
         ftTenant.config?.timezone ?? 'America/Chicago'
       ).catch((err) => {

@@ -9,6 +9,7 @@
 // an appointment, they asked for a phone call).
 
 import { zonedDateToUtc } from './calendar/localAvailability';
+import { ymdInTz, addDaysYmd } from './dateParse';
 
 export interface CallbackParse {
   /** When the caller wants to be rung back, in UTC. */
@@ -37,18 +38,6 @@ export function detectCallbackIntent(text: string): boolean {
   return CALLBACK_TRIGGERS.some((re) => re.test(t));
 }
 
-/** Returns the current Y/M/D in `timezone`. */
-function ymdInTz(now: Date, timezone: string): { year: number; month: number; day: number } {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(now);
-  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? '0');
-  return { year: get('year'), month: get('month'), day: get('day') };
-}
-
 /** Hour (0–23) right now in tenant TZ. */
 function hourInTz(now: Date, timezone: string): number {
   try {
@@ -61,14 +50,6 @@ function hourInTz(now: Date, timezone: string): number {
   } catch {
     return now.getUTCHours();
   }
-}
-
-function addDaysYmd(
-  ymd: { year: number; month: number; day: number },
-  delta: number,
-): { year: number; month: number; day: number } {
-  const d = new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day + delta));
-  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
 }
 
 function formatLabel(when: Date, timezone: string): string {

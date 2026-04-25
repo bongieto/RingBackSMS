@@ -1,13 +1,23 @@
 import { prisma } from '../db';
+import {
+  parseDateOnly,
+  ymdInTz,
+  formatPrettyDate,
+  ymdToIso,
+  type Ymd,
+} from '@ringback/flow-engine';
 
 /**
- * Match SMS bodies asking "where are you?" — anchored so it doesn't fire on
- * phrases like "where's my order". Trailing qualifiers (today, right now,
- * located, parked, etc.) are allowed but only from a known whitelist, which
- * keeps unrelated phrasings like "where are you sourcing your meat" from
- * misrouting here.
+ * Match SMS bodies asking "where are you?" / "where will you be tomorrow?".
+ * Anchored so it doesn't fire on phrases like "where's my order".
+ *
+ * Two layers of acceptance:
+ *  1. Bare keyword forms (where / location / address / find you).
+ *  2. "where (is the truck|are you|s the truck|you)" + optional trailing
+ *     date phrase (today, tomorrow, this Friday, april 30, the 3rd).
  */
 const TRAILING_QUALIFIERS = /(\s+(today|tonight|right\s+now|now|located|parked|currently|set\s*up|at))*/.source;
+const DATE_PHRASE = String.raw`(today|tonight|tomorrow|tmrw|(this|next)\s+(sun|sunday|mon|monday|tue|tues|tuesday|wed|weds|wednesday|thu|thur|thurs|thursday|fri|friday|sat|saturday)|(sun|sunday|mon|monday|tue|tues|tuesday|wed|weds|wednesday|thu|thur|thurs|thursday|fri|friday|sat|saturday)|(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\s+\d{1,2}(st|nd|rd|th)?|\d{1,2}\s*[\/-]\s*\d{1,2}|the\s+\d{1,2}(st|nd|rd|th)?)`;
 
 export function matchesLocationKeyword(msg: string): boolean {
   const lower = msg.toLowerCase().trim().replace(/[!.]+$/, '');
@@ -16,30 +26,62 @@ export function matchesLocationKeyword(msg: string): boolean {
   if (new RegExp(`^where\\s*('?s|s)?\\s+(the\\s+truck|y'?all|you)${TRAILING_QUALIFIERS}\\??$`).test(lower)) return true;
   if (/^(find|locate)\s+you\??$/.test(lower)) return true;
   if (new RegExp(`^where\\s+is\\s+the\\s+truck${TRAILING_QUALIFIERS}\\??$`).test(lower)) return true;
+  // Trailing date phrase: "where will you be tomorrow", "where are you on april 30", etc.
+  if (new RegExp(`^(where|when|will\\s+you\\s+be)\\b.*\\b(on\\s+)?${DATE_PHRASE}\\??$`).test(lower)) return true;
   return false;
 }
 
-/** Return 0..6 day-of-week in the tenant's timezone (0 = Sunday). */
-function dayOfWeekInTz(now: Date, timezone: string): number {
-  const formatter = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: timezone });
-  const short = formatter.format(now);
-  const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-  return map[short] ?? now.getDay();
-}
-
+/**
+ * Return one or more stops for the parsed (or default-today) target date.
+ *
+ * Returns null in two cases that the caller should treat as fall-through:
+ *  - target is today AND no stops are scheduled (let FALLBACK use the
+ *    tenant's businessAddress instead).
+ *  - we couldn't connect to the database (don't block the flow engine).
+ *
+ * Returns a non-null reply for non-today queries with no stops, since
+ * the customer asked specifically about a different day and needs a
+ * concrete answer ("we don't have a stop scheduled for ...").
+ */
 export async function buildLocationReply(
   tenantId: string,
+  inboundMessage: string,
   now: Date,
-  timezone: string
+  timezone: string,
 ): Promise<string | null> {
-  const dow = dayOfWeekInTz(now, timezone);
-  const row = await prisma.foodTruckSchedule.findUnique({
-    where: { tenantId_dayOfWeek: { tenantId, dayOfWeek: dow } },
-  });
-  if (!row || !row.isActive) return null;
+  const today = ymdInTz(now, timezone);
+  const parsed = parseDateOnly(inboundMessage, timezone, now);
+  const target: Ymd = parsed?.ymd ?? today;
+  const isToday = target.year === today.year && target.month === today.month && target.day === today.day;
 
-  const header = row.locationName ? `📍 ${row.locationName}` : '📍 Today';
-  const lines = [header, row.address, `Open until ${row.closeTime}`];
-  if (row.note?.trim()) lines.push(row.note.trim());
+  const stops = await prisma.foodTruckStop.findMany({
+    where: {
+      tenantId,
+      isActive: true,
+      stopDate: new Date(ymdToIso(target) + 'T00:00:00Z'),
+    },
+    orderBy: { openTime: 'asc' },
+  });
+
+  if (stops.length === 0) {
+    if (isToday) return null; // let the FALLBACK / businessAddress path handle it
+    const label = parsed?.label ?? formatPrettyDate(target, timezone);
+    return `We don't have a stop scheduled for ${label}. Reply WHERE for today's spot.`;
+  }
+
+  const dateLabel = isToday ? 'today' : (parsed?.label ?? formatPrettyDate(target, timezone));
+  const lines: string[] = [];
+  for (const stop of stops) {
+    const header = stop.locationName
+      ? `📍 ${stop.locationName}`
+      : `📍 ${dateLabel}`;
+    lines.push(header);
+    lines.push(stop.address);
+    lines.push(`Open ${stop.openTime}–${stop.closeTime}`);
+    if (stop.note?.trim()) lines.push(stop.note.trim());
+    lines.push(''); // blank separator between multiple stops
+  }
+  // Drop the trailing blank.
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
   return lines.join('\n');
 }

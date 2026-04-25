@@ -152,7 +152,7 @@ model Tenant {
   syncLogs           PosSyncLog[]
   replyTemplates     ReplyTemplate[]
   tasks              Task[]
-  foodTruckSchedule  FoodTruckSchedule[]
+  foodTruckStops     FoodTruckStop[]
   smsConsentRequests SmsConsentRequest[]
   smsSuppressions    SmsSuppression[]
   escalationEvents   EscalationEvent[]
@@ -243,22 +243,22 @@ model AgencyApplication {
   @@index([status])
 }
 
-model FoodTruckSchedule {
+model FoodTruckStop {
   id           String   @id @default(uuid())
   tenantId     String
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  dayOfWeek    Int // 0=Sun..6=Sat
+  stopDate     DateTime @db.Date
   locationName String?
   address      String
-  openTime     String // "HH:mm"
-  closeTime    String // "HH:mm"
+  openTime     String // "HH:mm" 24h, tenant-local
+  closeTime    String // "HH:mm" 24h, tenant-local
   note         String?
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  @@unique([tenantId, dayOfWeek])
-  @@index([tenantId])
+  @@index([tenantId, stopDate])
+  @@index([tenantId, isActive, stopDate])
 }
 
 model TenantConfig {
