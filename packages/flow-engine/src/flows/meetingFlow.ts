@@ -242,9 +242,24 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
       cfg.timezone ?? 'America/Chicago',
     );
     if (!parsed) {
+      // Off-flow question detector. Many callers, after we ask "what day
+      // works?", reply with a question instead ("how much do you charge?",
+      // "what services do you offer?"). Re-prompting "I didn't catch that"
+      // feels robotic and dead-ends the conversation. Acknowledge that we
+      // heard a question and steer back to the booking — the answer will
+      // happen on the call. Heuristic is conservative: trailing "?" or
+      // common interrogative openers.
+      const looksLikeQuestion =
+        /\?$/.test(inboundMessage.trim()) ||
+        /^\s*(how|what|when|where|why|who|do you|does it|is it|are you|can you|can i|could you|would you|will you)\b/i.test(
+          inboundMessage,
+        );
+      const reply = looksLikeQuestion
+        ? `Good question — let's get a time on the books first and we'll cover the details on the call. What day works for you? You can say "tomorrow", a weekday like "Monday", a date like "5/15", or "asap".`
+        : `Sorry, I didn't catch that. What day works for you? e.g. "tomorrow", "Friday", or "4/15".`;
       return {
         nextState: { ...currentState, lastMessageAt: Date.now() },
-        smsReply: `Sorry, I didn't catch that. What day works for you? e.g. "tomorrow", "Friday", or "4/15".`,
+        smsReply: reply,
         sideEffects: [],
         flowType: FlowType.MEETING,
       };
