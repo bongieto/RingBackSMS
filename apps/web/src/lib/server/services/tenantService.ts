@@ -1,6 +1,7 @@
 import { BusinessType, Plan } from '@prisma/client';
 import { FlowType } from '@ringback/shared-types';
 import { clerkClient } from '@clerk/nextjs/server';
+import { waitUntil } from '@vercel/functions';
 import { logger } from '../logger';
 import { NotFoundError } from '../errors';
 import { prisma } from '../db';
@@ -249,17 +250,23 @@ export async function updateTenantConfig(
     const needsExtraction =
       newUrl && newUrl.trim().length > 0 && (urlChanged || !currentConfig.websiteContext);
     if (needsExtraction) {
-      import('./websiteContextService')
-        .then(({ extractAndStoreWebsiteContext }) =>
-          extractAndStoreWebsiteContext(tenantId, newUrl as string),
-        )
-        .catch((err) =>
-          logger.warn('Website context extraction failed', {
-            err: (err as Error).message,
-            tenantId,
-            url: newUrl,
-          }),
-        );
+      // Vercel kills the serverless function the moment the response is
+      // sent, so a bare fire-and-forget Promise gets terminated mid-fetch.
+      // waitUntil keeps the function alive until the extraction completes
+      // (up to ~30s), without blocking the PATCH response itself.
+      waitUntil(
+        import('./websiteContextService')
+          .then(({ extractAndStoreWebsiteContext }) =>
+            extractAndStoreWebsiteContext(tenantId, newUrl as string),
+          )
+          .catch((err) =>
+            logger.warn('Website context extraction failed', {
+              err: (err as Error).message,
+              tenantId,
+              url: newUrl,
+            }),
+          ),
+      );
     }
   }
 
