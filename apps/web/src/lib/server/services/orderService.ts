@@ -281,13 +281,19 @@ export async function createOrder(input: CreateOrderInput) {
   // Stripe webhook calls pushOrderToPos after payment confirms.
   if (input.paymentStatus !== 'PENDING') {
     const totalCents = Math.round(Number(input.total) * 100);
+    const taxCents = Math.round(Number(input.taxAmount ?? 0) * 100);
+    const feeCents = Math.round(Number(input.feeAmount ?? 0) * 100);
     const paidViaStripe = input.paymentStatus === 'PAID' && !!input.stripePaymentId;
     waitUntil(
       pushOrderToPos(order.id, input.tenantId, input.conversationId, input.items, {
         totalCents: paidViaStripe ? totalCents : undefined,
+        taxCents: paidViaStripe && taxCents > 0 ? taxCents : undefined,
+        feeCents: paidViaStripe && feeCents > 0 ? feeCents : undefined,
         externalSource: paidViaStripe ? 'Stripe' : undefined,
         externalSourceId: paidViaStripe ? input.stripePaymentId : undefined,
         customerName: input.customerName ?? null,
+        pickupTime: input.pickupTime ?? null,
+        tenantTimezone: cfg?.timezone ?? null,
       }).catch((err) =>
         logger.error('POS push failed (non-fatal)', { err, orderId: order.id }),
       ),
@@ -310,10 +316,14 @@ export async function pushOrderToPos(
   items: CreateOrderInput['items'],
   payment?: {
     totalCents?: number;
+    taxCents?: number;
+    feeCents?: number;
+    tipCents?: number;
     externalSource?: string;
     externalSourceId?: string;
     customerName?: string | null;
     pickupTime?: string | null;
+    tenantTimezone?: string | null;
   },
 ): Promise<void> {
   const tenant = await prisma.tenant.findUnique({
@@ -401,10 +411,14 @@ export async function pushOrderToPos(
     locationId: tenant.posLocationId,
     idempotencyKey: `ringback-${conversationId}-${orderId}`,
     totalCents: payment?.totalCents,
+    taxCents: payment?.taxCents,
+    feeCents: payment?.feeCents,
+    tipCents: payment?.tipCents,
     externalSource: payment?.externalSource,
     externalSourceId: payment?.externalSourceId,
     customerName: payment?.customerName ?? null,
     pickupTime: payment?.pickupTime ?? null,
+    tenantTimezone: payment?.tenantTimezone ?? null,
   });
 
   await prisma.order.update({

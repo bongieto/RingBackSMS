@@ -595,10 +595,14 @@ export class SquareAdapter extends BasePosAdapter {
       locationId: string;
       idempotencyKey: string;
       totalCents?: number;
+      taxCents?: number;
+      feeCents?: number;
+      tipCents?: number;
       externalSource?: string;
       externalSourceId?: string;
       customerName?: string | null;
       pickupTime?: string | null;
+      tenantTimezone?: string | null;
     },
   ): Promise<PosOrderResult> {
     const tokens = await this.loadTokens(tenantId);
@@ -613,22 +617,28 @@ export class SquareAdapter extends BasePosAdapter {
     // is accepted by the Orders API but never appears in any KDS or
     // Dashboard Orders view — it's invisible to kitchen staff.
     //
-    // We always use ASAP as the scheduleType. SCHEDULED requires a
-    // pickupAt ISO timestamp, but our pickupTime is a human string
-    // like "7:35pm" with no date or timezone context — converting it
-    // reliably requires the tenant's timezone and today's date, which
-    // adds complexity for minimal gain. The pickup time is included in
-    // the note so kitchen staff see it on the ticket.
+    // Resolve the customer-provided pickup string into a real RFC 3339
+    // timestamp using the tenant's timezone. When parsing succeeds we
+    // send SCHEDULED so Square's "Pickup time" field populates and KDS
+    // sorts orders by pickup. When the string is "asap" / "now" / can't
+    // be parsed, we fall back to ASAP and put the original string in
+    // the note as a human-readable fallback.
     //
     // IMPORTANT: the Square SDK uses camelCase field names (pickupDetails,
-    // scheduleType, displayName). Using snake_case here causes the SDK to
-    // silently drop those fields, resulting in a bare PICKUP fulfillment
-    // that Square rejects with a 400 error.
+    // scheduleType, pickupAt, displayName). Using snake_case here causes
+    // the SDK to silently drop those fields, resulting in a bare PICKUP
+    // fulfillment that Square rejects with a 400 error.
+    const pickupAt = resolvePickupTimestamp(
+      metadata.pickupTime ?? null,
+      metadata.tenantTimezone ?? null,
+    );
     const fulfillment = {
       type: 'PICKUP',
       state: 'PROPOSED',
       pickupDetails: {
-        scheduleType: 'ASAP',
+        ...(pickupAt
+          ? { scheduleType: 'SCHEDULED', pickupAt }
+          : { scheduleType: 'ASAP' }),
         ...(metadata.pickupTime && { note: `Pickup: ${metadata.pickupTime}` }),
         recipient: {
           displayName: metadata.customerName?.trim() || 'RingbackSMS Order',
@@ -651,7 +661,7 @@ export class SquareAdapter extends BasePosAdapter {
     });
     const byVariationId = new Map(menuRows.map((m) => [m.posVariationId!, m]));
 
-    const lineItems = items.map((item) => {
+    const menuLineItems = items.map((item) => {
       const ref = byVariationId.get(item.externalVariationId);
       const name = ref?.name ?? 'Item';
       const priceCents = ref ? Math.round(Number(ref.price) * 100) : 0;
@@ -661,6 +671,41 @@ export class SquareAdapter extends BasePosAdapter {
         basePriceMoney: { amount: BigInt(priceCents), currency: 'USD' },
       };
     });
+
+    // Push sales tax, card-fee passthrough, and tip as ad-hoc line items so
+    // Square's calculated order total matches the customer-paid total. Without
+    // these, Square sees only the items subtotal and end-of-day reports
+    // under-count revenue / collected tax. Square's Orders API has dedicated
+    // `taxes` / `serviceCharges` fields too, but those require Catalog
+    // tax/charge objects that not every tenant has set up — ad-hoc line items
+    // work universally.
+    const adjustmentLineItems: Array<{
+      quantity: string;
+      name: string;
+      basePriceMoney: { amount: bigint; currency: 'USD' };
+    }> = [];
+    if (metadata.taxCents && metadata.taxCents > 0) {
+      adjustmentLineItems.push({
+        quantity: '1',
+        name: 'Sales Tax',
+        basePriceMoney: { amount: BigInt(metadata.taxCents), currency: 'USD' },
+      });
+    }
+    if (metadata.feeCents && metadata.feeCents > 0) {
+      adjustmentLineItems.push({
+        quantity: '1',
+        name: 'Card processing fee',
+        basePriceMoney: { amount: BigInt(metadata.feeCents), currency: 'USD' },
+      });
+    }
+    if (metadata.tipCents && metadata.tipCents > 0) {
+      adjustmentLineItems.push({
+        quantity: '1',
+        name: 'Tip',
+        basePriceMoney: { amount: BigInt(metadata.tipCents), currency: 'USD' },
+      });
+    }
+    const lineItems = [...menuLineItems, ...adjustmentLineItems];
 
     const response = await client.ordersApi.createOrder({
       order: {
@@ -694,10 +739,10 @@ export class SquareAdapter extends BasePosAdapter {
     //
     // We use Square's own calculated order total (not the Stripe total) so
     // the amounts match exactly and Square doesn't flag the order as
-    // over/under-paid. Stripe remains the authoritative financial record;
-    // Square sales reports for this channel will show item subtotals only
-    // (no tax, tips, or service fees), which is an acceptable trade-off for
-    // getting KDS routing to work.
+    // over/under-paid. With the tax/fee/tip ad-hoc line items above,
+    // Square's calculated total now equals the Stripe total, so reports
+    // reflect real revenue + collected tax. Stripe remains the authoritative
+    // financial record on the payment processor side.
     let externalPaymentId: string | null = null;
     const squareOrderTotal = (o as any)?.totalMoney?.amount as bigint | number | undefined;
     if (squareOrderTotal != null && Number(squareOrderTotal) > 0) {
@@ -807,4 +852,135 @@ export class SquareAdapter extends BasePosAdapter {
         };
       });
   }
+}
+
+/**
+ * Resolve a customer-typed pickup string into an RFC 3339 timestamp in
+ * UTC, anchored to today in the tenant's timezone. Returns null when the
+ * string is empty, "asap"/"now", or otherwise unparseable — caller falls
+ * back to ASAP fulfillment in that case.
+ *
+ * Handles the formats real customers send:
+ *   - "5pm", "5 pm", "5:30 PM", "5:30pm"
+ *   - "in 30 minutes", "in 1 hour", "in 2 hrs"
+ *   - "noon", "midnight"
+ *   - "tomorrow at 1pm", "tomorrow 1pm"
+ * Does NOT handle: "next Friday", explicit dates ("4/15"). For those we
+ * return null (ASAP fallback) — the human-readable note still shows on
+ * the kitchen ticket so nothing is silently lost.
+ *
+ * Exported for unit testing.
+ */
+export function resolvePickupTimestamp(
+  pickup: string | null,
+  timezone: string | null,
+): string | null {
+  if (!pickup) return null;
+  const tz = timezone || 'America/Chicago';
+  const raw = pickup.trim().toLowerCase();
+  if (!raw) return null;
+  if (/^(asap|now|right now|whenever|any\s*time|as soon as possible|soon|immediately)\b/.test(raw)) {
+    return null;
+  }
+
+  // "in N minutes/hours" — anchor relative to right now.
+  const relMatch = raw.match(/in\s+(a|an|\d+)\s*(min(?:ute)?s?|hour|hours|hr|hrs)\b/);
+  if (relMatch) {
+    const n = relMatch[1] === 'a' || relMatch[1] === 'an' ? 1 : Number(relMatch[1]);
+    if (Number.isFinite(n) && n > 0 && n < 1440) {
+      const isHour = /^h/.test(relMatch[2]);
+      const ms = n * (isHour ? 3600_000 : 60_000);
+      return new Date(Date.now() + ms).toISOString();
+    }
+  }
+
+  // "noon" / "midnight"
+  let hour: number | null = null;
+  let minute = 0;
+  if (/\bnoon\b/.test(raw)) hour = 12;
+  else if (/\bmidnight\b/.test(raw)) hour = 0;
+
+  // "5pm", "5 pm", "5:30 pm"
+  const clockMatch = raw.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)/);
+  if (clockMatch) {
+    let h = Number(clockMatch[1]);
+    const m = clockMatch[2] ? Number(clockMatch[2]) : 0;
+    const isPm = /^p/.test(clockMatch[3]);
+    if (h >= 1 && h <= 12 && m >= 0 && m <= 59) {
+      if (isPm && h < 12) h += 12;
+      if (!isPm && h === 12) h = 0;
+      hour = h;
+      minute = m;
+    }
+  }
+
+  if (hour == null) return null;
+
+  const isTomorrow = /\btomorrow\b|\btmrw\b/.test(raw);
+  return buildLocalTimestamp(tz, hour, minute, isTomorrow ? 1 : 0);
+}
+
+/**
+ * Build an RFC 3339 UTC timestamp for {hour:minute} of today (or today+dayOffset)
+ * in the given IANA timezone. Uses Intl.DateTimeFormat to determine the UTC
+ * offset for that wall-clock instant, then constructs the ISO string.
+ */
+function buildLocalTimestamp(
+  timezone: string,
+  hour: number,
+  minute: number,
+  dayOffset: number,
+): string | null {
+  try {
+    // Get today's Y/M/D as observed in `timezone`.
+    const now = new Date();
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(now);
+    const y = Number(parts.find((p) => p.type === 'year')?.value);
+    const m = Number(parts.find((p) => p.type === 'month')?.value);
+    const d = Number(parts.find((p) => p.type === 'day')?.value);
+    if (!y || !m || !d) return null;
+
+    // Construct the wall-clock instant as if it were UTC, then determine
+    // what UTC offset that timezone has at that moment, then subtract.
+    const localAsUtcMs = Date.UTC(y, m - 1, d + dayOffset, hour, minute, 0);
+    // Find the offset at that instant for the IANA tz.
+    const offsetMin = getTimezoneOffsetMinutes(timezone, new Date(localAsUtcMs));
+    const utcMs = localAsUtcMs - offsetMin * 60_000;
+    return new Date(utcMs).toISOString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Returns the offset (in minutes, signed: positive east of UTC) of `timezone`
+ * at the given UTC instant. Implemented by formatting the date in both UTC and
+ * the target timezone and diffing the components — works without external libs.
+ */
+function getTimezoneOffsetMinutes(timezone: string, utcDate: Date): number {
+  const tzString = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(utcDate);
+  const get = (t: string) => Number(tzString.find((p) => p.type === t)?.value);
+  const tzMs = Date.UTC(
+    get('year'),
+    get('month') - 1,
+    get('day'),
+    get('hour') === 24 ? 0 : get('hour'),
+    get('minute'),
+    get('second'),
+  );
+  return Math.round((tzMs - utcDate.getTime()) / 60_000);
 }

@@ -76,6 +76,14 @@ export abstract class BasePosAdapter {
        *  payments (e.g. Square) will create a matching Payment to mark
        *  the order as paid. Amount is the final total the customer paid. */
       totalCents?: number;
+      /** Sales tax collected, in cents. When provided, adapters push it
+       *  as a separate ad-hoc line item so Square's calculated total
+       *  matches the customer-paid total (totalCents). */
+      taxCents?: number;
+      /** Card-processing-fee passthrough, in cents. Same handling as taxCents. */
+      feeCents?: number;
+      /** Tip, in cents. Same handling as taxCents. */
+      tipCents?: number;
       /** Label for the external payment source, e.g. "Stripe". */
       externalSource?: string;
       /** Opaque id from the external processor (e.g. Stripe payment_intent). */
@@ -86,6 +94,10 @@ export abstract class BasePosAdapter {
       /** Pickup time string (e.g. "2:30 PM"). Attached as a PICKUP
        *  fulfillment so Square for Restaurants KDS routes the ticket. */
       pickupTime?: string | null;
+      /** Tenant IANA timezone (e.g. "America/Chicago"). Required for
+       *  resolving a human pickup string into an RFC 3339 timestamp so
+       *  the Square fulfillment can be SCHEDULED instead of ASAP. */
+      tenantTimezone?: string | null;
     },
   ): Promise<PosOrderResult>;
   abstract verifyWebhook(

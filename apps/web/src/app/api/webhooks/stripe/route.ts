@@ -229,10 +229,13 @@ export async function POST(request: NextRequest) {
               conversationId: true,
               items: true,
               total: true,
+              taxAmount: true,
+              feeAmount: true,
               tipAmount: true,
               customerName: true,
               pickupTime: true,
               squareOrderId: true,
+              tenant: { select: { config: { select: { timezone: true } } } },
             },
           });
           logger.info('Order payment completed', { orderId, tenantId });
@@ -260,13 +263,20 @@ export async function POST(request: NextRequest) {
             const totalCents = Math.round(
               (Number(paidOrder.total) + Number(paidOrder.tipAmount ?? 0)) * 100,
             );
+            const taxCents = Math.round(Number(paidOrder.taxAmount ?? 0) * 100);
+            const feeCents = Math.round(Number(paidOrder.feeAmount ?? 0) * 100);
+            const tipCents = Math.round(Number(paidOrder.tipAmount ?? 0) * 100);
             waitUntil(
               pushOrderToPos(paidOrder.id, tenantId, paidOrder.conversationId, items, {
                 totalCents,
+                taxCents: taxCents > 0 ? taxCents : undefined,
+                feeCents: feeCents > 0 ? feeCents : undefined,
+                tipCents: tipCents > 0 ? tipCents : undefined,
                 externalSource: 'Stripe',
                 externalSourceId: paymentIntentId,
                 customerName: paidOrder.customerName ?? null,
                 pickupTime: paidOrder.pickupTime ?? null,
+                tenantTimezone: paidOrder.tenant?.config?.timezone ?? null,
               })
                 .then(() => {
                   logger.info('POS push after payment completed', { orderId });
