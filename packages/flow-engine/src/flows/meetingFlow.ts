@@ -1,71 +1,77 @@
 import { FlowInput, FlowOutput, FlowStep } from '../types';
 import { FlowType, CallerState, MeetingDraft } from '@ringback/shared-types';
 import { pushDecision } from '../decisions';
+import { zonedDateToUtc } from '../calendar/localAvailability';
 
 // ── Date parsing (MVP — keyword-based, no LLM) ────────────────────────────
 
 /**
- * Resolve a naive natural-language date expression to a UTC day range.
- * Returns null if we can't parse it, so the caller can re-prompt.
+ * Resolve a naive natural-language date expression in the tenant's timezone
+ * to a UTC day range. The earlier implementation was timezone-naive — it
+ * built Dates with `new Date(y, m, d)` which uses the SERVER's local time,
+ * not the tenant's. On UTC servers (Vercel) that produced labels off by a
+ * day for callers in CST/CDT after ~7 PM local. Returns null when we can't
+ * parse, so the caller can re-prompt.
+ *
+ * Tolerates trailing time text: "tomorrow at 10am", "Friday at 2 PM",
+ * "4/15 morning" all match. We don't *consume* the time today — the slot
+ * walker still offers every open slot — but the date itself parses cleanly.
  */
-function parseDateExpression(
+export function parseDateExpression(
   input: string,
   timezone: string,
   now: Date = new Date(),
-): { startUtc: Date; endUtc: Date; label: string } | null {
+): {
+  startUtc: Date;
+  endUtc: Date;
+  label: string;
+  requestedDateLocal: { year: number; month: number; day: number };
+} | null {
   const t = input.trim().toLowerCase();
-  const nowInTz = toZonedDate(now, timezone);
-  let target: Date | null = null;
+  const today = todayInTz(now, timezone);
+  let target: { year: number; month: number; day: number } | null = null;
 
-  if (/^today$|^tdy$/.test(t)) {
-    target = nowInTz;
-  } else if (/^tomorrow$|^tmrw$|^tomm?orow$/.test(t)) {
-    target = addDays(nowInTz, 1);
+  if (/\btoday\b|\btdy\b/.test(t)) {
+    target = today;
+  } else if (/\btomorrow\b|\btmrw\b|\btommor?ow\b/.test(t)) {
+    target = addDays(today, 1);
   } else {
     const weekdays = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-    const match = t.match(/^(?:next\s+)?(sun|mon|tue|wed|thu|fri|sat)/);
+    const match = t.match(/\b(next\s+)?(sun|mon|tue|wed|thu|fri|sat)/);
     if (match) {
-      const wantedDay = weekdays.indexOf(match[1]);
-      const currentDay = nowInTz.getDay();
+      const wantedDay = weekdays.indexOf(match[2]);
+      const currentDay = weekdayIndex(today, timezone);
       let delta = (wantedDay - currentDay + 7) % 7;
-      if (delta === 0) delta = 7; // "monday" spoken on monday → next monday
-      if (t.includes('next') && delta < 7) delta += 7;
-      target = addDays(nowInTz, delta);
+      if (delta === 0) delta = 7; // "monday" said on monday → next monday
+      if (match[1] && delta < 7) delta += 7;
+      target = addDays(today, delta);
     } else {
-      // MM/DD or YYYY-MM-DD
-      const numMatch = t.match(/(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/);
+      // MM/DD or MM/DD/YYYY (or with dashes). US-format only.
+      const numMatch = t.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
       if (numMatch) {
         const yyyy = numMatch[3]
           ? numMatch[3].length === 2
             ? 2000 + Number(numMatch[3])
             : Number(numMatch[3])
-          : nowInTz.getFullYear();
-        // Treat as YYYY-MM-DD if first group is 4 digits (not possible from this regex,
-        // so assume US MM/DD input).
+          : today.year;
         const mm = Number(numMatch[1]);
         const dd = Number(numMatch[2]);
-        target = new Date(Date.UTC(yyyy, mm - 1, dd));
+        target = { year: yyyy, month: mm, day: dd };
       }
     }
   }
 
   if (!target) return null;
 
-  // Build day range in the tenant's timezone. We query cal.com with UTC
-  // ISO strings spanning 00:00 → 23:59 local.
-  const y = target.getFullYear();
-  const m = target.getMonth();
-  const d = target.getDate();
-  const startLocal = new Date(y, m, d, 0, 0, 0);
-  const endLocal = new Date(y, m, d, 23, 59, 59);
   return {
-    startUtc: startLocal,
-    endUtc: endLocal,
-    label: formatDateLabel(startLocal, timezone),
+    startUtc: zonedDateToUtc(target.year, target.month, target.day, 0, 0, timezone),
+    endUtc: zonedDateToUtc(target.year, target.month, target.day, 23, 59, timezone),
+    label: formatDateLabel(target),
+    requestedDateLocal: target,
   };
 }
 
-function toZonedDate(now: Date, timezone: string): Date {
+function todayInTz(now: Date, timezone: string): { year: number; month: number; day: number } {
   try {
     const parts = new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
@@ -73,31 +79,48 @@ function toZonedDate(now: Date, timezone: string): Date {
       month: '2-digit',
       day: '2-digit',
     }).formatToParts(now);
-    const y = Number(parts.find((p) => p.type === 'year')?.value ?? '1970');
-    const m = Number(parts.find((p) => p.type === 'month')?.value ?? '1');
-    const d = Number(parts.find((p) => p.type === 'day')?.value ?? '1');
-    return new Date(y, m - 1, d);
+    return {
+      year: Number(parts.find((p) => p.type === 'year')?.value ?? '1970'),
+      month: Number(parts.find((p) => p.type === 'month')?.value ?? '1'),
+      day: Number(parts.find((p) => p.type === 'day')?.value ?? '1'),
+    };
   } catch {
-    return now;
+    return { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1, day: now.getUTCDate() };
   }
 }
 
-function addDays(d: Date, n: number): Date {
-  const r = new Date(d);
-  r.setDate(r.getDate() + n);
-  return r;
+function addDays(
+  d: { year: number; month: number; day: number },
+  n: number,
+): { year: number; month: number; day: number } {
+  // Use UTC math to dodge DST shenanigans, then read UTC components back.
+  const utc = new Date(Date.UTC(d.year, d.month - 1, d.day));
+  utc.setUTCDate(utc.getUTCDate() + n);
+  return {
+    year: utc.getUTCFullYear(),
+    month: utc.getUTCMonth() + 1,
+    day: utc.getUTCDate(),
+  };
 }
 
-function formatDateLabel(d: Date, timezone: string): string {
+function weekdayIndex(d: { year: number; month: number; day: number }, _timezone: string): number {
+  // Calendar-date weekday is timezone-independent.
+  return new Date(Date.UTC(d.year, d.month - 1, d.day)).getUTCDay();
+}
+
+function formatDateLabel(d: { year: number; month: number; day: number }): string {
+  // Anchor at noon UTC so the formatter doesn't tip into the previous day
+  // for any reasonable timezone.
+  const anchor = new Date(Date.UTC(d.year, d.month - 1, d.day, 12, 0));
   try {
     return new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
+      timeZone: 'UTC',
       weekday: 'long',
       month: 'long',
       day: 'numeric',
-    }).format(d);
+    }).format(anchor);
   } catch {
-    return d.toDateString();
+    return anchor.toDateString();
   }
 }
 
