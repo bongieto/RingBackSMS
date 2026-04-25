@@ -183,18 +183,18 @@ export default function HelpPage() {
           <SubSection title="Setup instructions by carrier">
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
               <p className="text-sm text-blue-800">
-                <strong>Your RingBackSMS number</strong> can be found in <strong>Settings &rarr; Phone</strong>. You&apos;ll need this number for the steps below.
+                <strong>Use the in-dashboard wizard.</strong> Go to <strong>Settings &rarr; Phone</strong> in your dashboard for an interactive step-by-step guide that picks the right carrier code (AT&amp;T, Verizon, T-Mobile) for iPhone or Android and pre-fills your RingBackSMS number.
               </p>
             </div>
 
             <div className="space-y-3">
               <div className="border rounded-lg p-4">
                 <p className="font-medium">iPhone / iOS</p>
-                <p className="text-sm text-gray-600 mt-1">Go to <strong>Settings &rarr; Phone &rarr; Call Forwarding</strong> and enter your RingBackSMS number.</p>
+                <p className="text-sm text-gray-600 mt-1">Either run the wizard above, or go to <strong>Settings &rarr; Phone &rarr; Call Forwarding</strong> on your phone and enter your RingBackSMS number.</p>
               </div>
               <div className="border rounded-lg p-4">
                 <p className="font-medium">Android</p>
-                <p className="text-sm text-gray-600 mt-1">Open <strong>Phone app &rarr; Settings &rarr; Calls &rarr; Call forwarding &rarr; When unanswered</strong> and enter your RingBackSMS number.</p>
+                <p className="text-sm text-gray-600 mt-1">Either run the wizard above, or open <strong>Phone app &rarr; Settings &rarr; Calls &rarr; Call forwarding &rarr; When unanswered</strong> and enter your RingBackSMS number.</p>
               </div>
               <div className="border rounded-lg p-4">
                 <p className="font-medium">Landline / VoIP</p>

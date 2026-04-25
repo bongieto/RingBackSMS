@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { phoneApi } from '@/lib/api';
+import { CallForwardingWizard } from '@/components/settings/CallForwardingWizard';
 
 interface PhoneStatus {
   hasPhoneNumber: boolean;
@@ -108,35 +109,7 @@ export default function PhoneSetupPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-blue-200 bg-blue-50/50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-blue-900">
-                <Phone className="h-5 w-5" />
-                Forward Your Business Phone
-              </CardTitle>
-              <CardDescription className="text-blue-800">
-                Set up call forwarding so unanswered calls to your existing business number go to your RingbackSMS number
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm text-blue-900">
-              <div className="space-y-2">
-                <p className="font-medium">Option A: Conditional forwarding (recommended)</p>
-                <p>Forward calls only when you don&apos;t answer. On most phones, dial:</p>
-                <code className="block bg-blue-100 rounded px-3 py-2 font-mono text-sm">
-                  *67*{status.phoneNumber}#
-                </code>
-                <p className="text-xs text-blue-700">This keeps your normal number &mdash; RingbackSMS only picks up when you can&apos;t.</p>
-              </div>
-              <div className="space-y-2 pt-2 border-t border-blue-200">
-                <p className="font-medium">Option B: Phone settings</p>
-                <p>Go to your phone&apos;s <strong>Call Settings &rarr; Call Forwarding &rarr; Forward when unanswered</strong> and enter your RingbackSMS number: <strong>{status.phoneNumber}</strong></p>
-              </div>
-              <div className="space-y-2 pt-2 border-t border-blue-200">
-                <p className="font-medium">Option C: Carrier forwarding</p>
-                <p>Contact your phone carrier and ask them to enable &quot;no-answer forwarding&quot; to <strong>{status.phoneNumber}</strong></p>
-              </div>
-            </CardContent>
-          </Card>
+          <CallForwardingWizard tenantPhoneNumber={status.phoneNumber!} />
         </div>
       </div>
     );
