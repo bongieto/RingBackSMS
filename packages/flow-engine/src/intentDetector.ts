@@ -219,10 +219,25 @@ export async function detectIntent(
     ? `\n\nIMPORTANT context: ${tenantContext.tenantName} is a service business that schedules consultations/appointments via SMS. Any caller asking for help, services, or describing a need (even casually — "I need help with my mom", "do you have anyone available") is functionally a MEETING request. Choose FALLBACK only for purely social messages like greetings or closures.`
     : '';
 
+  // When the tenant has a website-extracted blurb, give the LLM ~600
+  // chars of it. Lets the classifier ground ambiguous messages in what
+  // the business actually does — e.g. caller asks "do you do new
+  // installs?" → website mentions "new system replacement consultation"
+  // → high-confidence MEETING.
+  const websiteSnippet = tenantContext.config.websiteContext
+    ? tenantContext.config.websiteContext
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 600)
+    : '';
+  const websiteContextHint = websiteSnippet
+    ? `\n\nFor reference, here is what ${tenantContext.tenantName} actually does (from their website):\n"${websiteSnippet}"`
+    : '';
+
   const prompt = `The customer sent this SMS: "${message}"
 
 Available flows:
-${availableFlows}${serviceOnlyHint}
+${availableFlows}${serviceOnlyHint}${websiteContextHint}
 
 Classify the customer's intent. Respond with JSON only:
 {"intent": "<FLOW_TYPE or UNCLEAR>", "confidence": <0.0-1.0>}`;
