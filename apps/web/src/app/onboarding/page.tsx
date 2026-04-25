@@ -54,7 +54,7 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(1);
 
   const [form, setForm] = useState({
-    name: organization?.name ?? '',
+    name: '',
     businessType: '',
     ownerEmail: user?.emailAddresses[0]?.emailAddress ?? '',
     ownerPhone: '',
@@ -89,8 +89,8 @@ export default function OnboardingPage() {
       webApi.post('/tenants', {
         name: form.name,
         businessType: form.businessType,
-        ownerEmail: form.ownerEmail,
-        ownerPhone: form.ownerPhone,
+        ownerEmail: form.ownerEmail || undefined,
+        ownerPhone: form.ownerPhone || undefined,
         timezone: form.timezone,
         clerkOrgId: organization?.id,
       }).then(r => r.data.data),
