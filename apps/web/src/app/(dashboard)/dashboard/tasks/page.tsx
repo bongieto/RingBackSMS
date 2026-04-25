@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Header } from '@/components/layout/Header';
-import { TaskList, type TaskItem } from '@/components/tasks/TaskList';
+import { TaskList, isCallbackTask, type TaskItem } from '@/components/tasks/TaskList';
 import { taskApi } from '@/lib/api';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -17,16 +17,20 @@ type Tab = 'OPEN' | 'SNOOZED' | 'DONE';
 
 export default function TasksPage() {
   const [tab, setTab] = useState<Tab>('OPEN');
+  const [callbacksOnly, setCallbacksOnly] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const queryClient = useQueryClient();
 
-  const { data: tasks = [], isLoading } = useQuery<TaskItem[]>({
+  const { data: rawTasks = [], isLoading } = useQuery<TaskItem[]>({
     queryKey: ['tasks', tab],
     queryFn: () => taskApi.list(tab),
     refetchInterval: 30_000,
   });
+
+  const tasks = callbacksOnly ? rawTasks.filter(isCallbackTask) : rawTasks;
+  const callbackCount = rawTasks.filter(isCallbackTask).length;
 
   const createMutation = useMutation({
     mutationFn: () => taskApi.create({ title: newTitle, description: newDescription || undefined }),
@@ -44,20 +48,36 @@ export default function TasksPage() {
   return (
     <div>
       <Header title="Action Items" description="Everything that needs your attention, in one place." />
-      <div className="flex items-center justify-between mb-4">
-        <div className="inline-flex rounded-lg border bg-white p-1">
-          {(['OPEN', 'SNOOZED', 'DONE'] as Tab[]).map((t) => (
+      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="inline-flex rounded-lg border bg-white p-1">
+            {(['OPEN', 'SNOOZED', 'DONE'] as Tab[]).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={cn(
+                  'px-4 py-1.5 text-sm rounded-md transition-colors',
+                  tab === t ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-50'
+                )}
+              >
+                {t === 'OPEN' ? 'Open' : t === 'SNOOZED' ? 'Snoozed' : 'Done'}
+              </button>
+            ))}
+          </div>
+          {callbackCount > 0 && (
             <button
-              key={t}
-              onClick={() => setTab(t)}
+              onClick={() => setCallbacksOnly((v) => !v)}
               className={cn(
-                'px-4 py-1.5 text-sm rounded-md transition-colors',
-                tab === t ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-50'
+                'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border transition-colors',
+                callbacksOnly
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50',
               )}
+              title="Show only scheduled phone callbacks (customers who asked to be rung at a specific time)"
             >
-              {t === 'OPEN' ? 'Open' : t === 'SNOOZED' ? 'Snoozed' : 'Done'}
+              📞 Callbacks ({callbackCount})
             </button>
-          ))}
+          )}
         </div>
         <Button onClick={() => setShowCreate((v) => !v)}>
           <Plus className="h-4 w-4 mr-1.5" /> Add task

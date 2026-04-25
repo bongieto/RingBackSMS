@@ -49,7 +49,14 @@ interface Meeting {
   calcomBookingUid?: string | null;
   scheduledAt: string | null;
   status: 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED';
+  /** Stamped when the customer replies "C" / "yes" to the day-before
+   *  confirmation SMS. The status badge says CONFIRMED whether or not
+   *  the customer has actually confirmed; this distinguishes the two. */
+  confirmedAt?: string | null;
+  /** Stamped when the day-before confirmation SMS has been sent. */
+  confirmationSentAt?: string | null;
   notes: string | null;
+  guestName?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -496,9 +503,27 @@ function ListViewContent({
                   {maskPhone(meeting.callerPhone)}
                 </td>
                 <td className="p-4">
-                  <Badge variant={STATUS_COLORS[meeting.status] ?? 'outline'}>
-                    {meeting.status}
-                  </Badge>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <Badge variant={STATUS_COLORS[meeting.status] ?? 'outline'}>
+                      {meeting.status}
+                    </Badge>
+                    {meeting.confirmedAt && (
+                      <Badge
+                        variant="success"
+                        title={`Customer confirmed on ${format(parseISO(meeting.confirmedAt), 'MMM d, h:mm a')}`}
+                      >
+                        ✓ Customer confirmed
+                      </Badge>
+                    )}
+                    {meeting.status === 'CONFIRMED' && !meeting.confirmedAt && meeting.confirmationSentAt && (
+                      <Badge
+                        variant="warning"
+                        title="Day-before confirmation SMS sent — awaiting customer reply"
+                      >
+                        Awaiting reply
+                      </Badge>
+                    )}
+                  </div>
                 </td>
                 <td className="p-4 text-sm text-muted-foreground max-w-[200px] truncate">
                   {meeting.notes ?? '--'}

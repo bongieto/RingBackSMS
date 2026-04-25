@@ -220,7 +220,7 @@ const SERVICE_BUSINESSES: IndustryLandingContent = {
   ],
   benefits: [
     { icon: Bot, title: 'AI receptionist 24/7', body: "Sounds like a professional front-desk person. Quotes your standard services, asks qualifying questions, and only escalates the weird stuff." },
-    { icon: Calendar, title: 'Drops jobs on your calendar', body: "The AI sends a Cal.com booking link right in the conversation — or hands the request off to your existing scheduler. The customer picks a slot via text and it's on your calendar before you finish the current job." },
+    { icon: Calendar, title: 'Drops jobs on your calendar', body: "The AI offers open slots directly in the SMS thread using your built-in calendar — no Cal.com or Calendly required. The customer picks a time via text and it's on your calendar before you finish the current job. Day-before SMS confirmations cut no-shows from ~25% to ~5%." },
     { icon: Zap, title: 'Replies in under 3 seconds', body: "Your customer gets a real reply before they can dial the next business on their list. The race to respond is over." },
     { icon: MessageCircle, title: 'Auto reminders & confirmations', body: 'Reduces no-shows by ~50% with 24-hour and 2-hour SMS reminders, and a "Running late?" check-in 10 min before.' },
     { icon: TrendingUp, title: 'Lead quality scoring', body: 'Tags every inbound by intent (urgent/quote/question/spam) so you know which leads to call personally and which the AI can close.' },
@@ -237,7 +237,7 @@ const SERVICE_BUSINESSES: IndustryLandingContent = {
     { quote: "Home health is relationship-driven and families panic when nobody picks up. Now they get a warm response immediately and a real human follows up within the hour.", name: 'Robert K.', role: 'Director, Sunrise Home Care' },
   ],
   faqs: [
-    { q: 'Does it integrate with my scheduling software?', a: 'Yes — drop your Cal.com booking link into Settings and the AI sends it to the customer in the conversation. Google Calendar, Square Appointments, and Acuity work the same way. If you use a niche scheduler we can add a webhook in minutes.' },
+    { q: 'Does it integrate with my scheduling software?', a: 'RingbackSMS includes a built-in calendar by default — the AI offers open slots and books appointments directly via SMS, no Cal.com or Calendly required. If you already run Google Calendar, Square Appointments, or Acuity we can sync via webhook. Day-before SMS confirmations are included.' },
     { q: 'Will the AI sound like a robot?', a: 'No. Every tenant gets a custom personality tuned to their business — friendly salon, no-nonsense trades, warm caregiving. Most customers assume they\'re texting your front desk.' },
     { q: 'Can it handle emergencies?', a: 'Yes. You define urgency keywords (flood, no power, elderly fall, etc.) and the AI escalates those directly to your phone as a push notification instead of handling them via text.' },
     { q: "Do I need a new phone number?", a: "No. Keep your existing number or port it to us. Either way, customers see your business name — not 'Unknown.'" },
@@ -369,8 +369,8 @@ const niche = (c: NicheConfig): IndustryLandingContent => ({
 const commonServiceBenefits = (verb: string, thing: string): NicheConfig['benefits'] => [
   { icon: Bot, title: 'AI receptionist 24/7', body: `Sounds like your front-desk person — quotes ${thing}, answers common questions, and only escalates the weird stuff.` },
   { icon: Zap, title: '<3 second replies', body: 'Customers get a real answer before they dial the next business on the list.' },
-  { icon: Calendar, title: 'Books into your calendar', body: `${verb} confirmed appointments via a Cal.com booking link sent right in the conversation — works with Google Calendar, Square Appointments, and Acuity too.` },
-  { icon: MessageCircle, title: 'Reminders + no-show defense', body: '24-hour and 2-hour SMS reminders cut no-shows by ~50%. Customers can reschedule by text in one tap.' },
+  { icon: Calendar, title: 'Books into your calendar', body: `${verb} confirmed appointments directly via SMS using the built-in calendar — no Cal.com or Calendly required. Optional sync to Google Calendar, Square Appointments, or Acuity.` },
+  { icon: MessageCircle, title: 'Reminders + no-show defense', body: 'Day-before SMS confirmation ("Reply C to confirm or R to reschedule") cuts no-shows from ~25% to ~5%. Customers reschedule by text in one tap.' },
   { icon: ShieldCheck, title: 'Emergency escalation', body: 'Real urgencies ping your phone immediately via push or Slack — the AI knows when to back off.' },
   { icon: TrendingUp, title: 'Rapid-redial detection', body: 'NEW / RAPID_REDIAL / RETURNING caller tags surface urgency instantly — real emergencies jump the queue.' },
 ];

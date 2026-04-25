@@ -30,6 +30,8 @@ import {
   Search,
   AlertTriangle,
   Users,
+  GitBranch,
+  ShieldOff,
 } from 'lucide-react';
 import { MobileNav } from '@/components/landing/MobileNav';
 import { PricingSection } from '@/components/landing/PricingSection';
@@ -213,6 +215,22 @@ const faqJsonLd = {
         text: 'No. RingBackSMS provisions a dedicated business number through Twilio that works alongside your existing phone number. You can also port your existing number if you prefer.',
       },
     },
+    {
+      '@type': 'Question',
+      name: 'Does the bot confirm appointments?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'Yes. Every booked meeting gets a day-before confirmation SMS. Customers reply C to confirm or R to reschedule. Reduces no-shows from ~25% to ~5% on most service businesses.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: 'Does RingBackSMS filter spam and robocalls?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: 'Yes. Twilio Lookup classifies every inbound number. Invalid E.164s and unbranded VoIP robocallers are blocked before they trigger a consent SMS, so monthly SMS quota goes to real customers.',
+      },
+    },
   ],
 };
 
@@ -264,9 +282,9 @@ const FEATURES = [
   },
   {
     icon: Clock,
-    title: 'Appointment Booking',
+    title: 'Built-In Appointment Booking',
     description:
-      'Service businesses can book appointments by text. AI validates business hours, collects the details, and drops a Cal.com booking link right in the conversation.',
+      'Service businesses book appointments directly via SMS — no Cal.com or Calendly required. AI checks your business hours, offers open slots from your built-in calendar, collects name + email, and confirms the booking. Then a day-before SMS reminder reduces no-shows from ~25% to ~5%.',
   },
   {
     icon: Search,
@@ -294,9 +312,9 @@ const FEATURES = [
   },
   {
     icon: BarChart3,
-    title: 'Real-Time Analytics & Daily Digest',
+    title: 'Daily Recap Email + Real-Time Analytics',
     description:
-      'Track missed calls, conversations, orders, bookings, and revenue in real time. Optional daily-digest email lands in your inbox every morning.',
+      'Every morning, a one-glance summary lands in your inbox: missed calls handled, SMS conversations, meetings booked + confirmed, orders + revenue from yesterday — plus customers still pending day-before confirmation. Real-time dashboard for the live view.',
   },
   {
     icon: ShieldCheck,
@@ -335,6 +353,18 @@ const FEATURES = [
       'See exactly where missed-call revenue leaks: missed → SMS sent → caller replied → owner responded → order. Drop rates, conversion %, and avg response time.',
   },
   {
+    icon: GitBranch,
+    title: 'Pipeline Kanban Board',
+    description:
+      'Every recovered call shows up as a card on a six-stage funnel: New → In conversation → Booked → Confirmed → Won → Lost. Click any card to jump straight to the SMS thread. The view operators look at first thing every morning.',
+  },
+  {
+    icon: ShieldOff,
+    title: 'Spam & Robocall Filter',
+    description:
+      'Twilio Lookup classifies every inbound number. Invalid E.164s and unbranded VoIP robocallers get blocked before they trigger a consent SMS — so your monthly SMS quota goes to real customers, not bot traffic. Per-tenant kill switch if your business needs every call through.',
+  },
+  {
     icon: MoonStar,
     title: 'Business Hours & Holidays',
     description:
@@ -361,8 +391,8 @@ const INDUSTRIES = [
     icon: Scissors,
     name: 'Salons & Barbershops',
     pain: 'Hands full with a client, phone keeps ringing',
-    solution: 'Customers book their next appointment via SMS',
-    stat: '50% fewer no-shows',
+    solution: 'Customers book + day-before SMS confirms the slot',
+    stat: 'No-shows ~25% → ~5%',
     href: '/industries/service-businesses/beauty-salons',
   },
   {
@@ -593,6 +623,16 @@ const FAQ = [
     question: 'Can customers with existing accounts just reorder?',
     answer:
       'Yes. Returning customers see "Last time you ordered X — reply SAME to reorder." The AI recognizes them from their phone number, remembers their past order, and can replay it in a single message.',
+  },
+  {
+    question: 'Does the bot confirm appointments?',
+    answer:
+      'Yes — every booked meeting gets a day-before confirmation SMS. Customers reply C to confirm or R to reschedule. This single addition reduces no-shows from ~25% to ~5% on most service businesses we onboard. The dashboard shows you who\'s confirmed vs still pending so you can call the stragglers personally.',
+  },
+  {
+    question: 'Does it filter spam and robocalls?',
+    answer:
+      'Yes. Twilio Lookup classifies every inbound number on first contact. Invalid E.164s and unbranded VoIP robocallers (the typical fingerprint of automated spam) are blocked before they trigger a consent SMS — so your monthly SMS quota goes to real customers, not bot traffic. Per-tenant kill switch in Settings if your business legitimately gets lots of VoIP calls.',
   },
 ];
 

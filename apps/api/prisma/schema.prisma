@@ -300,6 +300,14 @@ model TenantConfig {
   dashboardConfirmTaskCompletion Boolean   @default(true)
   dailyDigestEnabled             Boolean   @default(true)
   dailyDigestHour                Int       @default(8)
+  /// Last tenant-local date (YYYY-MM-DD) on which the daily recap was
+  /// successfully sent. Idempotency guard for the hourly recap cron —
+  /// prevents Vercel cron retries / clock skew from double-sending.
+  dailyRecapLastSentDate         String?
+  /// Per-tenant kill switch for the Twilio Lookup spam classifier.
+  /// Off when tenants get many legitimate VoIP calls (e.g. contractors)
+  /// that would otherwise be blocked by the unbranded-VoIP heuristic.
+  spamFilterEnabled              Boolean   @default(true)
   // Prep time (restaurants & food trucks)
   defaultPrepTimeMinutes         Int? // null = feature unused
   largeOrderThresholdItems       Int? // null = no large-order rule

@@ -63,9 +63,12 @@ function formatTimeLabel(scheduledAt: Date, timezone: string): string {
 }
 
 export async function GET(req: NextRequest) {
+  // Fail-closed: missing CRON_SECRET means we refuse the request rather
+  // than silently allowing public callers to trigger SMS sends. Matches
+  // the auth shape used by every other cron route in this app.
   const secret = process.env.CRON_SECRET;
-  const auth = req.headers.get('authorization') ?? '';
-  if (secret && !auth.endsWith(secret)) {
+  const authHeader = req.headers.get('authorization');
+  if (!secret || authHeader !== `Bearer ${secret}`) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -120,6 +123,25 @@ export async function GET(req: NextRequest) {
 
     const timeLabel = formatTimeLabel(m.scheduledAt, tz);
 
+    // Stamp BEFORE the send. If Twilio is down or returns an error, we
+    // accept that this meeting goes un-confirmed rather than retrying
+    // every hour for 12 hours straight (which would fire the same SMS
+    // 12 times once Twilio recovers, since it does eventually deliver
+    // queued messages). The operator sees the unconfirmed meeting in
+    // the pipeline view + day-of and can call manually if needed.
+    try {
+      await prisma.meeting.update({
+        where: { id: m.id },
+        data: { confirmationSentAt: new Date() },
+      });
+    } catch (err: any) {
+      logger.warn('Meeting-confirmation cron: stamp failed, skipping send', {
+        meetingId: m.id,
+        err: err?.message,
+      });
+      continue;
+    }
+
     try {
       await sendSms(
         m.tenantId,
@@ -129,11 +151,6 @@ export async function GET(req: NextRequest) {
           timeLabel,
         }),
       );
-      // Stamp ASAP so a retry inside this same window doesn't double-send.
-      await prisma.meeting.update({
-        where: { id: m.id },
-        data: { confirmationSentAt: new Date() },
-      });
       sent += 1;
     } catch (err: any) {
       logger.warn('Meeting-confirmation cron: send failed (non-fatal)', {

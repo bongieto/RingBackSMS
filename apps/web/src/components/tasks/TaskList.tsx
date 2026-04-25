@@ -41,6 +41,19 @@ const SOURCE_ICONS: Record<string, typeof VoicemailIcon> = {
   MANUAL: ListChecks,
 };
 
+/** Tasks created by the "call me back at 3 PM" detector show as a
+ *  scheduled callback rather than a generic conversation task. The
+ *  detector stamps `Call back +1… at Mon 3:00 PM` as the title and
+ *  sets snoozedUntil so reopen-snoozed cron resurfaces them at the
+ *  requested time. */
+export function isCallbackTask(task: TaskItem): boolean {
+  return (
+    task.source === 'CONVERSATION' &&
+    task.title.startsWith('Call back ') &&
+    !!task.snoozedUntil
+  );
+}
+
 const PRIORITY_DOT: Record<string, string> = {
   URGENT: 'bg-red-500',
   HIGH: 'bg-amber-500',
@@ -105,19 +118,32 @@ export function TaskList({ tasks, compact = false }: { tasks: TaskItem[]; compac
     <>
       <ul className="divide-y divide-slate-100">
         {tasks.map((task) => {
-          const Icon = SOURCE_ICONS[task.source] ?? ListChecks;
+          const isCallback = isCallbackTask(task);
+          const Icon = isCallback ? Phone : SOURCE_ICONS[task.source] ?? ListChecks;
           return (
             <li key={task.id} className="py-3 flex items-start gap-3">
               <span className={cn('w-2 h-2 rounded-full mt-2 shrink-0', PRIORITY_DOT[task.priority])} />
-              <Icon className="h-4 w-4 text-slate-500 mt-1 shrink-0" />
+              <Icon className={cn('h-4 w-4 mt-1 shrink-0', isCallback ? 'text-blue-600' : 'text-slate-500')} />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-900 truncate">{task.title}</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-medium text-slate-900 truncate">{task.title}</p>
+                  {isCallback && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">
+                      📞 CALLBACK
+                    </span>
+                  )}
+                </div>
                 {!compact && task.description && (
                   <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{task.description}</p>
                 )}
                 <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-400">
                   {task.callerPhone && <span>{task.callerPhone}</span>}
                   <span>· {new Date(task.createdAt).toLocaleString()}</span>
+                  {isCallback && task.snoozedUntil && (
+                    <span className="text-blue-600">
+                      · Due {new Date(task.snoozedUntil).toLocaleString()}
+                    </span>
+                  )}
                   {task.priority === 'URGENT' && (
                     <span className="inline-flex items-center gap-0.5 text-red-600 font-semibold">
                       <AlertCircle className="h-3 w-3" /> URGENT

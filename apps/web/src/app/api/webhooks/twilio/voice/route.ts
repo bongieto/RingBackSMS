@@ -340,20 +340,25 @@ export async function POST(request: NextRequest) {
       // Spam/robocall gate: Twilio Lookup tells us when the inbound
       // number is invalid or matches the unbranded-VoIP fingerprint
       // typical of robocallers. Cached 30d/global so a returning
-      // legit caller doesn't trigger a paid lookup every time.
-      const spam = await classifyCaller(from);
-      if (!spam.allow) {
-        console.log('[consent-sms] spam-blocked', JSON.stringify({
-          from,
-          reason: spam.reason,
-          lineType: spam.lineType,
-          cached: spam.cached,
-        }));
-        await logConsentEvent(tenant.id, from, 'sms_send_failed', {
-          errorCode: 'spam_blocked',
-          errorMessage: spam.reason,
-        }).catch(() => {});
-        return;
+      // legit caller doesn't trigger a paid lookup every time. Per-
+      // tenant kill switch (`spamFilterEnabled`, default true) lets
+      // tenants like Bruno's HVAC who get lots of legitimate VoIP
+      // contractor calls disable the filter entirely.
+      if (tenant.config?.spamFilterEnabled !== false) {
+        const spam = await classifyCaller(from);
+        if (!spam.allow) {
+          console.log('[consent-sms] spam-blocked', JSON.stringify({
+            from,
+            reason: spam.reason,
+            lineType: spam.lineType,
+            cached: spam.cached,
+          }));
+          await logConsentEvent(tenant.id, from, 'sms_send_failed', {
+            errorCode: 'spam_blocked',
+            errorMessage: spam.reason,
+          }).catch(() => {});
+          return;
+        }
       }
 
       const { id: consentRequestId, alreadyPending } = await createConsentRequest(tenant.id, from, to);

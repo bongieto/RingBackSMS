@@ -228,7 +228,75 @@ export default function AdminApiStatusPage() {
 
           {/* Per-tenant integrations */}
           <TenantIntegrationsSection />
+
+          {/* Spam-blocked calls audit */}
+          <SpamLogSection />
         </>
+      )}
+    </div>
+  );
+}
+
+// ── Spam-blocked calls audit ────────────────────────────────────────────────
+
+interface SpamEvent {
+  id: string;
+  tenantId: string;
+  tenantName: string;
+  callerPhone: string;
+  reason: string;
+  createdAt: string;
+}
+
+function SpamLogSection() {
+  const { data, isLoading } = useQuery<{ events: SpamEvent[] }>({
+    queryKey: ['admin-spam-log'],
+    queryFn: () => api.get('/admin/spam-log').then((r) => r.data.data),
+    staleTime: 60_000,
+  });
+
+  const events = data?.events ?? [];
+
+  return (
+    <div className="mt-12">
+      <h2 className="text-xs text-slate-500 uppercase tracking-widest mb-3">
+        Spam-Blocked Calls (last 50)
+      </h2>
+      <p className="text-xs text-slate-500 mb-3">
+        Inbound numbers Twilio Lookup classified as invalid or unbranded
+        VoIP. Their consent SMS was suppressed. Review for false positives.
+      </p>
+      {isLoading ? (
+        <div className="h-24 bg-slate-900 border border-slate-800 rounded animate-pulse" />
+      ) : events.length === 0 ? (
+        <div className="border border-slate-800 rounded-lg p-6 text-center text-slate-500 text-sm bg-slate-900">
+          No spam blocks recorded.
+        </div>
+      ) : (
+        <div className="border border-slate-800 rounded-lg overflow-hidden bg-slate-900">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-950/60 text-slate-400">
+              <tr className="border-b border-slate-800">
+                <th className="px-4 py-2 text-left font-medium">When</th>
+                <th className="px-4 py-2 text-left font-medium">Tenant</th>
+                <th className="px-4 py-2 text-left font-medium">Caller</th>
+                <th className="px-4 py-2 text-left font-medium">Reason</th>
+              </tr>
+            </thead>
+            <tbody className="text-slate-300">
+              {events.map((e) => (
+                <tr key={e.id} className="border-b border-slate-800 last:border-0">
+                  <td className="px-4 py-2 text-xs text-slate-400">
+                    {new Date(e.createdAt).toLocaleString()}
+                  </td>
+                  <td className="px-4 py-2">{e.tenantName}</td>
+                  <td className="px-4 py-2 font-mono text-xs">{e.callerPhone}</td>
+                  <td className="px-4 py-2 text-xs">{e.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

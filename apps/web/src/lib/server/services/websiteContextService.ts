@@ -18,6 +18,7 @@ import { prisma } from '../db';
 import { logger } from '../logger';
 
 const FETCH_TIMEOUT_MS = 10_000;
+const AGGREGATE_TIMEOUT_MS = 20_000;
 const CONTEXT_MAX_CHARS = 8000;
 const PER_PAGE_MAX_CHARS = 2500;
 const MAX_SUBPAGES = 3;
@@ -169,10 +170,31 @@ function extractSubpageUrls(html: string, baseUrl: string): string[] {
  * lot to plain text. Each page's contribution is capped so one bloated
  * page can't crowd out the others.
  *
+ * Wrapped in a 20s aggregate ceiling so a slow CDN / redirect chain on
+ * one sub-page can't block the entire Vercel function for ~40s
+ * (per-page is 10s × up to 4 pages). On timeout, returns whatever the
+ * homepage produced so the tenant still gets *some* context rather
+ * than null.
+ *
  * Returns null on any failure (blocked URL, homepage fetch error,
  * empty content). Never throws.
  */
 export async function fetchWebsiteContext(url: string): Promise<string | null> {
+  return Promise.race([
+    fetchWebsiteContextInner(url),
+    new Promise<string | null>((resolve) =>
+      setTimeout(() => {
+        logger.warn('Website context aggregate timeout — returning what we have', {
+          url,
+          timeoutMs: AGGREGATE_TIMEOUT_MS,
+        });
+        resolve(null);
+      }, AGGREGATE_TIMEOUT_MS),
+    ),
+  ]);
+}
+
+async function fetchWebsiteContextInner(url: string): Promise<string | null> {
   const homeHtml = await fetchHtml(url);
   if (!homeHtml) return null;
 

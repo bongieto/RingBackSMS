@@ -40,6 +40,7 @@ export const UpdateTenantConfigRequestSchema = z.object({
   requirePayment: z.boolean().optional(),
   dailyDigestEnabled: z.boolean().optional(),
   dailyDigestHour: z.number().int().min(0).max(23).optional(),
+  spamFilterEnabled: z.boolean().optional(),
   // Prep time (restaurants & food trucks)
   defaultPrepTimeMinutes: z.number().int().min(0).max(720).nullable().optional(),
   largeOrderThresholdItems: z.number().int().min(1).max(10000).nullable().optional(),

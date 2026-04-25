@@ -43,6 +43,7 @@ interface TenantConfig {
   requirePayment?: boolean;
   dailyDigestEnabled?: boolean;
   dailyDigestHour?: number;
+  spamFilterEnabled?: boolean;
   followupOpener?: string | null;
   customAiInstructions?: string | null;
 }
@@ -125,6 +126,7 @@ export default function SettingsPage() {
     requirePayment: false,
     dailyDigestEnabled: true,
     dailyDigestHour: 8,
+    spamFilterEnabled: true,
     defaultPrepTimeMinutes: null as number | null,
     largeOrderThresholdItems: null as number | null,
     largeOrderExtraMinutes: null as number | null,
@@ -177,6 +179,7 @@ export default function SettingsPage() {
         requirePayment: config.requirePayment ?? false,
         dailyDigestEnabled: (config as any).dailyDigestEnabled ?? true,
         dailyDigestHour: (config as any).dailyDigestHour ?? 8,
+        spamFilterEnabled: (config as any).spamFilterEnabled ?? true,
         defaultPrepTimeMinutes: (config as any).defaultPrepTimeMinutes ?? null,
         largeOrderThresholdItems: (config as any).largeOrderThresholdItems ?? null,
         largeOrderExtraMinutes: (config as any).largeOrderExtraMinutes ?? null,
@@ -252,6 +255,7 @@ export default function SettingsPage() {
         requirePayment: form.requirePayment,
         dailyDigestEnabled: form.dailyDigestEnabled,
         dailyDigestHour: form.dailyDigestHour,
+        spamFilterEnabled: form.spamFilterEnabled,
         defaultPrepTimeMinutes: form.defaultPrepTimeMinutes,
         largeOrderThresholdItems: form.largeOrderThresholdItems,
         largeOrderExtraMinutes: form.largeOrderExtraMinutes,
@@ -755,6 +759,27 @@ export default function SettingsPage() {
                   <p className="text-xs text-muted-foreground">In your business timezone ({form.timezone})</p>
                 </div>
               )}
+              <RecapPreviewButton tenantId={tenantId} ownerEmail={form.ownerEmail} />
+            </div>
+
+            <div className="pt-4 border-t space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Spam &amp; robocall filter</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Twilio Lookup blocks invalid numbers and unbranded VoIP
+                    robocallers before they consume your SMS quota. Disable
+                    if your business gets lots of legitimate VoIP calls
+                    (e.g. contractors on softphones).
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={form.spamFilterEnabled}
+                  onChange={(e) => setForm((f) => ({ ...f, spamFilterEnabled: e.target.checked }))}
+                  className="h-4 w-4"
+                />
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -839,6 +864,59 @@ export default function SettingsPage() {
         {/* Team & Invitations */}
         {tenantId && <TeamCard tenantId={tenantId} />}
       </div>
+    </div>
+  );
+}
+
+// ── Recap preview button ────────────────────────────────────────────────────
+// Sends a one-off "what tomorrow's recap would look like" email so the
+// operator doesn't have to wait until 8am to see the format. Reuses the
+// same aggregator + template as the cron.
+
+function RecapPreviewButton({
+  tenantId,
+  ownerEmail,
+}: {
+  tenantId: string | undefined;
+  ownerEmail: string | null | undefined;
+}) {
+  const [sending, setSending] = useState(false);
+  const send = async () => {
+    if (!tenantId) return;
+    setSending(true);
+    try {
+      const r = await fetch(`/api/tenants/${tenantId}/recap-preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const body = await r.json();
+      if (!r.ok) {
+        toast.error(body?.error ?? 'Preview failed');
+      } else {
+        toast.success(`Preview sent to ${body?.data?.sentTo ?? ownerEmail}`);
+      }
+    } catch (err) {
+      toast.error((err as Error).message ?? 'Preview failed');
+    } finally {
+      setSending(false);
+    }
+  };
+  return (
+    <div className="pt-3 border-t">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={send}
+        disabled={sending || !tenantId || !ownerEmail}
+      >
+        {sending ? 'Sending…' : '📧 Send recap preview'}
+      </Button>
+      <p className="text-xs text-muted-foreground mt-1.5">
+        Sends today's recap email immediately to{' '}
+        {ownerEmail ?? 'your owner email'} so you can see what shows up
+        every morning at your configured digest hour.
+      </p>
     </div>
   );
 }
