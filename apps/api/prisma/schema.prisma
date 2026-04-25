@@ -311,6 +311,11 @@ model TenantConfig {
   minutesPerQueuedOrder          Int       @default(4)     // added to ETA for every order currently CONFIRMED or PREPARING
   salesTaxRate                   Decimal?  @db.Decimal(5, 4) // e.g. 0.0825 for 8.25%. Null = no tax applied.
   passStripeFeesToCustomer       Boolean   @default(false) // when true, add 2.9% + $0.30 processing fee as a line item on the checkout
+  // Google Business Profile review nudge. When set, customers who reply
+  // 4–5 stars to the review prompt receive a follow-up SMS with this link
+  // asking them to leave a public review. Unhappy raters (1–3) never see
+  // it — protects the public profile from low ratings.
+  googleReviewUrl                String?
   // Built-in calendar (used when cal.com isn't configured)
   meetingEnabled                 Boolean   @default(true) // master on/off for built-in calendar
   meetingDurationMinutes         Int       @default(30)

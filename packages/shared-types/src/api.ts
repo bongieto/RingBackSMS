@@ -63,6 +63,8 @@ export const UpdateTenantConfigRequestSchema = z.object({
   // Pricing / pass-through
   salesTaxRate: z.number().min(0).max(0.5).nullable().optional(), // 0–50% sanity cap
   passStripeFeesToCustomer: z.boolean().optional(),
+  // Google Business Profile review nudge URL
+  googleReviewUrl: z.string().url().nullable().optional(),
   // Built-in calendar
   meetingEnabled: z.boolean().optional(),
   meetingDurationMinutes: z.number().int().min(5).max(480).optional(),

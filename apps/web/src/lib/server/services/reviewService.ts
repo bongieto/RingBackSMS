@@ -55,17 +55,36 @@ export async function tryConsumeReviewReply(
       },
     });
     // Honor caller's preferredLanguage so the thank-you matches the
-    // language the rest of the conversation was in.
-    const contact = await prisma.contact.findFirst({
-      where: { tenantId, phone: callerPhone },
-      select: { preferredLanguage: true },
-    });
+    // language the rest of the conversation was in. Also pull the
+    // tenant's Google Business Profile review URL — the reviewThanksHigh
+    // template appends it for 4-5 star ratings only (review-gating).
+    const [contact, tenantConfig] = await Promise.all([
+      prisma.contact.findFirst({
+        where: { tenantId, phone: callerPhone },
+        select: { preferredLanguage: true },
+      }),
+      prisma.tenantConfig.findUnique({
+        where: { tenantId },
+        select: { googleReviewUrl: true },
+      }),
+    ]);
+    const reviewUrl = tenantConfig?.googleReviewUrl?.trim() || undefined;
     const thanks =
       rating >= 4
-        ? i18nSms('reviewThanksHigh', contact?.preferredLanguage ?? null, { rating })
+        ? i18nSms('reviewThanksHigh', contact?.preferredLanguage ?? null, {
+            rating,
+            // Only set the URL when the operator has configured one — keeps
+            // the bare "thanks for the rating" copy when there's nothing to
+            // link to.
+            ...(reviewUrl ? { reviewUrl } : {}),
+          })
         : i18nSms('reviewThanksLow', contact?.preferredLanguage ?? null, {});
     await sendSms(tenantId, callerPhone, thanks).catch(() => {});
-    logger.info('Order review saved', { orderId: order.id, rating });
+    logger.info('Order review saved', {
+      orderId: order.id,
+      rating,
+      pushedToGoogle: rating >= 4 && Boolean(reviewUrl),
+    });
     return true;
   } catch (err: any) {
     logger.warn('Failed to save review', { err: err?.message, orderId: order.id });

@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/nextjs';
 import { toast } from 'sonner';
 import Link from 'next/link';
-import { Phone, Sparkles, Globe, MapPin, CheckCircle, X, Copy, CalendarOff, Plus, CreditCard, Send, Users } from 'lucide-react';
+import { Phone, Sparkles, Globe, MapPin, CheckCircle, X, Copy, CalendarOff, Plus, CreditCard, Send, Users, Star } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ReplyTemplatesCard } from '@/components/settings/ReplyTemplatesCard';
@@ -39,6 +39,7 @@ interface TenantConfig {
   ownerPhone: string | null;
   businessAddress: string | null;
   websiteUrl: string | null;
+  googleReviewUrl: string | null;
   requirePayment?: boolean;
   dailyDigestEnabled?: boolean;
   dailyDigestHour?: number;
@@ -120,6 +121,7 @@ export default function SettingsPage() {
     ownerPhone: '',
     businessAddress: '',
     websiteUrl: '',
+    googleReviewUrl: '',
     requirePayment: false,
     dailyDigestEnabled: true,
     dailyDigestHour: 8,
@@ -171,6 +173,7 @@ export default function SettingsPage() {
         ownerPhone: config.ownerPhone ?? '',
         businessAddress: config.businessAddress ?? '',
         websiteUrl: config.websiteUrl ?? '',
+        googleReviewUrl: (config as any).googleReviewUrl ?? '',
         requirePayment: config.requirePayment ?? false,
         dailyDigestEnabled: (config as any).dailyDigestEnabled ?? true,
         dailyDigestHour: (config as any).dailyDigestHour ?? 8,
@@ -245,6 +248,7 @@ export default function SettingsPage() {
         ownerPhone: form.ownerPhone || undefined,
         businessAddress: form.businessAddress || undefined,
         websiteUrl: form.websiteUrl || undefined,
+        googleReviewUrl: form.googleReviewUrl?.trim() ? form.googleReviewUrl.trim() : null,
         requirePayment: form.requirePayment,
         dailyDigestEnabled: form.dailyDigestEnabled,
         dailyDigestHour: form.dailyDigestHour,
@@ -378,6 +382,20 @@ export default function SettingsPage() {
               </Label>
               <Input {...field('websiteUrl')} placeholder="https://yourbusiness.com" />
               <p className="text-xs text-muted-foreground">AI will extract context from your website to improve conversations and greetings</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5">
+                <Star className="h-3.5 w-3.5" />
+                Google Business Profile review link
+              </Label>
+              <Input
+                {...field('googleReviewUrl')}
+                placeholder="https://g.page/r/CXXXXXXXXXXX/review"
+                type="url"
+              />
+              <p className="text-xs text-muted-foreground">
+                When set, customers who reply 4 or 5 stars to the review prompt receive a follow-up SMS with this link asking them to leave a public Google review. 1&ndash;3 star raters never see it.
+              </p>
             </div>
           </CardContent>
         </Card>

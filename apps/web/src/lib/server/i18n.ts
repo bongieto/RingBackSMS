@@ -55,7 +55,9 @@ const COPY: Record<CopyKey, (v: Vars) => string> = {
   reviewPrompt: (v) =>
     `How was your order from ${v.businessName}? Reply 1-5 (5 = great!).`,
   reviewThanksHigh: (v) =>
-    `Thanks for the ${v.rating}-star rating! We appreciate you.`,
+    v.reviewUrl
+      ? `Thanks for the ${v.rating}-star rating! Mind sharing it on Google? ${v.reviewUrl}`
+      : `Thanks for the ${v.rating}-star rating! We appreciate you.`,
   reviewThanksLow: () =>
     `Thanks for the feedback — sorry we missed the mark. Reply back if there's anything we can do.`,
   paymentExpired: () =>
