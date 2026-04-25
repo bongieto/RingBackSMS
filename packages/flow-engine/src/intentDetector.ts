@@ -113,6 +113,33 @@ export async function detectIntent(
     }
   }
 
+  // Service-only tenants (MEETING + FALLBACK enabled, no ORDER/INQUIRY)
+  // are agencies whose entire SMS surface is "schedule a consultation".
+  // Common caregiver/legal/medical openers rarely contain the literal
+  // word "appointment" — callers say "I need help with my dad", "looking
+  // for a caregiver", "do you have anyone available". Without this
+  // fast-path the LLM classifier sometimes routes them to FALLBACK and
+  // the conversation never offers a booking. The trigger phrases below
+  // are intentionally conservative — generic enough to catch real intent,
+  // narrow enough to skip pure social messages ("hi", "thanks").
+  const isServiceOnlyTenant =
+    enabledFlowTypes.includes(FlowType.MEETING) &&
+    !enabledFlowTypes.includes(FlowType.ORDER) &&
+    !enabledFlowTypes.includes(FlowType.INQUIRY);
+
+  if (isServiceOnlyTenant) {
+    const lower = message.toLowerCase();
+    const familyTerms =
+      /\b(my\s+(mom|mother|dad|father|parent|parents|grandma|grandmother|grandpa|grandfather|husband|wife|spouse|partner|son|daughter|brother|sister))\b/;
+    const serviceVerbs =
+      /\b(hire|need|looking\s+for|interested\s+in|want\s+(?:to\s+(?:hire|get|find)|help|info))\b/;
+    const serviceNouns =
+      /\b(caregiver|caretaker|nurse|aide|companion|in-home|in\s+home|home\s+care|home\s+health|hospice|consultation|consult|services?|estimate|quote)\b/;
+    if (familyTerms.test(lower) || serviceVerbs.test(lower) || serviceNouns.test(lower)) {
+      return { intent: FlowType.MEETING, confidence: 0.9 };
+    }
+  }
+
   // Use AI for ambiguous messages
   const flowDescriptions: Record<FlowType, string> = {
     [FlowType.ORDER]: 'placing a food or product order',
@@ -126,10 +153,14 @@ export async function detectIntent(
     .map((ft) => `- ${ft}: ${flowDescriptions[ft]}`)
     .join('\n');
 
+  const serviceOnlyHint = isServiceOnlyTenant
+    ? `\n\nIMPORTANT context: ${tenantContext.tenantName} is a service business that schedules consultations/appointments via SMS. Any caller asking for help, services, or describing a need (even casually — "I need help with my mom", "do you have anyone available") is functionally a MEETING request. Choose FALLBACK only for purely social messages like greetings or closures.`
+    : '';
+
   const prompt = `The customer sent this SMS: "${message}"
 
 Available flows:
-${availableFlows}
+${availableFlows}${serviceOnlyHint}
 
 Classify the customer's intent. Respond with JSON only:
 {"intent": "<FLOW_TYPE or UNCLEAR>", "confidence": <0.0-1.0>}`;
