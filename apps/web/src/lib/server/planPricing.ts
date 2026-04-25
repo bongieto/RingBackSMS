@@ -5,7 +5,7 @@
  */
 export const PLAN_MRR: Record<string, number> = {
   STARTER: 0,
-  GROWTH: 99,
-  SCALE: 299,
+  GROWTH: 79,
+  SCALE: 199,
   ENTERPRISE: 499,
 };

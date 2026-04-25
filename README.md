@@ -190,10 +190,10 @@ All variables are required unless marked optional.
 
 | Plan | SMS/mo | AI Calls/mo | Square | Price |
 |------|--------|-------------|--------|-------|
-| STARTER | 200 | 100 | No | — |
-| GROWTH | 1,000 | 500 | Yes | — |
-| SCALE | 5,000 | 2,500 | Yes | — |
-| ENTERPRISE | Unlimited | Unlimited | Yes | — |
+| STARTER | 25 | 25 | No | Free |
+| GROWTH | 750 | 500 | Yes | $79/mo |
+| SCALE | 5,000 | 2,500 | Yes | $199/mo |
+| ENTERPRISE | Unlimited | Unlimited | Yes | Custom |
 
 ---
 
