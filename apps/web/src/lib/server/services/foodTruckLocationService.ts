@@ -2,15 +2,20 @@ import { prisma } from '../db';
 
 /**
  * Match SMS bodies asking "where are you?" — anchored so it doesn't fire on
- * phrases like "where's my order".
+ * phrases like "where's my order". Trailing qualifiers (today, right now,
+ * located, parked, etc.) are allowed but only from a known whitelist, which
+ * keeps unrelated phrasings like "where are you sourcing your meat" from
+ * misrouting here.
  */
+const TRAILING_QUALIFIERS = /(\s+(today|tonight|right\s+now|now|located|parked|currently|set\s*up|at))*/.source;
+
 export function matchesLocationKeyword(msg: string): boolean {
   const lower = msg.toLowerCase().trim().replace(/[!.]+$/, '');
   if (/^(where|location|address)\??$/.test(lower)) return true;
-  if (/^where\s+are\s+(you|y'?all|u)\??$/.test(lower)) return true;
-  if (/^where\s*('?s|s)?\s+(the\s+truck|y'?all|you)\??$/.test(lower)) return true;
+  if (new RegExp(`^where\\s+are\\s+(you|y'?all|u)${TRAILING_QUALIFIERS}\\??$`).test(lower)) return true;
+  if (new RegExp(`^where\\s*('?s|s)?\\s+(the\\s+truck|y'?all|you)${TRAILING_QUALIFIERS}\\??$`).test(lower)) return true;
   if (/^(find|locate)\s+you\??$/.test(lower)) return true;
-  if (/^where\s+is\s+the\s+truck\??$/.test(lower)) return true;
+  if (new RegExp(`^where\\s+is\\s+the\\s+truck${TRAILING_QUALIFIERS}\\??$`).test(lower)) return true;
   return false;
 }
 
