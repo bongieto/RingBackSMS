@@ -58,6 +58,8 @@ export default function OnboardingPage() {
     businessType: '',
     ownerEmail: user?.emailAddresses[0]?.emailAddress ?? '',
     ownerPhone: '',
+    websiteUrl: '',
+    hoursPreset: '' as '' | 'weekday-9-5' | 'daily-11-9' | 'custom',
     voiceGreeting: '',
     timezone: 'America/Chicago',
   });
@@ -93,12 +95,27 @@ export default function OnboardingPage() {
         clerkOrgId: organization?.id,
       }).then(r => r.data.data),
     onSuccess: async (tenant) => {
-      // Update voice greeting if customized (non-fatal — can be set later in Settings)
-      if (form.voiceGreeting) {
+      // PATCH any optional config the user filled in. Each field is
+      // independent — failures here don't block onboarding, the user
+      // can always finish in Settings. Setting websiteUrl triggers
+      // background context extraction (see updateTenantConfig).
+      const configPatch: Record<string, unknown> = {};
+      if (form.voiceGreeting) configPatch.voiceGreeting = form.voiceGreeting;
+      if (form.websiteUrl) configPatch.websiteUrl = form.websiteUrl;
+      if (form.hoursPreset === 'weekday-9-5') {
+        configPatch.businessDays = [1, 2, 3, 4, 5];
+        configPatch.businessHoursStart = '09:00';
+        configPatch.businessHoursEnd = '17:00';
+      } else if (form.hoursPreset === 'daily-11-9') {
+        configPatch.businessDays = [0, 1, 2, 3, 4, 5, 6];
+        configPatch.businessHoursStart = '11:00';
+        configPatch.businessHoursEnd = '21:00';
+      }
+      if (Object.keys(configPatch).length > 0) {
         try {
-          await webApi.patch(`/tenants/${tenant.id}/config`, { voiceGreeting: form.voiceGreeting });
+          await webApi.patch(`/tenants/${tenant.id}/config`, configPatch);
         } catch {
-          // Silently continue — tenant was created, voice greeting can be set in Settings
+          // Silently continue — tenant was created, config can be set in Settings
         }
       }
       toast.success('Account created! Welcome to RingBackSMS 🎉');
@@ -224,6 +241,16 @@ export default function OnboardingPage() {
                 </div>
               </div>
 
+              <div className="space-y-1.5">
+                <Label>Website URL <span className="text-muted-foreground font-normal">(optional, recommended)</span></Label>
+                <Input
+                  value={form.websiteUrl}
+                  onChange={e => setForm(f => ({ ...f, websiteUrl: e.target.value }))}
+                  placeholder="https://yourbusiness.com"
+                />
+                <p className="text-xs text-muted-foreground">We'll read your homepage to ground the bot's replies in your actual services and pricing.</p>
+              </div>
+
               <Button
                 className="w-full"
                 onClick={() => setStep(2)}
@@ -257,6 +284,35 @@ export default function OnboardingPage() {
                   {`Hey! ${form.name || '{business name}'} here — we just missed your call and we're sorry about that! I can help you via text if you want. Reply YES to go ahead or STOP to opt out. Msg & data rates may apply.`}
                 </p>
                 <p className="text-[10px] text-green-600 mt-1">This message is standardized for TCPA compliance and cannot be edited.</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Business hours</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { key: 'weekday-9-5', label: 'Mon–Fri 9–5', sub: 'Service businesses' },
+                    { key: 'daily-11-9', label: 'Daily 11–9', sub: 'Restaurants' },
+                    { key: 'custom', label: 'Set later', sub: 'I’ll configure in Settings' },
+                  ].map((p) => {
+                    const selected = form.hoursPreset === p.key;
+                    return (
+                      <button
+                        key={p.key}
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, hoursPreset: p.key as typeof f.hoursPreset }))}
+                        className={cn(
+                          'flex flex-col items-center gap-0.5 p-2.5 rounded-lg border-2 text-xs transition-colors text-center',
+                          selected
+                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                            : 'border-border hover:border-blue-200 hover:bg-muted/50'
+                        )}
+                      >
+                        <span className="font-medium">{p.label}</span>
+                        <span className="text-[10px] text-muted-foreground">{p.sub}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="space-y-1.5">
@@ -305,19 +361,32 @@ export default function OnboardingPage() {
               <div>
                 <h2 className="text-2xl font-bold">You're all set! 🎉</h2>
                 <p className="text-muted-foreground mt-2">
-                  {form.name} is now on RingBackSMS. Your AI assistant is ready to handle missed calls.
+                  {form.name} is now on RingBackSMS. One more step before the bot starts working.
                 </p>
               </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-left space-y-2">
+                <p className="font-semibold text-amber-900 text-sm">⚠️ Forward your calls to start receiving SMS</p>
+                <p className="text-xs text-amber-800">
+                  Until you forward your phone number to RingBackSMS, missed calls won't trigger an SMS reply.
+                  This takes about 60 seconds — we'll guide you through your carrier's setup.
+                </p>
+                <Button
+                  className="w-full mt-2 bg-amber-600 hover:bg-amber-700"
+                  onClick={() => router.push('/dashboard/settings/phone')}
+                >
+                  Set up call forwarding →
+                </Button>
+              </div>
               <div className="bg-muted/50 rounded-lg p-4 text-left space-y-2 text-sm">
-                <p className="font-medium">Next steps:</p>
+                <p className="font-medium">Then:</p>
                 {profile.onboardingNextSteps.map((s) => (
                   <p key={s.title}>
                     {s.emoji} <strong>{s.title}</strong> — {s.description}
                   </p>
                 ))}
               </div>
-              <Button className="w-full" size="lg" onClick={() => router.push('/dashboard')}>
-                Go to Dashboard →
+              <Button variant="outline" className="w-full" onClick={() => router.push('/dashboard')}>
+                Skip for now — go to Dashboard
               </Button>
             </CardContent>
           </Card>
