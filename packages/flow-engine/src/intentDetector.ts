@@ -28,11 +28,44 @@ const ESCALATION_KEYWORDS = [
   'let me talk to',
   'customer service',
   'manager',
+  // Owner-by-role: "talk to the owner", "speak with the owner", "owner please"
+  'talk to the owner',
+  'speak to the owner',
+  'speak with the owner',
+  'owner please',
+  'the owner',
 ];
 
-export function detectEscalationIntent(message: string): boolean {
+/**
+ * Match "talk to {firstWord}" or "speak to {firstWord}" where firstWord is
+ * the tenant's name's first token (e.g. "Bruno's HVAC" → "bruno"). Catches
+ * casual escalation like "talk to Bruno" without requiring the operator to
+ * configure an explicit owner-name field.
+ */
+function matchesOwnerByName(message: string, tenantName: string | null | undefined): boolean {
+  if (!tenantName) return false;
+  // Strip "'s" possessive and trailing business words so "Bruno's HVAC Co."
+  // → "Bruno". If the tenant name is generic ("Hvac Pros"), don't bother.
+  const firstToken = tenantName
+    .replace(/['\u2019]s\b/gi, '')
+    .trim()
+    .split(/\s+/)[0];
+  if (!firstToken || firstToken.length < 3) return false;
+  const generic = /^(the|a|an|my|our|hvac|pros|inc|llc|co|company|corp|services?|home|care)$/i;
+  if (generic.test(firstToken)) return false;
+  const escaped = firstToken.replace(/[.*+?^${}()|[\]\\]/g, '\\$1');
+  const re = new RegExp(`\\b(?:talk|speak|chat|connect)\\s+(?:to|with)\\s+${escaped}\\b`, 'i');
+  return re.test(message);
+}
+
+export function detectEscalationIntent(
+  message: string,
+  tenantName?: string | null,
+): boolean {
   const lower = message.toLowerCase().trim();
-  return ESCALATION_KEYWORDS.some((keyword) => lower.includes(keyword));
+  if (ESCALATION_KEYWORDS.some((keyword) => lower.includes(keyword))) return true;
+  if (matchesOwnerByName(message, tenantName)) return true;
+  return false;
 }
 
 export interface IntentResult {
@@ -129,6 +162,17 @@ export async function detectIntent(
 
   if (isServiceOnlyTenant) {
     const lower = message.toLowerCase();
+    // Pricing/info questions take priority over the meeting fast-path —
+    // a customer asking "how much for an AC tune-up?" wants the price,
+    // not to be dropped into the date picker. FALLBACK can answer using
+    // the tenant's menu/services context. Without this gate, a question
+    // like "how much for X" would hit the serviceNouns regex below and
+    // jump straight to MEETING.
+    const pricingQuestion =
+      /\b(how\s+much|what\s+(?:does\s+it\s+cost|do\s+you\s+charge|is\s+the\s+(?:price|cost|rate))|what'?s\s+(?:the\s+)?(?:price|cost|rate|charge)|cost\s+(?:of|for)|price\s+(?:of|for)|do\s+you\s+(?:offer|have)\s+a?\s*(?:free\s+)?(?:estimate|quote))\b/;
+    if (pricingQuestion.test(lower)) {
+      return { intent: FlowType.FALLBACK, confidence: 0.9 };
+    }
     const familyTerms =
       /\b(my\s+(mom|mother|dad|father|parent|parents|grandma|grandmother|grandpa|grandfather|husband|wife|spouse|partner|son|daughter|brother|sister))\b/;
     const serviceVerbs =

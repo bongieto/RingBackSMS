@@ -206,6 +206,37 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
     // conversational booking. Both paths share the same date-prompt step;
     // the side-effect emitted later branches on isCalcom.
     if (hasCalendar) {
+      // If the opening message already contains a date hint
+      // ("need a tune-up tomorrow", "AC out — asap", "book me Monday"),
+      // skip the "what day works?" prompt and jump straight to fetching
+      // slots. Saves the caller a turn and matches the fast pace of
+      // service-business SMS conversations.
+      const openerDate = parseDateExpression(
+        inboundMessage,
+        cfg.timezone ?? 'America/Chicago',
+      );
+      if (openerDate) {
+        return {
+          nextState: {
+            ...baseInitial(),
+            flowStep: 'MEETING_SLOT_PICK',
+            meetingDraft: {},
+          },
+          smsReply: `Happy to help you book an appointment with ${tenantContext.tenantName}! Checking availability for ${openerDate.label}…`,
+          sideEffects: [
+            {
+              type: isCalcom ? 'FETCH_CALCOM_SLOTS' : 'FETCH_LOCAL_SLOTS',
+              payload: {
+                startUtc: openerDate.startUtc.toISOString(),
+                endUtc: openerDate.endUtc.toISOString(),
+                dateLabel: openerDate.label,
+                ...(openerDate.findEarliest && !isCalcom ? { findEarliest: true } : {}),
+              },
+            },
+          ],
+          flowType: FlowType.MEETING,
+        };
+      }
       return {
         nextState: {
           ...baseInitial(),

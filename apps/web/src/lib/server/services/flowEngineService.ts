@@ -1155,8 +1155,9 @@ async function processInboundSmsInner(
     result.smsReply = `${afterHoursNotice}\n\n${result.smsReply}`;
   }
 
-  // Check for escalation intent
-  const isEscalation = detectEscalationIntent(inboundMessage);
+  // Check for escalation intent (pass tenant name so "talk to Bruno" /
+  // owner-by-name escalations are caught for tenants like "Bruno's HVAC").
+  const isEscalation = detectEscalationIntent(inboundMessage, tenant.name);
   if (isEscalation) {
     result.smsReply = "I'm connecting you with a team member who can help. Someone will follow up with you shortly!";
     logger.info('Escalation detected, handing off to human', { tenantId, callerPhone });
