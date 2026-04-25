@@ -961,13 +961,17 @@ async function processInboundSmsInner(
           day: Number(startDayParts.find((p) => p.type === 'day')?.value ?? '0'),
         };
 
-        // Walk forward day-by-day. For a fixed date the loop runs once; for
-        // findEarliest it walks up to maxDaysOut days until it finds slots.
-        const maxIterations = effect.payload.findEarliest ? maxDaysOut : 1;
+        // Always walk forward up to maxDaysOut. For findEarliest the
+        // semantics are "give me the next available day". For a specific
+        // requested date, if it has no slots (closed day, blackout, fully
+        // booked), we still walk forward and *suggest* the next open day
+        // — better than re-prompting the caller to guess. The reply copy
+        // tells them their first choice was closed so they don't think we
+        // ignored them.
         let slots: Array<{ start: string; end: string }> = [];
         let resolvedDateLocal = startDate;
 
-        for (let offset = 0; offset < maxIterations; offset++) {
+        for (let offset = 0; offset < maxDaysOut; offset++) {
           const cursorUtc = new Date(Date.UTC(startDate.year, startDate.month - 1, startDate.day));
           cursorUtc.setUTCDate(cursorUtc.getUTCDate() + offset);
           const cursorDate = {
@@ -1001,12 +1005,13 @@ async function processInboundSmsInner(
           }
         }
 
+        const requestedSameAsResolved =
+          startDate.year === resolvedDateLocal.year &&
+          startDate.month === resolvedDateLocal.month &&
+          startDate.day === resolvedDateLocal.day;
+
         if (slots.length === 0) {
-          if (effect.payload.findEarliest) {
-            result.smsReply = `Sorry, no open slots in the next ${maxDaysOut} days. Please contact us directly so we can find a time.`;
-          } else {
-            result.smsReply = `Sorry, no open slots on ${effect.payload.dateLabel}. What other day works?`;
-          }
+          result.smsReply = `Sorry, no open slots in the next ${maxDaysOut} days. Please contact us directly so we can find a time.`;
           result.nextState.flowStep = 'MEETING_DATE_PROMPT';
         } else {
           const lines = slots.map((s, i) => {
@@ -1018,17 +1023,26 @@ async function processInboundSmsInner(
             }).format(new Date(s.start));
             return `${i + 1}. ${t}`;
           });
-          // For findEarliest we render the resolved date so the caller knows
-          // which day they're picking from.
-          const dayLabel = effect.payload.findEarliest
-            ? new Intl.DateTimeFormat('en-US', {
-                timeZone: 'UTC',
-                weekday: 'long',
-                month: 'long',
-                day: 'numeric',
-              }).format(new Date(Date.UTC(resolvedDateLocal.year, resolvedDateLocal.month - 1, resolvedDateLocal.day, 12)))
-            : effect.payload.dateLabel;
-          result.smsReply = `Here are open slots for ${dayLabel}:\n${lines.join('\n')}\n\nReply with the number you want.`;
+          const formatDayLabel = (d: { year: number; month: number; day: number }) =>
+            new Intl.DateTimeFormat('en-US', {
+              timeZone: 'UTC',
+              weekday: 'long',
+              month: 'long',
+              day: 'numeric',
+            }).format(new Date(Date.UTC(d.year, d.month - 1, d.day, 12)));
+
+          const resolvedLabel = formatDayLabel(resolvedDateLocal);
+
+          let preface: string;
+          if (effect.payload.findEarliest || requestedSameAsResolved) {
+            preface = `Here are open slots for ${resolvedLabel}:`;
+          } else {
+            // Caller asked for a specific day, but it has no slots (closed,
+            // blackout, fully booked). Surface that AND offer the next day
+            // we found availability — no need to make them re-guess.
+            preface = `We don't have openings on ${effect.payload.dateLabel}. Our next available day is ${resolvedLabel}:`;
+          }
+          result.smsReply = `${preface}\n${lines.join('\n')}\n\nReply with the number you want, or another day to try a different date.`;
           result.nextState.meetingDraft = {
             ...(result.nextState.meetingDraft ?? {}),
             slots,
