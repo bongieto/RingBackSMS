@@ -46,6 +46,27 @@ export async function POST(req: NextRequest) {
 
     return apiSuccess({ phoneNumber: provisionedNumber });
   } catch (err: any) {
-    return apiError('Internal server error', 500);
+    // Surface the real cause to logs (Twilio errors usually carry .code,
+    // .moreInfo, .status). Without this, the handler returns a bare 500
+    // and ops has nothing to debug. Customer-facing message stays generic.
+    const twilioCode = err?.code ?? null;
+    const twilioStatus = err?.status ?? null;
+    const twilioMoreInfo = err?.moreInfo ?? null;
+    logger.error('Phone provision failed', {
+      message: err?.message,
+      twilioCode,
+      twilioStatus,
+      twilioMoreInfo,
+      stack: err?.stack,
+    });
+    if (err instanceof z.ZodError) {
+      return apiError(err.errors.map((e) => e.message).join('; '), 400);
+    }
+    // Pass Twilio's customer-friendly message through when we have one
+    // (e.g. "Phone number is no longer available", "A2P 10DLC ...").
+    if (typeof err?.message === 'string' && err.message.length < 200) {
+      return apiError(err.message, 500);
+    }
+    return apiError('Failed to provision phone number', 500);
   }
 }
