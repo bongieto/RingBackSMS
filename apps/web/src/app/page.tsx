@@ -1062,7 +1062,7 @@ export default function HomePage() {
             </div>
             <PricingSection plans={PRICING} />
             <p className="text-center text-sm text-slate-500 mt-8">
-              All plans include a 14-day free trial. No credit card required to start. Cancel anytime.
+              FREE plan is free forever — no credit card required. Paid plans start with a 14-day free trial; card is collected at signup but you&apos;re not charged until the trial ends. Cancel anytime.
             </p>
             <p className="text-center text-xs text-slate-500 mt-2">
               Billing is per business. <a href="#agencies" className="text-blue-600 hover:underline">Agency access</a> — managing multiple clients from one login — is granted on request.

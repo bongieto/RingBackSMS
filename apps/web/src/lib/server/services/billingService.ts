@@ -117,6 +117,12 @@ export async function createCheckoutSession(
     // subscription automatically.
     'subscription_data[metadata][tenantId]': tenantId,
     'subscription_data[metadata][plan]': plan,
+    // 14-day free trial on every paid checkout. Card is collected
+    // up-front but Stripe doesn't charge until day 15. Subscription
+    // status is `trialing` during the trial — handleSubscriptionUpdated
+    // already treats that as active so the user gets full plan
+    // features immediately.
+    'subscription_data[trial_period_days]': '14',
   };
 
   // Add SMS metered price only on monthly checkout. The metered price

@@ -210,14 +210,25 @@ export default function BillingPage() {
                   <div>{limits.calcomIntegration ? '✓ Cal.com' : '✗ Cal.com'}</div>
                 </div>
                 {!isCurrent && plan !== Plan.FREE && (
-                  <Button
-                    className="w-full mt-3"
-                    size="sm"
-                    onClick={() => checkoutMutation.mutate({ plan, interval: billingInterval })}
-                    disabled={pendingPlan === plan}
-                  >
-                    {pendingPlan === plan ? 'Opening checkout…' : 'Upgrade'}
-                  </Button>
+                  <>
+                    <Button
+                      className="w-full mt-3"
+                      size="sm"
+                      onClick={() => checkoutMutation.mutate({ plan, interval: billingInterval })}
+                      disabled={pendingPlan === plan}
+                    >
+                      {pendingPlan === plan
+                        ? 'Opening checkout…'
+                        : currentPlan === Plan.FREE
+                          ? 'Start 14-day free trial'
+                          : 'Upgrade'}
+                    </Button>
+                    {currentPlan === Plan.FREE && (
+                      <p className="text-[11px] text-muted-foreground mt-1.5 leading-tight">
+                        Card collected at checkout. No charge for 14 days. Cancel anytime.
+                      </p>
+                    )}
+                  </>
                 )}
                 {!isCurrent && plan === Plan.FREE && currentPlan !== Plan.FREE && (
                   <Button
