@@ -16,11 +16,13 @@ export function ItemForm({
   tenantId,
   item,
   categories,
+  noun = 'item',
   onClose,
 }: {
   tenantId: string;
   item: MenuItem | null;
   categories: MenuCategory[];
+  noun?: string;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -46,7 +48,7 @@ export function ItemForm({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['menu', tenantId] });
-      toast.success(item ? 'Item updated' : 'Item created');
+      toast.success(item ? `${noun} updated` : `${noun} created`);
       onClose();
     },
     onError: (err: any) =>
@@ -58,7 +60,7 @@ export function ItemForm({
   return (
     <Card className="mb-4 bg-orange-50/60">
       <CardContent className="p-6 space-y-5">
-        <h3 className="font-semibold">{item ? 'Edit item' : 'New item'}</h3>
+        <h3 className="font-semibold">{item ? `Edit ${noun.toLowerCase()}` : `New ${noun.toLowerCase()}`}</h3>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
@@ -157,7 +159,7 @@ export function ItemForm({
             onClick={() => save.mutate()}
             disabled={save.isPending || !name.trim() || !priceValid}
           >
-            {save.isPending ? 'Saving…' : item ? 'Save' : 'Create'}
+            {save.isPending ? 'Saving…' : item ? 'Save' : `Create ${noun}`}
           </Button>
           <Button variant="outline" onClick={onClose}>
             Cancel

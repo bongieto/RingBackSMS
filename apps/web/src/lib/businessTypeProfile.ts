@@ -20,6 +20,8 @@ export type DashboardCardKey =
   | 'meetings'
   | 'inquiries';
 
+export type MenuTab = 'menus' | 'categories' | 'items' | 'import' | 'option-groups' | 'options';
+
 export interface BusinessTypeProfile {
   label: string;
   emoji: string;
@@ -36,6 +38,13 @@ export interface BusinessTypeProfile {
     showLocation?: boolean;
     showPrepTime?: boolean;
     menuLabel?: string;
+  };
+  menu: {
+    pageTitle: string;
+    pageDescription: string;
+    itemNoun: string;
+    visibleTabs: MenuTab[];
+    tabLabels?: Partial<Record<MenuTab, string>>;
   };
   dashboardCards: DashboardCardKey[];
   aiPersonalityHint: string;
@@ -56,6 +65,12 @@ const RESTAURANT: BusinessTypeProfile = {
     `Hi! Sorry we missed your call at ${name}. Reply ORDER to place a pickup order or just tell us what you need — we'll get right back to you!`,
   defaultHours: { start: '11:00', end: '21:00', days: [1, 2, 3, 4, 5, 6] },
   nav: { showMenu: true, showServices: false, showOrders: true, showMeetings: false, showPrepTime: true },
+  menu: {
+    pageTitle: 'Menu',
+    pageDescription: 'Set up your menu for online and SMS ordering.',
+    itemNoun: 'Item',
+    visibleTabs: ['menus', 'categories', 'items', 'import', 'option-groups', 'options'],
+  },
   dashboardCards: ['missedCalls', 'conversations', 'orders', 'revenue'],
   aiPersonalityHint:
     "You're the friendly host of a casual restaurant. Help customers place pickup/delivery orders, answer menu questions, and keep replies warm and quick.",
@@ -80,6 +95,12 @@ const FOOD_TRUCK: BusinessTypeProfile = {
     `Hi! Sorry we missed your call at ${name}. Text WHERE to see today's location, or ORDER to start a pickup order.`,
   defaultHours: { start: '11:00', end: '20:00', days: [1, 2, 3, 4, 5, 6] },
   nav: { showMenu: true, showServices: false, showOrders: true, showMeetings: false, showLocation: true, showPrepTime: true },
+  menu: {
+    pageTitle: 'Menu',
+    pageDescription: 'Set up your menu for online and SMS ordering.',
+    itemNoun: 'Item',
+    visibleTabs: ['menus', 'categories', 'items', 'import', 'option-groups', 'options'],
+  },
   dashboardCards: ['missedCalls', 'conversations', 'orders', 'revenue'],
   aiPersonalityHint:
     "You're the friendly voice of a mobile food truck. Help customers find today's spot, place pickup orders, and answer menu questions. Keep replies warm, quick, and casual.",
@@ -104,6 +125,13 @@ const SERVICE: BusinessTypeProfile = {
     `Hi! Sorry we missed your call at ${name}. Reply with what you need and we'll get back to you — or say BOOK to schedule an appointment.`,
   defaultHours: { start: '09:00', end: '18:00', days: [1, 2, 3, 4, 5] },
   nav: { showMenu: false, showServices: true, showOrders: false, showMeetings: true },
+  menu: {
+    pageTitle: 'Services',
+    pageDescription: 'Manage the services you offer.',
+    itemNoun: 'Service',
+    visibleTabs: ['categories', 'items', 'import'],
+    tabLabels: { items: 'Services', categories: 'Categories' },
+  },
   dashboardCards: ['missedCalls', 'conversations', 'meetings'],
   aiPersonalityHint:
     "You're a professional receptionist for a service business. Help callers describe their need, book appointments, and triage urgency. Keep replies polished and concise.",
@@ -128,6 +156,13 @@ const RETAIL: BusinessTypeProfile = {
     `Hi! Sorry we missed your call at ${name}. Ask us about any product — we'll check availability and can hold one for you.`,
   defaultHours: { start: '10:00', end: '19:00', days: [1, 2, 3, 4, 5, 6] },
   nav: { showMenu: true, showServices: false, showOrders: true, showMeetings: false, menuLabel: 'Products' },
+  menu: {
+    pageTitle: 'Products',
+    pageDescription: 'Manage your product catalog for SMS ordering.',
+    itemNoun: 'Product',
+    visibleTabs: ['categories', 'items', 'import'],
+    tabLabels: { items: 'Products', categories: 'Categories' },
+  },
   dashboardCards: ['missedCalls', 'conversations', 'orders', 'revenue'],
   aiPersonalityHint:
     "You're a friendly boutique shop clerk. When customers ask about a product, check the catalog, share price + availability, and offer to hold one. Keep replies warm and personal.",
@@ -153,6 +188,12 @@ const OTHER: BusinessTypeProfile = {
     `Hi! Sorry we missed your call from ${name}. How can we help you today?`,
   defaultHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
   nav: { showMenu: true, showServices: true, showOrders: true, showMeetings: true },
+  menu: {
+    pageTitle: 'Menu',
+    pageDescription: 'Set up your menu for online and SMS ordering.',
+    itemNoun: 'Item',
+    visibleTabs: ['menus', 'categories', 'items', 'import', 'option-groups', 'options'],
+  },
   dashboardCards: ['missedCalls', 'conversations', 'orders', 'revenue', 'meetings'],
   aiPersonalityHint:
     "You're a helpful, friendly, and professional assistant representing the business.",

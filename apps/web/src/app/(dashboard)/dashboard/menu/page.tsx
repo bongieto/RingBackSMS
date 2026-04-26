@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { Header } from '@/components/layout/Header';
 import { useTenantId } from '@/components/providers/TenantProvider';
 import { Tabs, TabList, TabTrigger, TabPanel } from '@/components/ui/tabs';
+import { getProfile, type MenuTab } from '@/lib/businessTypeProfile';
 import { MenusTab } from './_components/MenusTab';
 import { CategoriesTab } from './_components/CategoriesTab';
 import { ItemsTab } from './_components/ItemsTab';
@@ -12,36 +13,50 @@ import { OptionGroupsTab } from './_components/OptionGroupsTab';
 import { OptionsTab } from './_components/OptionsTab';
 import { ImportTab } from './_components/ImportTab';
 
-type Tab = 'menus' | 'categories' | 'items' | 'import' | 'option-groups' | 'options';
-const TABS: Tab[] = ['menus', 'categories', 'items', 'import', 'option-groups', 'options'];
-
 export default function MenuPage() {
-  const { tenantId } = useTenantId();
+  const { tenantId, businessType } = useTenantId();
+  const profile = getProfile(businessType);
+  const { pageTitle, pageDescription, itemNoun, visibleTabs, tabLabels = {} } = profile.menu;
+
   const searchParams = useSearchParams();
-  const paramTab = searchParams.get('tab') as Tab | null;
-  const initial: Tab = paramTab && TABS.includes(paramTab) ? paramTab : 'items';
-  const [active, setActive] = useState<Tab>(initial);
+  const paramTab = searchParams.get('tab') as MenuTab | null;
+  const defaultTab = paramTab && visibleTabs.includes(paramTab) ? paramTab : visibleTabs[0];
+  const [active, setActive] = useState<MenuTab>(defaultTab);
 
   if (!tenantId) {
     return (
       <div>
-        <Header title="Menu" description="Set up your menu for online and SMS ordering." />
+        <Header title={pageTitle} description={pageDescription} />
         <div className="text-sm text-muted-foreground">Loading tenant…</div>
       </div>
     );
   }
 
+  const tabLabel = (tab: MenuTab, fallback: string) => tabLabels[tab] ?? fallback;
+
   return (
     <div>
-      <Header title="Menu" description="Set up your menu for online and SMS ordering." />
-      <Tabs value={active} onChange={(v) => setActive(v as Tab)}>
+      <Header title={pageTitle} description={pageDescription} />
+      <Tabs value={active} onChange={(v) => setActive(v as MenuTab)}>
         <TabList>
-          <TabTrigger value="menus">Menus</TabTrigger>
-          <TabTrigger value="categories">Categories</TabTrigger>
-          <TabTrigger value="items">Items</TabTrigger>
-          <TabTrigger value="import">Import</TabTrigger>
-          <TabTrigger value="option-groups">Option groups</TabTrigger>
-          <TabTrigger value="options">Options</TabTrigger>
+          {visibleTabs.includes('menus') && (
+            <TabTrigger value="menus">{tabLabel('menus', 'Menus')}</TabTrigger>
+          )}
+          {visibleTabs.includes('categories') && (
+            <TabTrigger value="categories">{tabLabel('categories', 'Categories')}</TabTrigger>
+          )}
+          {visibleTabs.includes('items') && (
+            <TabTrigger value="items">{tabLabel('items', 'Items')}</TabTrigger>
+          )}
+          {visibleTabs.includes('import') && (
+            <TabTrigger value="import">{tabLabel('import', 'Import')}</TabTrigger>
+          )}
+          {visibleTabs.includes('option-groups') && (
+            <TabTrigger value="option-groups">{tabLabel('option-groups', 'Option groups')}</TabTrigger>
+          )}
+          {visibleTabs.includes('options') && (
+            <TabTrigger value="options">{tabLabel('options', 'Options')}</TabTrigger>
+          )}
         </TabList>
 
         <TabPanel value="menus">
@@ -51,7 +66,7 @@ export default function MenuPage() {
           <CategoriesTab tenantId={tenantId} />
         </TabPanel>
         <TabPanel value="items">
-          <ItemsTab tenantId={tenantId} />
+          <ItemsTab tenantId={tenantId} noun={itemNoun} />
         </TabPanel>
         <TabPanel value="import">
           <ImportTab tenantId={tenantId} />

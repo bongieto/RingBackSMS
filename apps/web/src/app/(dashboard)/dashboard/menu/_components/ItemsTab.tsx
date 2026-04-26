@@ -14,7 +14,7 @@ import { BulkActionBar } from './BulkActionBar';
 import { ItemForm } from './ItemForm';
 import type { MenuCategory, MenuItem } from './types';
 
-export function ItemsTab({ tenantId }: { tenantId: string }) {
+export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?: string }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [filterCategoryId, setFilterCategoryId] = useState<string>('');
@@ -108,7 +108,7 @@ export function ItemsTab({ tenantId }: { tenantId: string }) {
         <div className="relative flex-1 min-w-[240px] max-w-md">
           <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search items..."
+            placeholder={`Search ${noun.toLowerCase()}s…`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -142,7 +142,7 @@ export function ItemsTab({ tenantId }: { tenantId: string }) {
             setCreating(true);
           }}
         >
-          <Plus className="h-4 w-4 mr-1" /> Create Item
+          <Plus className="h-4 w-4 mr-1" /> Create {noun}
         </Button>
       </div>
 
@@ -151,6 +151,7 @@ export function ItemsTab({ tenantId }: { tenantId: string }) {
           tenantId={tenantId}
           item={editing}
           categories={categories}
+          noun={noun}
           onClose={() => {
             setCreating(false);
             setEditing(null);
@@ -170,13 +171,13 @@ export function ItemsTab({ tenantId }: { tenantId: string }) {
         <CardContent className="p-0">
           <div className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-4 border-b px-4 py-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
             <div />
-            <div>Item</div>
+            <div>{noun}</div>
             <div>Price</div>
             <div>Available</div>
             <div>Actions</div>
           </div>
           {filtered.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground text-sm">No items match.</div>
+            <div className="p-8 text-center text-muted-foreground text-sm">No {noun.toLowerCase()}s match.</div>
           ) : (
             filtered.map((item) => (
               <div
