@@ -29,9 +29,20 @@ export async function countUserOrganizations(userId: string): Promise<number> {
     const memberships = await clerk.users.getOrganizationMembershipList({ userId });
     const anyM = memberships as unknown as { totalCount?: number; data?: unknown[] } | unknown[];
     const list: unknown[] = Array.isArray(anyM) ? anyM : (Array.isArray((anyM as any).data) ? (anyM as any).data : []);
-    // Only count orgs where the user is an admin (orgs they created/own).
-    // Membership in someone else's org should not block first-tenant creation.
-    return list.filter((m: any) => m.role === 'org:admin').length;
+    // Collect org IDs where the user is an admin (orgs they created/own).
+    const adminOrgIds = list
+      .filter((m: any) => m.role === 'org:admin')
+      .map((m: any) => m.organization?.id)
+      .filter(Boolean) as string[];
+    if (adminOrgIds.length === 0) return 0;
+    // Only count orgs that already have a tenant record in our DB.
+    // An admin org with no tenant means the webhook stub never arrived —
+    // the user should be allowed to complete their first onboarding.
+    const { prisma } = await import('@/lib/server/db');
+    const count = await prisma.tenant.count({
+      where: { clerkOrgId: { in: adminOrgIds } },
+    });
+    return count;
   } catch {
     return 0;
   }
