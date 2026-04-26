@@ -27,12 +27,11 @@ export async function countUserOrganizations(userId: string): Promise<number> {
   try {
     const clerk = await clerkClient();
     const memberships = await clerk.users.getOrganizationMembershipList({ userId });
-    // Clerk SDK may return a paginated object { data, totalCount } or a plain array.
     const anyM = memberships as unknown as { totalCount?: number; data?: unknown[] } | unknown[];
-    if (Array.isArray(anyM)) return anyM.length;
-    if (typeof anyM.totalCount === 'number') return anyM.totalCount;
-    if (Array.isArray(anyM.data)) return anyM.data.length;
-    return 0;
+    const list: unknown[] = Array.isArray(anyM) ? anyM : (Array.isArray((anyM as any).data) ? (anyM as any).data : []);
+    // Only count orgs where the user is an admin (orgs they created/own).
+    // Membership in someone else's org should not block first-tenant creation.
+    return list.filter((m: any) => m.role === 'org:admin').length;
   } catch {
     return 0;
   }
