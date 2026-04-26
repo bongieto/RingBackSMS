@@ -217,6 +217,7 @@ export const taskApi = {
   reopen: (id: string) =>
     webApi.patch(`/tasks/${id}`, { action: 'reopen' }).then((r) => r.data.data),
   delete: (id: string) => webApi.delete(`/tasks/${id}`).then((r) => r.data),
+  dismissAll: () => webApi.delete('/tasks').then((r) => r.data.data),
 };
 
 export const notificationApi = {

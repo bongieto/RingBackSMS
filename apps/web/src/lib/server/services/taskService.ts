@@ -101,6 +101,15 @@ export async function dismissTask(taskId: string, userId: string): Promise<Task>
   });
 }
 
+export async function dismissAllOpenTasks(tenantId: string, userId: string): Promise<number> {
+  const result = await prisma.task.updateMany({
+    where: { tenantId, status: 'OPEN' },
+    data: { status: 'DISMISSED', completedAt: new Date(), completedBy: userId },
+  });
+  logger.info('All open tasks dismissed', { tenantId, count: result.count, by: userId });
+  return result.count;
+}
+
 export async function reopenTask(taskId: string): Promise<Task> {
   return prisma.task.update({
     where: { id: taskId },

@@ -32,6 +32,16 @@ export default function TasksPage() {
   const tasks = callbacksOnly ? rawTasks.filter(isCallbackTask) : rawTasks;
   const callbackCount = rawTasks.filter(isCallbackTask).length;
 
+  const dismissAllMutation = useMutation({
+    mutationFn: () => taskApi.dismissAll(),
+    onSuccess: (data: { dismissed?: number } | null) => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['tasks-count'] });
+      toast.success(`Dismissed ${data?.dismissed ?? 'all'} items`);
+    },
+    onError: () => toast.error('Failed to dismiss all tasks'),
+  });
+
   const createMutation = useMutation({
     mutationFn: () => taskApi.create({ title: newTitle, description: newDescription || undefined }),
     onSuccess: () => {
@@ -79,9 +89,25 @@ export default function TasksPage() {
             </button>
           )}
         </div>
-        <Button onClick={() => setShowCreate((v) => !v)}>
-          <Plus className="h-4 w-4 mr-1.5" /> Add task
-        </Button>
+        <div className="flex items-center gap-2">
+          {tab === 'OPEN' && rawTasks.length > 0 && (
+            <Button
+              variant="outline"
+              className="text-red-600 border-red-200 hover:bg-red-50"
+              disabled={dismissAllMutation.isPending}
+              onClick={() => {
+                if (confirm(`Dismiss all ${rawTasks.length} open items?`)) {
+                  dismissAllMutation.mutate();
+                }
+              }}
+            >
+              Dismiss all
+            </Button>
+          )}
+          <Button onClick={() => setShowCreate((v) => !v)}>
+            <Plus className="h-4 w-4 mr-1.5" /> Add task
+          </Button>
+        </div>
       </div>
 
       {showCreate && (

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { getTenantByClerkOrg } from '@/lib/server/services/tenantService';
-import { createTask, listAllTasks, listOpenTasks } from '@/lib/server/services/taskService';
+import { createTask, dismissAllOpenTasks, listAllTasks, listOpenTasks } from '@/lib/server/services/taskService';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { TaskPriority, TaskSource, TaskStatus } from '@prisma/client';
 
@@ -28,6 +28,19 @@ export async function GET(req: NextRequest) {
   } catch (err: any) {
     console.error('[GET /api/tasks] failed', err);
     return apiError('Failed to list tasks', 500);
+  }
+}
+
+export async function DELETE(_req: NextRequest) {
+  const { orgId, userId } = await auth();
+  if (!orgId || !userId) return apiError('Organization required', 401);
+  try {
+    const tenant = await getTenantByClerkOrg(orgId);
+    const count = await dismissAllOpenTasks(tenant.id, userId);
+    return apiSuccess({ dismissed: count });
+  } catch (err: any) {
+    console.error('[DELETE /api/tasks] failed', err);
+    return apiError('Failed to dismiss all tasks', 500);
   }
 }
 
