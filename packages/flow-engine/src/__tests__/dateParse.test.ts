@@ -3,6 +3,7 @@ import {
   addDaysYmd,
   dayOfWeekYmd,
   parseDateOnly,
+  parseDateRange,
   ymdToIso,
 } from '../dateParse';
 
@@ -172,5 +173,87 @@ describe('parseDateOnly', () => {
       .toEqual({ year: 2026, month: 4, day: 22 });
     expect(parseDateOnly('tomorrow', TZ_CHI, WED_LATE_NIGHT_CHI_AS_UTC)?.ymd)
       .toEqual({ year: 2026, month: 4, day: 23 });
+  });
+});
+
+describe('parseDateRange', () => {
+  // Anchor 1: Saturday Apr 25 2026, 2pm Chicago.
+  const SAT = SAT_APR_25_2PM_CHI_AS_UTC;
+  // Anchor 2: Wednesday Apr 22 2026 (mid-week, dow=3).
+  const WED = new Date('2026-04-22T19:00:00Z');
+  // Anchor 3: Sunday Apr 26 2026 (start of week, dow=0).
+  const SUN = new Date('2026-04-26T19:00:00Z');
+
+  it('returns null for unparseable text', () => {
+    expect(parseDateRange('hello there', TZ_CHI, SAT)).toBeNull();
+    expect(parseDateRange('tomorrow', TZ_CHI, SAT)).toBeNull(); // single-date, not a range
+  });
+
+  it('parses "next week" as Sunday-Saturday after this week', () => {
+    // From Saturday Apr 25, next Sunday = Apr 26, next Saturday = May 2.
+    expect(parseDateRange('where is the truck next week', TZ_CHI, SAT)).toEqual({
+      from: { year: 2026, month: 4, day: 26 },
+      to: { year: 2026, month: 5, day: 2 },
+      label: 'next week',
+    });
+  });
+
+  it('parses "next week" from a Sunday as the following Sun-Sat', () => {
+    // From Sunday Apr 26, next Sun = May 3, next Sat = May 9.
+    expect(parseDateRange('next week', TZ_CHI, SUN)).toEqual({
+      from: { year: 2026, month: 5, day: 3 },
+      to: { year: 2026, month: 5, day: 9 },
+      label: 'next week',
+    });
+  });
+
+  it('parses "this week" as today through this Saturday', () => {
+    // From Wed Apr 22, this Saturday = Apr 25.
+    expect(parseDateRange('what about this week', TZ_CHI, WED)).toEqual({
+      from: { year: 2026, month: 4, day: 22 },
+      to: { year: 2026, month: 4, day: 25 },
+      label: 'this week',
+    });
+    // From Saturday Apr 25, this week = just today.
+    expect(parseDateRange('this week', TZ_CHI, SAT)).toEqual({
+      from: { year: 2026, month: 4, day: 25 },
+      to: { year: 2026, month: 4, day: 25 },
+      label: 'this week',
+    });
+  });
+
+  it('parses "this weekend" as upcoming Sat+Sun', () => {
+    // From Wed Apr 22, this weekend = Sat Apr 25 + Sun Apr 26.
+    expect(parseDateRange('where will you be this weekend', TZ_CHI, WED)).toEqual({
+      from: { year: 2026, month: 4, day: 25 },
+      to: { year: 2026, month: 4, day: 26 },
+      label: 'this weekend',
+    });
+    // From Saturday Apr 25, this weekend = today + Sun.
+    expect(parseDateRange('this weekend', TZ_CHI, SAT)).toEqual({
+      from: { year: 2026, month: 4, day: 25 },
+      to: { year: 2026, month: 4, day: 26 },
+      label: 'this weekend',
+    });
+  });
+
+  it('parses "next weekend" as the weekend after this one', () => {
+    // From Wed Apr 22, this weekend is Sat Apr 25 + Sun Apr 26.
+    // Next weekend = Sat May 2 + Sun May 3.
+    expect(parseDateRange('next weekend', TZ_CHI, WED)).toEqual({
+      from: { year: 2026, month: 5, day: 2 },
+      to: { year: 2026, month: 5, day: 3 },
+      label: 'next weekend',
+    });
+    // From Saturday Apr 25, next weekend = +7 days.
+    expect(parseDateRange('next weekend', TZ_CHI, SAT)).toEqual({
+      from: { year: 2026, month: 5, day: 2 },
+      to: { year: 2026, month: 5, day: 3 },
+      label: 'next weekend',
+    });
+  });
+
+  it('treats bare "weekend" as this weekend', () => {
+    expect(parseDateRange('any plans for the weekend', TZ_CHI, WED)?.label).toBe('this weekend');
   });
 });

@@ -194,3 +194,62 @@ function isBefore(a: Ymd, b: Ymd): boolean {
 export function ymdToIso(ymd: Ymd): string {
   return `${ymd.year}-${String(ymd.month).padStart(2, '0')}-${String(ymd.day).padStart(2, '0')}`;
 }
+
+export interface DateRange {
+  from: Ymd;
+  to: Ymd;
+  /** Human label, e.g. "next week", "this weekend". */
+  label: string;
+}
+
+/**
+ * Pull a date *range* out of `text`. Returns null for phrases that can't
+ * be resolved to a span. Used by the food-truck location handler to
+ * answer "where will you be next week / this weekend?".
+ *
+ * Week convention: Sunday-start (todayDow 0=Sun..6=Sat). "this week" is
+ * today through the upcoming Saturday — past days don't matter to a
+ * customer asking now. "next week" is the full Sunday..Saturday after.
+ */
+export function parseDateRange(
+  text: string,
+  timezone: string,
+  now: Date = new Date(),
+): DateRange | null {
+  if (!text) return null;
+  const t = text.toLowerCase();
+  const today = ymdInTz(now, timezone);
+  const dow = dayOfWeekYmd(today);
+
+  if (/\bnext\s+weekend\b/.test(t)) {
+    // The Saturday/Sunday after the upcoming weekend.
+    // If today is Sat → next Sat is +7. If Sun → next Sat is +6.
+    // Else (Mon..Fri) → next Sat is (6 - dow) + 7.
+    const daysToNextSat = dow === 6 ? 7 : dow === 0 ? 6 : 6 - dow + 7;
+    const sat = addDaysYmd(today, daysToNextSat);
+    return { from: sat, to: addDaysYmd(sat, 1), label: 'next weekend' };
+  }
+
+  if (/\bthis\s+weekend\b/.test(t) || /\bweekend\b/.test(t)) {
+    // Upcoming Sat + Sun. If today is Sat or Sun, those are it.
+    if (dow === 6) return { from: today, to: addDaysYmd(today, 1), label: 'this weekend' };
+    if (dow === 0) return { from: today, to: today, label: 'this weekend' };
+    const sat = addDaysYmd(today, 6 - dow);
+    return { from: sat, to: addDaysYmd(sat, 1), label: 'this weekend' };
+  }
+
+  if (/\bnext\s+week\b/.test(t)) {
+    // Next Sunday through the following Saturday.
+    const daysToNextSun = dow === 0 ? 7 : 7 - dow;
+    const from = addDaysYmd(today, daysToNextSun);
+    return { from, to: addDaysYmd(from, 6), label: 'next week' };
+  }
+
+  if (/\bthis\s+week\b/.test(t) || /\brest\s+of\s+(the|this)\s+week\b/.test(t)) {
+    // Today through this Saturday.
+    const daysToSat = 6 - dow;
+    return { from: today, to: addDaysYmd(today, daysToSat), label: 'this week' };
+  }
+
+  return null;
+}

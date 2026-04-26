@@ -10,9 +10,10 @@ export {
   dayOfWeekYmd,
   formatPrettyDate,
   parseDateOnly,
+  parseDateRange,
   ymdToIso,
 } from './dateParse';
-export type { Ymd, ParsedDate } from './dateParse';
+export type { Ymd, ParsedDate, DateRange } from './dateParse';
 export { pushDecision, timeAsync, timeSync } from './decisions';
 export { computeAvailableSlots, zonedDateToUtc } from './calendar/localAvailability';
 export type { ComputeSlotsParams, AvailableSlot, DaySchedule } from './calendar/localAvailability';
