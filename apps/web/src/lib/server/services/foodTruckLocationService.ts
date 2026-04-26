@@ -108,7 +108,31 @@ export async function buildLocationReply(
   });
 
   if (stops.length === 0) {
-    if (isToday) return null; // let the FALLBACK / businessAddress path handle it
+    if (isToday) {
+      // No stop today. Look up the next future stop so we don't fall
+      // through to FALLBACK and have the LLM hallucinate the
+      // businessAddress as "where we are today" — the truck isn't
+      // there, it's somewhere else later this week.
+      const nextStop = await prisma.foodTruckStop.findFirst({
+        where: {
+          tenantId,
+          isActive: true,
+          stopDate: { gt: new Date(ymdToIso(today) + 'T00:00:00Z') },
+        },
+        orderBy: [{ stopDate: 'asc' }, { openTime: 'asc' }],
+      });
+      if (!nextStop) return null; // truly empty schedule — let FALLBACK handle
+      const nextYmd = {
+        year: nextStop.stopDate.getUTCFullYear(),
+        month: nextStop.stopDate.getUTCMonth() + 1,
+        day: nextStop.stopDate.getUTCDate(),
+      };
+      const nextLabel = formatPrettyDate(nextYmd, timezone);
+      const where = nextStop.locationName
+        ? `${nextStop.locationName} (${nextStop.address})`
+        : nextStop.address;
+      return `We're not on the road today. Next stop: ${nextLabel} at ${where}, ${nextStop.openTime}–${nextStop.closeTime}.`;
+    }
     const label = parsed?.label ?? formatPrettyDate(target, timezone);
     return `We don't have a stop scheduled for ${label}. Reply WHERE for today's spot.`;
   }
