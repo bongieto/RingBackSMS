@@ -440,6 +440,10 @@ model Order {
   tipAmount          Decimal?     @db.Decimal(10, 2) // customer-selected tip at checkout
   total              Decimal      @db.Decimal(10, 2) // final amount customer pays (subtotal + tax + fee + tip)
   pickupTime         String?
+  /// True when the customer requested dine-in. pickupTime then carries the
+  /// customer's *arrival ETA*, not pickup time. Default false for the
+  /// dominant pickup case so existing rows backfill correctly.
+  dineIn             Boolean      @default(false)
   estimatedReadyTime DateTime?
   notes              String?      @db.Text
   squareOrderId      String?

@@ -185,6 +185,9 @@ export const OrderSchema = z.object({
   items: z.array(OrderItemSchema),
   total: z.number().nonnegative(),
   pickupTime: z.string().nullable(),
+  // True when the customer requested dine-in. pickupTime then carries the
+  // *arrival ETA* rather than a pickup time.
+  dineIn: z.boolean().default(false),
   notes: z.string().nullable(),
   squareOrderId: z.string().nullable(),
   squarePaymentId: z.string().nullable(),

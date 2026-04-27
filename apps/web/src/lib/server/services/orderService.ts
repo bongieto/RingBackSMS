@@ -119,6 +119,9 @@ export interface CreateOrderInput {
   feeAmount?: number;
   pickupTime: string | null;
   notes: string | null;
+  /** True when the customer requested dine-in. pickupTime then carries
+   *  the customer's *arrival ETA*, not pickup time. */
+  dineIn?: boolean;
   /** Customer-provided name captured during the order. Shown on kitchen
    *  ticket and the READY SMS. Also backfilled onto the Contact row when
    *  the existing Contact has no name yet. */
@@ -205,6 +208,7 @@ export async function createOrder(input: CreateOrderInput) {
       feeAmount: input.feeAmount ?? 0,
       customerName: effectiveName,
       pickupTime: input.pickupTime,
+      dineIn: input.dineIn ?? false,
       estimatedReadyTime,
       notes: input.notes,
       ...(input.stripePaymentId && { stripePaymentId: input.stripePaymentId }),

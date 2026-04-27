@@ -29,6 +29,9 @@ export interface SaveOrderSideEffect {
     /** Customer's given name captured during the order (e.g. "Rolando").
      *  Shown on kitchen tickets and the READY SMS. */
     customerName?: string | null;
+    /** True when the customer requested dine-in. pickupTime then carries
+     *  the customer's *arrival ETA*, not pickup time. */
+    dineIn?: boolean;
     /** When 'PENDING', createOrder skips the POS push — we'll push after
      *  Stripe confirms payment. Default is to push immediately (legacy
      *  pay-after-order flow). */
@@ -84,6 +87,7 @@ export interface CreatePaymentLinkSideEffect {
     taxAmount?: number;
     feeAmount?: number;
     customerName?: string | null;
+    dineIn?: boolean;
   };
 }
 

@@ -20,6 +20,15 @@ import { buildLumpiaContext, IDS } from './_fixtures';
  */
 
 const ACCURACY_THRESHOLD = 0.9;
+const CRITICAL_GROUPS = new Set([
+  'intent-routing',
+  'order-flow',
+  'meeting-flow',
+  'closures',
+  'fallback-hardening',
+  'ungrounded-guards',
+  'sms-cap',
+]);
 
 type AgentToolStub = { name: string; input: unknown };
 
@@ -645,6 +654,7 @@ const CASES: AccuracyCase[] = [
       buildLumpiaContext({
         openNow: true,
         flowTypes: [FlowType.MEETING, FlowType.FALLBACK],
+        config: { meetingEnabled: false },
       }),
     expectFlowType: FlowType.MEETING,
     expectReplyContains: 'preferred date',
@@ -1477,6 +1487,15 @@ describe('System accuracy benchmark', () => {
     }
     // eslint-disable-next-line no-console
     console.log(report.join('\n'));
+
+    const criticalFailures = failed.filter((f) => CRITICAL_GROUPS.has(f.group));
+    if (criticalFailures.length > 0) {
+      throw new Error(
+        `Critical accuracy cases failed: ${criticalFailures
+          .map((f) => `${f.group}/${f.id}`)
+          .join(', ')}`,
+      );
+    }
 
     if (accuracy < ACCURACY_THRESHOLD) {
       throw new Error(

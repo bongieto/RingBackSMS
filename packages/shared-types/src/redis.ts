@@ -29,6 +29,9 @@ export const OrderDraftSchema = z.object({
   ),
   pickupTime: z.string().optional(),
   notes: z.string().optional(),
+  // True when the customer signaled dine-in. The pickupTime field then
+  // represents their *arrival ETA*, not pickup time.
+  dineIn: z.boolean().optional(),
 });
 
 export type OrderDraft = z.infer<typeof OrderDraftSchema>;
@@ -86,6 +89,10 @@ export const CallerStateSchema = z.object({
   // READY SMS, and receipt). Cached here within the session; also
   // denormalized onto Order + Contact on save.
   customerName: z.string().max(80).nullable().optional(),
+  // Unix-ms timestamp of the last reply we sent in AWAITING_PAYMENT state.
+  // Used to rate-limit owner notifications when the customer keeps texting
+  // after the payment link is out (avoid spamming the owner).
+  lastAwaitingPaymentReplyAt: z.number().nullable().optional(),
   lastMessageAt: z.number(), // unix timestamp
   messageCount: z.number().int().default(0),
   dedupKey: z.string().nullable(), // last Twilio MessageSid to prevent duplicates

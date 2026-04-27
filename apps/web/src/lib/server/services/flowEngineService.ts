@@ -1647,6 +1647,7 @@ async function processSideEffect(
         pickupTime: effect.payload.pickupTime,
         notes: effect.payload.notes,
         customerName: effect.payload.customerName,
+        dineIn: effect.payload.dineIn,
         paymentStatus: effect.payload.paymentStatus,
       });
       context.orderId = order.id;

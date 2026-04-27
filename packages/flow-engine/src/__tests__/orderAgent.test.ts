@@ -1,4 +1,4 @@
-import { runOrderAgent } from '../ai/orderAgent';
+import { runOrderAgent, detectDineInIntent } from '../ai/orderAgent';
 import type { FlowInput, ChatFn, ChatWithToolsFn } from '../types';
 import type { TenantContext } from '../types';
 import { FlowType } from '@ringback/shared-types';
@@ -187,6 +187,19 @@ describe('runOrderAgent', () => {
     // Handler returns error, no mutation; agent still produces a reply
     expect(result.nextState.orderDraft).toBeNull();
     expect(result.smsReply.length).toBeGreaterThan(0);
+  });
+
+  test('unclear restaurant item with empty cart gets Smart Order Link instead of a guess', async () => {
+    const input = mkInput(
+      'lemme get two pork rolls',
+      [],
+      "I couldn't find pork rolls on the menu.",
+    );
+    const result = await runOrderAgent(input);
+    expect(result.nextState.orderDraft).toBeNull();
+    expect(result.sideEffects).toHaveLength(0);
+    expect(result.smsReply).toContain('Smart Order Link');
+    expect(result.smsReply).toContain('/m/test-restaurant');
   });
 
   test('confirm_order without explicit user YES is rejected', async () => {
@@ -517,5 +530,201 @@ describe('runOrderAgent', () => {
     });
     expect(result.flowType).toBe(FlowType.ORDER);
     expect(result.smsReply.length).toBeGreaterThan(0);
+  });
+
+  // ── Modifier preserved as notes ──
+  test('"with rice" qualifier survives via add_items notes and renders in summary', async () => {
+    const input = mkInput(
+      'Adobo Chicken with rice',
+      [
+        {
+          name: 'add_items',
+          input: { items: [{ menu_item_id: ADOBO_ID, quantity: 1, notes: 'with rice' }] },
+        },
+      ],
+      'Added 1× Adobo Chicken (with rice).',
+    );
+    const result = await runOrderAgent(input);
+    expect(result.nextState.orderDraft?.items).toHaveLength(1);
+    expect(result.nextState.orderDraft?.items[0].notes).toBe('with rice');
+  });
+
+  // ── Dine-in detection + wording ──
+  test('"Dine in po. ETA 6:45pm" sets dineIn and confirms with dine-in wording', async () => {
+    const state = {
+      tenantId: TENANT_ID,
+      callerPhone: '+12175550199',
+      conversationId: null,
+      currentFlow: FlowType.ORDER,
+      flowStep: 'PICKUP_TIME',
+      orderDraft: {
+        items: [{ menuItemId: ADOBO_ID, name: 'Adobo Chicken', quantity: 1, price: 13.99 }],
+      },
+      customerName: 'Yanna',
+      lastMessageAt: Date.now(),
+      messageCount: 1,
+      dedupKey: null,
+    } as any;
+    const input = mkInput(
+      'Dine in po. ETA 6:45pm',
+      [{ name: 'set_pickup_time', input: { when: '6:45pm' } }],
+      '',
+      state,
+    );
+    const result = await runOrderAgent(input);
+    expect(result.nextState.orderDraft?.dineIn).toBe(true);
+    expect(result.nextState.orderDraft?.pickupTime).toBe('6:45pm');
+    expect(result.smsReply.toLowerCase()).toContain('dine-in at 6:45pm');
+    expect(result.smsReply.toLowerCase()).not.toMatch(/pickup at|for 6:45pm pickup/);
+  });
+
+  test('dine-in confirm → SAVE_ORDER payload includes dineIn:true and owner SMS prefixed DINE-IN', async () => {
+    const state = {
+      tenantId: TENANT_ID,
+      callerPhone: '+12175550199',
+      conversationId: null,
+      currentFlow: FlowType.ORDER,
+      flowStep: 'ORDER_CONFIRM',
+      orderDraft: {
+        items: [{ menuItemId: ADOBO_ID, name: 'Adobo Chicken', quantity: 1, price: 13.99 }],
+        pickupTime: '6:45pm',
+        dineIn: true,
+      },
+      customerName: 'Yanna',
+      lastMessageAt: Date.now(),
+      messageCount: 1,
+      dedupKey: null,
+    } as any;
+    const input = mkInput('confirm', [{ name: 'confirm_order', input: {} }], '', state);
+    const result = await runOrderAgent(input);
+    const saveOrder = result.sideEffects.find((s) => s.type === 'SAVE_ORDER') as any;
+    const notify = result.sideEffects.find((s) => s.type === 'NOTIFY_OWNER') as any;
+    expect(saveOrder?.payload.dineIn).toBe(true);
+    expect(notify?.payload.message).toMatch(/DINE-IN/);
+    expect(notify?.payload.message).toMatch(/Arrival: 6:45pm/);
+  });
+
+  // ── AWAITING_PAYMENT short-circuit + owner notification ──
+  test('AWAITING_PAYMENT + new items message → no LLM call, canned reply, NOTIFY_OWNER fires', async () => {
+    const state = {
+      tenantId: TENANT_ID,
+      callerPhone: '+12175550199',
+      conversationId: null,
+      currentFlow: FlowType.ORDER,
+      flowStep: 'AWAITING_PAYMENT',
+      orderDraft: null,
+      customerName: 'Yanna',
+      lastMessageAt: Date.now(),
+      messageCount: 5,
+      dedupKey: null,
+      lastAwaitingPaymentReplyAt: null,
+    } as any;
+    const llmSpy: ChatWithToolsFn = jest.fn().mockResolvedValue({
+      text: 'should not be called',
+      toolCalls: [],
+      stopReason: 'end_turn',
+      provider: 'claude' as const,
+    });
+    const result = await runOrderAgent({
+      tenantContext,
+      callerPhone: '+12175550199',
+      inboundMessage: '1 lumpia bowl 1 crispy pata',
+      currentState: state,
+      chatFn,
+      chatWithToolsFn: llmSpy,
+      callerMemory: {
+        activeOrder: {
+          orderNumber: 'ORD-1',
+          status: 'PENDING',
+          total: 17.23,
+        },
+      } as any,
+    });
+    expect(llmSpy).not.toHaveBeenCalled();
+    expect(result.smsReply).toMatch(/already out for \$17\.23/);
+    const notify = result.sideEffects.find((s) => s.type === 'NOTIFY_OWNER') as any;
+    expect(notify).toBeDefined();
+    expect(notify.payload.message).toMatch(/1 lumpia bowl 1 crispy pata/);
+    expect((result.nextState as any).lastAwaitingPaymentReplyAt).toBeGreaterThan(0);
+  });
+
+  test('AWAITING_PAYMENT + second message within 60s → no second NOTIFY_OWNER (rate-limit)', async () => {
+    const recently = Date.now() - 10_000; // 10s ago
+    const state = {
+      tenantId: TENANT_ID,
+      callerPhone: '+12175550199',
+      conversationId: null,
+      currentFlow: FlowType.ORDER,
+      flowStep: 'AWAITING_PAYMENT',
+      orderDraft: null,
+      customerName: 'Yanna',
+      lastMessageAt: recently,
+      messageCount: 6,
+      dedupKey: null,
+      lastAwaitingPaymentReplyAt: recently,
+    } as any;
+    const result = await runOrderAgent({
+      tenantContext,
+      callerPhone: '+12175550199',
+      inboundMessage: 'add laing too',
+      currentState: state,
+      chatFn,
+      chatWithToolsFn: jest.fn() as any,
+      callerMemory: {
+        activeOrder: { orderNumber: 'ORD-1', status: 'PENDING', total: 17.23 },
+      } as any,
+    });
+    expect(result.smsReply).toMatch(/already out/);
+    expect(result.sideEffects.find((s) => s.type === 'NOTIFY_OWNER')).toBeUndefined();
+  });
+
+  test('AWAITING_PAYMENT + "NO" cancels and resets', async () => {
+    const state = {
+      tenantId: TENANT_ID,
+      callerPhone: '+12175550199',
+      conversationId: null,
+      currentFlow: FlowType.ORDER,
+      flowStep: 'AWAITING_PAYMENT',
+      orderDraft: null,
+      customerName: 'Yanna',
+      lastMessageAt: Date.now(),
+      messageCount: 5,
+      dedupKey: null,
+    } as any;
+    const result = await runOrderAgent({
+      tenantContext,
+      callerPhone: '+12175550199',
+      inboundMessage: 'NO',
+      currentState: state,
+      chatFn,
+      chatWithToolsFn: jest.fn() as any,
+    });
+    expect(result.nextState.flowStep).toBe('MENU_DISPLAY');
+    expect(result.nextState.orderDraft).toBeNull();
+    expect(result.smsReply.toLowerCase()).toMatch(/cancelled/);
+  });
+});
+
+describe('detectDineInIntent', () => {
+  test.each([
+    ['dine in po', 'dine_in'],
+    ['Dine-in please', 'dine_in'],
+    ['kakain dito', 'dine_in'],
+    ['kakain po', 'dine_in'],
+    ['eating here', 'dine_in'],
+    ['for dine-in', 'dine_in'],
+    ['pickup at 6pm', 'pickup'],
+    ['to-go please', 'pickup'],
+    ['takeout', 'pickup'],
+  ])('"%s" → %s', (msg, expected) => {
+    expect(detectDineInIntent(msg)).toBe(expected);
+  });
+
+  test('negation: "not dine in" → null (no false positive)', () => {
+    expect(detectDineInIntent('not dine in, pickup please')).not.toBe('dine_in');
+  });
+
+  test('silent message → null', () => {
+    expect(detectDineInIntent('1 adobo with rice')).toBeNull();
   });
 });

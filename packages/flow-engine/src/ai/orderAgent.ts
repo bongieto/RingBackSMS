@@ -44,6 +44,38 @@ function capSmsReply(reply: string, cap: number = SMS_REPLY_CAP): string {
   return `${prosePart.slice(0, budget - 1).trimEnd()}…\n${url}`;
 }
 
+function buildMenuUrl(tenantSlug?: string | null): string | null {
+  return tenantSlug
+    ? `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.ringbacksms.com'}/m/${tenantSlug}`
+    : null;
+}
+
+function buildSmartOrderLinkReply(tenantSlug?: string | null): string | null {
+  const menuUrl = buildMenuUrl(tenantSlug);
+  if (!menuUrl) return null;
+  return capSmsReply(
+    `I want to make sure I get that right. Tap the Smart Order Link to pick your items from the menu: ${menuUrl}`,
+  );
+}
+
+function looksLikeOrderAttempt(raw: string): boolean {
+  const msg = raw.trim();
+  if (!msg) return false;
+  if (/^(hi|hello|hey+|thanks?|thank you|ok|okay|yes|no|nope|nah|menu|help)\b/i.test(msg)) {
+    return false;
+  }
+  return (
+    /\b(order|want|wanna|need|get|have|buy|add|lemme|let me|can i|could i|i'll take|i would like|same as|usual)\b/i.test(msg) ||
+    /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|dozen|couple|pair)\b/i.test(msg)
+  );
+}
+
+function looksLikeUncertainItemReply(text: string): boolean {
+  return /\b(didn'?t catch|don'?t see|couldn'?t find|not sure|which one|what item|what would you like|text menu|menu link|not on (the |our )?menu)\b/i.test(
+    text,
+  );
+}
+
 // Cheap heuristic: did the customer just explicitly confirm?
 // Anchored to start-and-end of message so phrases like "I can confirm
 // that's not right" or "yes but change X" don't accidentally commit the
@@ -167,7 +199,44 @@ function cloneDraft(d: OrderDraft | null | undefined): OrderDraft {
     items: d.items.map((i) => ({ ...i, selectedModifiers: i.selectedModifiers ? [...i.selectedModifiers] : undefined })),
     pickupTime: d.pickupTime,
     notes: d.notes,
+    dineIn: d.dineIn,
   };
+}
+
+/**
+ * Deterministic detector for dine-in vs pickup intent. Returns 'dine_in' /
+ * 'pickup' when the message contains an unambiguous signal, or null when
+ * the message is silent on fulfillment. Used so the bot can flip to dine-in
+ * semantics ("arrival time", "dine-in at 6:45pm") without forcing every
+ * customer through an extra "pickup or dine-in?" round-trip.
+ *
+ * Negation guard: "not dine in" / "no dine-in" don't trigger. We bias
+ * toward null on conflict so a stray word doesn't override an earlier
+ * explicit choice.
+ */
+export function detectDineInIntent(raw: string): 'dine_in' | 'pickup' | null {
+  if (!raw) return null;
+  const msg = raw.toLowerCase();
+  // Negation guard — "not dine in", "no dine-in", "instead of dine in".
+  const negatedDineIn = /\b(not|no|instead of|rather than|skip|isn'?t|isn t)\b[^.!?]{0,15}\bdine[\s-]?in\b/i.test(msg);
+  // Tagalog: "kakain dito/po/dyan" = "(I'm) eating here". Common dine-in
+  // signal in Filipino-leaning tenants. Also accept "kain dito/po".
+  const dineIn =
+    !negatedDineIn &&
+    (/\bdine[\s-]?in\b/i.test(msg) ||
+      /\b(eat|eating)\s+(here|there|in)\b/i.test(msg) ||
+      /\bk(?:a)?kain\s+(?:dito|po|dyan|d'?yan|diyan)\b/i.test(msg) ||
+      /\bhere\s+to\s+eat\b/i.test(msg) ||
+      /\bfor\s+dine[\s-]?in\b/i.test(msg));
+  const pickup =
+    /\bpick[\s-]?up\b/i.test(msg) ||
+    /\bto[\s-]?go\b/i.test(msg) ||
+    /\btake[\s-]?out\b/i.test(msg) ||
+    /\btakeout\b/i.test(msg) ||
+    /\bpara\s+takeout\b/i.test(msg);
+  if (dineIn && !pickup) return 'dine_in';
+  if (pickup && !dineIn) return 'pickup';
+  return null;
 }
 
 function buildBaseState(input: FlowInput, draft: OrderDraft, overrides: Partial<CallerState> = {}): CallerState {
@@ -201,6 +270,7 @@ function canonicalPrompt(
   draft: OrderDraft,
   name: string | null,
 ): string {
+  const dineIn = draft.dineIn === true;
   switch (missing) {
     case 'items':
       return name
@@ -209,11 +279,17 @@ function canonicalPrompt(
     case 'name':
       return `What name should I put this order under?`;
     case 'pickup':
-      return `What time would you like to pick up?`;
+      return dineIn
+        ? `What time will you be arriving?`
+        : `What time would you like to pick up?`;
     case 'confirm': {
       const summary = buildOwnerOrderSummary(draft.items).replace(/\n/g, ', ');
-      const pickup = draft.pickupTime ? ` Pickup ${draft.pickupTime}.` : '';
-      return `${summary}.${pickup} Ready to confirm?`;
+      const when = draft.pickupTime
+        ? dineIn
+          ? ` Dine-in at ${draft.pickupTime}.`
+          : ` Pickup ${draft.pickupTime}.`
+        : '';
+      return `${summary}.${when} Ready to confirm?`;
     }
   }
 }
@@ -224,7 +300,8 @@ function buildOwnerOrderSummary(items: OrderDraft['items']): string {
       const mods = i.selectedModifiers?.length
         ? ` [${i.selectedModifiers.map((m) => `${m.groupName}: ${m.modifierName}`).join(', ')}]`
         : '';
-      return `${i.quantity}× ${i.name}${mods}`;
+      const notes = i.notes ? ` (${i.notes})` : '';
+      return `${i.quantity}× ${i.name}${notes}${mods}`;
     })
     .join('\n');
 }
@@ -281,6 +358,23 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
     return processOrderFlow(input);
   }
 
+  // ── AWAITING_PAYMENT SHORT-CIRCUIT ──
+  // Once the payment link has been sent, we don't run the LLM again on
+  // subsequent inbound messages. The LLM would happily start a fresh draft
+  // and mislead the customer that their additions were captured. Instead,
+  // delegate to the deterministic regex flow which (1) honors NO/NEVERMIND
+  // as a restart, (2) returns a clear "your link is already out" reply for
+  // anything else, and (3) notifies the owner so a human can step in.
+  if (input.currentState?.flowStep === 'AWAITING_PAYMENT') {
+    pushDecision(input, {
+      handler: 'runOrderAgent',
+      phase: 'PRE_HANDLER',
+      outcome: 'awaiting_payment_short_circuit',
+      durationMs: Date.now() - agentT0,
+    });
+    return processOrderFlow(input);
+  }
+
   pushDecision(input, {
     handler: 'runOrderAgent',
     phase: 'FLOW',
@@ -297,6 +391,19 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
     // the capture came via Claude's set_pickup_time tool OR our
     // deterministic fallback parser. Both paths need the same echo.
     const pickupWasEmptyOnEntry = !draft.pickupTime;
+
+    // Detect dine-in vs pickup intent from the inbound message. When the
+    // customer says "dine in", "kakain dito", "eat here", etc., flip the
+    // draft into dine-in mode so subsequent prompts ask "What time will
+    // you be arriving?" instead of "What time would you like to pick up?".
+    // Once flagged, only an explicit pickup signal flips it back —
+    // protects against a stray word silently inverting the order.
+    const fulfillmentSignal = detectDineInIntent(inboundMessage);
+    if (fulfillmentSignal === 'dine_in') {
+      draft.dineIn = true;
+    } else if (fulfillmentSignal === 'pickup' && draft.dineIn) {
+      draft.dineIn = false;
+    }
 
     // If the customer is restating their entire order ("Order: X, Y, Z"
     // or "I want X, Y, Z" / "can i get X"), or rejecting the bot's
@@ -821,14 +928,55 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
 
     // ── MENU LINK ──
     if (wantsMenuLink) {
-      const slug = tenantContext.tenantSlug;
-      const menuUrl = slug
-        ? `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.ringbacksms.com'}/m/${slug}`
-        : null;
+      const menuUrl = buildMenuUrl(tenantContext.tenantSlug);
       const reply = capSmsReply(aiResponse.text && menuUrl ? `${aiResponse.text}\n${menuUrl}` : menuUrl ?? aiResponse.text ?? 'Menu link coming shortly.');
       return {
         nextState: buildBaseState(input, draft, { flowStep: currentState?.flowStep ?? 'MENU_DISPLAY', customerName: capturedName }),
         smsReply: reply,
+        sideEffects: [],
+        flowType: FlowType.ORDER,
+      };
+    }
+
+    // ── SMART ORDER LINK LOW-CONFIDENCE FALLBACK ──
+    // Restaurant/food-truck customers often use casual names that don't
+    // map cleanly to menu names ("pork rolls", "the regular", "that
+    // garlic rice thing"). If the agent/tool layer failed to mutate an
+    // empty cart, don't let a loose LLM reply or legacy regex flow guess.
+    // Send the web order form instead, where the customer can tap exact
+    // items/modifiers.
+    const smartOrderLinkReply = buildSmartOrderLinkReply(tenantContext.tenantSlug);
+    const hasLowConfidenceItemFailure =
+      smartOrderLinkReply != null &&
+      draft.items.length === 0 &&
+      !anyMutation &&
+      looksLikeOrderAttempt(inboundMessage) &&
+      (
+        toolErrors.length > 0 ||
+        (!aiResponse.toolCalls.length && !aiResponse.text) ||
+        looksLikeUncertainItemReply(aiResponse.text) ||
+        clarification?.field === 'item_identity' ||
+        clarification?.field === 'generic'
+      );
+    if (hasLowConfidenceItemFailure && smartOrderLinkReply) {
+      pushDecision(input, {
+        handler: 'orderAgent.smartOrderLink',
+        phase: 'POST_HANDLER',
+        outcome: 'low_confidence_item_mapping',
+        evidence: {
+          toolErrors,
+          clarificationField: clarification?.field ?? null,
+          hadText: Boolean(aiResponse.text),
+        },
+        durationMs: 0,
+      });
+      return {
+        nextState: buildBaseState(input, draft, {
+          flowStep: currentState?.flowStep ?? 'MENU_DISPLAY',
+          customerName: capturedName,
+          pendingClarification: null,
+        }),
+        smsReply: smartOrderLinkReply,
         sideEffects: [],
         flowType: FlowType.ORDER,
       };
@@ -901,18 +1049,21 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         };
       }
       if (!draft.pickupTime) {
-        // Don't commit without a pickup time — ask for it.
+        // Don't commit without a pickup/arrival time — ask for it.
+        const askWhen = draft.dineIn
+          ? 'What time will you be arriving?'
+          : 'What time would you like to pick up?';
         return {
           nextState: buildBaseState(input, draft, {
             flowStep: 'PICKUP_TIME',
             customerName: capturedName,
             pendingClarification: {
               field: 'pickup_time',
-              question: 'What time would you like to pick up?',
+              question: askWhen,
               askedAt: Date.now(),
             },
           }),
-          smsReply: capSmsReply(aiResponse.text || 'What time would you like to pick up?'),
+          smsReply: capSmsReply(aiResponse.text || askWhen),
           sideEffects: [],
           flowType: FlowType.ORDER,
         };
@@ -975,11 +1126,18 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
         queueCount >= 1
           ? `${queueCount} order${queueCount === 1 ? '' : 's'} ahead — `
           : '';
+      const dineIn = draft.dineIn === true;
       const etaPhrase = pickupLooksConcrete
-        ? `ready for ${pickupStr} pickup. `
+        ? dineIn
+          ? `dine-in at ${pickupStr}. `
+          : `ready for ${pickupStr} pickup. `
         : computedReadyAt
-          ? `ready around ${computedReadyAt}. `
+          ? dineIn
+            ? `we'll be ready around ${computedReadyAt}. `
+            : `ready around ${computedReadyAt}. `
           : '';
+      const dineInPrefix = dineIn ? '**DINE-IN**\n' : '';
+      const whenLabel = dineIn ? 'Arrival' : 'Pickup';
 
       if (tenantContext.config.requirePayment) {
         // DON'T tell the customer the order is placed — payment hasn't
@@ -1018,6 +1176,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
                 taxAmount: totals.tax,
                 feeAmount: totals.fee,
                 customerName: capturedName,
+                dineIn,
                 paymentStatus: 'PENDING',
               },
             },
@@ -1032,13 +1191,14 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
                 pickupTime: draft.pickupTime,
                 notes: draft.notes ?? null,
                 customerName: capturedName,
+                dineIn,
               },
             },
             {
               type: 'NOTIFY_OWNER',
               payload: {
                 subject: `Pending Order from ${input.callerPhone}`,
-                message: `New order pending payment!${ownerNameLine}\n${buildOwnerOrderSummary(draft.items)}\nTotal: $${total.toFixed(2)}\nPickup: ${draft.pickupTime}`,
+                message: `${dineInPrefix}New order pending payment!${ownerNameLine}\n${buildOwnerOrderSummary(draft.items)}\nTotal: $${total.toFixed(2)}\n${whenLabel}: ${draft.pickupTime}`,
                 channel: 'sms',
               },
             },
@@ -1076,13 +1236,14 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
               taxAmount: totals.tax,
               feeAmount: totals.fee,
               customerName: capturedName,
+              dineIn,
             },
           },
           {
             type: 'NOTIFY_OWNER',
             payload: {
               subject: `New Order from ${input.callerPhone}`,
-              message: `New order received!${ownerNameLine}\n${buildOwnerOrderSummary(draft.items)}\nTotal: $${total.toFixed(2)}\nPickup: ${draft.pickupTime}`,
+              message: `${dineInPrefix}New order received!${ownerNameLine}\n${buildOwnerOrderSummary(draft.items)}\nTotal: $${total.toFixed(2)}\n${whenLabel}: ${draft.pickupTime}`,
               channel: 'sms',
             },
           },
@@ -1153,7 +1314,9 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       const total = computeTotal(draft).toFixed(2);
       const needsPickup = !draft.pickupTime;
       const next = needsPickup
-        ? 'What time would you like to pick up?'
+        ? draft.dineIn
+          ? 'What time will you be arriving?'
+          : 'What time would you like to pick up?'
         : 'Anything else, or ready to confirm?';
       return `Added: ${summary}. Total $${total}. ${next}`;
     }
@@ -1193,9 +1356,12 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           })
           .join(', ');
         const total = computeTotal(draft).toFixed(2);
+        const whenPhrase = draft.dineIn
+          ? `dine-in at ${draft.pickupTime}`
+          : `pickup ${draft.pickupTime}`;
         const head = summary
-          ? `Got it — pickup ${draft.pickupTime}. ${summary}. Total $${total}.`
-          : `Got it — pickup ${draft.pickupTime}.`;
+          ? `Got it — ${whenPhrase}. ${summary}. Total $${total}.`
+          : `Got it — ${whenPhrase}.`;
         const tail = summary ? ' Ready to confirm?' : ' What can I get you?';
         baseReply = `${head}${tail}`;
       }

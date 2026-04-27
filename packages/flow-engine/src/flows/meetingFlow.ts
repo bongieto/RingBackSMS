@@ -200,10 +200,11 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
   };
   const calcomLink = cfg.calcomLink ?? null;
   const isCalcom = Boolean(cfg.calcomApiKey && cfg.calcomEventTypeId);
+  const hasLinkFallback = Boolean(calcomLink);
   // Built-in calendar is the default. Activates when cal.com isn't
   // configured AND the operator hasn't explicitly disabled the native flow
   // (meetingEnabled defaults to true).
-  const hasBuiltIn = !isCalcom && cfg.meetingEnabled !== false;
+  const hasBuiltIn = !isCalcom && !hasLinkFallback && cfg.meetingEnabled !== false;
   const hasCalendar = isCalcom || hasBuiltIn;
 
   const step = (currentState?.flowStep as FlowStep) ?? 'MEETING_GREETING';

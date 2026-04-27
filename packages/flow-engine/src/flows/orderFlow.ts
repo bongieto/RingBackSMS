@@ -747,10 +747,48 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       };
     }
 
+    // Customer texted something other than NO — likely trying to add items
+    // or change something after the payment link is already out. We can't
+    // safely mutate the pending order (the Stripe link is locked to the
+    // prior total), so we (1) tell them honestly that the link is out and
+    // they need to restart, and (2) ping the owner so a human can step in.
+    // Rate-limit owner notifications to once per 60s per caller — protects
+    // the owner from a spammy customer firing 10 messages in 30s.
+    const activeTotal = input.callerMemory?.activeOrder?.total;
+    const totalStr = typeof activeTotal === 'number' ? activeTotal.toFixed(2) : null;
+    const reply = totalStr
+      ? `Your payment link is already out for $${totalStr}. Reply NO to start over with the new items, or wait — we'll text you once payment confirms.`
+      : `Your payment link is already out. Reply NO to start over with the new items, or wait — we'll text you once payment confirms.`;
+
+    const NOTIFY_RATE_LIMIT_MS = 60_000;
+    const lastNotifiedAt = currentState?.lastAwaitingPaymentReplyAt ?? null;
+    const now = Date.now();
+    const shouldNotifyOwner = !lastNotifiedAt || now - lastNotifiedAt > NOTIFY_RATE_LIMIT_MS;
+
+    const sideEffects: SideEffect[] = shouldNotifyOwner
+      ? [
+          {
+            type: 'NOTIFY_OWNER',
+            payload: {
+              subject: `Customer wants to modify pending order — ${input.callerPhone}`,
+              message:
+                `Pending payment${totalStr ? ` for $${totalStr}` : ''}.\n` +
+                `Customer just texted:\n"${input.inboundMessage.slice(0, 200)}"\n` +
+                `Reply NO restarts the order.`,
+              channel: 'sms',
+            },
+          },
+        ]
+      : [];
+
     return {
-      nextState: { ...currentState, lastMessageAt: Date.now() },
-      smsReply: 'Your payment link has been sent. Complete payment to confirm your order. Reply NO to start over.',
-      sideEffects: [],
+      nextState: {
+        ...currentState,
+        lastMessageAt: now,
+        lastAwaitingPaymentReplyAt: shouldNotifyOwner ? now : lastNotifiedAt ?? now,
+      },
+      smsReply: reply,
+      sideEffects,
       flowType: FlowType.ORDER,
     };
   }

@@ -274,6 +274,7 @@ async function processSideEffect(
         total: effect.payload.total,
         pickupTime: effect.payload.pickupTime,
         notes: effect.payload.notes,
+        dineIn: effect.payload.dineIn,
       });
       context.orderId = order.id;
       context.orderNumber = order.orderNumber;
