@@ -10,12 +10,11 @@ import { ActionItemsCard } from '@/components/dashboard/ActionItemsCard';
 import { Badge } from '@/components/ui/badge';
 import { analyticsApi, conversationApi, tenantApi } from '@/lib/api';
 import { formatRelativeTime, maskPhone } from '@/lib/utils';
-import { useOrganization } from '@clerk/nextjs';
 import { getProfile } from '@/lib/businessTypeProfile';
+import { useTenantId } from '@/components/providers/TenantProvider';
 
 export default function DashboardPage() {
-  const { organization } = useOrganization();
-  const tenantId = organization?.publicMetadata?.tenantId as string | undefined;
+  const { tenantId } = useTenantId();
 
   const { data: analytics } = useQuery({
     queryKey: ['analytics', tenantId],

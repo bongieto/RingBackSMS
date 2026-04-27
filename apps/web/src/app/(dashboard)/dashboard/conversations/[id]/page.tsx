@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Phone, User, Send, Bot, UserCheck } from 'lucide-react';
+import axios from 'axios';
+import { ArrowLeft, Phone, Send, Bot, UserCheck } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
@@ -14,6 +15,17 @@ import { Input } from '@/components/ui/input';
 import { conversationApi } from '@/lib/api';
 import { formatDate, maskPhone } from '@/lib/utils';
 import { cn } from '@/lib/utils';
+
+function getApiErrorStatus(error: unknown): number | undefined {
+  return axios.isAxiosError(error) ? error.response?.status : undefined;
+}
+
+function getConversationErrorMessage(status: number | undefined): string {
+  if (status === 401) return 'Please sign in again to view this conversation.';
+  if (status === 403) return 'This conversation belongs to a different tenant or organization.';
+  if (status === 404) return 'Conversation not found';
+  return 'Unable to load conversation. Please refresh and try again.';
+}
 
 interface Message {
   role: 'user' | 'assistant';
@@ -27,10 +39,15 @@ export default function ConversationDetailPage() {
   const queryClient = useQueryClient();
   const [replyText, setReplyText] = useState('');
 
-  const { data: conversation, isLoading } = useQuery({
+  const { data: conversation, error, isError, isLoading } = useQuery({
     queryKey: ['conversation', id],
     queryFn: () => conversationApi.get(id),
     enabled: !!id,
+    retry: (failureCount, err) => {
+      const status = getApiErrorStatus(err);
+      if (status && status >= 400 && status < 500) return false;
+      return failureCount < 2;
+    },
   });
 
   const replyMutation = useMutation({
@@ -93,10 +110,16 @@ export default function ConversationDetailPage() {
     );
   }
 
-  if (!conversation) {
+  if (isError || !conversation) {
+    const status = getApiErrorStatus(error);
     return (
-      <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">Conversation not found</p>
+      <div className="flex h-64 flex-col items-center justify-center gap-4 text-center">
+        <p className="text-muted-foreground">{getConversationErrorMessage(status)}</p>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/dashboard/conversations">
+            <ArrowLeft className="h-4 w-4 mr-1" /> Back to conversations
+          </Link>
+        </Button>
       </div>
     );
   }

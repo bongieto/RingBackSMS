@@ -2,8 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useOrganization } from '@clerk/nextjs';
-import { MessageSquare, Phone, Search, Filter } from 'lucide-react';
+import { MessageSquare, Phone, Search } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { conversationApi, webApi } from '@/lib/api';
 import { formatRelativeTime, maskPhone } from '@/lib/utils';
 import Link from 'next/link';
+import { useTenantId } from '@/components/providers/TenantProvider';
 
 const FLOW_COLORS: Record<string, 'success' | 'secondary' | 'outline' | 'default'> = {
   ORDER: 'success',
@@ -21,8 +21,7 @@ const FLOW_COLORS: Record<string, 'success' | 'secondary' | 'outline' | 'default
 };
 
 export default function ConversationsPage() {
-  const { organization } = useOrganization();
-  const tenantId = organization?.publicMetadata?.tenantId as string | undefined;
+  const { tenantId } = useTenantId();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
 

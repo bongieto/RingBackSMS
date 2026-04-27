@@ -2,16 +2,14 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useOrganization } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
 import { Search, User, MessageSquare, ShoppingBag, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { searchApi } from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { useTenantId } from '@/components/providers/TenantProvider';
 
 export function GlobalSearch() {
-  const { organization } = useOrganization();
-  const tenantId = organization?.publicMetadata?.tenantId as string | undefined;
+  const { tenantId } = useTenantId();
   const router = useRouter();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
