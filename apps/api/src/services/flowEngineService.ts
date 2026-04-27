@@ -163,6 +163,75 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     timezone: tenant.config.timezone,
   });
 
+  const medicalUrgency =
+    tenant.businessType === 'MEDICAL' &&
+    /\b(emergency|urgent|right\s+now|immediately|asap|fell|fallen|fall|hurt|injured|injury|pain|can't\s+(?:get\s+)?up|cannot\s+(?:get\s+)?up|need\s+help\s+now|call\s+me)\b/i.test(
+      inboundMessage,
+    );
+
+  if (medicalUrgency) {
+    const reply = "I'm connecting you with a team member who can help. Someone will follow up with you shortly!";
+    let conversationId: string | null = existingConversationId;
+    const newMessages = [
+      { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },
+      { role: 'assistant', content: reply, timestamp: new Date(), sender: 'bot' },
+    ];
+
+    if (!conversationId) {
+      const conversation = await prisma.conversation.create({
+        data: {
+          tenantId,
+          callerPhone,
+          flowType: FlowType.FALLBACK,
+          messages: newMessages,
+          isActive: true,
+          handoffStatus: 'HUMAN',
+          handoffAt: new Date(),
+        },
+      });
+      conversationId = conversation.id;
+    } else {
+      const existing = await prisma.conversation.findUnique({
+        where: { id: conversationId },
+        select: { messages: true },
+      });
+      const messages = Array.isArray(existing?.messages) ? existing.messages : [];
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: {
+          messages: [...messages, ...newMessages],
+          flowType: FlowType.FALLBACK,
+          handoffStatus: 'HUMAN',
+          handoffAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+    }
+
+    await setCallerState({
+      tenantId,
+      callerPhone,
+      conversationId,
+      currentFlow: FlowType.FALLBACK,
+      flowStep: null,
+      orderDraft: null,
+      lastMessageAt: Date.now(),
+      messageCount: (currentState?.messageCount ?? 0) + 1,
+      dedupKey: messageSid,
+    });
+
+    await sendNotification({
+      tenantId,
+      subject: 'Customer requested urgent human assistance',
+      message: `Customer ${callerPhone} sent an urgent care message and needs human follow-up: "${inboundMessage.substring(0, 160)}"`,
+      channel: 'email',
+    }).catch((err) => logger.warn('Failed to send medical urgency notification', { error: err }));
+
+    await sendSms(tenantId, callerPhone, reply);
+    logger.info('Medical urgency handoff short-circuit fired', { tenantId, callerPhone });
+    return;
+  }
+
   // Run flow engine
   const result = await runFlowEngine({
     tenantContext,
@@ -185,13 +254,9 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     result.smsReply = `${afterHoursNotice}\n\n${result.smsReply}`;
   }
 
-  // Check for escalation intent
-  const medicalUrgency =
-    tenant.businessType === 'MEDICAL' &&
-    /\b(emergency|urgent|right\s+now|immediately|asap|fell|fallen|fall|hurt|injured|injury|pain|can't\s+(?:get\s+)?up|cannot\s+(?:get\s+)?up|need\s+help\s+now|call\s+me)\b/i.test(
-      inboundMessage,
-    );
-  const isEscalation = medicalUrgency || detectEscalationIntent(inboundMessage, tenant.name);
+  // Check for escalation intent. Medical urgency is handled above before
+  // the flow engine can enter a slower scheduling/AI path.
+  const isEscalation = detectEscalationIntent(inboundMessage, tenant.name);
   if (isEscalation) {
     result.smsReply = "I'm connecting you with a team member who can help. Someone will follow up with you shortly!";
     logger.info('Escalation detected, handing off to human', { tenantId, callerPhone });
