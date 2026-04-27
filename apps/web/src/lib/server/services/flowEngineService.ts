@@ -48,6 +48,9 @@ export interface ProcessInboundSmsTestResult {
   flowType: FlowType;
 }
 
+const MEDICAL_URGENCY_HANDOFF_REPLY =
+  "If this is a medical emergency or someone is in immediate danger, please call 911 now. We're not an emergency service. I'm also connecting you with a team member who can help, and someone will follow up with you shortly.";
+
 export async function processInboundSms(
   input: ProcessInboundSmsInput,
   options?: ProcessInboundSmsOptions,
@@ -835,7 +838,7 @@ async function processInboundSmsInner(
     );
 
   if (medicalUrgency) {
-    const reply = "I'm connecting you with a team member who can help. Someone will follow up with you shortly!";
+    const reply = MEDICAL_URGENCY_HANDOFF_REPLY;
     let conversationId: string | null = existingConversationId;
     const newMessages = [
       { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },

@@ -17,6 +17,9 @@ import { SideEffect } from '@ringback/shared-types';
 const prisma = new PrismaClient();
 let minimaxClient: OpenAI | null = null;
 
+const MEDICAL_URGENCY_HANDOFF_REPLY =
+  "If this is a medical emergency or someone is in immediate danger, please call 911 now. We're not an emergency service. I'm also connecting you with a team member who can help, and someone will follow up with you shortly.";
+
 function localIntentFallback(message: string): string {
   const lower = message.toLowerCase();
   const intent =
@@ -170,7 +173,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     );
 
   if (medicalUrgency) {
-    const reply = "I'm connecting you with a team member who can help. Someone will follow up with you shortly!";
+    const reply = MEDICAL_URGENCY_HANDOFF_REPLY;
     let conversationId: string | null = existingConversationId;
     const newMessages = [
       { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },
