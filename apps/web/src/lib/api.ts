@@ -1,15 +1,12 @@
 import axios from 'axios';
 
-const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001',
-  headers: { 'Content-Type': 'application/json' },
-});
-
 /** Axios instance for Next.js API routes (same origin) */
 export const webApi = axios.create({
   baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },
 });
+
+const api = webApi;
 
 /**
  * Attach a Clerk session token to outgoing requests.

@@ -24,11 +24,18 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+.claire/
 *.swp
 *.swo
 
 # TypeScript
 *.tsbuildinfo
+
+# Generated seed artifacts
+apps/api/prisma/seed.js
+apps/api/prisma/seed.js.map
+apps/api/prisma/seed.d.ts
+apps/api/prisma/seed.d.ts.map
 
 # Test coverage
 coverage/
