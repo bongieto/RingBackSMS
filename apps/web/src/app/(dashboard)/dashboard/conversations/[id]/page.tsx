@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import axios from 'axios';
 import { ArrowLeft, Phone, Send, Bot, UserCheck } from 'lucide-react';
 import Link from 'next/link';
@@ -36,13 +36,18 @@ interface Message {
 
 export default function ConversationDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [replyText, setReplyText] = useState('');
+
+  useEffect(() => {
+    if (!id) router.replace('/dashboard/conversations');
+  }, [id, router]);
 
   const { data: conversation, error, isError, isLoading } = useQuery({
     queryKey: ['conversation', id],
     queryFn: () => conversationApi.get(id),
-    enabled: !!id,
+    enabled: Boolean(id),
     retry: (failureCount, err) => {
       const status = getApiErrorStatus(err);
       if (status && status >= 400 && status < 500) return false;
@@ -106,6 +111,14 @@ export default function ConversationDetailPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <p className="text-muted-foreground">Loading conversation...</p>
+      </div>
+    );
+  }
+
+  if (!id) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">Loading conversations...</p>
       </div>
     );
   }

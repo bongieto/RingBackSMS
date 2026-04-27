@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import axios from 'axios';
 import { MessageSquare, Phone, Search } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent } from '@/components/ui/card';
@@ -20,15 +21,29 @@ const FLOW_COLORS: Record<string, 'success' | 'secondary' | 'outline' | 'default
   CUSTOM: 'default',
 };
 
+function getApiErrorMessage(error: unknown): string {
+  if (!axios.isAxiosError(error)) return 'Unable to load conversations. Please refresh and try again.';
+  const status = error.response?.status;
+  if (status === 401) return 'Please sign in again to view conversations.';
+  if (status === 403) return 'This organization does not have access to the selected tenant.';
+  if (status === 404) return 'No tenant was found for this organization.';
+  return 'Unable to load conversations. Please refresh and try again.';
+}
+
 export default function ConversationsPage() {
   const { tenantId } = useTenantId();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
 
-  const { data, isLoading } = useQuery({
+  const { data, error, isError, isLoading } = useQuery({
     queryKey: ['conversations', tenantId, page],
     queryFn: () => conversationApi.list(tenantId!, { page, pageSize: 20 }),
     enabled: !!tenantId,
+    retry: (failureCount, err) => {
+      const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+      if (status && status >= 400 && status < 500) return false;
+      return failureCount < 2;
+    },
   });
 
   const conversations = data?.data ?? [];
@@ -72,6 +87,11 @@ export default function ConversationsPage() {
         <CardContent className="p-0">
           {isLoading ? (
             <div className="p-8 text-center text-muted-foreground">Loading...</div>
+          ) : isError ? (
+            <div className="p-12 text-center">
+              <MessageSquare className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-30" />
+              <p className="text-muted-foreground">{getApiErrorMessage(error)}</p>
+            </div>
           ) : filtered.length === 0 ? (
             <div className="p-12 text-center">
               <MessageSquare className="h-12 w-12 mx-auto mb-3 text-muted-foreground opacity-30" />
