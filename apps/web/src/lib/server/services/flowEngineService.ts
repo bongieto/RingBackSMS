@@ -1337,7 +1337,14 @@ async function processInboundSmsInner(
 
   // Check for escalation intent (pass tenant name so "talk to Bruno" /
   // owner-by-name escalations are caught for tenants like "Bruno's HVAC").
-  const isEscalation = detectEscalationIntent(inboundMessage, tenant.name);
+  // For medical/care tenants, treat urgent safety language as an immediate
+  // human handoff instead of letting the scheduler keep collecting dates.
+  const medicalUrgency =
+    tenant.businessType === 'MEDICAL' &&
+    /\b(emergency|urgent|right\s+now|immediately|asap|fell|fallen|fall|hurt|injured|injury|pain|can't\s+(?:get\s+)?up|cannot\s+(?:get\s+)?up|need\s+help\s+now|call\s+me)\b/i.test(
+      inboundMessage,
+    );
+  const isEscalation = medicalUrgency || detectEscalationIntent(inboundMessage, tenant.name);
   if (isEscalation) {
     result.smsReply = "I'm connecting you with a team member who can help. Someone will follow up with you shortly!";
     logger.info('Escalation detected, handing off to human', { tenantId, callerPhone });

@@ -173,6 +173,11 @@ export async function detectIntent(
     if (pricingQuestion.test(lower)) {
       return { intent: FlowType.FALLBACK, confidence: 0.9 };
     }
+    const serviceInfoQuestion =
+      /\b(what\s+(?:services?|care|help)\s+(?:do\s+you\s+(?:provide|offer)|are\s+available)|do\s+you\s+(?:provide|offer|have)\s+.+(?:care|services?|help)|tell\s+me\s+about\s+(?:your\s+)?(?:services?|care|help))\b/;
+    if (serviceInfoQuestion.test(lower)) {
+      return { intent: FlowType.FALLBACK, confidence: 0.9 };
+    }
     const familyTerms =
       /\b(my\s+(mom|mother|dad|father|parent|parents|grandma|grandmother|grandpa|grandfather|husband|wife|spouse|partner|son|daughter|brother|sister))\b/;
     const serviceVerbs =

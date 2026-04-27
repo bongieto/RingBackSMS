@@ -186,7 +186,12 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
   }
 
   // Check for escalation intent
-  const isEscalation = detectEscalationIntent(inboundMessage);
+  const medicalUrgency =
+    tenant.businessType === 'MEDICAL' &&
+    /\b(emergency|urgent|right\s+now|immediately|asap|fell|fallen|fall|hurt|injured|injury|pain|can't\s+(?:get\s+)?up|cannot\s+(?:get\s+)?up|need\s+help\s+now|call\s+me)\b/i.test(
+      inboundMessage,
+    );
+  const isEscalation = medicalUrgency || detectEscalationIntent(inboundMessage, tenant.name);
   if (isEscalation) {
     result.smsReply = "I'm connecting you with a team member who can help. Someone will follow up with you shortly!";
     logger.info('Escalation detected, handing off to human', { tenantId, callerPhone });

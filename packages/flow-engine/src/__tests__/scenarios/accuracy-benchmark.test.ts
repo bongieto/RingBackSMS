@@ -2,7 +2,7 @@ import { FlowType } from '@ringback/shared-types';
 import { runFlowEngine } from '../../engine';
 import type { CallerState, SideEffect } from '@ringback/shared-types';
 import type { CallerMemory, ChatFn, ChatWithToolsFn, FlowInput } from '../../types';
-import { buildLumpiaContext, IDS } from './_fixtures';
+import { buildAngelsOverUsContext, buildLumpiaContext, IDS } from './_fixtures';
 
 /**
  * Accuracy benchmark.
@@ -671,6 +671,24 @@ const CASES: AccuracyCase[] = [
       }),
     expectFlowType: FlowType.MEETING,
     expectReplyContains: 'preferred date',
+  },
+  {
+    id: 'meeting-04',
+    group: 'meeting-flow',
+    desc: 'Angels Over Us service info question stays in FALLBACK',
+    user: 'What services do you provide for seniors?',
+    contextBuilder: () => buildAngelsOverUsContext({ openNow: true }),
+    expectFlowType: FlowType.FALLBACK,
+  },
+  {
+    id: 'meeting-05',
+    group: 'meeting-flow',
+    desc: 'Angels Over Us direct booking request enters scheduler',
+    user: 'I need to schedule a consultation for my mom',
+    contextBuilder: () => buildAngelsOverUsContext({ openNow: true }),
+    expectFlowType: FlowType.MEETING,
+    expectFlowStep: 'MEETING_DATE_PROMPT',
+    expectReplyContains: 'What day works',
   },
 
   // ── CASE / PUNCTUATION NORMALIZATION ──────────────────────────────────
