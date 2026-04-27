@@ -24,11 +24,67 @@ function routeOrder(input: FlowInput): Promise<FlowOutput> {
   return processOrderFlow(input);
 }
 
+function shouldReclassifyActiveFlow(input: FlowInput): boolean {
+  const { currentState, tenantContext, inboundMessage } = input;
+  if (!currentState?.currentFlow) return false;
+
+  const enabled = new Set(
+    tenantContext.flows.filter((f) => f.isEnabled).map((f) => f.type),
+  );
+  const msg = inboundMessage.trim();
+  const upper = msg.toUpperCase();
+
+  if (currentState.currentFlow !== FlowType.ORDER && enabled.has(FlowType.ORDER)) {
+    if (
+      upper === 'ORDER' ||
+      upper === 'START ORDER' ||
+      upper.includes('PLACE ORDER') ||
+      upper.includes('I WANT TO ORDER') ||
+      upper.includes('ORDER FOOD')
+    ) {
+      return true;
+    }
+  }
+
+  if (currentState.currentFlow !== FlowType.MEETING && enabled.has(FlowType.MEETING)) {
+    if (
+      upper === 'MEETING' ||
+      upper === 'APPOINTMENT' ||
+      upper === 'SCHEDULE' ||
+      /\b(schedule|appointment|book (?:a |an )?(?:meeting|appointment|call)|schedule (?:a |an )?(?:meeting|appointment|call))\b/i.test(msg)
+    ) {
+      return true;
+    }
+  }
+
+  if (currentState.currentFlow !== FlowType.FALLBACK && enabled.has(FlowType.FALLBACK)) {
+    if (
+      /\?$/.test(msg) ||
+      /^\s*(what|where|why|how|when|who|do you|does|did|is it|are you|can you|can i)\b/i.test(msg)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export async function runFlowEngine(input: FlowInput): Promise<FlowOutput> {
   const { currentState, tenantContext, inboundMessage } = input;
 
   // If in an active flow (not complete), continue it
   if (currentState?.currentFlow && currentState.flowStep !== 'ORDER_COMPLETE' && currentState.flowStep !== 'INQUIRY_COMPLETE') {
+    if (shouldReclassifyActiveFlow(input)) {
+      pushDecision(input, {
+        handler: 'engine.topicSwitch',
+        phase: 'PRE_HANDLER',
+        outcome: 'reclassified',
+        evidence: { previousFlow: currentState.currentFlow, step: currentState.flowStep },
+        durationMs: 0,
+      });
+      return runFlowEngine({ ...input, currentState: null });
+    }
+
     pushDecision(input, {
       handler: 'engine.continueFlow',
       phase: 'FLOW',

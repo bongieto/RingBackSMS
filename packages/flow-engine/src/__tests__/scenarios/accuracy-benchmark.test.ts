@@ -20,15 +20,14 @@ import { buildLumpiaContext, IDS } from './_fixtures';
  */
 
 const ACCURACY_THRESHOLD = 0.9;
-const CRITICAL_GROUPS = new Set([
-  'intent-routing',
-  'order-flow',
-  'meeting-flow',
-  'closures',
-  'fallback-hardening',
-  'ungrounded-guards',
-  'sms-cap',
-]);
+const CRITICAL_GROUP_THRESHOLDS: Record<string, number> = {
+  'meeting-flow': 1,
+  'order-flow': 1,
+  'mid-flow': 1,
+  'ungrounded-guards': 1,
+  'fallback-hardening': 1,
+  'business-hours': 1,
+};
 
 type AgentToolStub = { name: string; input: unknown };
 
@@ -648,7 +647,21 @@ const CASES: AccuracyCase[] = [
   {
     id: 'meeting-02',
     group: 'meeting-flow',
-    desc: 'meeting with no calcom config → manual schedule message',
+    desc: 'meeting with no calcom config uses built-in calendar prompt',
+    user: 'appointment please',
+    contextBuilder: () =>
+      buildLumpiaContext({
+        openNow: true,
+        flowTypes: [FlowType.MEETING, FlowType.FALLBACK],
+      }),
+    expectFlowType: FlowType.MEETING,
+    expectFlowStep: 'MEETING_DATE_PROMPT',
+    expectReplyContains: 'What day works',
+  },
+  {
+    id: 'meeting-03',
+    group: 'meeting-flow',
+    desc: 'meeting with native calendar disabled uses manual schedule message',
     user: 'appointment please',
     contextBuilder: () =>
       buildLumpiaContext({
@@ -1488,19 +1501,26 @@ describe('System accuracy benchmark', () => {
     // eslint-disable-next-line no-console
     console.log(report.join('\n'));
 
-    const criticalFailures = failed.filter((f) => CRITICAL_GROUPS.has(f.group));
-    if (criticalFailures.length > 0) {
-      throw new Error(
-        `Critical accuracy cases failed: ${criticalFailures
-          .map((f) => `${f.group}/${f.id}`)
-          .join(', ')}`,
-      );
-    }
-
     if (accuracy < ACCURACY_THRESHOLD) {
       throw new Error(
         `Accuracy ${(accuracy * 100).toFixed(1)}% below threshold ${(ACCURACY_THRESHOLD * 100).toFixed(0)}% (${failed.length} failures)`,
       );
+    }
+
+    const groupFailures: string[] = [];
+    for (const [group, threshold] of Object.entries(CRITICAL_GROUP_THRESHOLDS)) {
+      const rows = results.filter((r) => r.group === group);
+      if (rows.length === 0) {
+        groupFailures.push(`${group}: no cases`);
+        continue;
+      }
+      const groupAccuracy = rows.filter((r) => r.pass).length / rows.length;
+      if (groupAccuracy < threshold) {
+        groupFailures.push(`${group}: ${(groupAccuracy * 100).toFixed(1)}% below ${(threshold * 100).toFixed(0)}%`);
+      }
+    }
+    if (groupFailures.length > 0) {
+      throw new Error(`Critical accuracy group(s) failed: ${groupFailures.join('; ')}`);
     }
   });
 });

@@ -368,6 +368,20 @@ describe('Flow Engine', () => {
       expect(scheduleResult.sideEffects.some((e) => e.type === 'BOOK_MEETING')).toBe(true);
       expect(scheduleResult.sideEffects.some((e) => e.type === 'NOTIFY_OWNER')).toBe(true);
     });
+
+    it('uses configured cal.com link before built-in calendar fallback', async () => {
+      const linkContext = {
+        ...mockTenantContext,
+        config: { ...mockTenantContext.config, calcomLink: 'https://cal.com/test' } as any,
+      };
+      const result = await runFlowEngine({
+        ...baseInput,
+        tenantContext: linkContext,
+        inboundMessage: 'schedule a call',
+      });
+      expect(result.flowType).toBe(FlowType.MEETING);
+      expect(result.smsReply).toContain('https://cal.com/test');
+    });
   });
 
   // ── Disabled flows ───────────────────────────────────────────────────────
@@ -412,6 +426,38 @@ describe('Flow Engine', () => {
         currentState: result1.nextState,
       });
       expect(result2.nextState.messageCount).toBeGreaterThanOrEqual(result1.nextState.messageCount);
+    });
+
+    it('reclassifies a clear topic switch instead of forcing the active flow', async () => {
+      const activeOrderState = {
+        tenantId: mockTenantContext.tenantId,
+        callerPhone: '+12175550199',
+        conversationId: null,
+        currentFlow: FlowType.ORDER,
+        flowStep: 'PICKUP_TIME',
+        orderDraft: {
+          items: [
+            {
+              menuItemId: '00000000-0000-0000-0000-000000000010',
+              name: 'Lumpia Shanghai',
+              quantity: 1,
+              price: 8.99,
+            },
+          ],
+        },
+        lastMessageAt: Date.now(),
+        messageCount: 2,
+        dedupKey: null,
+      } as any;
+
+      const result = await runFlowEngine({
+        ...baseInput,
+        inboundMessage: 'book an appointment',
+        currentState: activeOrderState,
+      });
+
+      expect(result.flowType).toBe(FlowType.MEETING);
+      expect(result.nextState.currentFlow).toBe(FlowType.MEETING);
     });
   });
 

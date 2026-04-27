@@ -1,6 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 import { runFlowEngine, TenantContext, detectEscalationIntent } from '@ringback/flow-engine';
+import type { ChatFn } from '@ringback/flow-engine';
 import { FlowType } from '@ringback/shared-types';
+import OpenAI from 'openai';
 import { getCallerState, setCallerState, isDuplicate } from './stateService';
 import { createOrder } from './orderService';
 import { createMeeting } from './schedulingService';
@@ -13,6 +15,48 @@ import { isWithinBusinessHours, getBusinessHoursDisplay } from '../utils/busines
 import { SideEffect } from '@ringback/shared-types';
 
 const prisma = new PrismaClient();
+let minimaxClient: OpenAI | null = null;
+
+function localIntentFallback(message: string): string {
+  const lower = message.toLowerCase();
+  const intent =
+    /\b(order|menu|buy|place order|i want)\b/.test(lower)
+      ? 'ORDER'
+      : /\b(schedule|appointment|meeting|book|call)\b/.test(lower)
+        ? 'MEETING'
+        : /\b(do you have|in stock|available|how much|price)\b/.test(lower)
+          ? 'INQUIRY'
+          : 'UNCLEAR';
+  const confidence = intent === 'UNCLEAR' ? 0 : 0.85;
+  return JSON.stringify({ intent, confidence });
+}
+
+const chatFn: ChatFn = async ({ systemPrompt, userMessage, maxTokens = 300, temperature = 0.2 }) => {
+  const isClassifier =
+    /intent classifier/i.test(systemPrompt) ||
+    /Classify the customer's intent|Available flows/i.test(userMessage);
+  const key = process.env.MINIMAX_API_KEY?.trim();
+  if (!key) {
+    return isClassifier
+      ? localIntentFallback(userMessage)
+      : "Thanks for reaching out! We'll get back to you shortly.";
+  }
+
+  minimaxClient ??= new OpenAI({
+    baseURL: 'https://api.minimax.io/v1',
+    apiKey: key,
+  });
+  const response = await minimaxClient.chat.completions.create({
+    model: 'MiniMax-M2.7',
+    max_tokens: maxTokens,
+    temperature,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userMessage },
+    ],
+  });
+  return response.choices[0]?.message?.content ?? (isClassifier ? localIntentFallback(userMessage) : '');
+};
 
 export interface ProcessInboundSmsInput {
   tenantId: string;
@@ -89,6 +133,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       businessDays: tenant.config.businessDays as number[],
       businessSchedule: tenant.config.businessSchedule as Record<string, { open: string; close: string }> | null | undefined,
       closedDates: tenant.config.closedDates as string[],
+      salesTaxRate: tenant.config.salesTaxRate != null ? Number(tenant.config.salesTaxRate) : null,
     },
     flows: tenant.flows.map((f) => ({
       id: f.id,
@@ -124,7 +169,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     callerPhone,
     inboundMessage,
     currentState,
-    aiApiKey: process.env.MINIMAX_API_KEY ?? '',
+    chatFn,
   });
 
   // Prepend after-hours notice if outside business hours

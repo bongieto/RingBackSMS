@@ -1449,15 +1449,6 @@ async function processInboundSmsInner(
   // reset the flow to FALLBACK so the next message doesn't re-run the
   // same failed step.
   try {
-    // Send the main agent reply FIRST, then fire side effects. A side
-    // effect like CREATE_PAYMENT_LINK sends its own follow-up SMS
-    // ("Pay securely here: …"); if we fire side effects first, the Stripe
-    // link lands before the agent's summary, which reads backwards.
-    // Empty smsReply = intentional silence (e.g. "ok" / emoji closure).
-    if (result.smsReply && result.smsReply.trim().length > 0 && !testMode) {
-      await sendSms(tenantId, callerPhone, result.smsReply);
-    }
-
     // Process side effects. Each is wrapped in its own try/catch so a
     // failure in one effect doesn't cascade and silently drop subsequent
     // effects. Two classes of effects:
@@ -1469,16 +1460,16 @@ async function processInboundSmsInner(
     //     on so the customer gets their payment link even if the owner
     //     didn't get their Slack ping.
     const CRITICAL_EFFECTS = new Set(['SAVE_ORDER', 'CREATE_PAYMENT_LINK']);
-    const sideEffectContext: Record<string, any> = {};
+    const sideEffectContext: Record<string, any> = { deferPaymentSms: true };
     let criticalFailure: { effect: string; error: string } | null = null;
     // In testMode, selectively execute DB-only effects so the admin bot
     // tester can simulate payment webhooks against a real Order row.
     // Everything that talks to external systems (Stripe, Square, Twilio,
     // email/Slack notifications) stays skipped.
     const TEST_MODE_EXECUTABLE = new Set(['SAVE_ORDER']);
-    for (const effect of result.sideEffects) {
-      if (criticalFailure) break; // abort chain once a critical effect fails
-      if (testMode && !TEST_MODE_EXECUTABLE.has(effect.type)) continue;
+    const runEffect = async (effect: SideEffect) => {
+      if (criticalFailure) return; // abort chain once a critical effect fails
+      if (testMode && !TEST_MODE_EXECUTABLE.has(effect.type)) return;
       try {
         await processSideEffect(effect, tenantId, conversationId as string, callerPhone, sideEffectContext);
       } catch (effectErr: any) {
@@ -1498,11 +1489,31 @@ async function processInboundSmsInner(
           });
         }
       }
+    };
+
+    for (const effect of result.sideEffects.filter((e) => CRITICAL_EFFECTS.has(e.type))) {
+      await runEffect(effect);
+    }
+
+    if (!criticalFailure && result.smsReply && result.smsReply.trim().length > 0 && !testMode) {
+      await sendSms(tenantId, callerPhone, result.smsReply);
+    }
+
+    if (!criticalFailure && sideEffectContext.paymentLink && !testMode) {
+      await sendSms(tenantId, callerPhone, `Pay securely here: ${sideEffectContext.paymentLink}`);
+      logger.info('Deferred payment link sent', {
+        tenantId,
+        orderId: sideEffectContext.orderId ?? 'pending',
+      });
+    }
+
+    for (const effect of result.sideEffects.filter((e) => !CRITICAL_EFFECTS.has(e.type))) {
+      await runEffect(effect);
     }
 
     if (criticalFailure) {
-      // Customer got the agent's "you'll get a payment link shortly"
-      // reply already. If the link generation tanked, tell them now.
+      // Do not send the agent's success reply when critical persistence or
+      // payment-link generation failed. Send one clear recovery message.
       const { sms: i18nSms } = await import('@/lib/server/i18n');
       if (!testMode) {
         await sendSms(
@@ -1797,6 +1808,15 @@ async function processSideEffect(
         // direct Stripe URL — there's no Order row yet to hang /pay off of.
         const appBase = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://ringbacksms.com').replace(/\/+$/, '');
         const payLink = context.orderId ? `${appBase}/pay/${context.orderId}` : url;
+        if (context.deferPaymentSms) {
+          context.paymentLink = payLink;
+          logger.info('Payment link prepared', {
+            tenantId,
+            orderId: context.orderId ?? 'pending',
+            sessionId,
+          });
+          break;
+        }
         await sendSms(tenantId, callerPhone, `Pay securely here: ${payLink}`);
         logger.info('Payment link sent', { tenantId, orderId: context.orderId ?? 'pending', sessionId });
       } catch (err) {
