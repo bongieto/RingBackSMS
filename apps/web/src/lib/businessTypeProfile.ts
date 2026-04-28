@@ -147,6 +147,68 @@ const SERVICE: BusinessTypeProfile = {
   ],
 };
 
+const MEDICAL: BusinessTypeProfile = {
+  label: 'Medical / health',
+  emoji: '🏥',
+  catalogNoun: 'services',
+  enabledFlows: [FlowType.MEETING, FlowType.FALLBACK],
+  defaultGreeting: (name) =>
+    `Hi, sorry we missed your call at ${name}. Reply with what you need and we'll help route your request. If this is an emergency, call 911.`,
+  defaultHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
+  nav: { showMenu: false, showServices: true, showOrders: false, showMeetings: true },
+  menu: {
+    pageTitle: 'Services',
+    pageDescription: 'List appointment types, care services, and common request categories.',
+    itemNoun: 'Service',
+    visibleTabs: ['categories', 'items', 'import'],
+    tabLabels: { items: 'Services', categories: 'Categories' },
+  },
+  dashboardCards: ['missedCalls', 'conversations', 'meetings'],
+  aiPersonalityHint:
+    "You're a calm, professional healthcare front-desk assistant. Help callers request appointments and basic office information. Never provide medical advice, and direct emergencies to 911.",
+  taskCopy: {
+    orderConfirm: 'Confirm request',
+    meetingConfirm: 'Confirm appointment',
+  },
+  onboardingNextSteps: [
+    { emoji: '📱', title: 'Provision your number', description: 'Settings → Phone', href: '/dashboard/settings/phone' },
+    { emoji: '📞', title: 'Forward unanswered calls', description: 'So missed calls reach RingbackSMS', href: '/help' },
+    { emoji: '📅', title: 'Configure appointment types', description: 'So patients can request the right visit', href: '/dashboard/services' },
+    { emoji: '🗓️', title: 'Connect your calendar', description: 'Automate scheduling prompts', href: '/dashboard/integrations' },
+  ],
+};
+
+const CONSULTANT: BusinessTypeProfile = {
+  label: 'Consultant',
+  emoji: '💼',
+  catalogNoun: 'services',
+  enabledFlows: [FlowType.MEETING, FlowType.FALLBACK],
+  defaultGreeting: (name) =>
+    `Hi! Sorry we missed your call at ${name}. Tell us what you're looking for, or say BOOK to schedule a consultation.`,
+  defaultHours: { start: '09:00', end: '17:00', days: [1, 2, 3, 4, 5] },
+  nav: { showMenu: false, showServices: true, showOrders: false, showMeetings: true },
+  menu: {
+    pageTitle: 'Services',
+    pageDescription: 'Describe your consultation offers and packages.',
+    itemNoun: 'Service',
+    visibleTabs: ['categories', 'items', 'import'],
+    tabLabels: { items: 'Services', categories: 'Categories' },
+  },
+  dashboardCards: ['missedCalls', 'conversations', 'meetings'],
+  aiPersonalityHint:
+    "You're a polished assistant for a consulting practice. Qualify the prospect briefly, answer basic service questions, and guide interested leads toward booking a consultation.",
+  taskCopy: {
+    orderConfirm: 'Confirm request',
+    meetingConfirm: 'Confirm consultation',
+  },
+  onboardingNextSteps: [
+    { emoji: '📱', title: 'Provision your number', description: 'Settings → Phone', href: '/dashboard/settings/phone' },
+    { emoji: '📞', title: 'Forward unanswered calls', description: 'So missed calls reach RingbackSMS', href: '/help' },
+    { emoji: '📋', title: 'List your services', description: 'So prospects understand your offers', href: '/dashboard/services' },
+    { emoji: '🗓️', title: 'Connect your calendar', description: 'Book consultations automatically', href: '/dashboard/integrations' },
+  ],
+};
+
 const RETAIL: BusinessTypeProfile = {
   label: 'Retail shop',
   emoji: '🛍️',
@@ -212,8 +274,8 @@ export const PROFILES: Record<BusinessType, BusinessTypeProfile> = {
   [BusinessType.RESTAURANT]: RESTAURANT,
   [BusinessType.FOOD_TRUCK]: FOOD_TRUCK,
   [BusinessType.SERVICE]: SERVICE,
-  [BusinessType.CONSULTANT]: SERVICE,
-  [BusinessType.MEDICAL]: SERVICE,
+  [BusinessType.CONSULTANT]: CONSULTANT,
+  [BusinessType.MEDICAL]: MEDICAL,
   [BusinessType.RETAIL]: RETAIL,
   [BusinessType.OTHER]: OTHER,
 };

@@ -3,6 +3,7 @@ import { FlowType } from '@ringback/shared-types';
 import { CallerState } from '@ringback/shared-types';
 import { pushDecision } from '../decisions';
 import type { CallerMemory } from '../types';
+import { buildVerticalPromptGuidance } from '../verticals';
 
 /**
  * Ungrounded-action guards. Each rule pairs a whole-message inbound
@@ -212,6 +213,14 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
   const businessAddress = tenantContext.config.businessAddress
     ? `\nBusiness address: ${tenantContext.config.businessAddress}`
     : '';
+  const verticalGuidance = buildVerticalPromptGuidance({
+    businessType: tenantContext.businessType,
+    industryTemplateKey:
+      tenantContext.industryTemplateKey ??
+      (tenantContext.config as { industryTemplateKey?: string | null }).industryTemplateKey,
+    tenantName: tenantContext.tenantName,
+    websiteContext: tenantContext.config.websiteContext,
+  });
 
   let catalogContext = '';
   if (tenantContext.menuItems.length > 0) {
@@ -316,7 +325,7 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
 - NEVER emit bracketed placeholder text like "[payment link would be sent here]", "[link]", "[name]", etc. These are template markers, not real output. If you don't have a real URL or value, don't mention one.${postOrderHint}
 
 # Capabilities and context
-${capabilities}${businessAddress}${websiteContext}${catalogContext}${callerContextBlock}${activeOrderBlock}${customBlock}`;
+${capabilities}${businessAddress}${websiteContext}${verticalGuidance}${catalogContext}${callerContextBlock}${activeOrderBlock}${customBlock}`;
 
   const nextState: CallerState = {
     tenantId: tenantContext.tenantId,

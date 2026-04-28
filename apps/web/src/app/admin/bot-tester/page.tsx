@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { webApi } from '@/lib/api';
 import { toast } from 'sonner';
-import { Send, RefreshCw, Bot, User as UserIcon, Zap, CreditCard } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Send, RefreshCw, Bot, User as UserIcon, Zap, CreditCard } from 'lucide-react';
 
 interface AdminTenant {
   id: string;
@@ -29,6 +29,27 @@ interface ChatMessage {
   at: number;
 }
 
+interface ReadinessResult {
+  verticalKey: string;
+  verticalLabel: string;
+  score: number;
+  passed: number;
+  total: number;
+  recommendedIntegrations: string[];
+  valueMetrics: string[];
+  intakeFields: Array<{ key: string; label: string; examples: string[] }>;
+  results: Array<{
+    id: string;
+    label: string;
+    message: string;
+    passed: boolean;
+    failures: string[];
+    reply: string;
+    flowType: string;
+    flowStep: string | null;
+  }>;
+}
+
 /**
  * Admin bot tester — talk to the flow engine directly, without Twilio,
  * Stripe, or the POS doing anything real. Side effects are collected
@@ -42,6 +63,8 @@ export default function BotTesterPage() {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sending, setSending] = useState(false);
+  const [readiness, setReadiness] = useState<ReadinessResult | null>(null);
+  const [readinessRunning, setReadinessRunning] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const { data: tenantsData } = useQuery({
@@ -110,6 +133,27 @@ export default function BotTesterPage() {
       toast.error(msg);
     } finally {
       setSending(false);
+    }
+  }
+
+  async function runReadiness() {
+    if (!tenantId || readinessRunning) return;
+    setReadinessRunning(true);
+    setReadiness(null);
+    try {
+      const res = await webApi.post('/admin/bot-tester/readiness', { tenantId });
+      const data = res.data.data as ReadinessResult;
+      setReadiness(data);
+      const pct = Math.round(data.score * 100);
+      if (data.passed === data.total) {
+        toast.success(`Readiness ${pct}% (${data.passed}/${data.total})`);
+      } else {
+        toast.warning(`Readiness ${pct}% (${data.passed}/${data.total})`);
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? 'Readiness run failed');
+    } finally {
+      setReadinessRunning(false);
     }
   }
 
@@ -205,6 +249,7 @@ export default function BotTesterPage() {
               onChange={(e) => {
                 setTenantId(e.target.value);
                 setMessages([]);
+                setReadiness(null);
               }}
             >
               {tenants.map((t) => (
@@ -223,12 +268,116 @@ export default function BotTesterPage() {
               onChange={(e) => {
                 setCallerPhone(e.target.value);
                 setMessages([]);
+                setReadiness(null);
               }}
               placeholder="+19990000001"
               className="bg-slate-950 border-slate-800 text-white"
             />
           </div>
         </CardContent>
+      </Card>
+
+      <Card className="bg-slate-900 border-slate-800 mb-4">
+        <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <div>
+            <CardTitle className="text-white text-base">Readiness</CardTitle>
+            <p className="text-xs text-slate-500 mt-1">
+              Run the tenant&apos;s vertical scenario pack without sending SMS or creating side effects.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={runReadiness}
+            disabled={!tenantId || readinessRunning}
+            className="border-slate-700 bg-slate-950 text-slate-100 hover:bg-slate-800"
+          >
+            <Zap className="w-4 h-4 mr-1" />
+            {readinessRunning ? 'Running…' : 'Run readiness'}
+          </Button>
+        </CardHeader>
+        {readiness && (
+          <CardContent className="pt-0 space-y-3">
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+              <span className="font-semibold text-white">
+                {readiness.verticalLabel}
+              </span>
+              <span
+                className={`font-mono text-xs px-2 py-1 rounded border ${
+                  readiness.passed === readiness.total
+                    ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                    : 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+                }`}
+              >
+                {Math.round(readiness.score * 100)}% · {readiness.passed}/{readiness.total}
+              </span>
+              {readiness.valueMetrics.slice(0, 4).map((metric) => (
+                <span key={metric} className="text-xs text-slate-400">
+                  {metric}
+                </span>
+              ))}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {readiness.results.map((result) => (
+                <div
+                  key={result.id}
+                  className="rounded border border-slate-800 bg-slate-950/70 p-3 text-sm"
+                >
+                  <div className="flex items-start gap-2">
+                    {result.passed ? (
+                      <CheckCircle2 className="w-4 h-4 mt-0.5 text-emerald-400" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 mt-0.5 text-amber-400" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-slate-100">{result.label}</div>
+                      <div className="mt-1 text-xs text-slate-500 truncate">
+                        “{result.message}”
+                      </div>
+                      <div className="mt-2 text-xs text-slate-400 line-clamp-3">
+                        {result.reply}
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        <span className="font-mono text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                          {result.flowType}
+                          {result.flowStep ? ` · ${result.flowStep}` : ''}
+                        </span>
+                        {result.failures.map((failure) => (
+                          <span
+                            key={failure}
+                            className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30"
+                          >
+                            {failure}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {(readiness.intakeFields.length > 0 || readiness.recommendedIntegrations.length > 0) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border-t border-slate-800 pt-3">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">
+                    Intake fields
+                  </div>
+                  <div className="text-xs text-slate-400">
+                    {readiness.intakeFields.map((f) => f.label).join(', ') || 'None configured'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">
+                    Recommended integrations
+                  </div>
+                  <div className="text-xs text-slate-400">
+                    {readiness.recommendedIntegrations.slice(0, 5).join(', ') || 'None'}
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        )}
       </Card>
 
       <Card className="bg-slate-900 border-slate-800">

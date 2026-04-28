@@ -18,6 +18,25 @@ export { pushDecision, timeAsync, timeSync } from './decisions';
 export { computeAvailableSlots, zonedDateToUtc } from './calendar/localAvailability';
 export type { ComputeSlotsParams, AvailableSlot, DaySchedule } from './calendar/localAvailability';
 export {
+  VERTICAL_PROFILES,
+  getVerticalKey,
+  getVerticalProfile,
+  matchSafetyPolicy,
+  buildVerticalPromptGuidance,
+} from './verticals';
+export { runVerticalReadinessSuite } from './readiness';
+export type { ReadinessScenarioResult, ReadinessSuiteResult } from './readiness';
+export type {
+  VerticalKey,
+  VerticalProfile,
+  SafetyPolicy,
+  SafetyPolicyMatch,
+  EscalationPolicy,
+  IntakeField,
+  ReadinessScenarioSeed,
+  PolicySeverity,
+} from './verticals';
+export {
   generateForwardingCode,
   isValidRingDelay,
   DEFAULT_RING_DELAY_SECONDS,

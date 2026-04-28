@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { runFlowEngine, TenantContext, detectEscalationIntent } from '@ringback/flow-engine';
+import { runFlowEngine, TenantContext, detectEscalationIntent, matchSafetyPolicy } from '@ringback/flow-engine';
 import type { ChatFn } from '@ringback/flow-engine';
 import { FlowType } from '@ringback/shared-types';
 import OpenAI from 'openai';
@@ -16,19 +16,6 @@ import { SideEffect } from '@ringback/shared-types';
 
 const prisma = new PrismaClient();
 let minimaxClient: OpenAI | null = null;
-
-const MEDICAL_URGENCY_HANDOFF_REPLY =
-  "If this is a medical emergency or someone is in immediate danger, please call 911 now. We're not an emergency service. I'm also connecting you with a team member who can help, and someone will follow up with you shortly.";
-
-const SERVICE_SAFETY_HANDOFF_REPLY =
-  "If there is immediate danger, a gas smell or leak, carbon monoxide alarm, fire, smoke, or an electrical hazard, please call 911 or your utility emergency line now. We're not an emergency service. I'm also connecting you with a team member who can help, and someone will follow up with you shortly.";
-
-const SERVICE_SAFETY_URGENCY_RE =
-  /\b(?:gas\s+(?:smell|odor|leak)|smell(?:s|ing)?\s+(?:gas|natural\s+gas)|natural\s+gas|carbon\s+monoxide|\bco\s+(?:alarm|detector)\b|on\s+fire|fire\s+(?:in|from|near)|there(?:'s| is)\s+(?:a\s+)?fire|smoke|sparks?|electrical\s+(?:hazard|fire|shock)|burning\s+smell|furnace\s+(?:leak|leaking))\b/i;
-
-function isServiceSafetyUrgency(businessType: string | null | undefined, message: string): boolean {
-  return businessType === 'SERVICE' && SERVICE_SAFETY_URGENCY_RE.test(message);
-}
 
 function localIntentFallback(message: string): string {
   const lower = message.toLowerCase();
@@ -141,6 +128,8 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
   const tenantContext: TenantContext = {
     tenantId: tenant.id,
     tenantName: tenant.name,
+    businessType: tenant.businessType,
+    industryTemplateKey: tenant.config.industryTemplateKey,
     config: {
       ...tenant.config,
       businessDays: tenant.config.businessDays as number[],
@@ -176,14 +165,17 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     timezone: tenant.config.timezone,
   });
 
-  const medicalUrgency =
-    tenant.businessType === 'MEDICAL' &&
-    /\b(emergency|urgent|right\s+now|immediately|asap|fell|fallen|fall|hurt|injured|injury|pain|can't\s+(?:get\s+)?up|cannot\s+(?:get\s+)?up|need\s+help\s+now|call\s+me)\b/i.test(
-      inboundMessage,
-    );
+  const safetyMatch = matchSafetyPolicy({
+    businessType: tenant.businessType,
+    industryTemplateKey: tenant.config.industryTemplateKey,
+    tenantName: tenant.name,
+    websiteContext: tenant.config.websiteContext,
+    message: inboundMessage,
+    callerPhone,
+  });
 
-  if (medicalUrgency) {
-    const reply = MEDICAL_URGENCY_HANDOFF_REPLY;
+  if (safetyMatch) {
+    const reply = safetyMatch.customerReply;
     let conversationId: string | null = existingConversationId;
     const newMessages = [
       { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },
@@ -235,78 +227,18 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
 
     await sendNotification({
       tenantId,
-      subject: 'Customer requested urgent human assistance',
-      message: `Customer ${callerPhone} sent an urgent care message and needs human follow-up: "${inboundMessage.substring(0, 160)}"`,
+      subject: safetyMatch.ownerSubject,
+      message: safetyMatch.ownerMessage,
       channel: 'email',
-    }).catch((err) => logger.warn('Failed to send medical urgency notification', { error: err }));
+    }).catch((err) => logger.warn('Failed to send vertical safety notification', { error: err }));
 
     await sendSms(tenantId, callerPhone, reply);
-    logger.info('Medical urgency handoff short-circuit fired', { tenantId, callerPhone });
-    return;
-  }
-
-  const serviceSafetyUrgency = isServiceSafetyUrgency(tenant.businessType, inboundMessage);
-
-  if (serviceSafetyUrgency) {
-    const reply = SERVICE_SAFETY_HANDOFF_REPLY;
-    let conversationId: string | null = existingConversationId;
-    const newMessages = [
-      { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },
-      { role: 'assistant', content: reply, timestamp: new Date(), sender: 'bot' },
-    ];
-
-    if (!conversationId) {
-      const conversation = await prisma.conversation.create({
-        data: {
-          tenantId,
-          callerPhone,
-          flowType: FlowType.FALLBACK,
-          messages: newMessages,
-          isActive: true,
-          handoffStatus: 'HUMAN',
-          handoffAt: new Date(),
-        },
-      });
-      conversationId = conversation.id;
-    } else {
-      const existing = await prisma.conversation.findUnique({
-        where: { id: conversationId },
-        select: { messages: true },
-      });
-      const messages = Array.isArray(existing?.messages) ? existing.messages : [];
-      await prisma.conversation.update({
-        where: { id: conversationId },
-        data: {
-          messages: [...messages, ...newMessages],
-          flowType: FlowType.FALLBACK,
-          handoffStatus: 'HUMAN',
-          handoffAt: new Date(),
-          updatedAt: new Date(),
-        },
-      });
-    }
-
-    await setCallerState({
+    logger.info('Vertical safety handoff short-circuit fired', {
       tenantId,
       callerPhone,
-      conversationId,
-      currentFlow: FlowType.FALLBACK,
-      flowStep: null,
-      orderDraft: null,
-      lastMessageAt: Date.now(),
-      messageCount: (currentState?.messageCount ?? 0) + 1,
-      dedupKey: messageSid,
+      vertical: safetyMatch.profile.key,
+      policyId: safetyMatch.policy.id,
     });
-
-    await sendNotification({
-      tenantId,
-      subject: 'Customer reported a safety hazard',
-      message: `Customer ${callerPhone} reported a possible safety hazard and needs human follow-up: "${inboundMessage.substring(0, 160)}"`,
-      channel: 'email',
-    }).catch((err) => logger.warn('Failed to send service safety notification', { error: err }));
-
-    await sendSms(tenantId, callerPhone, reply);
-    logger.info('Service safety handoff short-circuit fired', { tenantId, callerPhone });
     return;
   }
 

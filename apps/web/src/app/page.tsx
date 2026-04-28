@@ -1167,11 +1167,11 @@ export default function HomePage() {
               <div>
                 <h4 className="text-white font-semibold mb-4">Industries</h4>
                 <ul className="space-y-2 text-sm">
-                  <li><span className="hover:text-white transition-colors cursor-default">Restaurants &amp; Food Trucks</span></li>
-                  <li><span className="hover:text-white transition-colors cursor-default">Salons &amp; Barbershops</span></li>
-                  <li><span className="hover:text-white transition-colors cursor-default">Medical &amp; Dental</span></li>
-                  <li><span className="hover:text-white transition-colors cursor-default">Home Services</span></li>
-                  <li><span className="hover:text-white transition-colors cursor-default">Auto Shops</span></li>
+                  <li><Link href="/industries/restaurants" className="hover:text-white transition-colors">Restaurants &amp; Food Trucks</Link></li>
+                  <li><Link href="/industries/service-businesses/beauty-salons" className="hover:text-white transition-colors">Salons &amp; Barbershops</Link></li>
+                  <li><Link href="/industries/service-businesses" className="hover:text-white transition-colors">Medical &amp; Dental</Link></li>
+                  <li><Link href="/industries/service-businesses" className="hover:text-white transition-colors">Home Services</Link></li>
+                  <li><Link href="/industries/service-businesses" className="hover:text-white transition-colors">Auto Shops</Link></li>
                 </ul>
               </div>
               {/* Legal */}

@@ -5,6 +5,10 @@ import type { DecisionDraft } from '@ringback/shared-types';
 export interface TenantContext {
   tenantId: string;
   tenantName: string;
+  /** Coarse product vertical from Tenant.businessType. */
+  businessType?: string | null;
+  /** Fine-grained template key, e.g. home_services, auto_shop, medical. */
+  industryTemplateKey?: string | null;
   /** URL-safe public slug for menu page, e.g. "the-lumpia-house" */
   tenantSlug?: string | null;
   /** E.164 Twilio number callers text — used to prefill "text to order" CTAs */

@@ -169,7 +169,7 @@ export async function detectIntent(
     // like "how much for X" would hit the serviceNouns regex below and
     // jump straight to MEETING.
     const pricingQuestion =
-      /\b(how\s+much|what\s+(?:does\s+it\s+cost|do\s+you\s+charge|is\s+the\s+(?:price|cost|rate))|what'?s\s+(?:the\s+)?(?:price|cost|rate|charge)|cost\s+(?:of|for)|price\s+(?:of|for)|do\s+you\s+(?:offer|have)\s+a?\s*(?:free\s+)?(?:estimate|quote))\b/;
+      /\b(how\s+much|what\s+(?:does\s+it\s+cost|do\s+you\s+charge|is\s+the\s+(?:price|cost|rate))|what'?s\s+(?:the\s+)?(?:price|cost|rate|charge)|cost\s+(?:of|for)|price\s+(?:of|for)|do\s+you\s+(?:offer|have)\s+a?\s*(?:free\s+)?(?:estimates?|quotes?))\b/;
     if (pricingQuestion.test(lower)) {
       return { intent: FlowType.FALLBACK, confidence: 0.9 };
     }

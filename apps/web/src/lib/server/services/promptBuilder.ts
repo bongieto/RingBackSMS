@@ -1,5 +1,6 @@
 import { prisma } from '../db';
 import { getProfile } from '@/lib/businessTypeProfile';
+import { buildVerticalPromptGuidance } from '@ringback/flow-engine';
 
 /**
  * Builds the full Claude system prompt for a tenant by combining:
@@ -54,6 +55,14 @@ export async function buildSystemPrompt(tenantId: string): Promise<string> {
   }
 
   const parts: string[] = [basePrompt];
+  parts.push(
+    buildVerticalPromptGuidance({
+      businessType: tenant.businessType,
+      industryTemplateKey: config?.industryTemplateKey,
+      tenantName: tenant.name,
+      websiteContext: config?.websiteContext,
+    }),
+  );
 
   // 2. Business hours
   if (config?.businessHoursStart && config?.businessHoursEnd) {
