@@ -1,6 +1,7 @@
 import { CallerState, Flow, TenantConfig, MenuItem, SideEffect } from '@ringback/shared-types';
 import { FlowType } from '@ringback/shared-types';
 import type { DecisionDraft } from '@ringback/shared-types';
+import type { StructuredIntake } from './intake';
 
 export interface TenantContext {
   tenantId: string;
@@ -142,6 +143,7 @@ export interface FlowOutput {
   smsReply: string;
   sideEffects: SideEffect[];
   flowType: FlowType;
+  intake?: StructuredIntake;
 }
 
 export type FlowStep =

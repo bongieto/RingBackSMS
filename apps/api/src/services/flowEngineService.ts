@@ -1,6 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { runFlowEngine, TenantContext, matchEscalationPolicy, matchSafetyPolicy } from '@ringback/flow-engine';
-import type { ChatFn } from '@ringback/flow-engine';
+import type { ChatFn, StructuredIntake } from '@ringback/flow-engine';
 import { FlowType } from '@ringback/shared-types';
 import OpenAI from 'openai';
 import { getCallerState, setCallerState, isDuplicate } from './stateService';
@@ -16,6 +16,34 @@ import { SideEffect } from '@ringback/shared-types';
 
 const prisma = new PrismaClient();
 let minimaxClient: OpenAI | null = null;
+
+function isStructuredIntake(value: unknown): value is StructuredIntake {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Array.isArray((value as { captured?: unknown }).captured) &&
+    Array.isArray((value as { missing?: unknown }).missing)
+  );
+}
+
+function mergeConversationIntake(existing: unknown, incoming?: StructuredIntake): StructuredIntake | undefined {
+  if (!incoming) return isStructuredIntake(existing) ? existing : undefined;
+
+  const capturedByKey = new Map<string, StructuredIntake['captured'][number]>();
+  if (isStructuredIntake(existing)) {
+    for (const field of existing.captured) capturedByKey.set(field.key, field);
+  }
+  for (const field of incoming.captured) capturedByKey.set(field.key, field);
+
+  const captured = [...capturedByKey.values()];
+  const missing = incoming.missing.filter((field) => !capturedByKey.has(field.key));
+  return {
+    verticalKey: incoming.verticalKey,
+    verticalLabel: incoming.verticalLabel,
+    captured,
+    missing,
+  };
+}
 
 function localIntentFallback(message: string): string {
   const lower = message.toLowerCase();
@@ -303,6 +331,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
   ];
 
   let conversationId: string | null = existingConversationId;
+  const nextConversationIntake = mergeConversationIntake(undefined, result.intake);
   if (!conversationId) {
     const conversation = await prisma.conversation.create({
       data: {
@@ -310,6 +339,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
         callerPhone,
         flowType: result.flowType,
         messages: newMessages,
+        ...(nextConversationIntake && { intake: nextConversationIntake as unknown as Prisma.InputJsonValue }),
         isActive: true,
         ...(stopAutomationForEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
       },
@@ -322,14 +352,16 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     // Append messages to existing conversation
     const existing = await prisma.conversation.findUnique({
       where: { id: conversationId },
-      select: { messages: true },
+      select: { messages: true, intake: true },
     });
 
     const messages = Array.isArray(existing?.messages) ? existing.messages : [];
+    const mergedIntake = mergeConversationIntake(existing?.intake, result.intake);
     await prisma.conversation.update({
       where: { id: conversationId },
       data: {
         messages: [...messages, ...newMessages],
+        ...(mergedIntake && { intake: mergedIntake as unknown as Prisma.InputJsonValue }),
         flowType: result.flowType,
         updatedAt: new Date(),
         ...(stopAutomationForEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),

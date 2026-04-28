@@ -158,6 +158,7 @@ export const ConversationSchema = z.object({
   callerPhone: z.string(),
   missedCallId: z.string().uuid().nullable(),
   messages: z.array(MessageSchema),
+  intake: z.unknown().nullable().optional(),
   flowType: z.nativeEnum(FlowType).nullable(),
   isActive: z.boolean().default(true),
   createdAt: z.date(),

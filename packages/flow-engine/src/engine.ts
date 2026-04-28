@@ -7,6 +7,7 @@ import { processInquiryFlow } from './flows/inquiryFlow';
 import { runOrderAgent } from './ai/orderAgent';
 import { FlowType } from '@ringback/shared-types';
 import { pushDecision } from './decisions';
+import { extractVerticalIntake } from './intake';
 
 function routeOrder(input: FlowInput): Promise<FlowOutput> {
   // AI order agent is the default when a tool-use chat fn is wired.
@@ -69,7 +70,16 @@ function shouldReclassifyActiveFlow(input: FlowInput): boolean {
   return false;
 }
 
-export async function runFlowEngine(input: FlowInput): Promise<FlowOutput> {
+function attachIntake(input: FlowInput, output: FlowOutput): FlowOutput {
+  const intake = extractVerticalIntake({
+    tenantContext: input.tenantContext,
+    inboundMessage: input.inboundMessage,
+    flowType: output.flowType,
+  });
+  return intake ? { ...output, intake } : output;
+}
+
+async function runFlowEngineCore(input: FlowInput): Promise<FlowOutput> {
   const { currentState, tenantContext, inboundMessage } = input;
 
   // If in an active flow (not complete), continue it
@@ -243,4 +253,8 @@ export async function runFlowEngine(input: FlowInput): Promise<FlowOutput> {
     sideEffects: [],
     flowType: FlowType.FALLBACK,
   };
+}
+
+export async function runFlowEngine(input: FlowInput): Promise<FlowOutput> {
+  return attachIntake(input, await runFlowEngineCore(input));
 }

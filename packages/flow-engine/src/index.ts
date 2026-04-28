@@ -29,6 +29,8 @@ export {
 } from './verticals';
 export { runVerticalReadinessSuite } from './readiness';
 export type { ReadinessScenarioResult, ReadinessSuiteResult } from './readiness';
+export { extractVerticalIntake } from './intake';
+export type { StructuredIntake, StructuredIntakeField, StructuredIntakeMissingField } from './intake';
 export type {
   VerticalKey,
   VerticalProfile,

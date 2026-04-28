@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import axios from 'axios';
-import { ArrowLeft, Phone, Send, Bot, UserCheck } from 'lucide-react';
+import { ArrowLeft, Phone, Send, Bot, UserCheck, ClipboardList } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
@@ -32,6 +32,30 @@ interface Message {
   content: string;
   timestamp: string;
   sender?: 'bot' | 'human' | 'customer';
+}
+
+interface ConversationIntake {
+  verticalLabel: string;
+  captured: Array<{ key: string; label: string; value: string; confidence?: string }>;
+  missing?: Array<{ key: string; label: string }>;
+}
+
+function readConversationIntake(value: unknown): ConversationIntake | null {
+  if (!value || typeof value !== 'object') return null;
+  const intake = value as Partial<ConversationIntake>;
+  if (!Array.isArray(intake.captured) || intake.captured.length === 0) return null;
+  return {
+    verticalLabel: typeof intake.verticalLabel === 'string' ? intake.verticalLabel : 'Lead',
+    captured: intake.captured.filter((field) =>
+      field &&
+      typeof field.key === 'string' &&
+      typeof field.label === 'string' &&
+      typeof field.value === 'string',
+    ),
+    missing: Array.isArray(intake.missing)
+      ? intake.missing.filter((field) => field && typeof field.key === 'string' && typeof field.label === 'string')
+      : [],
+  };
 }
 
 export default function ConversationDetailPage() {
@@ -139,6 +163,7 @@ export default function ConversationDetailPage() {
 
   const messages: Message[] = Array.isArray(conversation.messages) ? conversation.messages : [];
   const isHumanMode = conversation.handoffStatus === 'HUMAN';
+  const intake = readConversationIntake(conversation.intake);
 
   return (
     <div>
@@ -193,6 +218,35 @@ export default function ConversationDetailPage() {
           )}
         </div>
       </div>
+
+      {intake && (
+        <Card className="mb-6">
+          <CardContent className="p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <ClipboardList className="h-4 w-4 text-primary" />
+              <div>
+                <p className="text-sm font-semibold">Captured {intake.verticalLabel} intake</p>
+                <p className="text-xs text-muted-foreground">Details the AI picked up from the customer conversation</p>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {intake.captured.map((field) => (
+                <div key={field.key} className="rounded-md border bg-muted/30 p-3">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">{field.label}</p>
+                  <p className="mt-1 text-sm font-medium">{field.value}</p>
+                </div>
+              ))}
+            </div>
+            {intake.missing && intake.missing.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {intake.missing.slice(0, 5).map((field) => (
+                  <Badge key={field.key} variant="outline">Missing: {field.label}</Badge>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Chat */}
       <Card>

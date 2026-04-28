@@ -371,6 +371,12 @@ const appointmentIntake: IntakeField[] = [
   { key: 'name', label: 'Customer name', examples: ['Jordan'], requiredFor: ['booking'] },
 ];
 
+const salonIntake: IntakeField[] = [
+  { key: 'service', label: 'Requested service', examples: ['haircut', 'balayage', 'manicure'], requiredFor: ['booking'] },
+  { key: 'stylist_preference', label: 'Stylist preference', examples: ['Maria', 'first available'], requiredFor: ['booking'] },
+  { key: 'preferred_time', label: 'Preferred date/time', examples: ['Friday afternoon'], requiredFor: ['booking'] },
+];
+
 const homeServiceScenarioPack = [
   scenario('service-happy-path', 'Happy path: service request starts booking', 'My AC stopped cooling and I need someone to come out.', { flowType: FlowType.MEETING, flowStep: 'MEETING_DATE_PROMPT' }),
   scenario('service-after-hours', 'After-hours: hours question stays informational', 'Are you open after hours for service calls?', { flowType: FlowType.FALLBACK }),
@@ -584,7 +590,7 @@ export const VERTICAL_PROFILES: Record<VerticalKey, VerticalProfile> = {
     defaultFlows: [FlowType.MEETING, FlowType.FALLBACK],
     safetyPolicies: [medicalSafety],
     escalationPolicies: [],
-    intakeFields: appointmentIntake,
+    intakeFields: salonIntake,
     recommendedIntegrations: ['Google Calendar', 'EHR scheduling', 'secure intake forms'],
     valueMetrics: ['appointments requested', 'urgent handoffs', 'unresolved patient requests'],
     readinessScenarios: medicalScenarioPack,

@@ -407,6 +407,7 @@ model Conversation {
   missedCallId  String?
   missedCall    MissedCall?   @relation(fields: [missedCallId], references: [id])
   messages      Json          @default("[]")
+  intake        Json?
   flowType      FlowType?
   handoffStatus HandoffStatus @default(AI)
   handoffAt     DateTime?

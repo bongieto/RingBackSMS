@@ -1,4 +1,4 @@
-import { runFlowEngine, TenantContext, matchEscalationPolicy, matchSafetyPolicy, type CallerMemory, type ChatFn, type ChatWithToolsFn } from '@ringback/flow-engine';
+import { runFlowEngine, TenantContext, matchEscalationPolicy, matchSafetyPolicy, type CallerMemory, type ChatFn, type ChatWithToolsFn, type StructuredIntake } from '@ringback/flow-engine';
 import { chatCompletion, chatWithTools } from './aiClient';
 import { getCallerContext } from './callerContextService';
 import { FlowType, SideEffect } from '@ringback/shared-types';
@@ -46,6 +46,40 @@ export interface ProcessInboundSmsTestResult {
   sideEffects: SideEffect[];
   nextState: Awaited<ReturnType<typeof runFlowEngine>>['nextState'];
   flowType: FlowType;
+}
+
+function isStructuredIntake(value: unknown): value is StructuredIntake {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Array.isArray((value as { captured?: unknown }).captured) &&
+    Array.isArray((value as { missing?: unknown }).missing)
+  );
+}
+
+function mergeConversationIntake(existing: unknown, incoming?: StructuredIntake): StructuredIntake | undefined {
+  if (!incoming) return isStructuredIntake(existing) ? existing : undefined;
+
+  const capturedByKey = new Map<string, StructuredIntake['captured'][number]>();
+  if (isStructuredIntake(existing)) {
+    for (const field of existing.captured) capturedByKey.set(field.key, field);
+  }
+  for (const field of incoming.captured) capturedByKey.set(field.key, field);
+
+  const captured = [...capturedByKey.values()];
+  const missing = incoming.missing.filter((field) => !capturedByKey.has(field.key));
+  return {
+    verticalKey: incoming.verticalKey,
+    verticalLabel: incoming.verticalLabel,
+    captured,
+    missing,
+  };
+}
+
+function formatIntakeForTask(intake?: StructuredIntake): string {
+  if (!intake || intake.captured.length === 0) return '';
+  const fields = intake.captured.map((field) => `${field.label}: ${field.value}`).join('; ');
+  return `\n\nCaptured intake (${intake.verticalLabel}): ${fields}`;
 }
 
 export async function processInboundSms(
@@ -1506,6 +1540,7 @@ async function processInboundSmsInner(
     { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },
     { role: 'assistant', content: result.smsReply, timestamp: new Date(), sender: 'bot' },
   ];
+  const nextConversationIntake = mergeConversationIntake(undefined, result.intake);
 
   if (!conversationId) {
     const conversation = await prisma.conversation.create({
@@ -1514,6 +1549,7 @@ async function processInboundSmsInner(
         callerPhone,
         flowType: result.flowType,
         messages: encryptMessages(newMessages) as unknown as Prisma.InputJsonValue,
+        ...(nextConversationIntake && { intake: nextConversationIntake as unknown as Prisma.InputJsonValue }),
         isActive: true,
         causingTurnId: currentTurnId() ?? null,
         ...(stopAutomationForEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
@@ -1524,15 +1560,17 @@ async function processInboundSmsInner(
     // Append messages to existing conversation
     const existing = await prisma.conversation.findUnique({
       where: { id: conversationId },
-      select: { messages: true },
+      select: { messages: true, intake: true },
     });
 
     const messages = decryptMessages(existing?.messages);
     const updatedMessages = [...messages, ...newMessages];
+    const mergedIntake = mergeConversationIntake(existing?.intake, result.intake);
     await prisma.conversation.update({
       where: { id: conversationId },
       data: {
         messages: encryptMessages(updatedMessages) as unknown as Prisma.InputJsonValue,
+        ...(mergedIntake && { intake: mergedIntake as unknown as Prisma.InputJsonValue }),
         flowType: result.flowType,
         updatedAt: new Date(),
         causingTurnId: currentTurnId() ?? null,
@@ -1575,7 +1613,7 @@ async function processInboundSmsInner(
       tenantId,
       source: 'CONVERSATION',
       title: escalationMatch.taskTitle,
-      description: inboundMessage,
+      description: `${inboundMessage}${formatIntakeForTask(result.intake)}`,
       priority: escalationMatch.taskPriority,
       callerPhone,
       conversationId: conversationId as string,

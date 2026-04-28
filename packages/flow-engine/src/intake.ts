@@ -1,0 +1,237 @@
+import { FlowType } from '@ringback/shared-types';
+import type { TenantContext } from './types';
+import { getVerticalProfile, type IntakeField, type VerticalKey } from './verticals';
+
+export interface StructuredIntakeField {
+  key: string;
+  label: string;
+  value: string;
+  confidence: 'high' | 'medium' | 'low';
+  source: 'message';
+}
+
+export interface StructuredIntakeMissingField {
+  key: string;
+  label: string;
+  requiredFor: IntakeField['requiredFor'];
+}
+
+export interface StructuredIntake {
+  verticalKey: VerticalKey;
+  verticalLabel: string;
+  captured: StructuredIntakeField[];
+  missing: StructuredIntakeMissingField[];
+}
+
+const MAKE_WORDS = [
+  'Acura', 'Audi', 'BMW', 'Buick', 'Cadillac', 'Chevy', 'Chevrolet', 'Chrysler',
+  'Dodge', 'Ford', 'GMC', 'Honda', 'Hyundai', 'Infiniti', 'Jeep', 'Kia', 'Lexus',
+  'Mazda', 'Mercedes', 'Nissan', 'Subaru', 'Tesla', 'Toyota', 'Volkswagen', 'Volvo',
+];
+
+function firstMatch(message: string, patterns: RegExp[]): string | null {
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    const value = (match?.[1] ?? match?.[0])?.trim();
+    if (value) return value.replace(/[.!,;:]$/, '').trim();
+  }
+  return null;
+}
+
+function has(message: string, pattern: RegExp): boolean {
+  return pattern.test(message);
+}
+
+function setField(
+  fields: Map<string, StructuredIntakeField>,
+  profileFields: IntakeField[],
+  key: string,
+  value: string | null | undefined,
+  confidence: StructuredIntakeField['confidence'] = 'medium',
+) {
+  const clean = value?.trim();
+  if (!clean || fields.has(key)) return;
+  const profileField = profileFields.find((field) => field.key === key);
+  fields.set(key, {
+    key,
+    label: profileField?.label ?? key.replace(/_/g, ' '),
+    value: clean,
+    confidence,
+    source: 'message',
+  });
+}
+
+function inferUrgency(message: string): string | null {
+  if (has(message, /\b(?:emergency|urgent|asap|right now|immediately|now)\b/i)) return 'urgent';
+  if (has(message, /\b(?:today|same day|this afternoon|this morning|tonight)\b/i)) return 'today';
+  if (has(message, /\b(?:tomorrow|next day)\b/i)) return 'tomorrow';
+  if (has(message, /\b(?:this week|next week|weekend)\b/i)) return firstMatch(message, [/\b(this week|next week|this weekend|weekend)\b/i]);
+  if (has(message, /\b(?:not urgent|no rush|whenever)\b/i)) return 'not urgent';
+  return null;
+}
+
+function inferPreferredTime(message: string): string | null {
+  return firstMatch(message, [
+    /\b((?:today|tomorrow|tonight|this morning|this afternoon|this evening|next week|this week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+(?:morning|afternoon|evening|night))?)\b/i,
+    /\b((?:at|around|after|before)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i,
+    /\b(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/i,
+  ]);
+}
+
+function inferAddress(message: string): string | null {
+  return firstMatch(message, [
+    /\b(\d{2,6}\s+[A-Za-z0-9.' -]+?\s+(?:st|street|ave|avenue|rd|road|dr|drive|ln|lane|ct|court|blvd|boulevard|way|pl|place|circle|cir)\b(?:\.|,)?(?:\s*(?:apt|suite|unit|#)\s*[A-Za-z0-9-]+)?)/i,
+  ]);
+}
+
+function inferIssue(message: string): string | null {
+  return firstMatch(message, [
+    /\b(?:my|the|our)\s+(.{3,80}?\b(?:not working|stopped working|not cooling|not heating|leaking|broken|squealing|making noise|won't start|is out|went out))\b/i,
+    /\b(?:need|needs|looking for|want)\s+(?:help with|someone to fix|service for|repair for)?\s*(.{3,80})/i,
+    /\b((?:ac|a\/c|furnace|heater|heat|plumbing|pipe|sink|toilet|car|brakes?|engine|transmission|battery|hair|color|manicure|hoodie|shirt|shoes).{0,70})/i,
+  ]);
+}
+
+function inferHvacSystem(message: string): string | null {
+  return firstMatch(message, [
+    /\b(central\s+(?:ac|a\/c|air)|ac|a\/c|air conditioner|furnace|heater|heat pump|boiler|mini[-\s]?split|thermostat)\b/i,
+  ]);
+}
+
+function inferHomeCareRelationship(message: string): string | null {
+  return firstMatch(message, [
+    /\b(my\s+(?:mom|mother|dad|father|parent|parents|grandmother|grandfather|spouse|husband|wife|sister|brother))\b/i,
+    /\b(for\s+(?:me|myself|a client|a patient))\b/i,
+  ]);
+}
+
+function inferCareNeed(message: string): string | null {
+  return firstMatch(message, [
+    /\b(caregiver|home care|companionship|bathing help|meal prep|medication reminders?|dementia care|respite care|mobility help|transportation|overnight care)\b/i,
+  ]);
+}
+
+function inferVehicle(message: string): string | null {
+  const makePattern = MAKE_WORDS.join('|');
+  return firstMatch(message, [
+    new RegExp(`\\b((?:19|20)\\d{2}\\s+(?:${makePattern})(?:\\s+[A-Za-z0-9-]+){0,3})\\b`, 'i'),
+    new RegExp(`\\b((?:${makePattern})(?:\\s+[A-Za-z0-9-]+){0,3})\\b`, 'i'),
+  ]);
+}
+
+function inferTowNeeded(message: string): string | null {
+  if (has(message, /\b(?:need|needs|want)\s+(?:a\s+)?tow|tow truck|towed|towing\b/i)) return 'yes';
+  if (has(message, /\b(?:no tow|do not need a tow|don't need a tow)\b/i)) return 'no';
+  return null;
+}
+
+function inferSalonService(message: string): string | null {
+  return firstMatch(message, [
+    /\b(haircut|cut|color correction|color|balayage|highlights|blowout|manicure|pedicure|facial|waxing|massage|beard trim)\b/i,
+  ]);
+}
+
+function inferStylist(message: string): string | null {
+  return firstMatch(message, [
+    /\b(?:with|by)\s+([A-Z][a-z]{2,20})\b/,
+    /\b(?:any stylist|first available|no preference)\b/i,
+  ]);
+}
+
+function inferRetailProduct(message: string): string | null {
+  return firstMatch(message, [
+    /\b(?:have|hold|buy|looking for|want|need)\s+(?:a|an|the)?\s*([a-z0-9 -]{3,60}?(?:hoodie|shirt|shoes|dress|hat|jacket|pants|jeans|bag|product|item))\b/i,
+  ]);
+}
+
+function inferRetailVariant(message: string): string | null {
+  const size = firstMatch(message, [/\b(xs|small|medium|large|xl|xxl|size\s+\d{1,2})\b/i]);
+  const color = firstMatch(message, [/\b(black|white|blue|red|green|yellow|pink|purple|gray|grey|brown|tan|navy)\b/i]);
+  if (size && color) return `${color}, ${size}`;
+  return size ?? color;
+}
+
+function inferHoldRequest(message: string): string | null {
+  return has(message, /\b(?:hold|save|reserve|set aside)\b/i) ? 'yes' : null;
+}
+
+function requiredForFlow(flowType: FlowType): Array<'booking' | 'quote' | 'handoff'> {
+  if (flowType === FlowType.MEETING) return ['booking'];
+  if (flowType === FlowType.INQUIRY) return ['quote'];
+  if (flowType === FlowType.FALLBACK) return ['handoff', 'quote'];
+  return ['quote'];
+}
+
+export function extractVerticalIntake(input: {
+  tenantContext: TenantContext;
+  inboundMessage: string;
+  flowType: FlowType;
+}): StructuredIntake | undefined {
+  const profile = getVerticalProfile(input.tenantContext);
+  if (profile.intakeFields.length === 0) return undefined;
+
+  const fields = new Map<string, StructuredIntakeField>();
+  const message = input.inboundMessage;
+
+  if (['home_services', 'plumbing', 'electrical', 'generic_service'].includes(profile.key)) {
+    setField(fields, profile.intakeFields, 'issue', inferIssue(message), 'medium');
+    setField(fields, profile.intakeFields, 'urgency', inferUrgency(message), 'high');
+    setField(fields, profile.intakeFields, 'address', inferAddress(message), 'high');
+    setField(fields, profile.intakeFields, 'preferred_time', inferPreferredTime(message), 'medium');
+  }
+
+  if (profile.key === 'hvac') {
+    setField(fields, profile.intakeFields, 'issue', inferIssue(message), 'medium');
+    setField(fields, profile.intakeFields, 'urgency', inferUrgency(message), 'high');
+    setField(fields, profile.intakeFields, 'address', inferAddress(message), 'high');
+    setField(fields, profile.intakeFields, 'preferred_time', inferPreferredTime(message), 'medium');
+    setField(fields, profile.intakeFields, 'system_type', inferHvacSystem(message), 'high');
+  }
+
+  if (['medical', 'hospice', 'consultant'].includes(profile.key)) {
+    setField(fields, profile.intakeFields, 'service', inferIssue(message), 'medium');
+    setField(fields, profile.intakeFields, 'preferred_time', inferPreferredTime(message), 'medium');
+  }
+
+  if (profile.key === 'home_care') {
+    setField(fields, profile.intakeFields, 'relationship', inferHomeCareRelationship(message), 'high');
+    setField(fields, profile.intakeFields, 'care_need', inferCareNeed(message) ?? inferIssue(message), 'medium');
+    setField(fields, profile.intakeFields, 'start_date', inferPreferredTime(message), 'medium');
+    setField(fields, profile.intakeFields, 'location', inferAddress(message) ?? firstMatch(message, [/\b(?:in|near)\s+([A-Z][A-Za-z .'-]{2,40})\b/]), 'medium');
+  }
+
+  if (profile.key === 'auto_shop') {
+    setField(fields, profile.intakeFields, 'vehicle', inferVehicle(message), 'high');
+    setField(fields, profile.intakeFields, 'issue', inferIssue(message), 'medium');
+    setField(fields, profile.intakeFields, 'tow_needed', inferTowNeeded(message), 'high');
+  }
+
+  if (profile.key === 'salon') {
+    setField(fields, profile.intakeFields, 'service', inferSalonService(message) ?? inferIssue(message), 'medium');
+    setField(fields, profile.intakeFields, 'preferred_time', inferPreferredTime(message), 'medium');
+    setField(fields, profile.intakeFields, 'stylist_preference', inferStylist(message), 'medium');
+  }
+
+  if (profile.key === 'retail') {
+    setField(fields, profile.intakeFields, 'product', inferRetailProduct(message), 'medium');
+    setField(fields, profile.intakeFields, 'variant', inferRetailVariant(message), 'medium');
+    setField(fields, profile.intakeFields, 'hold_request', inferHoldRequest(message), 'high');
+  }
+
+  const captured = [...fields.values()].filter((field) =>
+    profile.intakeFields.some((configured) => configured.key === field.key),
+  );
+  const activeRequirements = requiredForFlow(input.flowType);
+  const missing = profile.intakeFields
+    .filter((field) => field.requiredFor.some((required) => activeRequirements.includes(required)))
+    .filter((field) => !fields.has(field.key))
+    .map((field) => ({ key: field.key, label: field.label, requiredFor: field.requiredFor }));
+
+  if (captured.length === 0 && missing.length === 0) return undefined;
+  return {
+    verticalKey: profile.key,
+    verticalLabel: profile.label,
+    captured,
+    missing,
+  };
+}
