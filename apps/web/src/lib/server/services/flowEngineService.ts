@@ -1229,6 +1229,7 @@ async function processInboundSmsInner(
             attendeeName: effect.payload.name,
             attendeeEmail: effect.payload.email,
             attendeePhone: effect.payload.callerPhone,
+            notes: effect.payload.notes ?? undefined,
             timeZone: calConfig.timezone ?? 'America/Chicago',
             metadata: {
               ringbackTenantId: tenantId,
@@ -1242,7 +1243,10 @@ async function processInboundSmsInner(
             conversationId: existingConversationId ?? '',
             callerPhone: effect.payload.callerPhone,
             scheduledAt: new Date(effect.payload.start),
-            notes: `Booked via SMS: ${effect.payload.name} <${effect.payload.email}>`,
+            notes: [
+              `Booked via SMS: ${effect.payload.name} <${effect.payload.email}>`,
+              effect.payload.notes?.trim(),
+            ].filter(Boolean).join('\n\n'),
             calcomBookingId: String(booking.id),
             calcomBookingUid: booking.uid,
             status: 'CONFIRMED',
@@ -1405,6 +1409,7 @@ async function processInboundSmsInner(
             durationMinutes: duration,
             guestName: effect.payload.name,
             guestEmail: effect.payload.email,
+            notes: effect.payload.notes ?? null,
           });
 
           // Guest confirmation email — non-fatal if it fails.
@@ -1433,7 +1438,11 @@ async function processInboundSmsInner(
             type: 'NOTIFY_OWNER',
             payload: {
               subject: `New meeting booked: ${effect.payload.name}`,
-              message: `${effect.payload.name} (${effect.payload.callerPhone}) booked a meeting for ${friendly}.\nEmail: ${effect.payload.email}`,
+              message: [
+                `${effect.payload.name} (${effect.payload.callerPhone}) booked a meeting for ${friendly}.`,
+                `Email: ${effect.payload.email}`,
+                effect.payload.notes?.trim() ? `\n${effect.payload.notes.trim()}` : '',
+              ].filter(Boolean).join('\n'),
               channel: 'email',
             },
           });

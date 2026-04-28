@@ -2,6 +2,7 @@ import { FlowInput, FlowOutput, FlowStep } from '../types';
 import { FlowType, CallerState, MeetingDraft } from '@ringback/shared-types';
 import { pushDecision } from '../decisions';
 import { zonedDateToUtc } from '../calendar/localAvailability';
+import { extractVerticalIntake, type StructuredIntake } from '../intake';
 
 // ── Date parsing (MVP — keyword-based, no LLM) ────────────────────────────
 
@@ -177,6 +178,47 @@ function isEmail(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
 }
 
+function intakeForTurn(input: FlowInput): StructuredIntake | undefined {
+  return extractVerticalIntake({
+    tenantContext: input.tenantContext,
+    inboundMessage: input.inboundMessage,
+    flowType: FlowType.MEETING,
+  });
+}
+
+function intakeNotes(intake?: StructuredIntake, extra?: string | null): string | undefined {
+  const lines: string[] = [];
+  if (intake?.captured.length) {
+    lines.push(`Captured intake (${intake.verticalLabel}):`);
+    for (const field of intake.captured) lines.push(`${field.label}: ${field.value}`);
+  }
+  if (extra?.trim()) {
+    lines.push('Additional customer details:');
+    lines.push(extra.trim());
+  }
+  return lines.length ? lines.join('\n') : undefined;
+}
+
+function combineNotes(...notes: Array<string | null | undefined>): string | undefined {
+  const clean = notes.map((note) => note?.trim()).filter((note): note is string => Boolean(note));
+  return clean.length ? clean.join('\n') : undefined;
+}
+
+function bookingMissingFields(intake?: StructuredIntake): Array<{ key: string; label: string }> {
+  if (!intake) return [];
+  const skip = new Set(['name', 'preferred_time']);
+  return intake.missing
+    .filter((field) => !skip.has(field.key))
+    .slice(0, 3)
+    .map((field) => ({ key: field.key, label: field.label }));
+}
+
+function formatMissingFieldPrompt(fields: Array<{ label: string }>): string {
+  if (fields.length === 1) return fields[0].label.toLowerCase();
+  if (fields.length === 2) return `${fields[0].label.toLowerCase()} and ${fields[1].label.toLowerCase()}`;
+  return `${fields.slice(0, -1).map((field) => field.label.toLowerCase()).join(', ')}, and ${fields[fields.length - 1].label.toLowerCase()}`;
+}
+
 // ── Flow entry ────────────────────────────────────────────────────────────
 
 export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> {
@@ -209,6 +251,9 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
   const hasCalendar = isCalcom || hasBuiltIn;
 
   const step = (currentState?.flowStep as FlowStep) ?? 'MEETING_GREETING';
+  const turnIntake = intakeForTurn(input);
+  const turnIntakeNotes = intakeNotes(turnIntake);
+  const turnMissingFields = bookingMissingFields(turnIntake);
 
   const baseInitial = (): CallerState => ({
     tenantId: tenantContext.tenantId,
@@ -247,7 +292,10 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
           nextState: {
             ...baseInitial(),
             flowStep: 'MEETING_SLOT_PICK',
-            meetingDraft: {},
+            meetingDraft: {
+              ...(turnIntakeNotes && { intakeNotes: turnIntakeNotes }),
+              ...(turnMissingFields.length > 0 && { pendingIntakeFields: turnMissingFields }),
+            },
           },
           smsReply: `Happy to help you book an appointment with ${tenantContext.tenantName}! Checking availability for ${openerDate.label}…`,
           sideEffects: [
@@ -268,7 +316,10 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
         nextState: {
           ...baseInitial(),
           flowStep: 'MEETING_DATE_PROMPT',
-          meetingDraft: {},
+          meetingDraft: {
+            ...(turnIntakeNotes && { intakeNotes: turnIntakeNotes }),
+            ...(turnMissingFields.length > 0 && { pendingIntakeFields: turnMissingFields }),
+          },
         },
         smsReply: `Happy to help you book an appointment with ${tenantContext.tenantName}! What day works for you? (e.g. tomorrow, Friday, or 4/15)`,
         sideEffects: [],
@@ -330,7 +381,14 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
       nextState: {
         ...currentState,
         flowStep: 'MEETING_SLOT_PICK',
-        meetingDraft: { ...(currentState.meetingDraft ?? {}) },
+        meetingDraft: {
+          ...(currentState.meetingDraft ?? {}),
+          intakeNotes: combineNotes(currentState.meetingDraft?.intakeNotes, turnIntakeNotes),
+          pendingIntakeFields:
+            currentState.meetingDraft?.pendingIntakeFields && currentState.meetingDraft.pendingIntakeFields.length > 0
+              ? currentState.meetingDraft.pendingIntakeFields
+              : turnMissingFields,
+        },
         lastMessageAt: Date.now(),
       },
       // Placeholder; the side-effect handler will override the SMS once
@@ -381,6 +439,23 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
     }
 
     const picked = slots[pickIdx];
+    const pendingIntakeFields = draft.pendingIntakeFields ?? [];
+    if (pendingIntakeFields.length > 0) {
+      return {
+        nextState: {
+          ...currentState,
+          flowStep: 'MEETING_COLLECT_INTAKE',
+          meetingDraft: { ...draft, pickedSlotStart: picked.start },
+          lastMessageAt: Date.now(),
+        },
+        smsReply: `Great — ${formatTimeLabel(
+          picked.start,
+          cfg.timezone ?? 'America/Chicago',
+        )} it is. Before I book it, please send the ${formatMissingFieldPrompt(pendingIntakeFields)}.`,
+        sideEffects: [],
+        flowType: FlowType.MEETING,
+      };
+    }
     return {
       nextState: {
         ...currentState,
@@ -392,6 +467,43 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
         picked.start,
         cfg.timezone ?? 'America/Chicago',
       )} it is. What's your name?`,
+      sideEffects: [],
+      flowType: FlowType.MEETING,
+    };
+  }
+
+  // ── MEETING_COLLECT_INTAKE → capture vertical-specific details ────────
+  if (step === 'MEETING_COLLECT_INTAKE' && hasCalendar) {
+    const draft: MeetingDraft = currentState.meetingDraft ?? {};
+    const extra = inboundMessage.trim();
+    if (extra.length < 2) {
+      const pending = draft.pendingIntakeFields ?? [];
+      return {
+        nextState: { ...currentState, lastMessageAt: Date.now() },
+        smsReply: pending.length > 0
+          ? `Please send the ${formatMissingFieldPrompt(pending)} so we can prepare for the appointment.`
+          : `Please send a little more detail so we can prepare for the appointment.`,
+        sideEffects: [],
+        flowType: FlowType.MEETING,
+      };
+    }
+    const notes = combineNotes(
+      draft.intakeNotes,
+      turnIntakeNotes,
+      extra ? `Additional customer details:\n${extra}` : null,
+    );
+    return {
+      nextState: {
+        ...currentState,
+        flowStep: 'MEETING_COLLECT_NAME',
+        meetingDraft: {
+          ...draft,
+          intakeNotes: notes,
+          pendingIntakeFields: [],
+        },
+        lastMessageAt: Date.now(),
+      },
+      smsReply: `Thanks, that helps. What's your name?`,
       sideEffects: [],
       flowType: FlowType.MEETING,
     };
@@ -470,6 +582,7 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
             name: draft.name,
             email,
             callerPhone: input.callerPhone,
+            notes: draft.intakeNotes ?? null,
           },
         },
       ],
@@ -495,14 +608,14 @@ export async function processMeetingFlow(input: FlowInput): Promise<FlowOutput> 
           payload: {
             callerPhone: input.callerPhone,
             preferredTime: inboundMessage.trim(),
-            notes: null,
+            notes: intakeNotes(turnIntake, inboundMessage.trim()) ?? null,
           },
         },
         {
           type: 'NOTIFY_OWNER',
           payload: {
             subject: `Meeting Request from ${input.callerPhone}`,
-            message: `Meeting request received from ${input.callerPhone}:\n"${inboundMessage}"`,
+            message: `Meeting request received from ${input.callerPhone}:\n"${inboundMessage}"${turnIntakeNotes ? `\n\n${turnIntakeNotes}` : ''}`,
             channel: 'email',
           },
         },

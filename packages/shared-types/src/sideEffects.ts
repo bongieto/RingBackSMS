@@ -107,6 +107,7 @@ export interface CreateCalcomBookingSideEffect {
     name: string;
     email: string;
     callerPhone: string;
+    notes?: string | null;
   };
 }
 
@@ -136,6 +137,7 @@ export interface CreateLocalBookingSideEffect {
     name: string;
     email: string;
     callerPhone: string;
+    notes?: string | null;
   };
 }
 

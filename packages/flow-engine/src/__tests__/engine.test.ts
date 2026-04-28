@@ -349,6 +349,40 @@ describe('Flow Engine', () => {
       expect(scheduleResult.sideEffects.some((e) => e.type === 'FETCH_LOCAL_SLOTS')).toBe(true);
     });
 
+    it('asks for missing vertical intake before collecting booking name', async () => {
+      const hvacContext = {
+        ...mockTenantContext,
+        tenantName: 'Bruno HVAC',
+        businessType: BusinessType.SERVICE,
+        industryTemplateKey: 'hvac',
+      };
+      const meetingChatFn: ChatFn = jest.fn().mockResolvedValue('{"intent":"MEETING","confidence":0.95}');
+      const openerResult = await runFlowEngine({
+        ...baseInput,
+        tenantContext: hvacContext,
+        chatFn: meetingChatFn,
+        inboundMessage: 'My AC is not cooling tomorrow morning',
+      });
+      const stateWithSlots = {
+        ...openerResult.nextState,
+        meetingDraft: {
+          ...(openerResult.nextState.meetingDraft ?? {}),
+          slots: [{ start: '2026-05-01T15:00:00.000Z', end: '2026-05-01T15:30:00.000Z' }],
+        },
+      };
+      const slotPick = await runFlowEngine({
+        ...baseInput,
+        tenantContext: hvacContext,
+        chatFn: meetingChatFn,
+        inboundMessage: '1',
+        currentState: stateWithSlots,
+      });
+
+      expect(slotPick.nextState.flowStep).toBe('MEETING_COLLECT_INTAKE');
+      expect(slotPick.smsReply).toMatch(/service address/i);
+      expect(slotPick.smsReply).not.toMatch(/what's your name/i);
+    });
+
     it('falls back to legacy manual booking when meetingEnabled is false and cal.com is unset', async () => {
       const tier3Context = {
         ...mockTenantContext,

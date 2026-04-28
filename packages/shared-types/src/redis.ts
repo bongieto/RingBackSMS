@@ -60,6 +60,10 @@ export const MeetingDraftSchema = z.object({
   name: z.string().optional(),
   email: z.string().optional(),
   notes: z.string().optional(),
+  intakeNotes: z.string().optional(),
+  pendingIntakeFields: z
+    .array(z.object({ key: z.string(), label: z.string() }))
+    .optional(),
 });
 
 export type MeetingDraft = z.infer<typeof MeetingDraftSchema>;

@@ -82,6 +82,7 @@ export async function createLocalBooking(input: {
   durationMinutes: number;
   guestName: string;
   guestEmail: string;
+  notes?: string | null;
 }): Promise<{ id: string }> {
   const start = input.start;
   const end = new Date(start.getTime() + input.durationMinutes * 60_000);
@@ -153,7 +154,10 @@ export async function createLocalBooking(input: {
           durationMinutes: input.durationMinutes,
           guestName: input.guestName,
           guestEmail: input.guestEmail,
-          notes: `Booked via SMS: ${input.guestName} <${input.guestEmail}>`,
+          notes: [
+            `Booked via SMS: ${input.guestName} <${input.guestEmail}>`,
+            input.notes?.trim(),
+          ].filter(Boolean).join('\n\n'),
           status: MeetingStatus.CONFIRMED,
         },
         select: { id: true },
