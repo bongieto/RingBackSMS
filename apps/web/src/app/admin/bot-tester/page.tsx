@@ -38,6 +38,14 @@ interface ReadinessResult {
   recommendedIntegrations: string[];
   valueMetrics: string[];
   intakeFields: Array<{ key: string; label: string; examples: string[] }>;
+  escalationPolicies: Array<{
+    id: string;
+    label: string;
+    severity: string;
+    keywords: string[];
+    stopAutomation: boolean;
+    source: string;
+  }>;
   results: Array<{
     id: string;
     label: string;
@@ -364,8 +372,8 @@ export default function BotTesterPage() {
                 </div>
               ))}
             </div>
-            {(readiness.intakeFields.length > 0 || readiness.recommendedIntegrations.length > 0) && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 border-t border-slate-800 pt-3">
+            {(readiness.intakeFields.length > 0 || readiness.recommendedIntegrations.length > 0 || readiness.escalationPolicies.length > 0) && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 border-t border-slate-800 pt-3">
                 <div>
                   <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">
                     Intake fields
@@ -380,6 +388,20 @@ export default function BotTesterPage() {
                   </div>
                   <div className="text-xs text-slate-400">
                     {readiness.recommendedIntegrations.slice(0, 5).join(', ') || 'None'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">
+                    Escalation rules
+                  </div>
+                  <div className="space-y-1 text-xs text-slate-400">
+                    {readiness.escalationPolicies.slice(0, 5).map((policy) => (
+                      <div key={policy.id}>
+                        {policy.label} · {policy.severity}
+                        {policy.stopAutomation ? ' · stops AI' : ' · notify only'}
+                      </div>
+                    ))}
+                    {readiness.escalationPolicies.length === 0 && 'None'}
                   </div>
                 </div>
               </div>

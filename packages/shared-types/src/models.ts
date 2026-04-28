@@ -83,6 +83,7 @@ export const TenantConfigSchema = z.object({
   followupOpener: z.string().nullable().optional(),
   customAiInstructions: z.string().nullable().optional(),
   customEscalationKeywords: z.array(z.string()).default([]).optional(),
+  escalationPolicyOverrides: z.unknown().nullable().optional(),
   squareSyncEnabled: z.boolean().default(false),
   squareAutoSync: z.boolean().default(false),
   posSyncEnabled: z.boolean().default(false),

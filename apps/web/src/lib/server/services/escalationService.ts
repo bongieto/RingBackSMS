@@ -3,10 +3,7 @@ import { logger } from '../logger';
 import { sendSms } from './twilioService';
 import { sendNotification } from './notificationService';
 import { createTask } from './taskService';
-import { getVerticalProfile, matchSafetyPolicy } from '@ringback/flow-engine';
-
-const HOLDING_MESSAGE =
-  "Let me get someone from our team — hang tight!";
+import { matchEscalationPolicy, matchSafetyPolicy } from '@ringback/flow-engine';
 
 /**
  * Checks the inbound message against the tenant's industry escalation
@@ -32,6 +29,7 @@ export async function checkEscalation(
         select: {
           industryTemplateKey: true,
           customEscalationKeywords: true,
+          escalationPolicyOverrides: true,
           websiteContext: true,
         },
       },
@@ -56,68 +54,52 @@ export async function checkEscalation(
     return false;
   }
 
-  // Gather keywords: industry template defaults + tenant custom
-  let allKeywords: string[] = [...(config.customEscalationKeywords ?? [])];
-  let customerReply = HOLDING_MESSAGE;
-  let severity: 'HIGH' | 'NORMAL' = 'NORMAL';
-
-  const vertical = getVerticalProfile({
-    businessType: tenant.businessType,
-    industryTemplateKey: config.industryTemplateKey,
-    tenantName: tenant.name,
-    websiteContext: config.websiteContext,
-  });
-  for (const policy of vertical.escalationPolicies) {
-    allKeywords = [...allKeywords, ...policy.keywords];
-  }
-
+  let templateKeywords: string[] = [];
   if (config.industryTemplateKey) {
     const template = await prisma.industryTemplate.findUnique({
       where: { industryKey: config.industryTemplateKey },
       select: { escalationKeywords: true },
     });
     if (template) {
-      allKeywords = [...allKeywords, ...template.escalationKeywords];
+      templateKeywords = template.escalationKeywords;
     }
   }
 
-  if (allKeywords.length === 0) return false;
-
-  const lower = message.toLowerCase();
-  // Use word-boundary matching to avoid false positives
-  // (e.g. "end" should not match "weekend" or "send")
-  const wordMatch = (text: string, kw: string) =>
-    new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text);
-  const triggerKeyword = allKeywords.find((kw) => wordMatch(lower, kw));
-
-  if (!triggerKeyword) return false;
-
-  const matchedVerticalPolicy = vertical.escalationPolicies.find((policy) =>
-    policy.keywords.some((kw) => wordMatch(lower, kw)),
-  );
-  if (matchedVerticalPolicy) {
-    customerReply = matchedVerticalPolicy.customerReply;
-    severity = matchedVerticalPolicy.severity === 'LOW' || matchedVerticalPolicy.severity === 'NORMAL' ? 'NORMAL' : 'HIGH';
-  }
+  const match = matchEscalationPolicy({
+    businessType: tenant.businessType,
+    industryTemplateKey: config.industryTemplateKey,
+    tenantName: tenant.name,
+    websiteContext: config.websiteContext,
+    message,
+    callerPhone,
+    customKeywords: config.customEscalationKeywords,
+    templateKeywords,
+    policyOverrides: config.escalationPolicyOverrides,
+  });
+  if (!match) return false;
 
   // Escalation triggered
   logger.info('Escalation triggered', {
     tenantId,
-    triggerKeyword,
-    vertical: vertical.key,
-    policyId: matchedVerticalPolicy?.id ?? null,
+    triggerKeyword: match.triggerKeyword,
+    vertical: match.profile.key,
+    policyId: match.policy.id,
+    severity: match.severity,
+    stopAutomation: match.stopAutomation,
   });
 
   // 1. Send holding message to customer
-  await sendSms(tenantId, callerPhone, customerReply).catch((err) =>
-    logger.error('Failed to send escalation holding message', { err, tenantId }),
-  );
+  if (match.stopAutomation) {
+    await sendSms(tenantId, callerPhone, match.customerReply).catch((err) =>
+      logger.error('Failed to send escalation holding message', { err, tenantId }),
+    );
+  }
 
   // 2. Notify tenant via all configured channels
   await sendNotification({
     tenantId,
-    subject: `Escalation: customer needs help`,
-    message: `A customer (${callerPhone}) triggered an escalation with keyword "${triggerKeyword}". Message: "${message.substring(0, 200)}"`,
+    subject: match.ownerSubject,
+    message: match.ownerMessage,
     channel: 'email',
   }).catch((err) =>
     logger.warn('Escalation email notification failed', { err, tenantId }),
@@ -126,8 +108,8 @@ export async function checkEscalation(
   await createTask({
     tenantId,
     source: 'CONVERSATION',
-    priority: severity,
-    title: `Customer follow-up needed: ${callerPhone}`,
+    priority: match.taskPriority,
+    title: match.taskTitle,
     description: message,
     callerPhone,
     conversationId: conversationId ?? undefined,
@@ -141,10 +123,10 @@ export async function checkEscalation(
       tenantId,
       callerPhone,
       conversationId: conversationId ?? null,
-      triggerKeyword,
+      triggerKeyword: match.triggerKeyword,
       messageBody: message,
     },
   });
 
-  return true;
+  return match.stopAutomation;
 }

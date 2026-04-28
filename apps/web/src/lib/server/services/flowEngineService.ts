@@ -1,4 +1,4 @@
-import { runFlowEngine, TenantContext, detectEscalationIntent, matchSafetyPolicy, type CallerMemory, type ChatFn, type ChatWithToolsFn } from '@ringback/flow-engine';
+import { runFlowEngine, TenantContext, matchEscalationPolicy, matchSafetyPolicy, type CallerMemory, type ChatFn, type ChatWithToolsFn } from '@ringback/flow-engine';
 import { chatCompletion, chatWithTools } from './aiClient';
 import { getCallerContext } from './callerContextService';
 import { FlowType, SideEffect } from '@ringback/shared-types';
@@ -1457,14 +1457,29 @@ async function processInboundSmsInner(
     result.smsReply = `${afterHoursNotice}\n\n${result.smsReply}`;
   }
 
-  // Check for escalation intent (pass tenant name so "talk to Bruno" /
-  // owner-by-name escalations are caught for tenants like "Bruno's HVAC").
-  // Medical urgency is handled above before the flow engine can enter a
-  // slower scheduling/AI path.
-  const isEscalation = detectEscalationIntent(inboundMessage, tenant.name);
-  if (isEscalation) {
-    result.smsReply = "I'm connecting you with a team member who can help. Someone will follow up with you shortly!";
-    logger.info('Escalation detected, handing off to human', { tenantId, callerPhone });
+  // Structured escalation policy matching. Medical/safety emergencies are
+  // handled above before the flow engine can enter a slower scheduling/AI
+  // path; this covers human handoffs and vertical/tenant-specific rules.
+  const escalationMatch = matchEscalationPolicy({
+    businessType: tenant.businessType,
+    industryTemplateKey: tenant.config.industryTemplateKey,
+    tenantName: tenant.name,
+    websiteContext: tenant.config.websiteContext,
+    message: inboundMessage,
+    callerPhone,
+    customKeywords: tenant.config.customEscalationKeywords,
+    policyOverrides: tenant.config.escalationPolicyOverrides,
+  });
+  const isEscalation = !!escalationMatch;
+  const stopAutomationForEscalation = escalationMatch?.stopAutomation ?? false;
+  if (stopAutomationForEscalation && escalationMatch) {
+    result.smsReply = escalationMatch.customerReply;
+    logger.info('Escalation policy detected, handing off to human', {
+      tenantId,
+      callerPhone,
+      policyId: escalationMatch.policy.id,
+      severity: escalationMatch.severity,
+    });
   }
 
   // Strip emoji + non-GSM-7 pictographs before sending. A single emoji
@@ -1501,7 +1516,7 @@ async function processInboundSmsInner(
         messages: encryptMessages(newMessages) as unknown as Prisma.InputJsonValue,
         isActive: true,
         causingTurnId: currentTurnId() ?? null,
-        ...(isEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
+        ...(stopAutomationForEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
       },
     });
     conversationId = conversation.id;
@@ -1521,7 +1536,7 @@ async function processInboundSmsInner(
         flowType: result.flowType,
         updatedAt: new Date(),
         causingTurnId: currentTurnId() ?? null,
-        ...(isEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
+        ...(stopAutomationForEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
       },
     });
   }
@@ -1547,11 +1562,11 @@ async function processInboundSmsInner(
   }
 
   // Notify owner if escalation
-  if (isEscalation && !testMode) {
+  if (isEscalation && escalationMatch && !testMode) {
     await sendNotification({
       tenantId,
-      subject: 'Customer requested human assistance',
-      message: `Customer ${callerPhone} requested to speak with a human. Please check the conversation in your dashboard.`,
+      subject: escalationMatch.ownerSubject,
+      message: escalationMatch.ownerMessage,
       channel: 'email',
     }).catch((err) => logger.warn('Failed to send escalation notification', { error: err }));
 
@@ -1559,9 +1574,9 @@ async function processInboundSmsInner(
     await createTask({
       tenantId,
       source: 'CONVERSATION',
-      title: `Reply needed: ${callerPhone}`,
+      title: escalationMatch.taskTitle,
       description: inboundMessage,
-      priority: 'HIGH',
+      priority: escalationMatch.taskPriority,
       callerPhone,
       conversationId: conversationId as string,
     }).catch((err) => logger.warn('Failed to create handoff task', { error: err }));

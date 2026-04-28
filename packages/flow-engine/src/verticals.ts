@@ -1,4 +1,5 @@
 import { BusinessType, FlowType } from '@ringback/shared-types';
+import { detectEscalationIntent } from './intentDetector';
 
 export type VerticalKey =
   | 'restaurant'
@@ -18,6 +19,7 @@ export type VerticalKey =
   | 'other';
 
 export type PolicySeverity = 'LOW' | 'NORMAL' | 'HIGH' | 'EMERGENCY';
+export type EscalationTaskPriority = 'URGENT' | 'HIGH' | 'NORMAL';
 
 export interface SafetyPolicy {
   id: string;
@@ -37,7 +39,28 @@ export interface EscalationPolicy {
   keywords: string[];
   customerReply: string;
   ownerSubject: string;
+  ownerMessage?: string;
+  taskTitle?: string;
+  taskPriority?: EscalationTaskPriority;
   stopAutomation: boolean;
+}
+
+export interface EscalationPolicyOverride {
+  id: string;
+  enabled?: boolean;
+  label?: string;
+  severity?: PolicySeverity;
+  keywords?: string[];
+  customerReply?: string;
+  ownerSubject?: string;
+  ownerMessage?: string;
+  taskTitle?: string;
+  taskPriority?: EscalationTaskPriority;
+  stopAutomation?: boolean;
+}
+
+export interface ResolvedEscalationPolicy extends EscalationPolicy {
+  source: 'vertical' | 'template' | 'tenant' | 'generic';
 }
 
 export interface IntakeField {
@@ -98,12 +121,28 @@ export interface SafetyPolicyMatch {
   ownerSubject: string;
   ownerMessage: string;
   taskTitle: string;
-  taskPriority: 'URGENT' | 'HIGH' | 'NORMAL';
+  taskPriority: EscalationTaskPriority;
+  stopAutomation: boolean;
+}
+
+export interface EscalationPolicyMatch {
+  profile: VerticalProfile;
+  policy: ResolvedEscalationPolicy;
+  severity: PolicySeverity;
+  triggerKeyword: string;
+  customerReply: string;
+  ownerSubject: string;
+  ownerMessage: string;
+  taskTitle: string;
+  taskPriority: EscalationTaskPriority;
   stopAutomation: boolean;
 }
 
 const NOT_EMERGENCY_SERVICE =
   "We're not an emergency service.";
+
+const DEFAULT_HANDOFF_REPLY =
+  "I'm connecting you with a team member who can help. Someone will follow up with you shortly!";
 
 const HOME_SERVICE_SAFETY_REPLY =
   `If there is immediate danger, a gas smell or leak, carbon monoxide alarm, fire, smoke, flooding, sewage backup, or an electrical hazard, please call 911 or your utility emergency line now. ${NOT_EMERGENCY_SERVICE} I'm also connecting you with a team member who can help, and someone will follow up with you shortly.`;
@@ -150,6 +189,104 @@ function safetyPolicy(
         : `Urgent follow-up needed: ${callerPhone}`,
     stopAutomation: true,
   };
+}
+
+function severityToTaskPriority(severity: PolicySeverity): EscalationTaskPriority {
+  if (severity === 'EMERGENCY') return 'URGENT';
+  if (severity === 'HIGH') return 'HIGH';
+  return 'NORMAL';
+}
+
+function isPolicySeverity(value: unknown): value is PolicySeverity {
+  return value === 'LOW' || value === 'NORMAL' || value === 'HIGH' || value === 'EMERGENCY';
+}
+
+function isTaskPriority(value: unknown): value is EscalationTaskPriority {
+  return value === 'URGENT' || value === 'HIGH' || value === 'NORMAL';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function cleanKeywords(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const keywords = value
+    .filter((keyword): keyword is string => typeof keyword === 'string')
+    .map((keyword) => keyword.trim())
+    .filter(Boolean);
+  return keywords.length > 0 ? [...new Set(keywords)] : [];
+}
+
+function cleanString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function readPolicyOverrides(value: unknown): EscalationPolicyOverride[] {
+  const rawRules =
+    Array.isArray(value)
+      ? value
+      : isRecord(value) && Array.isArray(value.rules)
+        ? value.rules
+        : [];
+
+  return rawRules.flatMap((rule): EscalationPolicyOverride[] => {
+    if (!isRecord(rule)) return [];
+    const id = cleanString(rule.id);
+    if (!id) return [];
+    const keywords = cleanKeywords(rule.keywords);
+    const label = cleanString(rule.label);
+    const customerReply = cleanString(rule.customerReply);
+    const ownerSubject = cleanString(rule.ownerSubject);
+    const ownerMessage = cleanString(rule.ownerMessage);
+    const taskTitle = cleanString(rule.taskTitle);
+    return [{
+      id,
+      ...(typeof rule.enabled === 'boolean' && { enabled: rule.enabled }),
+      ...(label && { label }),
+      ...(isPolicySeverity(rule.severity) && { severity: rule.severity }),
+      ...(keywords !== undefined && { keywords }),
+      ...(customerReply && { customerReply }),
+      ...(ownerSubject && { ownerSubject }),
+      ...(ownerMessage && { ownerMessage }),
+      ...(taskTitle && { taskTitle }),
+      ...(isTaskPriority(rule.taskPriority) && { taskPriority: rule.taskPriority }),
+      ...(typeof rule.stopAutomation === 'boolean' && { stopAutomation: rule.stopAutomation }),
+    }];
+  });
+}
+
+function mergePolicyOverride(
+  base: ResolvedEscalationPolicy | undefined,
+  override: EscalationPolicyOverride,
+): ResolvedEscalationPolicy | null {
+  if (override.enabled === false) return null;
+  const keywords = override.keywords ?? base?.keywords ?? [];
+  if (keywords.length === 0) return null;
+  const severity = override.severity ?? base?.severity ?? 'HIGH';
+  return {
+    id: override.id,
+    label: override.label ?? base?.label ?? override.id,
+    severity,
+    keywords,
+    customerReply: override.customerReply ?? base?.customerReply ?? DEFAULT_HANDOFF_REPLY,
+    ownerSubject: override.ownerSubject ?? base?.ownerSubject ?? 'Customer needs follow-up',
+    ownerMessage: override.ownerMessage ?? base?.ownerMessage,
+    taskTitle: override.taskTitle ?? base?.taskTitle,
+    taskPriority: override.taskPriority ?? base?.taskPriority,
+    stopAutomation: override.stopAutomation ?? base?.stopAutomation ?? true,
+    source: 'tenant',
+  };
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function matchesKeyword(message: string, keyword: string): boolean {
+  const trimmed = keyword.trim();
+  if (!trimmed) return false;
+  return new RegExp(`\\b${escapeRegex(trimmed)}\\b`, 'i').test(message);
 }
 
 const homeServiceSafety = safetyPolicy(
@@ -563,6 +700,99 @@ export function getVerticalProfile(input: {
   return VERTICAL_PROFILES[getVerticalKey(input)];
 }
 
+export function resolveEscalationPolicies(input: {
+  businessType?: string | null;
+  industryTemplateKey?: string | null;
+  tenantName?: string | null;
+  websiteContext?: string | null;
+  customKeywords?: unknown;
+  templateKeywords?: unknown;
+  policyOverrides?: unknown;
+}): ResolvedEscalationPolicy[] {
+  const profile = getVerticalProfile(input);
+  const policies = new Map<string, ResolvedEscalationPolicy>();
+
+  for (const policy of profile.escalationPolicies) {
+    policies.set(policy.id, { ...policy, source: 'vertical' });
+  }
+
+  const templateKeywords = cleanKeywords(input.templateKeywords);
+  if (templateKeywords?.length) {
+    policies.set('industry_template_keywords', {
+      id: 'industry_template_keywords',
+      label: 'Industry-template escalation keywords',
+      severity: 'HIGH',
+      keywords: templateKeywords,
+      customerReply: DEFAULT_HANDOFF_REPLY,
+      ownerSubject: 'Customer needs follow-up',
+      taskPriority: 'HIGH',
+      stopAutomation: true,
+      source: 'template',
+    });
+  }
+
+  const customKeywords = cleanKeywords(input.customKeywords);
+  if (customKeywords?.length) {
+    policies.set('tenant_custom_keywords', {
+      id: 'tenant_custom_keywords',
+      label: 'Tenant custom escalation keywords',
+      severity: 'NORMAL',
+      keywords: customKeywords,
+      customerReply: DEFAULT_HANDOFF_REPLY,
+      ownerSubject: 'Customer requested human assistance',
+      taskPriority: 'NORMAL',
+      stopAutomation: true,
+      source: 'tenant',
+    });
+  }
+
+  policies.set('human_handoff', {
+    id: 'human_handoff',
+    label: 'Human handoff request',
+    severity: 'HIGH',
+    keywords: [
+      'talk to a human',
+      'talk to a person',
+      'talk to someone',
+      'speak to a human',
+      'speak to a person',
+      'speak to someone',
+      'real person',
+      'real human',
+      'live agent',
+      'live person',
+      'representative',
+      'operator',
+      'agent',
+      'stop bot',
+      'stop ai',
+      'human please',
+      'customer service',
+      'manager',
+      'talk to the owner',
+      'speak to the owner',
+      'speak with the owner',
+      'owner please',
+    ],
+    customerReply: DEFAULT_HANDOFF_REPLY,
+    ownerSubject: 'Customer requested human assistance',
+    taskPriority: 'HIGH',
+    stopAutomation: true,
+    source: 'generic',
+  });
+
+  for (const override of readPolicyOverrides(input.policyOverrides)) {
+    const merged = mergePolicyOverride(policies.get(override.id), override);
+    if (merged) {
+      policies.set(override.id, merged);
+    } else {
+      policies.delete(override.id);
+    }
+  }
+
+  return [...policies.values()];
+}
+
 export function matchSafetyPolicy(input: {
   businessType?: string | null;
   industryTemplateKey?: string | null;
@@ -583,8 +813,62 @@ export function matchSafetyPolicy(input: {
     ownerSubject: policy.ownerSubject,
     ownerMessage: `Customer ${callerPhone} triggered ${policy.label}: "${input.message.substring(0, 240)}"`,
     taskTitle: policy.taskTitle(callerPhone),
-    taskPriority: policy.severity === 'EMERGENCY' ? 'URGENT' : policy.severity === 'HIGH' ? 'HIGH' : 'NORMAL',
+    taskPriority: severityToTaskPriority(policy.severity),
     stopAutomation: policy.stopAutomation,
+  };
+}
+
+export function matchEscalationPolicy(input: {
+  businessType?: string | null;
+  industryTemplateKey?: string | null;
+  tenantName?: string | null;
+  websiteContext?: string | null;
+  message: string;
+  callerPhone?: string;
+  customKeywords?: unknown;
+  templateKeywords?: unknown;
+  policyOverrides?: unknown;
+}): EscalationPolicyMatch | null {
+  const profile = getVerticalProfile(input);
+  const policies = resolveEscalationPolicies(input);
+  let matchedPolicy: ResolvedEscalationPolicy | undefined;
+  let triggerKeyword = '';
+
+  for (const policy of policies) {
+    const keyword = policy.keywords.find((kw) => matchesKeyword(input.message, kw));
+    if (keyword) {
+      matchedPolicy = policy;
+      triggerKeyword = keyword;
+      break;
+    }
+  }
+
+  if (!matchedPolicy && detectEscalationIntent(input.message, input.tenantName)) {
+    matchedPolicy = policies.find((policy) => policy.id === 'human_handoff');
+    triggerKeyword = 'human handoff';
+  }
+
+  if (!matchedPolicy) return null;
+
+  const callerPhone = input.callerPhone ?? 'customer';
+  const taskPriority = matchedPolicy.taskPriority ?? severityToTaskPriority(matchedPolicy.severity);
+  return {
+    profile,
+    policy: matchedPolicy,
+    severity: matchedPolicy.severity,
+    triggerKeyword,
+    customerReply: matchedPolicy.customerReply,
+    ownerSubject: matchedPolicy.ownerSubject,
+    ownerMessage:
+      matchedPolicy.ownerMessage ??
+      `Customer ${callerPhone} triggered ${matchedPolicy.label} with "${triggerKeyword}": "${input.message.substring(0, 240)}"`,
+    taskTitle:
+      matchedPolicy.taskTitle ??
+      (taskPriority === 'URGENT'
+        ? `Urgent customer follow-up needed: ${callerPhone}`
+        : `Customer follow-up needed: ${callerPhone}`),
+    taskPriority,
+    stopAutomation: matchedPolicy.stopAutomation,
   };
 }
 

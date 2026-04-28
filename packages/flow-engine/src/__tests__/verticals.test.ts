@@ -1,5 +1,11 @@
 import { FlowType } from '@ringback/shared-types';
-import { buildCatalogPromptContext, getVerticalProfile, matchSafetyPolicy } from '../verticals';
+import {
+  buildCatalogPromptContext,
+  getVerticalProfile,
+  matchEscalationPolicy,
+  matchSafetyPolicy,
+  resolveEscalationPolicies,
+} from '../verticals';
 
 describe('vertical profiles', () => {
   test('infers HVAC from tenant name when business type is generic service', () => {
@@ -66,5 +72,70 @@ describe('vertical profiles', () => {
     expect(context).toContain('[emergency eligible]');
     expect(context).toContain('within 25 miles');
     expect(context).toContain('What type of system do you have?');
+  });
+
+  test('matches structured HVAC urgent-service escalation policy', () => {
+    const match = matchEscalationPolicy({
+      businessType: 'SERVICE',
+      industryTemplateKey: 'home_services',
+      tenantName: "Bruno's HVAC Company",
+      message: 'This is urgent and I need service right now.',
+      callerPhone: '+15551234567',
+    });
+
+    expect(match?.policy.id).toBe('urgent_service');
+    expect(match?.severity).toBe('HIGH');
+    expect(match?.taskPriority).toBe('HIGH');
+    expect(match?.stopAutomation).toBe(true);
+    expect(match?.customerReply).toContain('team member');
+  });
+
+  test('applies tenant escalation override as a notify-only rule', () => {
+    const policies = resolveEscalationPolicies({
+      businessType: 'MEDICAL',
+      industryTemplateKey: 'home_care',
+      tenantName: 'Angels Over Us',
+      policyOverrides: {
+        rules: [
+          {
+            id: 'care_start_change',
+            label: 'Care start-date change',
+            severity: 'NORMAL',
+            keywords: ['change start date'],
+            customerReply: 'I can keep helping while the office reviews that.',
+            ownerSubject: 'Care start-date change requested',
+            taskPriority: 'NORMAL',
+            stopAutomation: false,
+          },
+        ],
+      },
+    });
+
+    expect(policies.some((policy) => policy.id === 'care_start_change')).toBe(true);
+
+    const match = matchEscalationPolicy({
+      businessType: 'MEDICAL',
+      industryTemplateKey: 'home_care',
+      tenantName: 'Angels Over Us',
+      message: 'Can I change start date for my mom?',
+      policyOverrides: {
+        rules: [
+          {
+            id: 'care_start_change',
+            label: 'Care start-date change',
+            severity: 'NORMAL',
+            keywords: ['change start date'],
+            ownerSubject: 'Care start-date change requested',
+            taskPriority: 'NORMAL',
+            stopAutomation: false,
+          },
+        ],
+      },
+    });
+
+    expect(match?.policy.id).toBe('care_start_change');
+    expect(match?.ownerSubject).toBe('Care start-date change requested');
+    expect(match?.stopAutomation).toBe(false);
+    expect(match?.taskPriority).toBe('NORMAL');
   });
 });

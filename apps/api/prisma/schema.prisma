@@ -344,6 +344,7 @@ model TenantConfig {
   followupOpener                 String?   @db.Text
   customAiInstructions           String?   @db.Text
   customEscalationKeywords       String[]  @default([])
+  escalationPolicyOverrides      Json?
   lastOrdersGraceMinutes         Int       @default(15) // minutes before close after which we refuse new pickups
   cloudPrntToken                 String?   // tenant-unique token a Star CloudPRNT printer polls our endpoint with
   // White-label — applied on /m /o /r /pay public pages

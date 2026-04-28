@@ -1,7 +1,13 @@
 import { FlowType, type CallerState } from '@ringback/shared-types';
 import { runFlowEngine } from './engine';
 import type { ChatFn, TenantContext } from './types';
-import { getVerticalProfile, matchSafetyPolicy, type ReadinessScenarioSeed } from './verticals';
+import {
+  getVerticalProfile,
+  matchEscalationPolicy,
+  matchSafetyPolicy,
+  resolveEscalationPolicies,
+  type ReadinessScenarioSeed,
+} from './verticals';
 
 export interface ReadinessScenarioResult {
   id: string;
@@ -26,6 +32,14 @@ export interface ReadinessSuiteResult {
   recommendedIntegrations: string[];
   valueMetrics: string[];
   intakeFields: Array<{ key: string; label: string; examples: string[] }>;
+  escalationPolicies: Array<{
+    id: string;
+    label: string;
+    severity: string;
+    keywords: string[];
+    stopAutomation: boolean;
+    source: string;
+  }>;
 }
 
 function localReadinessChat(message: string): string {
@@ -151,12 +165,33 @@ export async function runVerticalReadinessSuite(input: {
       callerPhone,
     });
 
+    const escalationMatch = !safetyMatch
+      ? matchEscalationPolicy({
+          businessType: input.tenantContext.businessType,
+          industryTemplateKey:
+            input.tenantContext.industryTemplateKey ??
+            (input.tenantContext.config as { industryTemplateKey?: string | null }).industryTemplateKey,
+          tenantName: input.tenantContext.tenantName,
+          websiteContext: input.tenantContext.config.websiteContext,
+          message: scenario.message,
+          callerPhone,
+          customKeywords: (input.tenantContext.config as { customEscalationKeywords?: unknown }).customEscalationKeywords,
+          policyOverrides: (input.tenantContext.config as { escalationPolicyOverrides?: unknown }).escalationPolicyOverrides,
+        })
+      : null;
+
     const actual = safetyMatch
       ? {
           reply: safetyMatch.customerReply,
           flowType: FlowType.FALLBACK,
           flowStep: buildSafetyState(input.tenantContext, callerPhone).flowStep,
         }
+      : escalationMatch?.stopAutomation
+        ? {
+            reply: escalationMatch.customerReply,
+            flowType: FlowType.FALLBACK,
+            flowStep: buildSafetyState(input.tenantContext, callerPhone).flowStep,
+          }
       : await runFlowEngine({
           tenantContext: input.tenantContext,
           callerPhone,
@@ -197,5 +232,22 @@ export async function runVerticalReadinessSuite(input: {
     recommendedIntegrations: profile.recommendedIntegrations,
     valueMetrics: profile.valueMetrics,
     intakeFields: profile.intakeFields.map(({ key, label, examples }) => ({ key, label, examples })),
+    escalationPolicies: resolveEscalationPolicies({
+      businessType: input.tenantContext.businessType,
+      industryTemplateKey:
+        input.tenantContext.industryTemplateKey ??
+        (input.tenantContext.config as { industryTemplateKey?: string | null }).industryTemplateKey,
+      tenantName: input.tenantContext.tenantName,
+      websiteContext: input.tenantContext.config.websiteContext,
+      customKeywords: (input.tenantContext.config as { customEscalationKeywords?: unknown }).customEscalationKeywords,
+      policyOverrides: (input.tenantContext.config as { escalationPolicyOverrides?: unknown }).escalationPolicyOverrides,
+    }).map(({ id, label, severity, keywords, stopAutomation, source }) => ({
+      id,
+      label,
+      severity,
+      keywords,
+      stopAutomation,
+      source,
+    })),
   };
 }

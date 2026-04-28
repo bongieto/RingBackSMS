@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { runFlowEngine, TenantContext, detectEscalationIntent, matchSafetyPolicy } from '@ringback/flow-engine';
+import { runFlowEngine, TenantContext, matchEscalationPolicy, matchSafetyPolicy } from '@ringback/flow-engine';
 import type { ChatFn } from '@ringback/flow-engine';
 import { FlowType } from '@ringback/shared-types';
 import OpenAI from 'openai';
@@ -269,12 +269,28 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     result.smsReply = `${afterHoursNotice}\n\n${result.smsReply}`;
   }
 
-  // Check for escalation intent. Medical urgency is handled above before
+  // Check structured escalation rules. Medical urgency is handled above before
   // the flow engine can enter a slower scheduling/AI path.
-  const isEscalation = detectEscalationIntent(inboundMessage, tenant.name);
-  if (isEscalation) {
-    result.smsReply = "I'm connecting you with a team member who can help. Someone will follow up with you shortly!";
-    logger.info('Escalation detected, handing off to human', { tenantId, callerPhone });
+  const escalationMatch = matchEscalationPolicy({
+    businessType: tenant.businessType,
+    industryTemplateKey: tenant.config.industryTemplateKey,
+    tenantName: tenant.name,
+    websiteContext: tenant.config.websiteContext,
+    message: inboundMessage,
+    callerPhone,
+    customKeywords: tenant.config.customEscalationKeywords,
+    policyOverrides: tenant.config.escalationPolicyOverrides,
+  });
+  const isEscalation = !!escalationMatch;
+  const stopAutomationForEscalation = escalationMatch?.stopAutomation ?? false;
+  if (stopAutomationForEscalation && escalationMatch) {
+    result.smsReply = escalationMatch.customerReply;
+    logger.info('Escalation policy detected, handing off to human', {
+      tenantId,
+      callerPhone,
+      policyId: escalationMatch.policy.id,
+      severity: escalationMatch.severity,
+    });
   }
 
   // Save next state
@@ -295,7 +311,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
         flowType: result.flowType,
         messages: newMessages,
         isActive: true,
-        ...(isEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
+        ...(stopAutomationForEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
       },
     });
     conversationId = conversation.id;
@@ -316,17 +332,17 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
         messages: [...messages, ...newMessages],
         flowType: result.flowType,
         updatedAt: new Date(),
-        ...(isEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
+        ...(stopAutomationForEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
       },
     });
   }
 
   // Notify owner if escalation
-  if (isEscalation) {
+  if (isEscalation && escalationMatch) {
     await sendNotification({
       tenantId,
-      subject: 'Customer requested human assistance',
-      message: `Customer ${callerPhone} requested to speak with a human. Please check the conversation in your dashboard.`,
+      subject: escalationMatch.ownerSubject,
+      message: escalationMatch.ownerMessage,
       channel: 'email',
     }).catch((err) => logger.warn('Failed to send escalation notification', { error: err }));
   }
