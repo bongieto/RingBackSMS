@@ -55,6 +55,27 @@ const hvacTenant: TenantContext = {
   },
 };
 
+const restaurantTenant: TenantContext = {
+  ...hvacTenant,
+  tenantId: '00000000-0000-0000-0000-00000000a002',
+  tenantName: 'The Lumpia House & Truck',
+  businessType: 'RESTAURANT',
+  industryTemplateKey: 'restaurant',
+  config: {
+    ...hvacTenant.config,
+    tenantId: '00000000-0000-0000-0000-00000000a002',
+    websiteContext: 'Filipino restaurant with pickup ordering.',
+    ordersAcceptingEnabled: true,
+  } as any,
+  flows: [
+    { id: 'f3', tenantId: '00000000-0000-0000-0000-00000000a002', type: FlowType.ORDER, isEnabled: true, config: null, createdAt: new Date(), updatedAt: new Date() },
+    { id: 'f4', tenantId: '00000000-0000-0000-0000-00000000a002', type: FlowType.FALLBACK, isEnabled: true, config: null, createdAt: new Date(), updatedAt: new Date() },
+  ],
+  menuItems: [
+    { id: 'm1', tenantId: '00000000-0000-0000-0000-00000000a002', name: 'Lumpia', description: null, price: 8, category: 'Entrees', imageUrl: null, isAvailable: true, sortOrder: 0, createdAt: new Date(), updatedAt: new Date(), posExternalId: null, posProvider: null, posLocationId: null, lastSyncedAt: null },
+  ] as any,
+};
+
 describe('vertical readiness suite', () => {
   test('runs HVAC readiness pack and catches emergency policy before booking', async () => {
     const result = await runVerticalReadinessSuite({ tenantContext: hvacTenant });
@@ -65,5 +86,15 @@ describe('vertical readiness suite', () => {
     const hazard = result.results.find((r) => r.id === 'hvac-gas');
     expect(hazard?.reply).toContain('911');
     expect(hazard?.flowType).toBe(FlowType.FALLBACK);
+  });
+
+  test('restaurant cancellation deflects instead of opening a new order', async () => {
+    const result = await runVerticalReadinessSuite({ tenantContext: restaurantTenant });
+    const cancellation = result.results.find((r) => r.id === 'restaurant-cancellation');
+
+    expect(result.score).toBe(1);
+    expect(cancellation?.flowType).toBe(FlowType.FALLBACK);
+    expect(cancellation?.reply).toContain('pending order');
+    expect(cancellation?.reply).not.toContain('what can I get');
   });
 });

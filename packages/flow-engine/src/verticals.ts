@@ -519,7 +519,11 @@ const retailScenarioPack = [
   scenario('retail-handoff', 'Handoff: return/refund stops automation', 'I want a refund for my order.', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
   scenario('retail-pricing', 'Pricing: product price routes to inquiry', 'How much is the blue hoodie?', { flowType: FlowType.INQUIRY }),
   scenario('retail-order', 'Order: purchase intent routes to ordering', 'I want to buy a medium hoodie.', { flowType: FlowType.ORDER }),
-  scenario('retail-cancellation', 'Cancellation: order change gets captured', 'I need to cancel my pickup order.', { flowType: FlowType.ORDER }),
+  scenario('retail-cancellation', 'Cancellation: ungrounded pickup cancellation is deflected', 'I need to cancel my pickup order.', {
+    flowType: FlowType.FALLBACK,
+    replyIncludes: ['pending order'],
+    replyExcludes: ['what can I get'],
+  }),
   scenario('retail-vague', 'Vague message: general shopping help gets a reply', 'Need help finding something.', { flowType: FlowType.FALLBACK }),
   scenario('retail-impossible', 'Impossible request: unknown inventory is not invented', 'Can you guarantee you have every color in stock?', { flowType: FlowType.INQUIRY, replyIncludes: ['team member'] }),
 ];
@@ -531,7 +535,11 @@ const restaurantScenarioPack = [
   scenario('restaurant-handoff', 'Handoff: wrong order stops automation', 'My order was wrong and I want to talk to a manager.', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
   scenario('restaurant-pricing', 'Pricing: item price question stays answerable', 'How much are the tacos?', { flowType: FlowType.FALLBACK }),
   scenario('restaurant-booking', 'Ordering: pickup order enters order flow', 'Can I place a pickup order?', { flowType: FlowType.ORDER }),
-  scenario('restaurant-cancellation', 'Cancellation: order cancellation enters order support', 'I need to cancel my food order.', { flowType: FlowType.ORDER }),
+  scenario('restaurant-cancellation', 'Cancellation: ungrounded order cancellation is deflected', 'I need to cancel my food order.', {
+    flowType: FlowType.FALLBACK,
+    replyIncludes: ['pending order'],
+    replyExcludes: ['what can I get'],
+  }),
   scenario('restaurant-vague', 'Vague message: general help gets a reply', 'Need help with dinner.', { flowType: FlowType.FALLBACK }),
   scenario('restaurant-impossible', 'Impossible request: exact prep promise is not invented', 'Can you guarantee my food will be ready in exactly one minute?', { flowType: FlowType.FALLBACK }),
 ];
@@ -543,7 +551,11 @@ const foodTruckScenarioPack = [
   scenario('truck-handoff', 'Handoff: staff request stops automation', 'Can I talk to a person at the truck?', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
   scenario('truck-pricing', 'Pricing: menu price question stays informational', 'How much are tacos today?', { flowType: FlowType.FALLBACK }),
   scenario('truck-booking', 'Ordering: lunch order enters order flow', 'I want to place a lunch order.', { flowType: FlowType.ORDER }),
-  scenario('truck-cancellation', 'Cancellation: order cancellation enters order support', 'I need to cancel my taco order.', { flowType: FlowType.ORDER }),
+  scenario('truck-cancellation', 'Cancellation: ungrounded order cancellation is deflected', 'I need to cancel my taco order.', {
+    flowType: FlowType.FALLBACK,
+    replyIncludes: ['pending order'],
+    replyExcludes: ['what can I get'],
+  }),
   scenario('truck-vague', 'Vague message: general help gets a reply', 'Need food soon.', { flowType: FlowType.FALLBACK }),
   scenario('truck-impossible', 'Impossible request: unlisted location promise is not invented', 'Can you guarantee you will be at my office in five minutes?', { flowType: FlowType.FALLBACK }),
 ];

@@ -48,7 +48,7 @@ export const UNGROUNDED_GUARDS: UngroundedGuardRule[] = [
     reason: 'cancel intent with no active order — refuse to hallucinate',
     // Bare cancel intents. Not "cancel my reservation" (different flow)
     // or compound messages like "cancel the lumpia I just added".
-    re: /^(cancel|cancel (my|the) (order|last order)?|nvm cancel|nevermind cancel|never mind cancel)[\s!.?]*$/i,
+    re: /^(cancel|cancel (my|the) (order|cart|last order)?|(?:i\s+(?:need|want|would like)\s+to\s+)?cancel\s+(?:my|the|this|that)?\s*(?:(?:food|pickup|taco|lunch|dinner)\s+)?(?:order|cart)|nvm cancel|nevermind cancel|never mind cancel)[\s!.?]*$/i,
     isGrounded: (mem) => Boolean(mem?.activeOrder),
     reply: ({ tenantPhone }) =>
       tenantPhone

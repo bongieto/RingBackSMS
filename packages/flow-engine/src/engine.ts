@@ -2,7 +2,7 @@ import { FlowInput, FlowOutput } from './types';
 import { detectIntent } from './intentDetector';
 import { processOrderFlow } from './flows/orderFlow';
 import { processMeetingFlow } from './flows/meetingFlow';
-import { processFallbackFlow } from './flows/fallbackFlow';
+import { findUngroundedGuard, processFallbackFlow } from './flows/fallbackFlow';
 import { processInquiryFlow } from './flows/inquiryFlow';
 import { runOrderAgent } from './ai/orderAgent';
 import { FlowType } from '@ringback/shared-types';
@@ -79,6 +79,11 @@ function attachIntake(input: FlowInput, output: FlowOutput): FlowOutput {
   return intake ? { ...output, intake } : output;
 }
 
+function shouldRunFreshUngroundedGuard(input: FlowInput): boolean {
+  const draft = input.currentState?.orderDraft;
+  return !draft || (draft.items.length === 0 && !draft.pickupTime);
+}
+
 async function runFlowEngineCore(input: FlowInput): Promise<FlowOutput> {
   const { currentState, tenantContext, inboundMessage } = input;
 
@@ -145,6 +150,45 @@ async function runFlowEngineCore(input: FlowInput): Promise<FlowOutput> {
       default:
         break;
     }
+  }
+
+  // Guard stateful action requests before fresh intent routing. A new
+  // message like "I need to cancel my food order" contains "order", so
+  // classifiers tend to send it to ORDER where the legacy regex flow can
+  // open a menu prompt. If there is no active state/memory to ground the
+  // action, deflect first instead of starting a new flow.
+  const guard = findUngroundedGuard(inboundMessage.trim(), input.callerMemory);
+  if (guard && shouldRunFreshUngroundedGuard(input)) {
+    pushDecision(input, {
+      handler: 'engine.ungroundedGuard',
+      phase: 'PRE_HANDLER',
+      outcome: guard.outcome,
+      reason: guard.reason,
+      durationMs: 0,
+    });
+    const reply =
+      typeof guard.reply === 'function'
+        ? guard.reply({
+            tenantName: tenantContext.tenantName,
+            tenantPhone: tenantContext.tenantPhoneNumber ?? null,
+          })
+        : guard.reply;
+    return {
+      nextState: {
+        tenantId: tenantContext.tenantId,
+        callerPhone: input.callerPhone,
+        conversationId: currentState?.conversationId ?? null,
+        currentFlow: FlowType.FALLBACK,
+        flowStep: 'FALLBACK',
+        orderDraft: null,
+        lastMessageAt: Date.now(),
+        messageCount: (currentState?.messageCount ?? 0) + 1,
+        dedupKey: null,
+      },
+      smsReply: reply,
+      sideEffects: [],
+      flowType: FlowType.FALLBACK,
+    };
   }
 
   // Detect intent from message
