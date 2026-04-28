@@ -51,6 +51,16 @@ export interface ProcessInboundSmsTestResult {
 const MEDICAL_URGENCY_HANDOFF_REPLY =
   "If this is a medical emergency or someone is in immediate danger, please call 911 now. We're not an emergency service. I'm also connecting you with a team member who can help, and someone will follow up with you shortly.";
 
+const SERVICE_SAFETY_HANDOFF_REPLY =
+  "If there is immediate danger, a gas smell or leak, carbon monoxide alarm, fire, smoke, or an electrical hazard, please call 911 or your utility emergency line now. We're not an emergency service. I'm also connecting you with a team member who can help, and someone will follow up with you shortly.";
+
+const SERVICE_SAFETY_URGENCY_RE =
+  /\b(?:gas\s+(?:smell|odor|leak)|smell(?:s|ing)?\s+(?:gas|natural\s+gas)|natural\s+gas|carbon\s+monoxide|\bco\s+(?:alarm|detector)\b|on\s+fire|fire\s+(?:in|from|near)|there(?:'s| is)\s+(?:a\s+)?fire|smoke|sparks?|electrical\s+(?:hazard|fire|shock)|burning\s+smell|furnace\s+(?:leak|leaking))\b/i;
+
+function isServiceSafetyUrgency(businessType: string | null | undefined, message: string): boolean {
+  return businessType === 'SERVICE' && SERVICE_SAFETY_URGENCY_RE.test(message);
+}
+
 export async function processInboundSms(
   input: ProcessInboundSmsInput,
   options?: ProcessInboundSmsOptions,
@@ -920,6 +930,103 @@ async function processInboundSmsInner(
     }
 
     logger.info('Medical urgency handoff short-circuit fired', { tenantId, callerPhone, testMode });
+    if (testMode) {
+      const st = await getCallerState(tenantId, callerPhone);
+      return {
+        reply,
+        sideEffects: [],
+        nextState: (st as unknown as ProcessInboundSmsTestResult['nextState']),
+        flowType: FlowType.FALLBACK,
+      };
+    }
+    return;
+  }
+
+  const serviceSafetyUrgency = isServiceSafetyUrgency(tenant.businessType, inboundMessage);
+
+  if (serviceSafetyUrgency) {
+    const reply = SERVICE_SAFETY_HANDOFF_REPLY;
+    let conversationId: string | null = existingConversationId;
+    const newMessages = [
+      { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },
+      { role: 'assistant', content: reply, timestamp: new Date(), sender: 'bot' },
+    ];
+
+    try {
+      if (conversationId) {
+        const existing = await prisma.conversation.findUnique({
+          where: { id: conversationId },
+          select: { messages: true },
+        });
+        const messages = decryptMessages(existing?.messages);
+        await prisma.conversation.update({
+          where: { id: conversationId },
+          data: {
+            messages: encryptMessages([...messages, ...newMessages]) as unknown as Prisma.InputJsonValue,
+            flowType: FlowType.FALLBACK,
+            handoffStatus: 'HUMAN',
+            handoffAt: new Date(),
+            updatedAt: new Date(),
+            causingTurnId: currentTurnId() ?? null,
+          },
+        });
+      } else {
+        const conversation = await prisma.conversation.create({
+          data: {
+            tenantId,
+            callerPhone,
+            flowType: FlowType.FALLBACK,
+            messages: encryptMessages(newMessages) as unknown as Prisma.InputJsonValue,
+            isActive: true,
+            handoffStatus: 'HUMAN',
+            handoffAt: new Date(),
+            causingTurnId: currentTurnId() ?? null,
+          },
+        });
+        conversationId = conversation.id;
+      }
+
+      await setCallerState({
+        tenantId,
+        callerPhone,
+        conversationId,
+        currentFlow: FlowType.FALLBACK,
+        flowStep: null,
+        orderDraft: null,
+        lastMessageAt: Date.now(),
+        messageCount: (currentState?.messageCount ?? 0) + 1,
+        dedupKey: messageSid,
+      });
+    } catch (err) {
+      logger.error('Failed to persist service safety handoff', { err, tenantId, callerPhone });
+    }
+
+    if (!testMode) {
+      await sendSms(tenantId, callerPhone, reply).catch((err) =>
+        logger.error('Failed to send service safety handoff SMS', { err, tenantId }),
+      );
+
+      if (conversationId) {
+        await sendNotification({
+          tenantId,
+          subject: 'Customer reported a safety hazard',
+          message: `Customer ${callerPhone} reported a possible safety hazard and needs human follow-up: "${inboundMessage.substring(0, 160)}"`,
+          channel: 'email',
+        }).catch((err) => logger.warn('Failed to send service safety notification', { error: err }));
+
+        await createTask({
+          tenantId,
+          source: 'CONVERSATION',
+          title: `Safety hazard reply needed: ${callerPhone}`,
+          description: inboundMessage,
+          priority: 'HIGH',
+          callerPhone,
+          conversationId,
+        }).catch((err) => logger.warn('Failed to create service safety task', { error: err }));
+      }
+    }
+
+    logger.info('Service safety handoff short-circuit fired', { tenantId, callerPhone, testMode });
     if (testMode) {
       const st = await getCallerState(tenantId, callerPhone);
       return {

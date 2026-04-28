@@ -220,7 +220,10 @@ export default function BotTesterPage() {
             </label>
             <Input
               value={callerPhone}
-              onChange={(e) => setCallerPhone(e.target.value)}
+              onChange={(e) => {
+                setCallerPhone(e.target.value);
+                setMessages([]);
+              }}
               placeholder="+19990000001"
               className="bg-slate-950 border-slate-800 text-white"
             />
