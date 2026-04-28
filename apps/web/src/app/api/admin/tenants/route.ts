@@ -6,7 +6,24 @@ import { BusinessType, Plan } from '@prisma/client';
 import { prisma } from '@/lib/server/db';
 import { apiError, apiPaginated, apiCreated } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
+import { createTenant } from '@/lib/server/services/tenantService';
+import { buildConsentMessage } from '@/lib/server/services/consentService';
 
+const BUSINESS_TYPE_TO_TEMPLATE: Record<string, string> = {
+  RESTAURANT: 'restaurant',
+  FOOD_TRUCK: 'food_truck',
+  SERVICE: 'salon',
+  CONSULTANT: 'consultant',
+  MEDICAL: 'medical',
+  RETAIL: 'retail',
+  OTHER: 'restaurant',
+};
+
+const blankToUndefined = (value: unknown) => {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
 
 export async function GET(request: NextRequest) {
   const { userId } = await auth();
@@ -71,9 +88,9 @@ export async function POST(request: NextRequest) {
     name: z.string().min(1).max(255),
     businessType: z.nativeEnum(BusinessType),
     plan: z.nativeEnum(Plan).default('FREE'),
-    ownerEmail: z.string().email().optional(),
-    ownerPhone: z.string().optional(),
-    greeting: z.string().optional(),
+    ownerEmail: z.preprocess(blankToUndefined, z.string().email().optional()),
+    ownerPhone: z.preprocess(blankToUndefined, z.string().optional()),
+    greeting: z.preprocess(blankToUndefined, z.string().optional()),
   });
 
   let body: z.infer<typeof CreateSchema>;
@@ -83,27 +100,32 @@ export async function POST(request: NextRequest) {
     return apiError(err.message ?? 'Invalid body', 400);
   }
 
-  const tenant = await prisma.tenant.create({
-    data: {
-      name: body.name,
-      businessType: body.businessType,
-      plan: body.plan,
-      isActive: true,
-    },
+  const tenant = await createTenant({
+    name: body.name,
+    businessType: body.businessType,
+    plan: body.plan,
+    ownerEmail: body.ownerEmail,
+    ownerPhone: body.ownerPhone,
   });
 
-  // Auto-create config if contact info provided
-  if (body.ownerEmail || body.ownerPhone || body.greeting) {
-    await prisma.tenantConfig.create({
-      data: {
-        tenantId: tenant.id,
-        greeting: body.greeting ?? `Hi! Thanks for calling ${body.name}. We missed your call but we're here to help via text!`,
-        ownerEmail: body.ownerEmail ?? null,
-        ownerPhone: body.ownerPhone ?? null,
-        businessDays: [1, 2, 3, 4, 5],
-      },
-    });
-  }
+  const templateKey = BUSINESS_TYPE_TO_TEMPLATE[body.businessType] ?? 'restaurant';
+  const template = await prisma.industryTemplate.findUnique({
+    where: { industryKey: templateKey },
+    select: { followupOpenerDefault: true, voiceGreetingDefault: true },
+  });
+  const followupOpener = template?.followupOpenerDefault ?? `Thanks! How can ${body.name} help you today?`;
+  const voiceGreeting = template?.voiceGreetingDefault?.replace(/\{business_name\}/gi, body.name) ?? null;
+
+  await prisma.tenantConfig.update({
+    where: { tenantId: tenant.id },
+    data: {
+      ...(body.greeting ? { greeting: body.greeting } : {}),
+      industryTemplateKey: templateKey,
+      consentMessage: buildConsentMessage(body.name),
+      followupOpener,
+      voiceGreeting,
+    },
+  });
 
   logger.info('Admin created tenant', { adminAction: true, tenantId: tenant.id, name: body.name });
   return apiCreated(tenant);

@@ -51,13 +51,19 @@ function AddTenantModal({ onClose, onCreated }: AddTenantModalProps) {
   });
 
   const mutation = useMutation({
-    mutationFn: () => api.post('/admin/tenants', form).then((r) => r.data.data),
+    mutationFn: () => api.post('/admin/tenants', {
+      ...form,
+      name: form.name.trim(),
+      ownerEmail: form.ownerEmail.trim() || undefined,
+      ownerPhone: form.ownerPhone.trim() || undefined,
+      greeting: form.greeting.trim() || undefined,
+    }).then((r) => r.data.data),
     onSuccess: () => {
       toast.success('Tenant created');
       onCreated();
       onClose();
     },
-    onError: () => toast.error('Failed to create tenant'),
+    onError: (error: any) => toast.error(error?.response?.data?.error ?? 'Failed to create tenant'),
   });
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
