@@ -5,6 +5,8 @@ import {
   matchEscalationPolicy,
   matchSafetyPolicy,
   resolveEscalationPolicies,
+  VERTICAL_PROFILES,
+  type VerticalKey,
 } from '../verticals';
 
 describe('vertical profiles', () => {
@@ -137,5 +139,23 @@ describe('vertical profiles', () => {
     expect(match?.ownerSubject).toBe('Care start-date change requested');
     expect(match?.stopAutomation).toBe(false);
     expect(match?.taskPriority).toBe('NORMAL');
+  });
+
+  test('major industry profiles include comprehensive readiness packs', () => {
+    const majorVerticals: VerticalKey[] = [
+      'restaurant',
+      'food_truck',
+      'home_services',
+      'hvac',
+      'medical',
+      'home_care',
+      'salon',
+      'auto_shop',
+      'retail',
+    ];
+
+    for (const key of majorVerticals) {
+      expect(VERTICAL_PROFILES[key].readinessScenarios).toHaveLength(9);
+    }
   });
 });

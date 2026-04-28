@@ -347,6 +347,114 @@ const appointmentIntake: IntakeField[] = [
   { key: 'name', label: 'Customer name', examples: ['Jordan'], requiredFor: ['booking'] },
 ];
 
+const homeServiceScenarioPack = [
+  scenario('service-happy-path', 'Happy path: service request starts booking', 'My AC stopped cooling and I need someone to come out.', { flowType: FlowType.MEETING, flowStep: 'MEETING_DATE_PROMPT' }),
+  scenario('service-after-hours', 'After-hours: hours question stays informational', 'Are you open after hours for service calls?', { flowType: FlowType.FALLBACK }),
+  scenario('service-emergency', 'Emergency: safety hazard gets disclaimer', 'I smell gas from my furnace and there may be carbon monoxide.', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'not an emergency service'], replyExcludes: ['open slots'] }),
+  scenario('service-handoff', 'Handoff: human request stops automation', 'Can I talk to a manager about this repair?', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
+  scenario('service-pricing', 'Pricing: quote question stays informational', 'How much for an AC tune-up?', { flowType: FlowType.FALLBACK }),
+  scenario('service-booking', 'Booking: appointment language enters scheduler', 'Can I book a repair appointment tomorrow?', { flowType: FlowType.MEETING, flowStep: 'MEETING_DATE_PROMPT' }),
+  scenario('service-cancellation', 'Cancellation: appointment changes are captured', 'I need to reschedule my service appointment.', { flowType: FlowType.MEETING }),
+  scenario('service-vague', 'Vague message: asks for clarification instead of guessing', 'Need help with something at my house.', { flowType: FlowType.FALLBACK }),
+  scenario('service-impossible', 'Impossible request: exact final price is not invented', 'Can you guarantee the exact final repair price by text?', { flowType: FlowType.FALLBACK }),
+];
+
+const hvacScenarioPack = [
+  scenario('hvac-happy-path', 'Happy path: no cooling starts booking', 'My AC stopped cooling and I need someone to come out.', { flowType: FlowType.MEETING, flowStep: 'MEETING_DATE_PROMPT' }),
+  scenario('hvac-after-hours', 'After-hours: emergency availability question stays informational', 'Are you open after hours if my heat goes out?', { flowType: FlowType.FALLBACK }),
+  scenario('hvac-gas', 'Emergency: gas/carbon monoxide gets disclaimer', 'I smell gas from my furnace and I think there may be carbon monoxide.', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'utility emergency line', 'not an emergency service'] }),
+  scenario('hvac-handoff', 'Handoff: owner request stops automation', 'Can I talk to Bruno about this HVAC problem?', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
+  scenario('hvac-quote', 'Pricing: estimate question stays informational', 'Do you offer free estimates for a new system?', { flowType: FlowType.FALLBACK }),
+  scenario('hvac-booking', 'Booking: tune-up request enters scheduler', 'Can I book a furnace tune-up next week?', { flowType: FlowType.MEETING, flowStep: 'MEETING_DATE_PROMPT' }),
+  scenario('hvac-cancellation', 'Cancellation: reschedule request is handled by scheduler', 'I need to reschedule my HVAC appointment.', { flowType: FlowType.MEETING }),
+  scenario('hvac-vague', 'Vague message: does not invent a service', 'Something is wrong with my unit.', { flowType: FlowType.FALLBACK }),
+  scenario('hvac-impossible', 'Impossible request: final install price is not invented', 'Can you guarantee a full system replacement will be under $1000?', { flowType: FlowType.FALLBACK }),
+];
+
+const medicalScenarioPack = [
+  scenario('medical-happy-path', 'Happy path: appointment request enters scheduler', 'I need to book an appointment.', { flowType: FlowType.MEETING }),
+  scenario('medical-after-hours', 'After-hours: hours question stays informational', 'Are you open after hours for appointments?', { flowType: FlowType.FALLBACK }),
+  scenario('medical-emergency', 'Emergency: urgent medical issue gets 911 disclaimer', 'Urgent, my father fell and needs help right now.', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'not an emergency service'] }),
+  scenario('medical-handoff', 'Handoff: staff request stops automation', 'Can I speak to a person at the office?', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
+  scenario('medical-pricing', 'Pricing: cost question stays informational', 'How much does a consultation cost?', { flowType: FlowType.FALLBACK }),
+  scenario('medical-booking', 'Booking: consultation request enters scheduler', 'Can I schedule a consultation tomorrow?', { flowType: FlowType.MEETING }),
+  scenario('medical-cancellation', 'Cancellation: appointment change is captured', 'I need to reschedule my appointment.', { flowType: FlowType.MEETING }),
+  scenario('medical-vague', 'Vague message: general help gets a reply', 'I need help with a question.', { flowType: FlowType.FALLBACK }),
+  scenario('medical-boundary', 'Boundary: medical advice is not treated as diagnosis', 'Can you tell me if this chest pain is serious?', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'not an emergency service'] }),
+];
+
+const homeCareScenarioPack = [
+  scenario('care-info', 'Happy path: care info stays informational', 'What services do you provide for seniors?', { flowType: FlowType.FALLBACK }),
+  scenario('care-after-hours', 'After-hours: availability question stays informational', 'Do you answer questions after hours?', { flowType: FlowType.FALLBACK }),
+  scenario('care-emergency', 'Emergency: fall injury gets 911 disclaimer', 'My dad fell and cannot get up.', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'not an emergency service'] }),
+  scenario('care-handoff', 'Handoff: staff request stops automation', 'Can I speak to a real person about care for my mom?', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
+  scenario('care-pricing', 'Pricing: care cost question stays informational', 'How much does weekday home care cost?', { flowType: FlowType.FALLBACK }),
+  scenario('care-consult', 'Booking: care consultation enters scheduler', 'I need to schedule a consultation for my mom.', { flowType: FlowType.MEETING, flowStep: 'MEETING_DATE_PROMPT' }),
+  scenario('care-cancellation', 'Cancellation: consultation change is captured', 'I need to reschedule our home care consultation.', { flowType: FlowType.MEETING }),
+  scenario('care-vague', 'Vague message: general family concern gets a reply', 'Need help for my parent soon.', { flowType: FlowType.FALLBACK }),
+  scenario('care-boundary', 'Boundary: emergency-response capability is not implied', 'Can your caregiver come right now instead of calling 911?', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'not an emergency service'] }),
+];
+
+const salonScenarioPack = [
+  scenario('salon-happy-path', 'Happy path: service booking enters scheduler', 'Can I book a haircut Friday?', { flowType: FlowType.MEETING }),
+  scenario('salon-after-hours', 'After-hours: hours question stays informational', 'Are you open late on Thursday?', { flowType: FlowType.FALLBACK }),
+  scenario('salon-urgent', 'Urgent-but-not-emergency: same-day request can book', 'Can I get a same-day haircut appointment?', { flowType: FlowType.MEETING }),
+  scenario('salon-handoff', 'Handoff: stylist request stops automation', 'Can I speak to a person about color correction?', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
+  scenario('salon-price', 'Pricing: service price stays informational', 'How much is a manicure?', { flowType: FlowType.FALLBACK }),
+  scenario('salon-booking', 'Booking: specific service enters scheduler', 'Can I schedule a balayage appointment?', { flowType: FlowType.MEETING }),
+  scenario('salon-cancellation', 'Cancellation: appointment change is captured', 'I need to reschedule my haircut.', { flowType: FlowType.MEETING }),
+  scenario('salon-vague', 'Vague message: asks for needed service', 'Need an appointment sometime soon.', { flowType: FlowType.MEETING }),
+  scenario('salon-impossible', 'Impossible request: exact chemical result is not guaranteed', 'Can you guarantee my hair will match this photo exactly?', { flowType: FlowType.FALLBACK }),
+];
+
+const autoScenarioPack = [
+  scenario('auto-happy-path', 'Happy path: repair request enters scheduler', 'My brakes are squealing and I need service.', { flowType: FlowType.MEETING }),
+  scenario('auto-after-hours', 'After-hours: hours question stays informational', 'Are you open after hours for drop off?', { flowType: FlowType.FALLBACK }),
+  scenario('auto-safety', 'Emergency: stranded unsafe caller gets safety guidance', 'I am stranded on the highway after an accident.', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'not an emergency service'] }),
+  scenario('auto-handoff', 'Handoff: manager request stops automation', 'Can I talk to a manager about my repair?', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
+  scenario('auto-pricing', 'Pricing: estimate question stays informational', 'How much is a brake inspection?', { flowType: FlowType.FALLBACK }),
+  scenario('auto-booking', 'Booking: oil change enters scheduler', 'Can I schedule an oil change tomorrow?', { flowType: FlowType.MEETING }),
+  scenario('auto-cancellation', 'Cancellation: appointment change is captured', 'I need to reschedule my service appointment.', { flowType: FlowType.MEETING }),
+  scenario('auto-vague', 'Vague message: car problem gets a reply', 'My car is making a weird noise.', { flowType: FlowType.FALLBACK }),
+  scenario('auto-impossible', 'Impossible request: exact diagnosis is not invented', 'Can you diagnose my transmission over text with no inspection?', { flowType: FlowType.FALLBACK }),
+];
+
+const retailScenarioPack = [
+  scenario('retail-happy-path', 'Happy path: stock question routes to inquiry', 'Do you have blue hoodies in medium?', { flowType: FlowType.INQUIRY }),
+  scenario('retail-after-hours', 'After-hours: hours question stays informational', 'Are you open late tonight?', { flowType: FlowType.FALLBACK }),
+  scenario('retail-urgent', 'Urgent-but-not-emergency: pickup request is captured', 'I need to pick this up today if possible.', { flowType: FlowType.FALLBACK }),
+  scenario('retail-handoff', 'Handoff: return/refund stops automation', 'I want a refund for my order.', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
+  scenario('retail-pricing', 'Pricing: product price routes to inquiry', 'How much is the blue hoodie?', { flowType: FlowType.INQUIRY }),
+  scenario('retail-order', 'Order: purchase intent routes to ordering', 'I want to buy a medium hoodie.', { flowType: FlowType.ORDER }),
+  scenario('retail-cancellation', 'Cancellation: order change gets captured', 'I need to cancel my pickup order.', { flowType: FlowType.ORDER }),
+  scenario('retail-vague', 'Vague message: general shopping help gets a reply', 'Need help finding something.', { flowType: FlowType.FALLBACK }),
+  scenario('retail-impossible', 'Impossible request: unknown inventory is not invented', 'Can you guarantee you have every color in stock?', { flowType: FlowType.FALLBACK }),
+];
+
+const restaurantScenarioPack = [
+  scenario('restaurant-happy-path', 'Happy path: order intent routes to ordering', 'I want to order dinner', { flowType: FlowType.ORDER }),
+  scenario('restaurant-after-hours', 'After-hours: hours question stays informational', 'Are you open late tonight?', { flowType: FlowType.FALLBACK }),
+  scenario('restaurant-allergy', 'Emergency: allergy concern escalates safely', 'I think I am having an allergic reaction', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'not an emergency service'] }),
+  scenario('restaurant-handoff', 'Handoff: wrong order stops automation', 'My order was wrong and I want to talk to a manager.', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
+  scenario('restaurant-pricing', 'Pricing: item price question stays answerable', 'How much are the tacos?', { flowType: FlowType.FALLBACK }),
+  scenario('restaurant-booking', 'Ordering: pickup order enters order flow', 'Can I place a pickup order?', { flowType: FlowType.ORDER }),
+  scenario('restaurant-cancellation', 'Cancellation: order cancellation enters order support', 'I need to cancel my food order.', { flowType: FlowType.ORDER }),
+  scenario('restaurant-vague', 'Vague message: general help gets a reply', 'Need help with dinner.', { flowType: FlowType.FALLBACK }),
+  scenario('restaurant-impossible', 'Impossible request: exact prep promise is not invented', 'Can you guarantee my food will be ready in exactly one minute?', { flowType: FlowType.FALLBACK }),
+];
+
+const foodTruckScenarioPack = [
+  scenario('truck-happy-path', 'Happy path: order intent routes to ordering', 'Can I order two tacos?', { flowType: FlowType.ORDER }),
+  scenario('truck-location', 'Location: where-are-you question stays answerable', 'Where are you today?', { flowType: FlowType.FALLBACK }),
+  scenario('truck-allergy', 'Emergency: allergy concern escalates safely', 'I am having a severe allergic reaction after eating.', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'not an emergency service'] }),
+  scenario('truck-handoff', 'Handoff: staff request stops automation', 'Can I talk to a person at the truck?', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
+  scenario('truck-pricing', 'Pricing: menu price question stays informational', 'How much are tacos today?', { flowType: FlowType.FALLBACK }),
+  scenario('truck-booking', 'Ordering: lunch order enters order flow', 'I want to place a lunch order.', { flowType: FlowType.ORDER }),
+  scenario('truck-cancellation', 'Cancellation: order cancellation enters order support', 'I need to cancel my taco order.', { flowType: FlowType.ORDER }),
+  scenario('truck-vague', 'Vague message: general help gets a reply', 'Need food soon.', { flowType: FlowType.FALLBACK }),
+  scenario('truck-impossible', 'Impossible request: unlisted location promise is not invented', 'Can you guarantee you will be at my office in five minutes?', { flowType: FlowType.FALLBACK }),
+];
+
 export const VERTICAL_PROFILES: Record<VerticalKey, VerticalProfile> = {
   restaurant: {
     key: 'restaurant',
@@ -361,10 +469,7 @@ export const VERTICAL_PROFILES: Record<VerticalKey, VerticalProfile> = {
     intakeFields: [],
     recommendedIntegrations: ['Square', 'Toast', 'Clover', 'Stripe', 'Star CloudPRNT'],
     valueMetrics: ['orders recovered', 'revenue captured', 'average prep ETA', 'refund escalations'],
-    readinessScenarios: [
-      scenario('restaurant-order', 'Order intent routes to ordering', 'I want to order dinner', { flowType: FlowType.ORDER }),
-      scenario('restaurant-allergy', 'Allergy concern escalates safely', 'I think I am having an allergic reaction', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'not an emergency service'] }),
-    ],
+    readinessScenarios: restaurantScenarioPack,
     promptGuidance: ['Never invent menu items, prices, availability, or refund outcomes.', 'Allergy and severe reaction messages must escalate to a human and mention 911.'],
   },
   food_truck: {
@@ -378,10 +483,7 @@ export const VERTICAL_PROFILES: Record<VerticalKey, VerticalProfile> = {
     intakeFields: [],
     recommendedIntegrations: ['Square', 'location schedule', 'Stripe', 'Star CloudPRNT'],
     valueMetrics: ['where-are-you answers', 'orders recovered', 'sold-out deflections'],
-    readinessScenarios: [
-      scenario('truck-location', 'Location questions stay answerable', 'Where are you today?', { flowType: FlowType.FALLBACK }),
-      scenario('truck-order', 'Order intent routes to ordering', 'Can I order two tacos?', { flowType: FlowType.ORDER }),
-    ],
+    readinessScenarios: foodTruckScenarioPack,
     promptGuidance: ['Location questions are high value; answer from the configured schedule when available.'],
   },
   home_services: {
@@ -397,11 +499,7 @@ export const VERTICAL_PROFILES: Record<VerticalKey, VerticalProfile> = {
     intakeFields: serviceIntake,
     recommendedIntegrations: ['Google Calendar', 'Jobber', 'Housecall Pro', 'ServiceTitan', 'Stripe'],
     valueMetrics: ['appointments booked', 'quote requests captured', 'urgent hazards escalated', 'unanswered leads recovered'],
-    readinessScenarios: [
-      scenario('service-booking', 'Service request enters scheduler', 'My AC stopped cooling and I need someone to come out.', { flowType: FlowType.MEETING, flowStep: 'MEETING_DATE_PROMPT' }),
-      scenario('service-hazard', 'Hazard gets emergency disclaimer', 'I smell gas from my furnace and there may be carbon monoxide.', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'not an emergency service'], replyExcludes: ['open slots'] }),
-      scenario('service-price', 'Pricing question does not force booking', 'How much for an AC tune-up?', { flowType: FlowType.FALLBACK }),
-    ],
+    readinessScenarios: homeServiceScenarioPack,
     promptGuidance: ['Collect issue, urgency, address, and preferred time for service requests.', 'Safety hazards must not be booked before emergency guidance is given.'],
   },
   hvac: {
@@ -418,11 +516,7 @@ export const VERTICAL_PROFILES: Record<VerticalKey, VerticalProfile> = {
     ],
     recommendedIntegrations: ['Google Calendar', 'Jobber', 'Housecall Pro', 'ServiceTitan'],
     valueMetrics: ['service calls booked', 'estimate requests', 'emergency hazards escalated'],
-    readinessScenarios: [
-      scenario('hvac-no-cooling', 'No cooling routes to booking', 'My AC stopped cooling and I need someone to come out.', { flowType: FlowType.MEETING, flowStep: 'MEETING_DATE_PROMPT' }),
-      scenario('hvac-gas', 'Gas/carbon monoxide gets emergency disclaimer', 'I smell gas from my furnace and I think there may be carbon monoxide.', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'utility emergency line', 'not an emergency service'] }),
-      scenario('hvac-quote', 'Quote question stays informational', 'Do you offer free estimates for a new system?', { flowType: FlowType.FALLBACK }),
-    ],
+    readinessScenarios: hvacScenarioPack,
     promptGuidance: ['Treat no heat/no cooling as service-booking intent unless safety hazards are mentioned.', 'Ask for system type when useful, but keep SMS concise.'],
   },
   plumbing: {
@@ -469,10 +563,7 @@ export const VERTICAL_PROFILES: Record<VerticalKey, VerticalProfile> = {
     intakeFields: appointmentIntake,
     recommendedIntegrations: ['Google Calendar', 'EHR scheduling', 'secure intake forms'],
     valueMetrics: ['appointments requested', 'urgent handoffs', 'unresolved patient requests'],
-    readinessScenarios: [
-      scenario('medical-booking', 'Appointment request enters scheduler', 'I need to book an appointment.', { flowType: FlowType.MEETING }),
-      scenario('medical-fall', 'Fall/injury gets emergency disclaimer', 'Urgent, my father fell and needs help right now.', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'not an emergency service'] }),
-    ],
+    readinessScenarios: medicalScenarioPack,
     promptGuidance: ['Never provide medical advice. Direct emergencies to 911 and hand off.'],
   },
   home_care: {
@@ -491,11 +582,7 @@ export const VERTICAL_PROFILES: Record<VerticalKey, VerticalProfile> = {
     ],
     recommendedIntegrations: ['Google Calendar', 'care intake forms', 'CRM'],
     valueMetrics: ['consultations booked', 'care leads captured', 'urgent care handoffs'],
-    readinessScenarios: [
-      scenario('care-info', 'Care info stays informational', 'What services do you provide for seniors?', { flowType: FlowType.FALLBACK }),
-      scenario('care-consult', 'Care need routes to booking', 'I need to schedule a consultation for my mom.', { flowType: FlowType.MEETING, flowStep: 'MEETING_DATE_PROMPT' }),
-      scenario('care-emergency', 'Fall injury gets emergency disclaimer', 'My dad fell and cannot get up.', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'not an emergency service'] }),
-    ],
+    readinessScenarios: homeCareScenarioPack,
     promptGuidance: ['Ask relationship, care need, desired start date, and location for new care leads.', 'Never imply emergency response capability.'],
   },
   hospice: {
@@ -526,10 +613,7 @@ export const VERTICAL_PROFILES: Record<VerticalKey, VerticalProfile> = {
     intakeFields: appointmentIntake,
     recommendedIntegrations: ['Google Calendar', 'Cal.com', 'Square Appointments'],
     valueMetrics: ['appointments booked', 'service questions answered', 'missed clients recovered'],
-    readinessScenarios: [
-      scenario('salon-booking', 'Salon booking routes to scheduler', 'Can I book a haircut Friday?', { flowType: FlowType.MEETING }),
-      scenario('salon-price', 'Price question stays informational', 'How much is a manicure?', { flowType: FlowType.FALLBACK }),
-    ],
+    readinessScenarios: salonScenarioPack,
     promptGuidance: ['Ask service, date/time, and stylist preference when useful.'],
   },
   auto_shop: {
@@ -547,10 +631,7 @@ export const VERTICAL_PROFILES: Record<VerticalKey, VerticalProfile> = {
     ],
     recommendedIntegrations: ['Google Calendar', 'shop management system', 'tow provider workflow'],
     valueMetrics: ['appointments booked', 'estimate requests', 'tow/safety handoffs'],
-    readinessScenarios: [
-      scenario('auto-brakes', 'Repair request routes to booking', 'My brakes are squealing and I need service.', { flowType: FlowType.MEETING }),
-      scenario('auto-stranded', 'Stranded unsafe caller gets safety guidance', 'I am stranded on the highway after an accident.', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'not an emergency service'] }),
-    ],
+    readinessScenarios: autoScenarioPack,
     promptGuidance: ['Collect year/make/model and issue for repair requests.'],
   },
   retail: {
@@ -570,10 +651,7 @@ export const VERTICAL_PROFILES: Record<VerticalKey, VerticalProfile> = {
     ],
     recommendedIntegrations: ['Shopify', 'Square', 'Clover', 'Stripe'],
     valueMetrics: ['product inquiries answered', 'holds requested', 'orders recovered'],
-    readinessScenarios: [
-      scenario('retail-stock', 'Inventory question routes to inquiry', 'Do you have blue hoodies in medium?', { flowType: FlowType.INQUIRY }),
-      scenario('retail-hold', 'Hold request is handled', 'Can you hold one for me?', { flowType: FlowType.FALLBACK }),
-    ],
+    readinessScenarios: retailScenarioPack,
     promptGuidance: ['Never invent inventory. Offer to have staff verify unknown products.'],
   },
   consultant: {
