@@ -44,6 +44,7 @@ interface ReadinessResult {
     message: string;
     passed: boolean;
     failures: string[];
+    suggestedFixes: string[];
     reply: string;
     flowType: string;
     flowStep: string | null;
@@ -351,6 +352,13 @@ export default function BotTesterPage() {
                           </span>
                         ))}
                       </div>
+                      {!result.passed && result.suggestedFixes.length > 0 && (
+                        <div className="mt-2 space-y-1 text-xs text-slate-400">
+                          {result.suggestedFixes.map((fix) => (
+                            <div key={fix}>Fix: {fix}</div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

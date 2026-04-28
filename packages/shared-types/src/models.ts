@@ -270,6 +270,17 @@ export const MenuCategorySchema = z.object({
 
 export type MenuCategory = z.infer<typeof MenuCategorySchema>;
 
+export const ServiceCatalogMetadataSchema = z.object({
+  priceMin: z.number().nonnegative().nullable().optional(),
+  priceMax: z.number().nonnegative().nullable().optional(),
+  quoteRequired: z.boolean().optional(),
+  emergencyEligible: z.boolean().optional(),
+  serviceArea: z.string().nullable().optional(),
+  intakeQuestions: z.array(z.string().min(1)).default([]),
+});
+
+export type ServiceCatalogMetadata = z.infer<typeof ServiceCatalogMetadataSchema>;
+
 export const MenuItemSchema = z.object({
   id: z.string().uuid(),
   tenantId: z.string().uuid(),
@@ -282,6 +293,12 @@ export const MenuItemSchema = z.object({
   isAvailable: z.boolean().default(true),
   duration: z.number().int().positive().nullable(),
   requiresBooking: z.boolean().default(false),
+  priceMin: z.number().nonnegative().nullable().optional(),
+  priceMax: z.number().nonnegative().nullable().optional(),
+  quoteRequired: z.boolean().optional(),
+  emergencyEligible: z.boolean().optional(),
+  serviceArea: z.string().nullable().optional(),
+  intakeQuestions: z.array(z.string()).optional(),
   squareCatalogId: z.string().nullable(),
   squareVariationId: z.string().nullable(),
   posCatalogId: z.string().nullable(),

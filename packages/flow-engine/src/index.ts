@@ -23,6 +23,7 @@ export {
   getVerticalProfile,
   matchSafetyPolicy,
   buildVerticalPromptGuidance,
+  buildCatalogPromptContext,
 } from './verticals';
 export { runVerticalReadinessSuite } from './readiness';
 export type { ReadinessScenarioResult, ReadinessSuiteResult } from './readiness';

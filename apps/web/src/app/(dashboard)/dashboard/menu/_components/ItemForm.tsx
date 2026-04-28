@@ -29,9 +29,17 @@ export function ItemForm({
   const [name, setName] = useState(item?.name ?? '');
   const [description, setDescription] = useState(item?.description ?? '');
   const [price, setPrice] = useState(item?.price != null ? String(item.price) : '');
+  const [priceMin, setPriceMin] = useState(item?.priceMin != null ? String(item.priceMin) : '');
+  const [priceMax, setPriceMax] = useState(item?.priceMax != null ? String(item.priceMax) : '');
   const [categoryId, setCategoryId] = useState<string>(item?.categoryId ?? '');
   const [imageUrl, setImageUrl] = useState(item?.imageUrl ?? '');
   const [isAvailable, setIsAvailable] = useState(item?.isAvailable ?? true);
+  const [duration, setDuration] = useState(item?.duration != null ? String(item.duration) : '');
+  const [quoteRequired, setQuoteRequired] = useState(item?.quoteRequired ?? false);
+  const [emergencyEligible, setEmergencyEligible] = useState(item?.emergencyEligible ?? false);
+  const [serviceArea, setServiceArea] = useState(item?.serviceArea ?? '');
+  const [intakeQuestions, setIntakeQuestions] = useState((item?.intakeQuestions ?? []).join('\n'));
+  const showServiceFields = noun.toLowerCase().includes('service') || item?.requiresBooking;
 
   const save = useMutation({
     mutationFn: () => {
@@ -39,9 +47,19 @@ export function ItemForm({
         name,
         description: description || undefined,
         price: Number(price),
+        priceMin: priceMin.trim() ? Number(priceMin) : null,
+        priceMax: priceMax.trim() ? Number(priceMax) : null,
         categoryId: categoryId || null,
         imageUrl: imageUrl || null,
         isAvailable,
+        duration: duration.trim() ? Number(duration) : null,
+        quoteRequired,
+        emergencyEligible,
+        serviceArea: serviceArea.trim() || null,
+        intakeQuestions: intakeQuestions
+          .split('\n')
+          .map((q) => q.trim())
+          .filter(Boolean),
       };
       if (item) body.id = item.id;
       return tenantApi.upsertMenuItem(tenantId, body);
@@ -106,6 +124,80 @@ export function ItemForm({
             className="mt-1"
           />
         </div>
+
+        {showServiceFields && (
+          <div className="space-y-3 rounded-md border bg-background p-3">
+            <div className="text-sm font-medium">Service details</div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <Label htmlFor="it-duration">Duration (minutes)</Label>
+                <Input
+                  id="it-duration"
+                  type="number"
+                  min="1"
+                  value={duration}
+                  onChange={(e) => setDuration(e.target.value)}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="it-price-min">Price min</Label>
+                <Input
+                  id="it-price-min"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={priceMin}
+                  onChange={(e) => setPriceMin(e.target.value)}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="it-price-max">Price max</Label>
+                <Input
+                  id="it-price-max"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={priceMax}
+                  onChange={(e) => setPriceMax(e.target.value)}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="it-service-area">Service area</Label>
+              <Input
+                id="it-service-area"
+                value={serviceArea}
+                onChange={(e) => setServiceArea(e.target.value)}
+                placeholder="e.g. Chicago, Oak Park, within 20 miles"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label htmlFor="it-intake">Intake questions</Label>
+              <textarea
+                id="it-intake"
+                value={intakeQuestions}
+                onChange={(e) => setIntakeQuestions(e.target.value)}
+                placeholder="One question per line"
+                rows={3}
+                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm mt-1"
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                <Label>Quote required</Label>
+                <Switch checked={quoteRequired} onCheckedChange={setQuoteRequired} />
+              </div>
+              <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                <Label>Emergency eligible</Label>
+                <Switch checked={emergencyEligible} onCheckedChange={setEmergencyEligible} />
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>

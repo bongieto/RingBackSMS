@@ -697,6 +697,12 @@ model MenuItem {
   isAvailable       Boolean   @default(true)
   duration          Int?
   requiresBooking   Boolean   @default(false)
+  priceMin          Decimal?  @db.Decimal(10, 2)
+  priceMax          Decimal?  @db.Decimal(10, 2)
+  quoteRequired     Boolean   @default(false)
+  emergencyEligible Boolean   @default(false)
+  serviceArea       String?   @db.Text
+  intakeQuestions   Json?
   squareCatalogId   String?
   squareVariationId String?
   lastSyncedAt      DateTime?

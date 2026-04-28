@@ -60,6 +60,11 @@ export async function POST(request: NextRequest) {
     menuItems: tenant.menuItems.map((m) => ({
       ...m,
       price: Number(m.price),
+      priceMin: m.priceMin == null ? null : Number(m.priceMin),
+      priceMax: m.priceMax == null ? null : Number(m.priceMax),
+      intakeQuestions: Array.isArray(m.intakeQuestions)
+        ? m.intakeQuestions.filter((q): q is string => typeof q === 'string')
+        : [],
       squareCatalogId: m.squareCatalogId,
       squareVariationId: m.squareVariationId,
       lastSyncedAt: m.lastSyncedAt,

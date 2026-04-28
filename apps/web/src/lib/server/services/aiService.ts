@@ -3,6 +3,7 @@ import { buildSystemPrompt } from './promptBuilder';
 import { logger } from '../logger';
 import { prisma } from '../db';
 import { getProfile } from '@/lib/businessTypeProfile';
+import { buildCatalogPromptContext, getVerticalProfile } from '@ringback/flow-engine';
 
 function stripThinkTags(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
@@ -35,17 +36,24 @@ export async function buildTenantSystemPrompt(tenantId: string): Promise<string>
   const enabledFlows = tenant.flows.map((f) => f.type.toLowerCase()).join(', ');
   const tz = config?.timezone ?? 'America/Chicago';
 
-  let catalogContext = '';
-  if (tenant.menuItems.length > 0) {
-    const itemLines = tenant.menuItems.map((item) => {
-      let line = `- ${item.name}: $${Number(item.price).toFixed(2)}`;
-      if (item.duration) line += ` (${item.duration} min)`;
-      if (item.description) line += ` — ${item.description}`;
-      if (item.requiresBooking) line += ' [booking required]';
-      return line;
-    });
-    catalogContext = `\n\nAvailable products/services:\n${itemLines.join('\n')}`;
-  }
+  const verticalProfile = getVerticalProfile({
+    businessType: tenant.businessType,
+    industryTemplateKey: config?.industryTemplateKey,
+    tenantName: tenant.name,
+    websiteContext: config?.websiteContext,
+  });
+  const catalogContext = buildCatalogPromptContext({
+    catalogNoun: verticalProfile.catalogNoun,
+    items: tenant.menuItems.map((item) => ({
+      ...item,
+      price: Number(item.price),
+      priceMin: item.priceMin == null ? null : Number(item.priceMin),
+      priceMax: item.priceMax == null ? null : Number(item.priceMax),
+      intakeQuestions: Array.isArray(item.intakeQuestions)
+        ? item.intakeQuestions.filter((q): q is string => typeof q === 'string')
+        : [],
+    })),
+  });
 
   return `You are a helpful SMS assistant for ${tenant.name}.
 Business type: ${tenant.businessType}

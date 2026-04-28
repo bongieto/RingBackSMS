@@ -19,10 +19,16 @@ interface ServiceItem {
   name: string;
   description: string | null;
   price: number;
+  priceMin?: number | null;
+  priceMax?: number | null;
   category: string | null;
   isAvailable: boolean;
   duration: number | null;
   requiresBooking: boolean;
+  quoteRequired?: boolean;
+  emergencyEligible?: boolean;
+  serviceArea?: string | null;
+  intakeQuestions?: string[];
 }
 
 interface ServiceFormData {
@@ -30,19 +36,49 @@ interface ServiceFormData {
   name: string;
   description: string;
   price: string;
+  priceMin: string;
+  priceMax: string;
   category: string;
   duration: string;
   isAvailable: boolean;
+  quoteRequired: boolean;
+  emergencyEligible: boolean;
+  serviceArea: string;
+  intakeQuestions: string;
 }
 
 const defaultForm: ServiceFormData = {
   name: '',
   description: '',
   price: '',
+  priceMin: '',
+  priceMax: '',
   category: '',
   duration: '',
   isAvailable: true,
+  quoteRequired: false,
+  emergencyEligible: false,
+  serviceArea: '',
+  intakeQuestions: '',
 };
+
+function serviceToForm(item: ServiceItem): ServiceFormData {
+  return {
+    id: item.id,
+    name: item.name,
+    description: item.description ?? '',
+    price: item.price ? String(item.price) : '',
+    priceMin: item.priceMin != null ? String(item.priceMin) : '',
+    priceMax: item.priceMax != null ? String(item.priceMax) : '',
+    category: item.category ?? '',
+    duration: item.duration ? String(item.duration) : '',
+    isAvailable: item.isAvailable,
+    quoteRequired: item.quoteRequired ?? false,
+    emergencyEligible: item.emergencyEligible ?? false,
+    serviceArea: item.serviceArea ?? '',
+    intakeQuestions: (item.intakeQuestions ?? []).join('\n'),
+  };
+}
 
 export default function ServicesPage() {
   const { tenantId } = useTenantId();
@@ -82,8 +118,17 @@ export default function ServicesPage() {
         // `price` is non-nullable (Decimal) so blank → 0.00 ("price on
         // request" / "set in person"). Owner can fill it in later.
         price: data.price.trim() ? parseFloat(data.price) : 0,
+        priceMin: data.priceMin.trim() ? parseFloat(data.priceMin) : null,
+        priceMax: data.priceMax.trim() ? parseFloat(data.priceMax) : null,
         duration: data.duration ? parseInt(data.duration, 10) : null,
         requiresBooking: true,
+        quoteRequired: data.quoteRequired,
+        emergencyEligible: data.emergencyEligible,
+        serviceArea: data.serviceArea.trim() || null,
+        intakeQuestions: data.intakeQuestions
+          .split('\n')
+          .map((q) => q.trim())
+          .filter(Boolean),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['menu', tenantId] });
@@ -124,8 +169,16 @@ export default function ServicesPage() {
                 <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Men's Haircut" />
               </div>
               <div className="space-y-1.5">
-                <Label>Price</Label>
+                <Label>Base price</Label>
                 <Input type="number" step="0.01" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="25.00 (optional)" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Price range minimum</Label>
+                <Input type="number" step="0.01" value={form.priceMin} onChange={e => setForm(f => ({ ...f, priceMin: e.target.value }))} placeholder="Optional" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Price range maximum</Label>
+                <Input type="number" step="0.01" value={form.priceMax} onChange={e => setForm(f => ({ ...f, priceMax: e.target.value }))} placeholder="Optional" />
               </div>
               <div className="space-y-1.5">
                 <Label>Duration (minutes)</Label>
@@ -134,6 +187,10 @@ export default function ServicesPage() {
               <div className="space-y-1.5">
                 <Label>Category</Label>
                 <Input value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} placeholder="Hair Services" />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>Service area</Label>
+                <Input value={form.serviceArea} onChange={e => setForm(f => ({ ...f, serviceArea: e.target.value }))} placeholder="e.g. Chicago, Oak Park, within 20 miles" />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label>Description</Label>
@@ -148,9 +205,27 @@ export default function ServicesPage() {
                   Used by the AI when answering caller questions about this service. The more detail you give, the better the answers.
                 </p>
               </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>Intake questions</Label>
+                <textarea
+                  value={form.intakeQuestions}
+                  onChange={e => setForm(f => ({ ...f, intakeQuestions: e.target.value }))}
+                  placeholder={`One per line, e.g.\nWhat issue are you seeing?\nWhat is the service address?\nHow urgent is this?`}
+                  rows={4}
+                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+                />
+              </div>
               <div className="flex items-center gap-3">
                 <Switch checked={form.isAvailable} onCheckedChange={v => setForm(f => ({ ...f, isAvailable: v }))} />
                 <Label>Available</Label>
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch checked={form.quoteRequired} onCheckedChange={v => setForm(f => ({ ...f, quoteRequired: v }))} />
+                <Label>Quote required</Label>
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch checked={form.emergencyEligible} onCheckedChange={v => setForm(f => ({ ...f, emergencyEligible: v }))} />
+                <Label>Emergency eligible</Label>
               </div>
             </div>
             <div className="flex gap-3 mt-4">
@@ -194,14 +269,30 @@ export default function ServicesPage() {
                             {item.duration} min
                           </Badge>
                         )}
+                        {item.quoteRequired && <Badge variant="secondary">Quote required</Badge>}
+                        {item.emergencyEligible && <Badge variant="destructive">Emergency</Badge>}
                         {!item.isAvailable && <Badge variant="secondary">Unavailable</Badge>}
                       </div>
                       {item.description && <p className="text-sm text-muted-foreground mt-0.5">{item.description}</p>}
+                      {item.serviceArea && <p className="text-xs text-muted-foreground mt-1">Service area: {item.serviceArea}</p>}
+                      {item.intakeQuestions?.length ? (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Intake: {item.intakeQuestions.join(' · ')}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="flex items-center gap-4">
-                      <span className="font-semibold">${Number(item.price).toFixed(2)}</span>
+                      <span className="font-semibold">
+                        {item.priceMin != null && item.priceMax != null && item.priceMin !== item.priceMax
+                          ? `$${Number(item.priceMin).toFixed(2)}-$${Number(item.priceMax).toFixed(2)}`
+                          : item.priceMin != null
+                            ? `From $${Number(item.priceMin).toFixed(2)}`
+                            : item.quoteRequired
+                              ? 'Quote'
+                              : `$${Number(item.price).toFixed(2)}`}
+                      </span>
                       <Button variant="ghost" size="icon" onClick={() => {
-                        setForm({ id: item.id, name: item.name, description: item.description ?? '', price: String(item.price), category: item.category ?? '', duration: item.duration ? String(item.duration) : '', isAvailable: item.isAvailable });
+                        setForm(serviceToForm(item));
                         setShowForm(true);
                       }}>
                         <Pencil className="h-4 w-4" />

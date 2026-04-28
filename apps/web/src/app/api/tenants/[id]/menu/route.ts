@@ -28,6 +28,12 @@ const ItemSchema = z.object({
   isAvailable: z.boolean().optional(),
   duration: z.number().int().positive().nullable().optional(),
   requiresBooking: z.boolean().optional(),
+  priceMin: z.number().nonnegative().nullable().optional(),
+  priceMax: z.number().nonnegative().nullable().optional(),
+  quoteRequired: z.boolean().optional(),
+  emergencyEligible: z.boolean().optional(),
+  serviceArea: z.string().nullable().optional(),
+  intakeQuestions: z.array(z.string().min(1)).optional(),
 });
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {

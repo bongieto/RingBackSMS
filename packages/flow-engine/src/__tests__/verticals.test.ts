@@ -1,5 +1,5 @@
 import { FlowType } from '@ringback/shared-types';
-import { getVerticalProfile, matchSafetyPolicy } from '../verticals';
+import { buildCatalogPromptContext, getVerticalProfile, matchSafetyPolicy } from '../verticals';
 
 describe('vertical profiles', () => {
   test('infers HVAC from tenant name when business type is generic service', () => {
@@ -36,5 +36,35 @@ describe('vertical profiles', () => {
 
     expect(match?.policy.id).toBe('medical_emergency');
     expect(match?.customerReply).toContain('911');
+  });
+
+  test('renders service catalog metadata for AI prompts', () => {
+    const context = buildCatalogPromptContext({
+      catalogNoun: 'services',
+      items: [
+        {
+          name: 'Emergency no-cooling visit',
+          description: 'Same-day diagnostic for AC not cooling',
+          price: 0,
+          priceMin: 99,
+          priceMax: 249,
+          category: 'HVAC',
+          isAvailable: true,
+          duration: 60,
+          requiresBooking: true,
+          quoteRequired: true,
+          emergencyEligible: true,
+          serviceArea: 'within 25 miles',
+          intakeQuestions: ['What type of system do you have?', 'What is the service address?'],
+        },
+      ],
+    });
+
+    expect(context).toContain('Emergency no-cooling visit');
+    expect(context).toContain('$99.00-$249.00');
+    expect(context).toContain('[quote required]');
+    expect(context).toContain('[emergency eligible]');
+    expect(context).toContain('within 25 miles');
+    expect(context).toContain('What type of system do you have?');
   });
 });

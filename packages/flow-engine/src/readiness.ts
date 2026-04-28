@@ -9,6 +9,7 @@ export interface ReadinessScenarioResult {
   message: string;
   passed: boolean;
   failures: string[];
+  suggestedFixes: string[];
   reply: string;
   flowType: FlowType;
   flowStep: string | null;
@@ -93,6 +94,30 @@ function evaluateScenario(
   return failures;
 }
 
+function suggestFixes(
+  scenario: ReadinessScenarioSeed,
+  failures: string[],
+): string[] {
+  const fixes = new Set<string>();
+  for (const failure of failures) {
+    if (/Expected flow/i.test(failure)) {
+      fixes.add('Check enabled tenant flows and intent routing for this vertical.');
+    }
+    if (/Expected step/i.test(failure)) {
+      fixes.add('Review the target flow state machine and the scenario starting state.');
+    }
+    if (/include/i.test(failure) && scenario.expect.replyIncludes?.some((s) => /911|emergency/i.test(s))) {
+      fixes.add('Update the vertical safety policy response so emergency disclaimers are explicit.');
+    } else if (/include/i.test(failure)) {
+      fixes.add('Add missing business/policy wording to the vertical prompt or tenant configuration.');
+    }
+    if (/exclude/i.test(failure)) {
+      fixes.add('Tighten the prompt or deterministic guard to avoid unsafe or irrelevant wording.');
+    }
+  }
+  return [...fixes];
+}
+
 export async function runVerticalReadinessSuite(input: {
   tenantContext: TenantContext;
   scenarios?: ReadinessScenarioSeed[];
@@ -145,12 +170,14 @@ export async function runVerticalReadinessSuite(input: {
         }));
 
     const failures = evaluateScenario(scenario, actual);
+    const suggestedFixes = suggestFixes(scenario, failures);
     results.push({
       id: scenario.id,
       label: scenario.label,
       message: scenario.message,
       passed: failures.length === 0,
       failures,
+      suggestedFixes,
       reply: actual.reply,
       flowType: actual.flowType,
       flowStep: actual.flowStep,

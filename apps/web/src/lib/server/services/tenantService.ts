@@ -361,6 +361,11 @@ export async function getTenantMenuItems(tenantId: string) {
   return rows.map((r) => ({
     ...r,
     price: Number(r.price),
+    priceMin: r.priceMin == null ? null : Number(r.priceMin),
+    priceMax: r.priceMax == null ? null : Number(r.priceMax),
+    intakeQuestions: Array.isArray(r.intakeQuestions)
+      ? r.intakeQuestions.filter((q): q is string => typeof q === 'string')
+      : [],
     modifierGroups: r.modifierGroups.map((g) => ({
       ...g,
       modifiers: g.modifiers.map((m) => ({
@@ -402,6 +407,12 @@ export async function upsertMenuItem(
     isAvailable?: boolean;
     duration?: number | null;
     requiresBooking?: boolean;
+    priceMin?: number | null;
+    priceMax?: number | null;
+    quoteRequired?: boolean;
+    emergencyEligible?: boolean;
+    serviceArea?: string | null;
+    intakeQuestions?: string[];
   }
 ) {
   // Resolve category: prefer explicit categoryId, else auto-promote the string.
@@ -439,6 +450,12 @@ export async function upsertMenuItem(
         isAvailable: item.isAvailable ?? true,
         duration: item.duration ?? null,
         requiresBooking: item.requiresBooking ?? false,
+        priceMin: item.priceMin ?? null,
+        priceMax: item.priceMax ?? null,
+        quoteRequired: item.quoteRequired ?? false,
+        emergencyEligible: item.emergencyEligible ?? false,
+        serviceArea: item.serviceArea ?? null,
+        intakeQuestions: item.intakeQuestions ?? [],
       },
     });
   }
@@ -455,6 +472,12 @@ export async function upsertMenuItem(
       isAvailable: item.isAvailable ?? true,
       duration: item.duration ?? null,
       requiresBooking: item.requiresBooking ?? false,
+      priceMin: item.priceMin ?? null,
+      priceMax: item.priceMax ?? null,
+      quoteRequired: item.quoteRequired ?? false,
+      emergencyEligible: item.emergencyEligible ?? false,
+      serviceArea: item.serviceArea ?? null,
+      intakeQuestions: item.intakeQuestions ?? [],
     },
   });
 }

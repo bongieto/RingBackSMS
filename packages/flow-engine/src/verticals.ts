@@ -74,6 +74,22 @@ export interface VerticalProfile {
   promptGuidance: string[];
 }
 
+export interface CatalogPromptItem {
+  name: string;
+  description?: string | null;
+  price: number;
+  category?: string | null;
+  isAvailable: boolean;
+  duration?: number | null;
+  requiresBooking?: boolean;
+  priceMin?: number | null;
+  priceMax?: number | null;
+  quoteRequired?: boolean;
+  emergencyEligible?: boolean;
+  serviceArea?: string | null;
+  intakeQuestions?: string[];
+}
+
 export interface SafetyPolicyMatch {
   profile: VerticalProfile;
   policy: SafetyPolicy;
@@ -588,4 +604,71 @@ export function buildVerticalPromptGuidance(input: {
     ? `\nSafety boundaries: ${profile.safetyPolicies.map((p) => p.label).join(', ')}. When matched, tell the customer we are not an emergency service and route to human follow-up.`
     : '';
   return `\nIndustry profile: ${profile.label}. Value metrics: ${profile.valueMetrics.join(', ')}.${intake}${safety}\n${profile.promptGuidance.map((line) => `- ${line}`).join('\n')}`;
+}
+
+function formatCatalogPrice(item: CatalogPromptItem): string {
+  const min = item.priceMin;
+  const max = item.priceMax;
+  if (min != null && max != null && min !== max) return `$${min.toFixed(2)}-$${max.toFixed(2)}`;
+  if (min != null) return `from $${min.toFixed(2)}`;
+  if (max != null) return `up to $${max.toFixed(2)}`;
+  if (item.quoteRequired) return 'quote required';
+  return `$${item.price.toFixed(2)}`;
+}
+
+function formatCatalogPromptLine(item: CatalogPromptItem): string {
+  let line = `- ${item.name}: ${formatCatalogPrice(item)}`;
+  if (item.category) line = `[${item.category}] ${line}`;
+  if (item.duration) line += ` (${item.duration} min)`;
+  if (item.requiresBooking) line += ' [booking required]';
+  if (item.quoteRequired) line += ' [quote required]';
+  if (item.emergencyEligible) line += ' [emergency eligible]';
+  if (item.serviceArea) line += ` [service area: ${item.serviceArea}]`;
+  if (item.description) line += ` -- ${item.description}`;
+  if (item.intakeQuestions?.length) {
+    line += ` Intake questions: ${item.intakeQuestions.join('; ')}`;
+  }
+  return line;
+}
+
+export function buildCatalogPromptContext(input: {
+  items: CatalogPromptItem[];
+  catalogNoun: VerticalProfile['catalogNoun'];
+}): string {
+  if (input.items.length === 0) return '';
+
+  const nounLabel =
+    input.catalogNoun === 'menu'
+      ? 'menu items'
+      : input.catalogNoun === 'products'
+        ? 'products'
+        : 'services';
+  const available = input.items.filter((m) => m.isAvailable).map(formatCatalogPromptLine);
+  const unavailable = input.items.filter((m) => !m.isAvailable).map(formatCatalogPromptLine);
+
+  let context = `\nAvailable ${nounLabel}:\n${available.join('\n')}`;
+  if (unavailable.length > 0) {
+    context += `\n\nUnavailable ${nounLabel} today (known offerings, but not available right now):\n${unavailable.join('\n')}`;
+  }
+
+  if (input.catalogNoun === 'services') {
+    context += `\n\nService-catalog rules:
+- If a service has a price range, quote the range exactly and avoid inventing a final price.
+- If a service says "quote required", collect the intake questions and tell the customer a team member will confirm pricing.
+- If a service is emergency eligible, triage urgency first and apply safety guidance before offering normal booking.
+- Use service area and duration only when shown above; never invent coverage or appointment length.`;
+  } else if (input.catalogNoun === 'products') {
+    context += `\n\nProduct-catalog rules:
+- Answer stock, price, and variant questions only from the products above.
+- For unavailable products, say they are unavailable today and offer a human follow-up or closest available alternative.
+- Never invent item names, prices, colors, or sizes.`;
+  } else {
+    context += `\n\nItem-availability rules:
+- If the customer asks about an available item, confirm with name and price, then offer to help them order.
+- If the customer asks about an unavailable item, say it is out today and suggest 1-2 available alternatives.
+- If the customer asks about something not listed, say we do not carry that and suggest the closest listed items.
+- Never invent item names, prices, or descriptions.`;
+  }
+
+  return context;
 }

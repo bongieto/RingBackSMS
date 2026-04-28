@@ -1,6 +1,6 @@
 import { prisma } from '../db';
 import { getProfile } from '@/lib/businessTypeProfile';
-import { buildVerticalPromptGuidance } from '@ringback/flow-engine';
+import { buildCatalogPromptContext, buildVerticalPromptGuidance, getVerticalProfile } from '@ringback/flow-engine';
 
 /**
  * Builds the full Claude system prompt for a tenant by combining:
@@ -55,14 +55,15 @@ export async function buildSystemPrompt(tenantId: string): Promise<string> {
   }
 
   const parts: string[] = [basePrompt];
-  parts.push(
-    buildVerticalPromptGuidance({
-      businessType: tenant.businessType,
-      industryTemplateKey: config?.industryTemplateKey,
-      tenantName: tenant.name,
-      websiteContext: config?.websiteContext,
-    }),
-  );
+  const verticalInput = {
+    businessType: tenant.businessType,
+    industryTemplateKey: config?.industryTemplateKey,
+    tenantName: tenant.name,
+    websiteContext: config?.websiteContext,
+  };
+  const verticalProfile = getVerticalProfile(verticalInput);
+
+  parts.push(buildVerticalPromptGuidance(verticalInput));
 
   // 2. Business hours
   if (config?.businessHoursStart && config?.businessHoursEnd) {
@@ -71,18 +72,22 @@ export async function buildSystemPrompt(tenantId: string): Promise<string> {
     );
   }
 
-  // 3. Menu items (restaurant/food truck only)
-  if (
-    tenant.menuItems.length > 0 &&
-    (tenant.businessType === 'RESTAURANT' || tenant.businessType === 'FOOD_TRUCK')
-  ) {
-    const itemLines = tenant.menuItems.map((item) => {
-      let line = `- ${item.name}: $${Number(item.price).toFixed(2)}`;
-      if (item.category) line = `[${item.category}] ${line}`;
-      if (item.description) line += ` — ${item.description}`;
-      return line;
-    });
-    parts.push(`\nMenu:\n${itemLines.join('\n')}`);
+  // 3. Catalog items: menu, services, or products depending on vertical.
+  if (tenant.menuItems.length > 0) {
+    parts.push(
+      buildCatalogPromptContext({
+        catalogNoun: verticalProfile.catalogNoun,
+        items: tenant.menuItems.map((item) => ({
+          ...item,
+          price: Number(item.price),
+          priceMin: item.priceMin == null ? null : Number(item.priceMin),
+          priceMax: item.priceMax == null ? null : Number(item.priceMax),
+          intakeQuestions: Array.isArray(item.intakeQuestions)
+            ? item.intakeQuestions.filter((q): q is string => typeof q === 'string')
+            : [],
+        })),
+      }),
+    );
   }
 
   // 4. Custom AI instructions from tenant
