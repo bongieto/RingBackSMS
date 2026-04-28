@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Tabs, TabList, TabPanel, TabTrigger } from '@/components/ui/tabs';
 import { tenantApi, phoneApi, notificationApi } from '@/lib/api';
 import { getProfile } from '@/lib/businessTypeProfile';
 
@@ -146,6 +147,7 @@ export default function SettingsPage() {
 
   const [newClosedDate, setNewClosedDate] = useState('');
   const [showSaved, setShowSaved] = useState(false);
+  const [activeTab, setActiveTab] = useState('basics');
 
   useEffect(() => {
     if (config) {
@@ -262,6 +264,7 @@ export default function SettingsPage() {
         prepTimeOverrides: form.prepTimeOverrides,
         ordersAcceptingEnabled: form.ordersAcceptingEnabled,
         customAiInstructions: form.customAiInstructions || null,
+        followupOpener: form.followupOpener || null,
         salesTaxRate: form.salesTaxRate,
         passStripeFeesToCustomer: form.passStripeFeesToCustomer,
       } as any);
@@ -345,9 +348,12 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <Header title="Settings" description="Configure your RingBack account" />
+      <Header
+        title="Settings"
+        description="Simple controls for how RingBackSMS answers, texts, and alerts your team."
+      />
 
-      <div className="space-y-6 max-w-2xl">
+      <div className="space-y-6 max-w-5xl">
         {/* Save Confirmation Banner */}
         {showSaved && (
           <div className="rounded-md border border-green-200 bg-green-50 p-4 text-green-800 flex items-center gap-2">
@@ -359,510 +365,567 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Phone Number */}
-        <PhoneNumberCard tenantId={tenantId} />
-
-        {/* Business Info */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Globe className="h-5 w-5" />
-              Business Info
-            </CardTitle>
-            <CardDescription>Your business address and website for AI context</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-1.5">
-              <Label className="flex items-center gap-1.5">
-                <MapPin className="h-3.5 w-3.5" />
-                Business Address
-              </Label>
-              <Input {...field('businessAddress')} placeholder="123 Main St, Springfield, IL 62701" />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="flex items-center gap-1.5">
-                <Globe className="h-3.5 w-3.5" />
-                Website URL
-              </Label>
-              <Input {...field('websiteUrl')} placeholder="https://yourbusiness.com" />
-              <p className="text-xs text-muted-foreground">AI will extract context from your website to improve conversations and greetings</p>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="flex items-center gap-1.5">
-                <Star className="h-3.5 w-3.5" />
-                Google Business Profile review link
-              </Label>
-              <Input
-                {...field('googleReviewUrl')}
-                placeholder="https://g.page/r/CXXXXXXXXXXX/review"
-                type="url"
-              />
-              <p className="text-xs text-muted-foreground">
-                When set, customers who reply 4 or 5 stars to the review prompt receive a follow-up SMS with this link asking them to leave a public Google review. 1&ndash;3 star raters never see it.
+        <div className="rounded-lg border bg-card p-4 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-sm font-medium">{profile.emoji} {profile.label}</p>
+              <p className="text-sm text-muted-foreground">
+                These settings control what customers hear, what they receive by text, and when your team gets alerted.
               </p>
             </div>
-          </CardContent>
-        </Card>
+            <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} size="lg">
+              {saveMutation.isPending ? 'Saving...' : 'Save Settings'}
+            </Button>
+          </div>
+        </div>
 
-        {/* Voice Greetings */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Voice Greetings</CardTitle>
-            <CardDescription>What callers hear via text-to-speech before voicemail</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 flex items-start gap-3">
-              <Sparkles className="h-4 w-4 mt-0.5 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="font-medium">Let AI write all 4 voice greetings for you</p>
-                <p className="text-xs text-blue-800 mt-0.5">
-                  Set your brand voice in <span className="font-medium">AI Personality</span> below, then click Generate. AI optimizes for natural spoken cadence. You can edit anything before saving.
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => generateAllGreetingsMutation.mutate()}
-                disabled={generateAllGreetingsMutation.isPending || !tenantId}
-              >
-                <Sparkles className="h-3.5 w-3.5 mr-1.5" />
-                {generateAllGreetingsMutation.isPending ? 'Generating…' : 'Generate all'}
-              </Button>
-            </div>
-
-            {/* Template-variable hint — applies to every greeting textarea below */}
-            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
-              <p className="font-semibold mb-1">Tip: use placeholders so your greeting stays correct every day.</p>
-              <p className="text-blue-800">
-                Drop these into any greeting and they&apos;ll auto-fill at call time:
-              </p>
-              <ul className="mt-1.5 space-y-0.5 font-mono text-[11px]">
-                <li><span className="bg-white border border-blue-200 rounded px-1">{'{business_name}'}</span> → your business name</li>
-                <li><span className="bg-white border border-blue-200 rounded px-1">{'{next_open}'}</span> → when we reopen (e.g. &ldquo;tomorrow at 11:00 AM&rdquo; or &ldquo;Tuesday at 11:00 AM&rdquo; on a Monday)</li>
-                <li><span className="bg-white border border-blue-200 rounded px-1">{'{today_hours}'}</span> → today&apos;s hours (e.g. &ldquo;11:00 AM - 9:00 PM&rdquo;)</li>
-                <li><span className="bg-white border border-blue-200 rounded px-1">{'{closes_at}'}</span> → today&apos;s close time (e.g. &ldquo;9:00 PM&rdquo;)</li>
-              </ul>
-              <p className="mt-2 text-blue-800">
-                Example after-hours greeting: <em>&ldquo;Hi, you&apos;ve reached {'{business_name}'}! We&apos;re closed right now — reopening {'{next_open}'}. Leave a message after the beep.&rdquo;</em>
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Voice Greeting (what callers hear)</Label>
-              <textarea
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[80px] resize-y"
-                value={form.voiceGreeting}
-                maxLength={500}
-                onChange={(e) => setForm(f => ({ ...f, voiceGreeting: e.target.value }))}
-                placeholder="Hi, thanks for calling. We can help you faster by text — you'll receive a message in just a moment. If you'd prefer a callback, leave a message after the beep."
-              />
-              <p className="text-xs text-muted-foreground">
-                Spoken via text-to-speech before voicemail. Leave blank to use the default. Max 500 characters.
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Voice</Label>
-              <select
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                value={form.voiceType}
-                onChange={(e) => setForm(f => ({ ...f, voiceType: e.target.value }))}
-              >
-                <optgroup label="OpenAI TTS (HD quality)">
-                  <option value="nova">Nova (Female, warm)</option>
-                  <option value="alloy">Alloy (Female, neutral)</option>
-                  <option value="shimmer">Shimmer (Female, bright)</option>
-                  <option value="echo">Echo (Male, warm)</option>
-                  <option value="fable">Fable (Male, British)</option>
-                  <option value="onyx">Onyx (Male, deep)</option>
-                </optgroup>
-                <optgroup label="Legacy (Polly)">
-                  <option value="Polly.Joanna-Neural">Joanna (Female)</option>
-                  <option value="Polly.Matthew-Neural">Matthew (Male)</option>
-                  <option value="Polly.Salli-Neural">Salli (Female)</option>
-                  <option value="Polly.Ivy-Neural">Ivy (Female)</option>
-                </optgroup>
-              </select>
-              <p className="text-xs text-muted-foreground">
-                OpenAI voices generate HD audio on save. Legacy voices use real-time TTS.
-              </p>
-            </div>
-
-            <div className="space-y-1.5 border-t pt-4">
-              <Label>After-hours voice greeting (optional)</Label>
-              <textarea
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[80px] resize-y"
-                value={form.voiceGreetingAfterHours}
-                maxLength={500}
-                onChange={(e) => setForm(f => ({ ...f, voiceGreetingAfterHours: e.target.value }))}
-                placeholder="Hi, you've reached {business_name}! We're closed right now — reopening {next_open}. Leave a message after the beep and we'll text you back."
-              />
-              <p className="text-xs text-muted-foreground">
-                Spoken when calls arrive outside business hours (including day-off closures like Mondays and holidays). Max 500 characters.
-              </p>
-            </div>
-
-            <div className="space-y-1.5 border-t pt-4">
-              <Label>Rapid-redial voice greeting (optional)</Label>
-              <textarea
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[60px] resize-y"
-                value={form.voiceGreetingRapidRedial}
-                maxLength={500}
-                onChange={(e) => setForm(f => ({ ...f, voiceGreetingRapidRedial: e.target.value }))}
-                placeholder="Still here — check your texts, we just messaged you."
-              />
-              <p className="text-xs text-muted-foreground">
-                Keep it short — 8 words or less feels responsive. Max 500 characters.
-              </p>
-            </div>
-
-            <div className="space-y-1.5 border-t pt-4">
-              <Label>Returning-customer voice greeting (optional)</Label>
-              <textarea
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[60px] resize-y"
-                value={form.voiceGreetingReturning}
-                maxLength={500}
-                onChange={(e) => setForm(f => ({ ...f, voiceGreetingReturning: e.target.value }))}
-                placeholder="Welcome back! We just texted you — check your messages."
-              />
-              <p className="text-xs text-muted-foreground">
-                Spoken when a known customer calls. Max 500 characters.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Business Hours */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Business Hours</CardTitle>
-                <CardDescription>Set hours for each day your business is open</CardDescription>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={copyToAllDays}
-                disabled={Object.keys(form.businessSchedule).length === 0}
-              >
-                <Copy className="h-3.5 w-3.5 mr-1.5" />
-                Copy to All
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>Timezone</Label>
-              <select
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                {...field('timezone')}
-              >
-                {TIMEZONES.map(tz => (
-                  <option key={tz} value={tz}>{tz}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              {DAYS.map((day) => {
-                const key = String(day.value);
-                const isEnabled = !!form.businessSchedule[key];
-                const schedule = form.businessSchedule[key];
-
-                return (
-                  <div key={day.value} className="flex flex-wrap items-center gap-2 sm:gap-3">
-                    <button
-                      type="button"
-                      onClick={() => toggleDay(day.value)}
-                      className={`w-20 sm:w-24 text-left text-sm font-medium py-2 px-3 rounded-md border transition-colors ${
-                        isEnabled
-                          ? 'bg-primary text-primary-foreground border-primary'
-                          : 'bg-muted text-muted-foreground border-input line-through'
-                      }`}
-                    >
-                      {day.short}
-                    </button>
-                    {isEnabled ? (
-                      <>
-                        <Input
-                          type="time"
-                          value={schedule.open}
-                          onChange={(e) => updateDayTime(day.value, 'open', e.target.value)}
-                          className="w-28 sm:w-32"
-                        />
-                        <span className="text-muted-foreground text-sm">to</span>
-                        <Input
-                          type="time"
-                          value={schedule.close}
-                          onChange={(e) => updateDayTime(day.value, 'close', e.target.value)}
-                          className="w-28 sm:w-32"
-                        />
-                      </>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">Closed</span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <p className="text-xs text-muted-foreground">Click a day name to toggle open/closed</p>
-          </CardContent>
-        </Card>
-
-        {/* Holiday / Closed Dates */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CalendarOff className="h-5 w-5" />
-              Holiday / Closed Dates
-            </CardTitle>
-            <CardDescription>Specific dates your business will be closed</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <Input
-                type="date"
-                value={newClosedDate}
-                onChange={(e) => setNewClosedDate(e.target.value)}
-                className="w-48"
-              />
-              <Button type="button" variant="outline" size="sm" onClick={addClosedDate} disabled={!newClosedDate}>
-                <Plus className="h-3.5 w-3.5 mr-1" />
-                Add
-              </Button>
-            </div>
-            {form.closedDates.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {form.closedDates.map((date) => (
-                  <Badge key={date} variant="secondary" className="flex items-center gap-1 px-3 py-1">
-                    {new Date(date + 'T12:00:00').toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
-                    <button type="button" onClick={() => removeClosedDate(date)} className="ml-1 hover:text-destructive">
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">No closed dates set</p>
+        <Tabs value={activeTab} onChange={setActiveTab}>
+          <TabList className="flex-wrap gap-4">
+            <TabTrigger value="basics">Basics</TabTrigger>
+            <TabTrigger value="ai">AI Response</TabTrigger>
+            <TabTrigger value="notifications">Notifications</TabTrigger>
+            {(profile.nav.showOrders || profile.nav.showPrepTime) && (
+              <TabTrigger value="operations">Orders</TabTrigger>
             )}
-          </CardContent>
-        </Card>
+            <TabTrigger value="advanced">Advanced</TabTrigger>
+            <TabTrigger value="team">Team</TabTrigger>
+          </TabList>
 
-        {/* AI & Contact */}
-        <Card>
-          <CardHeader>
-            <CardTitle>AI & Contact</CardTitle>
-            <CardDescription>Notifications and AI personality</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>AI Personality</Label>
-              <Input {...field('aiPersonality')} placeholder="warm, friendly, and professional" />
-              <p className="text-xs text-muted-foreground">How the AI should present itself in conversations</p>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Cal.com Booking Link</Label>
-              <Input {...field('calcomLink')} placeholder="https://cal.com/yourname" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Slack Webhook URL</Label>
-              <div className="flex gap-2">
-                <Input {...field('slackWebhook')} placeholder="https://hooks.slack.com/services/..." className="flex-1" />
-                {form.slackWebhook && (
+          <TabPanel value="basics" className="space-y-6 max-w-3xl">
+            <PhoneNumberCard tenantId={tenantId} />
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Globe className="h-5 w-5" />
+                  Business basics
+                </CardTitle>
+                <CardDescription>
+                  The AI uses this information to answer location, hours, and service questions more accurately.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label className="flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5" />
+                    Business address
+                  </Label>
+                  <Input {...field('businessAddress')} placeholder="123 Main St, Springfield, IL 62701" />
+                  <p className="text-xs text-muted-foreground">
+                    Used when customers ask where you are or whether they are nearby.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="flex items-center gap-1.5">
+                    <Globe className="h-3.5 w-3.5" />
+                    Website URL
+                  </Label>
+                  <Input {...field('websiteUrl')} placeholder="https://yourbusiness.com" />
+                  <p className="text-xs text-muted-foreground">
+                    RingBackSMS can read public website content so replies match your actual services, menu, and policies.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="flex items-center gap-1.5">
+                    <Star className="h-3.5 w-3.5" />
+                    Google Business Profile review link
+                  </Label>
+                  <Input
+                    {...field('googleReviewUrl')}
+                    placeholder="https://g.page/r/CXXXXXXXXXXX/review"
+                    type="url"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Optional. Happy customers who rate you 4 or 5 stars can receive this link; lower ratings stay private for follow-up.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Business hours</CardTitle>
+                    <CardDescription>
+                      Controls after-hours replies, voice greetings, and when customers are told you reopen.
+                    </CardDescription>
+                  </div>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="shrink-0"
-                    onClick={() => testNotificationMutation.mutate('slack')}
-                    disabled={testNotificationMutation.isPending}
+                    onClick={copyToAllDays}
+                    disabled={Object.keys(form.businessSchedule).length === 0}
                   >
-                    <Send className="h-3.5 w-3.5 mr-1" />
-                    Test
+                    <Copy className="h-3.5 w-3.5 mr-1.5" />
+                    Copy to All
                   </Button>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground">Receive notifications in your Slack channel</p>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label>Owner Email</Label>
-                <div className="flex gap-2">
-                  <Input type="email" {...field('ownerEmail')} placeholder="you@example.com" className="flex-1" />
-                  {form.ownerEmail && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0"
-                      onClick={() => testNotificationMutation.mutate('email')}
-                      disabled={testNotificationMutation.isPending}
-                    >
-                      <Send className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
                 </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Owner Phone (for SMS alerts)</Label>
-                <div className="flex gap-2">
-                  <Input {...field('ownerPhone')} placeholder="+12175551234" className="flex-1" />
-                  {form.ownerPhone && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0"
-                      onClick={() => testNotificationMutation.mutate('sms')}
-                      disabled={testNotificationMutation.isPending}
-                    >
-                      <Send className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div className="pt-4 border-t space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Daily action-items digest</Label>
-                  <p className="text-xs text-muted-foreground">Email me a daily summary of open tasks</p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={form.dailyDigestEnabled}
-                  onChange={(e) => setForm((f) => ({ ...f, dailyDigestEnabled: e.target.checked }))}
-                  className="h-4 w-4"
-                />
-              </div>
-              {form.dailyDigestEnabled && (
-                <div className="space-y-1.5 max-w-xs">
-                  <Label>Send at</Label>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label>Timezone</Label>
                   <select
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={form.dailyDigestHour}
-                    onChange={(e) => setForm((f) => ({ ...f, dailyDigestHour: parseInt(e.target.value, 10) }))}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    {...field('timezone')}
                   >
-                    {Array.from({ length: 24 }, (_, h) => (
-                      <option key={h} value={h}>
-                        {h === 0 ? '12:00 AM' : h < 12 ? `${h}:00 AM` : h === 12 ? '12:00 PM' : `${h - 12}:00 PM`}
-                      </option>
+                    {TIMEZONES.map(tz => (
+                      <option key={tz} value={tz}>{tz}</option>
                     ))}
                   </select>
-                  <p className="text-xs text-muted-foreground">In your business timezone ({form.timezone})</p>
                 </div>
-              )}
-              <RecapPreviewButton tenantId={tenantId} ownerEmail={form.ownerEmail} />
-            </div>
 
-            <div className="pt-4 border-t space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>Spam &amp; robocall filter</Label>
+                <div className="space-y-2">
+                  {DAYS.map((day) => {
+                    const key = String(day.value);
+                    const isEnabled = !!form.businessSchedule[key];
+                    const schedule = form.businessSchedule[key];
+
+                    return (
+                      <div key={day.value} className="flex flex-wrap items-center gap-2 sm:gap-3">
+                        <button
+                          type="button"
+                          onClick={() => toggleDay(day.value)}
+                          className={`w-20 sm:w-24 text-left text-sm font-medium py-2 px-3 rounded-md border transition-colors ${
+                            isEnabled
+                              ? 'bg-primary text-primary-foreground border-primary'
+                              : 'bg-muted text-muted-foreground border-input line-through'
+                          }`}
+                        >
+                          {day.short}
+                        </button>
+                        {isEnabled ? (
+                          <>
+                            <Input
+                              type="time"
+                              value={schedule.open}
+                              onChange={(e) => updateDayTime(day.value, 'open', e.target.value)}
+                              className="w-28 sm:w-32"
+                            />
+                            <span className="text-muted-foreground text-sm">to</span>
+                            <Input
+                              type="time"
+                              value={schedule.close}
+                              onChange={(e) => updateDayTime(day.value, 'close', e.target.value)}
+                              className="w-28 sm:w-32"
+                            />
+                          </>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">Closed</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground">Click a day name to toggle open/closed.</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CalendarOff className="h-5 w-5" />
+                  Holiday and closed dates
+                </CardTitle>
+                <CardDescription>
+                  Add one-off closures so callers are not promised same-day help when you are closed.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex gap-2">
+                  <Input
+                    type="date"
+                    value={newClosedDate}
+                    onChange={(e) => setNewClosedDate(e.target.value)}
+                    className="w-48"
+                  />
+                  <Button type="button" variant="outline" size="sm" onClick={addClosedDate} disabled={!newClosedDate}>
+                    <Plus className="h-3.5 w-3.5 mr-1" />
+                    Add
+                  </Button>
+                </div>
+                {form.closedDates.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {form.closedDates.map((date) => (
+                      <Badge key={date} variant="secondary" className="flex items-center gap-1 px-3 py-1">
+                        {new Date(date + 'T12:00:00').toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                        <button type="button" onClick={() => removeClosedDate(date)} className="ml-1 hover:text-destructive">
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No closed dates set.</p>
+                )}
+              </CardContent>
+            </Card>
+          </TabPanel>
+
+          <TabPanel value="ai" className="space-y-6 max-w-3xl">
+            <AiMessagingCard
+              businessName={(tenant as any)?.name ?? ''}
+              form={form}
+              setForm={setForm}
+            />
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Booking and AI tone</CardTitle>
+                <CardDescription>
+                  Tell the assistant how to sound and where to send customers who want an appointment.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label>AI personality</Label>
+                  <Input {...field('aiPersonality')} placeholder={profile.aiPersonalityHint} />
                   <p className="text-xs text-muted-foreground">
-                    Twilio Lookup blocks invalid numbers and unbranded VoIP
-                    robocallers before they consume your SMS quota. Disable
-                    if your business gets lots of legitimate VoIP calls
-                    (e.g. contractors on softphones).
+                    Plain language is best. Example: friendly, brief, and professional.
                   </p>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={form.spamFilterEnabled}
-                  onChange={(e) => setForm((f) => ({ ...f, spamFilterEnabled: e.target.checked }))}
-                  className="h-4 w-4"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+                {profile.nav.showMeetings && (
+                  <div className="space-y-1.5">
+                    <Label>Booking link</Label>
+                    <Input {...field('calcomLink')} placeholder="https://cal.com/yourname" />
+                    <p className="text-xs text-muted-foreground">
+                      Optional. The AI can share this when customers ask to book or schedule.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabPanel>
 
-        {/* Reply Templates */}
-        <ReplyTemplatesCard tenantId={tenantId} />
+          <TabPanel value="notifications" className="space-y-6 max-w-3xl">
+            <Card>
+              <CardHeader>
+                <CardTitle>Owner alerts</CardTitle>
+                <CardDescription>
+                  Where RingBackSMS sends urgent handoffs, action items, and daily summaries.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label>Owner email</Label>
+                    <div className="flex gap-2">
+                      <Input type="email" {...field('ownerEmail')} placeholder="you@example.com" className="flex-1" />
+                      {form.ownerEmail && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="shrink-0"
+                          onClick={() => testNotificationMutation.mutate('email')}
+                          disabled={testNotificationMutation.isPending}
+                        >
+                          <Send className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Used for recaps, summaries, and backup alerts.</p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Owner phone for urgent SMS alerts</Label>
+                    <div className="flex gap-2">
+                      <Input {...field('ownerPhone')} placeholder="+12175551234" className="flex-1" />
+                      {form.ownerPhone && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="shrink-0"
+                          onClick={() => testNotificationMutation.mutate('sms')}
+                          disabled={testNotificationMutation.isPending}
+                        >
+                          <Send className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">Used when a conversation needs a human quickly.</p>
+                  </div>
+                </div>
 
-        {/* Payments */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CreditCard className="h-5 w-5" />
-              Payments
-            </CardTitle>
-            <CardDescription>Collect payment from customers during SMS ordering</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label>Require upfront payment for orders</Label>
-                <p className="text-xs text-muted-foreground mt-0.5">Customers will receive a Stripe payment link after placing an order via SMS</p>
-              </div>
-              <Switch
-                checked={form.requirePayment}
-                onCheckedChange={(v) => setForm(f => ({ ...f, requirePayment: v }))}
-              />
-            </div>
+                <div className="pt-4 border-t space-y-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <Label>Daily summary email</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Sends open action items and, when there was activity, a daily performance recap.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={form.dailyDigestEnabled}
+                      onCheckedChange={(v) => setForm((f) => ({ ...f, dailyDigestEnabled: v }))}
+                    />
+                  </div>
+                  {form.dailyDigestEnabled && (
+                    <div className="space-y-1.5 max-w-xs">
+                      <Label>Send at</Label>
+                      <select
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={form.dailyDigestHour}
+                        onChange={(e) => setForm((f) => ({ ...f, dailyDigestHour: parseInt(e.target.value, 10) }))}
+                      >
+                        {Array.from({ length: 24 }, (_, h) => (
+                          <option key={h} value={h}>
+                            {h === 0 ? '12:00 AM' : h < 12 ? `${h}:00 AM` : h === 12 ? '12:00 PM' : `${h - 12}:00 PM`}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-muted-foreground">In your business timezone ({form.timezone}).</p>
+                    </div>
+                  )}
+                  <RecapPreviewButton tenantId={tenantId} ownerEmail={form.ownerEmail} />
+                </div>
+              </CardContent>
+            </Card>
+          </TabPanel>
 
-            <div className="border-t pt-4 space-y-2">
-              <Label htmlFor="salesTaxRate">Sales tax rate (%)</Label>
-              <p className="text-xs text-muted-foreground">
-                Applied to every order as a separate &quot;Sales tax&quot; line item. Leave blank to skip tax. Chicago prepared-food ≈ 10.75%; set what your local jurisdiction requires.
-              </p>
-              <Input
-                id="salesTaxRate"
-                type="number"
-                step="0.01"
-                min="0"
-                max="50"
-                placeholder="e.g. 9.75"
-                className="max-w-xs"
-                value={form.salesTaxRate != null ? (form.salesTaxRate * 100).toFixed(2) : ''}
-                onChange={(e) => {
-                  const raw = e.target.value;
-                  if (raw === '') {
-                    setForm((f) => ({ ...f, salesTaxRate: null }));
-                    return;
-                  }
-                  const pct = Number(raw);
-                  if (!Number.isFinite(pct) || pct < 0 || pct > 50) return;
-                  setForm((f) => ({ ...f, salesTaxRate: Math.round(pct * 10000) / 1000000 }));
-                }}
-              />
-            </div>
+          <TabPanel value="operations" className="space-y-6 max-w-3xl">
+            {profile.nav.showOrders && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <CreditCard className="h-5 w-5" />
+                    Orders and payments
+                  </CardTitle>
+                  <CardDescription>
+                    Controls customers placing orders by SMS. Leave payment off if you only collect at pickup.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <Label>Require upfront payment for orders</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Customers receive a Stripe payment link after placing an order.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={form.requirePayment}
+                      onCheckedChange={(v) => setForm(f => ({ ...f, requirePayment: v }))}
+                    />
+                  </div>
 
-            <div className="flex items-center justify-between border-t pt-4">
-              <div className="pr-4">
-                <Label>Pass Stripe processing fees to customer</Label>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Adds a &quot;Processing fee&quot; line item (2.9% + $0.30) so your net = subtotal + tax. Disclose this on your menu page to stay clear.
-                </p>
-              </div>
-              <Switch
-                checked={form.passStripeFeesToCustomer}
-                onCheckedChange={(v) => setForm((f) => ({ ...f, passStripeFeesToCustomer: v }))}
-              />
-            </div>
-          </CardContent>
-        </Card>
+                  <div className="border-t pt-4 space-y-2">
+                    <Label htmlFor="salesTaxRate">Sales tax rate (%)</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Optional. Applied to every order as a separate sales tax line item.
+                    </p>
+                    <Input
+                      id="salesTaxRate"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="50"
+                      placeholder="e.g. 9.75"
+                      className="max-w-xs"
+                      value={form.salesTaxRate != null ? (form.salesTaxRate * 100).toFixed(2) : ''}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        if (raw === '') {
+                          setForm((f) => ({ ...f, salesTaxRate: null }));
+                          return;
+                        }
+                        const pct = Number(raw);
+                        if (!Number.isFinite(pct) || pct < 0 || pct > 50) return;
+                        setForm((f) => ({ ...f, salesTaxRate: Math.round(pct * 10000) / 1000000 }));
+                      }}
+                    />
+                  </div>
 
-        {profile.nav.showPrepTime && (
-          <PrepTimeCard form={form} setForm={setForm} timezone={form.timezone} />
-        )}
+                  <div className="flex items-center justify-between gap-4 border-t pt-4">
+                    <div className="pr-4">
+                      <Label>Pass Stripe processing fees to customer</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Advanced. Adds a processing fee line item so your net is closer to subtotal plus tax.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={form.passStripeFeesToCustomer}
+                      onCheckedChange={(v) => setForm((f) => ({ ...f, passStripeFeesToCustomer: v }))}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
-        <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} size="lg">
-          {saveMutation.isPending ? 'Saving...' : 'Save Settings'}
-        </Button>
+            {profile.nav.showPrepTime && (
+              <PrepTimeCard form={form} setForm={setForm} timezone={form.timezone} />
+            )}
 
-        {/* AI & Messaging */}
-        {tenantId && <AiMessagingCard tenantId={tenantId} businessName={(tenant as any)?.name ?? ''} followupOpener={config?.followupOpener ?? null} initialCustomAiInstructions={config?.customAiInstructions ?? null} />}
+          </TabPanel>
 
-        {/* Team & Invitations */}
-        {tenantId && <TeamCard tenantId={tenantId} />}
+          <TabPanel value="advanced" className="space-y-6 max-w-3xl">
+            <ReplyTemplatesCard tenantId={tenantId} />
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Voice greetings</CardTitle>
+                <CardDescription>
+                  Optional call audio controls. The defaults work for most businesses.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 flex items-start gap-3">
+                  <Sparkles className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="font-medium">Let AI write voice greetings for you</p>
+                    <p className="text-xs text-blue-800 mt-0.5">
+                      AI creates a normal greeting, an after-hours greeting, and shorter returning-caller versions.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => generateAllGreetingsMutation.mutate()}
+                    disabled={generateAllGreetingsMutation.isPending || !tenantId}
+                  >
+                    <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+                    {generateAllGreetingsMutation.isPending ? 'Generating…' : 'Generate all'}
+                  </Button>
+                </div>
+
+                <div className="rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground">
+                  Use <span className="font-mono">{'{business_name}'}</span>,{' '}
+                  <span className="font-mono">{'{next_open}'}</span>,{' '}
+                  <span className="font-mono">{'{today_hours}'}</span>, or{' '}
+                  <span className="font-mono">{'{closes_at}'}</span> if you want the greeting to update automatically.
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Main voice greeting</Label>
+                  <textarea
+                    className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[80px] resize-y"
+                    value={form.voiceGreeting}
+                    maxLength={500}
+                    onChange={(e) => setForm(f => ({ ...f, voiceGreeting: e.target.value }))}
+                    placeholder="Hi, thanks for calling. We can help you faster by text..."
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    What callers hear before voicemail. Leave blank to use the default.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Voice</Label>
+                  <select
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    value={form.voiceType}
+                    onChange={(e) => setForm(f => ({ ...f, voiceType: e.target.value }))}
+                  >
+                    <optgroup label="OpenAI TTS">
+                      <option value="nova">Nova (warm)</option>
+                      <option value="alloy">Alloy (neutral)</option>
+                      <option value="shimmer">Shimmer (bright)</option>
+                      <option value="echo">Echo (warm)</option>
+                      <option value="fable">Fable (British)</option>
+                      <option value="onyx">Onyx (deep)</option>
+                    </optgroup>
+                    <optgroup label="Legacy">
+                      <option value="Polly.Joanna-Neural">Joanna</option>
+                      <option value="Polly.Matthew-Neural">Matthew</option>
+                      <option value="Polly.Salli-Neural">Salli</option>
+                      <option value="Polly.Ivy-Neural">Ivy</option>
+                    </optgroup>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5 border-t pt-4">
+                  <Label>After-hours voice greeting</Label>
+                  <textarea
+                    className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 min-h-[80px] resize-y"
+                    value={form.voiceGreetingAfterHours}
+                    maxLength={500}
+                    onChange={(e) => setForm(f => ({ ...f, voiceGreetingAfterHours: e.target.value }))}
+                    placeholder="Hi, you've reached {business_name}! We're closed right now..."
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t pt-4">
+                  <div className="space-y-1.5">
+                    <Label>Rapid-redial greeting</Label>
+                    <textarea
+                      className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[72px] resize-y"
+                      value={form.voiceGreetingRapidRedial}
+                      maxLength={500}
+                      onChange={(e) => setForm(f => ({ ...f, voiceGreetingRapidRedial: e.target.value }))}
+                      placeholder="Still here — check your texts."
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Returning-caller greeting</Label>
+                    <textarea
+                      className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[72px] resize-y"
+                      value={form.voiceGreetingReturning}
+                      maxLength={500}
+                      onChange={(e) => setForm(f => ({ ...f, voiceGreetingReturning: e.target.value }))}
+                      placeholder="Welcome back! We just texted you."
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Advanced alerts and filtering</CardTitle>
+                <CardDescription>
+                  Usually safe to leave alone unless you use Slack or need to tune call filtering.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="space-y-1.5">
+                  <Label>Slack webhook URL</Label>
+                  <div className="flex gap-2">
+                    <Input {...field('slackWebhook')} placeholder="https://hooks.slack.com/services/..." className="flex-1" />
+                    {form.slackWebhook && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        onClick={() => testNotificationMutation.mutate('slack')}
+                        disabled={testNotificationMutation.isPending}
+                      >
+                        <Send className="h-3.5 w-3.5 mr-1" />
+                        Test
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Optional. Sends team alerts to a Slack channel.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between gap-4 border-t pt-4">
+                  <div>
+                    <Label>Spam and robocall filter</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Blocks obvious bad numbers before they consume SMS quota. Turn off only if legitimate callers are being blocked.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={form.spamFilterEnabled}
+                    onCheckedChange={(v) => setForm((f) => ({ ...f, spamFilterEnabled: v }))}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </TabPanel>
+
+          <TabPanel value="team" className="space-y-6 max-w-3xl">
+            {tenantId && <TeamCard tenantId={tenantId} />}
+          </TabPanel>
+        </Tabs>
       </div>
     </div>
   );
@@ -923,68 +986,63 @@ function RecapPreviewButton({
 
 // ── AI & Messaging card ─────────────────────────────────────────────────────
 
-function AiMessagingCard({ tenantId, businessName, followupOpener, initialCustomAiInstructions }: { tenantId: string; businessName: string; followupOpener: string | null; initialCustomAiInstructions: string | null }) {
+function AiMessagingCard({
+  businessName,
+  form,
+  setForm,
+}: {
+  businessName: string;
+  form: {
+    followupOpener: string | null;
+    customAiInstructions: string | null;
+  };
+  setForm: (fn: (f: any) => any) => void;
+}) {
   const consentPreview = `Hey! ${businessName || '{business_name}'} here — we just missed your call and we're sorry about that! I can help you via text if you want. Reply YES to go ahead or STOP to opt out. Msg & data rates may apply.`;
-
-  const [customAiInstructions, setCustomAiInstructions] = useState(initialCustomAiInstructions ?? '');
-  const [dirty, setDirty] = useState(false);
-
-  useEffect(() => {
-    if (initialCustomAiInstructions != null) {
-      setCustomAiInstructions(initialCustomAiInstructions);
-      setDirty(false); // Reset dirty flag when external data syncs in
-    }
-  }, [initialCustomAiInstructions]);
-
-  const saveMutation = useMutation({
-    mutationFn: () =>
-      tenantApi.updateConfig(tenantId, { customAiInstructions }),
-    onSuccess: () => {
-      toast.success('AI instructions saved');
-      setDirty(false);
-    },
-    onError: () => toast.error('Failed to save'),
-  });
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Send className="h-5 w-5" />
-          SMS Compliance
+          AI text messages
         </CardTitle>
         <CardDescription>
-          TCPA-compliant consent-first messaging. Every missed call sends a consent request before the AI engages.
+          New callers consent before AI texting starts. Returning consented callers can continue without repeating YES.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div>
-          <Label>Consent request message (sent on every missed call)</Label>
+          <Label>Consent request message</Label>
           <div className="mt-2 p-3 bg-muted rounded-lg text-sm">
             {consentPreview}
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            {consentPreview.length} / 160 characters · This message is standardized for compliance and cannot be edited.
+            {consentPreview.length} / 160 characters. Sent to new callers before the AI starts texting.
           </p>
         </div>
 
         <div>
-          <Label>Follow-up opener (sent after customer replies YES)</Label>
-          <div className="mt-2 p-3 bg-muted rounded-lg text-sm">
-            {followupOpener || `Thanks! How can ${businessName} help you today?`}
-          </div>
+          <Label>Follow-up opener</Label>
+          <textarea
+            value={form.followupOpener ?? ''}
+            onChange={(e) => setForm((f) => ({ ...f, followupOpener: e.target.value.slice(0, 500) }))}
+            rows={2}
+            maxLength={500}
+            className="w-full mt-1 p-2 border rounded-lg text-sm bg-background"
+            placeholder={`Thanks! How can ${businessName || 'we'} help you today?`}
+          />
           <p className="text-xs text-muted-foreground mt-1">
-            This message starts the AI conversation after consent is given.
+            {(form.followupOpener ?? '').length} / 500 characters. Sent after a new caller replies YES, or when a returning consented caller reconnects.
           </p>
         </div>
 
         <div>
           <Label>Custom AI instructions</Label>
           <textarea
-            value={customAiInstructions}
+            value={form.customAiInstructions ?? ''}
             onChange={(e) => {
-              setCustomAiInstructions(e.target.value.slice(0, 500));
-              setDirty(true);
+              setForm((f) => ({ ...f, customAiInstructions: e.target.value.slice(0, 500) }));
             }}
             rows={3}
             maxLength={500}
@@ -992,18 +1050,8 @@ function AiMessagingCard({ tenantId, businessName, followupOpener, initialCustom
             placeholder={`e.g. "We close early on Sundays at 3pm"\n"Always mention our loyalty program after an order"\n"Never quote prices — always say 'prices vary, ask us'"`}
           />
           <p className="text-xs text-muted-foreground mt-1">
-            {customAiInstructions.length} / 500 characters · These rules are appended to the AI&apos;s system prompt.
+            {(form.customAiInstructions ?? '').length} / 500 characters. Use plain-language rules the assistant should always follow.
           </p>
-          {dirty && (
-            <Button
-              size="sm"
-              className="mt-2"
-              onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending}
-            >
-              {saveMutation.isPending ? 'Saving…' : 'Save Instructions'}
-            </Button>
-          )}
         </div>
       </CardContent>
     </Card>
@@ -1218,7 +1266,6 @@ function PrepTimeCard({
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <span role="img" aria-label="chef">👨‍🍳</span>
           Prep time
         </CardTitle>
         <CardDescription>
@@ -1372,9 +1419,9 @@ function PrepTimeCard({
 
         <div className="flex items-center justify-between pt-2 border-t">
           <div>
-            <Label>Allow order pausing</Label>
+            <Label>Accept SMS orders</Label>
             <p className="text-xs text-muted-foreground mt-0.5">
-              When off, inbound SMS order requests get a &quot;we&apos;re not accepting orders right now&quot; reply.
+              Turn this off to pause ordering. Customers will receive a &quot;we&apos;re not accepting orders right now&quot; reply.
             </p>
           </div>
           <Switch
