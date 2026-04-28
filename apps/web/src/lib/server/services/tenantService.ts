@@ -213,6 +213,8 @@ export async function updateTenantConfig(
     followupOpener: string | null;
     industryTemplateKey: string | null;
     consentMessage: string | null;
+    customEscalationKeywords: string[];
+    escalationPolicyOverrides: unknown | null;
     salesTaxRate: number | null;
     passStripeFeesToCustomer: boolean;
   }>

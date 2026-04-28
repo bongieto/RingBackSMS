@@ -30,6 +30,7 @@ import {
   Megaphone,
   Star,
   GitBranch,
+  ShieldCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { UserButton, OrganizationSwitcher, useUser } from '@clerk/nextjs';
@@ -72,6 +73,7 @@ const navItems: NavItem[] = [
   { href: '/dashboard/services', label: 'Services', icon: Briefcase, show: (n) => n.showServices },
   { href: '/dashboard/location', label: 'Location', icon: MapPin, show: (n) => !!n.showLocation },
   { href: '/dashboard/flows', label: 'Flows', icon: Zap },
+  { href: '/dashboard/ai-readiness', label: 'AI Readiness', icon: ShieldCheck },
   { href: '/dashboard/integrations', label: 'Integrations', icon: Plug2 },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
   { href: '/dashboard/billing', label: 'Billing', icon: CreditCard },

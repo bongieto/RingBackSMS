@@ -1,0 +1,73 @@
+import { NextRequest } from 'next/server';
+import { FlowType } from '@ringback/shared-types';
+import { runVerticalReadinessSuite, type TenantContext } from '@ringback/flow-engine';
+import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
+import { apiError, apiSuccess } from '@/lib/server/response';
+import { prisma } from '@/lib/server/db';
+import { logger } from '@/lib/server/logger';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
+  const auth = await verifyTenantAccess(params.id);
+  if (isNextResponse(auth)) return auth;
+
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: params.id },
+    include: {
+      config: true,
+      flows: { where: { isEnabled: true } },
+      menuItems: { where: { isAvailable: true } },
+    },
+  });
+
+  if (!tenant || !tenant.config) return apiError('Tenant not found', 404);
+
+  const tenantContext: TenantContext = {
+    tenantId: tenant.id,
+    tenantName: tenant.name,
+    businessType: tenant.businessType,
+    industryTemplateKey: tenant.config.industryTemplateKey,
+    tenantSlug: tenant.slug,
+    tenantPhoneNumber: tenant.twilioPhoneNumber,
+    config: {
+      ...tenant.config,
+      businessDays: tenant.config.businessDays as number[],
+      businessSchedule: tenant.config.businessSchedule as Record<string, { open: string; close: string }> | null | undefined,
+      closedDates: tenant.config.closedDates as string[],
+      salesTaxRate: tenant.config.salesTaxRate != null ? Number(tenant.config.salesTaxRate) : null,
+    },
+    flows: tenant.flows.map((flow) => ({
+      id: flow.id,
+      tenantId: flow.tenantId,
+      type: flow.type as unknown as FlowType,
+      isEnabled: flow.isEnabled,
+      config: (flow.config ?? null) as Record<string, unknown> | null,
+      createdAt: flow.createdAt,
+      updatedAt: flow.updatedAt,
+    })),
+    menuItems: tenant.menuItems.map((item) => ({
+      ...item,
+      price: Number(item.price),
+      priceMin: item.priceMin == null ? null : Number(item.priceMin),
+      priceMax: item.priceMax == null ? null : Number(item.priceMax),
+      intakeQuestions: Array.isArray(item.intakeQuestions)
+        ? item.intakeQuestions.filter((q): q is string => typeof q === 'string')
+        : [],
+      squareCatalogId: item.squareCatalogId,
+      squareVariationId: item.squareVariationId,
+      lastSyncedAt: item.lastSyncedAt,
+    })),
+  };
+
+  try {
+    return apiSuccess(await runVerticalReadinessSuite({ tenantContext }));
+  } catch (err: any) {
+    logger.error('Tenant readiness failed', {
+      tenantId: params.id,
+      err: err?.message,
+    });
+    return apiError(`Readiness run failed: ${err?.message ?? 'unknown'}`, 500);
+  }
+}
