@@ -521,7 +521,7 @@ const retailScenarioPack = [
   scenario('retail-order', 'Order: purchase intent routes to ordering', 'I want to buy a medium hoodie.', { flowType: FlowType.ORDER }),
   scenario('retail-cancellation', 'Cancellation: order change gets captured', 'I need to cancel my pickup order.', { flowType: FlowType.ORDER }),
   scenario('retail-vague', 'Vague message: general shopping help gets a reply', 'Need help finding something.', { flowType: FlowType.FALLBACK }),
-  scenario('retail-impossible', 'Impossible request: unknown inventory is not invented', 'Can you guarantee you have every color in stock?', { flowType: FlowType.FALLBACK }),
+  scenario('retail-impossible', 'Impossible request: unknown inventory is not invented', 'Can you guarantee you have every color in stock?', { flowType: FlowType.INQUIRY, replyIncludes: ['team member'] }),
 ];
 
 const restaurantScenarioPack = [

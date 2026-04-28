@@ -1,5 +1,5 @@
 import { TenantContext, ChatFn } from './types';
-import { FlowType } from '@ringback/shared-types';
+import { BusinessType, FlowType } from '@ringback/shared-types';
 
 function stripThinkTags(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
@@ -84,6 +84,8 @@ export async function detectIntent(
 
   // Fast keyword detection before calling AI
   const upperMsg = message.trim().toUpperCase();
+  const lowerMsg = message.toLowerCase();
+  const fallbackEnabled = enabledFlowTypes.includes(FlowType.FALLBACK);
 
   if (enabledFlowTypes.includes(FlowType.ORDER)) {
     if (
@@ -135,6 +137,14 @@ export async function detectIntent(
   }
 
   if (enabledFlowTypes.includes(FlowType.MEETING)) {
+    const hoursOrAvailabilityQuestion =
+      fallbackEnabled &&
+      /\b(?:open|hours?|after\s+hours?|late|business\s+hours?|answer\s+questions?)\b/i.test(message) &&
+      /^(?:are|do|does|when|what|can)\b/i.test(message.trim());
+    if (hoursOrAvailabilityQuestion) {
+      return { intent: FlowType.FALLBACK, confidence: 0.95 };
+    }
+
     if (
       upperMsg === 'MEETING' ||
       upperMsg.includes('SCHEDULE') ||
@@ -161,7 +171,10 @@ export async function detectIntent(
     !enabledFlowTypes.includes(FlowType.INQUIRY);
 
   if (isServiceOnlyTenant) {
-    const lower = message.toLowerCase();
+    const lower = lowerMsg;
+    const isMedicalLikeTenant =
+      tenantContext.businessType === BusinessType.MEDICAL ||
+      /^(medical|home_care|hospice)$/i.test(String(tenantContext.industryTemplateKey ?? ''));
     // Pricing/info questions take priority over the meeting fast-path —
     // a customer asking "how much for an AC tune-up?" wants the price,
     // not to be dropped into the date picker. FALLBACK can answer using
@@ -174,8 +187,13 @@ export async function detectIntent(
       return { intent: FlowType.FALLBACK, confidence: 0.9 };
     }
     const serviceInfoQuestion =
-      /\b(what\s+(?:services?|care|help)\s+(?:do\s+you\s+(?:provide|offer)|are\s+available)|do\s+you\s+(?:provide|offer|have)\s+.+(?:care|services?|help)|tell\s+me\s+about\s+(?:your\s+)?(?:services?|care|help))\b/;
+      /\b(what\s+(?:services?|care|help)\s+(?:do\s+you\s+(?:provide|offer)|are\s+available)|do\s+you\s+(?:provide|offer|have)\s+.+(?:care|services?|help)|tell\s+me\s+about\s+(?:your\s+)?(?:[a-z0-9-]+\s+){0,3}(?:services?|care|help|hospice))\b/;
     if (serviceInfoQuestion.test(lower)) {
+      return { intent: FlowType.FALLBACK, confidence: 0.9 };
+    }
+    const genericQuestion =
+      /\b(?:question|questions|info|information|details|help\s+with\s+a\s+question)\b/.test(lower);
+    if (genericQuestion) {
       return { intent: FlowType.FALLBACK, confidence: 0.9 };
     }
     const familyTerms =
@@ -196,6 +214,14 @@ export async function detectIntent(
     // Damage/state vocabulary — caller describing a broken thing.
     const tradeStates =
       /\b(broken|busted|not\s*working|won'?t\s*(?:turn|work|start)|malfunction(?:ing)?|won'?t\s+(?:heat|cool)|no\s*(?:heat|hot\s*water|cold\s*water|power)|flood(?:ed|ing)?|burst)\b/;
+    const familyOnlyCareQuestion =
+      isMedicalLikeTenant &&
+      familyTerms.test(lower) &&
+      serviceVerbs.test(lower) &&
+      !careNouns.test(lower);
+    if (familyOnlyCareQuestion) {
+      return { intent: FlowType.FALLBACK, confidence: 0.9 };
+    }
     if (
       familyTerms.test(lower) ||
       serviceVerbs.test(lower) ||
