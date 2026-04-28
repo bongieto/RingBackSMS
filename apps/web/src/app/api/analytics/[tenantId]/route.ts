@@ -4,6 +4,24 @@ import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { apiSuccess } from '@/lib/server/response';
 
+const EMERGENCY_TERMS = [
+  '911',
+  'emergency',
+  'urgent',
+  'gas',
+  'leak',
+  'fire',
+  'smoke',
+  'fell',
+  'fall',
+  'injury',
+  'danger',
+  'burst',
+  'flood',
+  'carbon monoxide',
+  'chest pain',
+];
+
 export async function GET(request: NextRequest, { params }: { params: { tenantId: string } }) {
   const authResult = await verifyTenantAccess(params.tenantId);
   if (isNextResponse(authResult)) return authResult;
@@ -16,7 +34,25 @@ export async function GET(request: NextRequest, { params }: { params: { tenantId
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
 
-  const [totalMissedCalls, totalConversations, totalOrders, totalMeetings, recentUsage, orderRevenue, monthlyUsage, dailyStats, contactCount] = await Promise.all([
+  const [
+    totalMissedCalls,
+    totalConversations,
+    totalOrders,
+    totalMeetings,
+    recentUsage,
+    orderRevenue,
+    monthlyUsage,
+    dailyStats,
+    contactCount,
+    missedCallsRecovered,
+    appointmentsBooked,
+    ordersPlaced,
+    estimatedRevenue,
+    quoteRequestRows,
+    emergenciesEscalated,
+    unresolvedUrgentLeads,
+    avgResponseRows,
+  ] = await Promise.all([
     prisma.missedCall.count({ where: { tenantId, occurredAt: { gte: since } } }),
     prisma.conversation.count({ where: { tenantId, createdAt: { gte: since } } }),
     prisma.order.count({ where: { tenantId, createdAt: { gte: since } } }),
@@ -35,10 +71,61 @@ export async function GET(request: NextRequest, { params }: { params: { tenantId
       ORDER BY date
     `).catch(() => [] as Array<{ date: Date; conversations: bigint }>),
     prisma.contact.count({ where: { tenantId } }),
+    prisma.missedCall.count({
+      where: { tenantId, occurredAt: { gte: since }, smsSent: true },
+    }),
+    prisma.meeting.count({
+      where: { tenantId, createdAt: { gte: since }, status: { not: 'CANCELLED' } },
+    }),
+    prisma.order.count({
+      where: { tenantId, createdAt: { gte: since }, status: { not: 'CANCELLED' } },
+    }),
+    prisma.order.aggregate({
+      where: { tenantId, createdAt: { gte: since }, status: { not: 'CANCELLED' } },
+      _sum: { total: true },
+    }),
+    prisma.$queryRaw<Array<{ count: number }>>(Prisma.sql`
+      SELECT COUNT(*)::int AS count
+      FROM "Conversation"
+      WHERE "tenantId" = ${tenantId}
+        AND "createdAt" >= ${since}
+        AND (
+          "messages"::text ILIKE '%quote%'
+          OR "messages"::text ILIKE '%estimate%'
+          OR "messages"::text ILIKE '%pricing%'
+          OR "messages"::text ILIKE '%how much%'
+        )
+    `).catch(() => [{ count: 0 }]),
+    prisma.escalationEvent.count({
+      where: {
+        tenantId,
+        createdAt: { gte: since },
+        OR: EMERGENCY_TERMS.flatMap((term) => [
+          { triggerKeyword: { contains: term, mode: 'insensitive' as const } },
+          { messageBody: { contains: term, mode: 'insensitive' as const } },
+        ]),
+      },
+    }),
+    prisma.task.count({
+      where: {
+        tenantId,
+        status: { in: ['OPEN', 'SNOOZED'] },
+        priority: { in: ['URGENT', 'HIGH'] },
+      },
+    }),
+    prisma.$queryRaw<Array<{ avg: number | null }>>(Prisma.sql`
+      SELECT AVG(EXTRACT(EPOCH FROM ("ownerRespondedAt" - "occurredAt")))::float AS avg
+      FROM "MissedCall"
+      WHERE "tenantId" = ${tenantId}
+        AND "occurredAt" >= ${since}
+        AND "ownerRespondedAt" IS NOT NULL
+    `).catch(() => [{ avg: null }]),
   ]);
   const usage = Object.fromEntries(recentUsage.map((u) => [u.type, u._count.id]));
   const monthUsage = Object.fromEntries(monthlyUsage.map((u) => [u.type, u._count.id]));
   const revenue = Number(orderRevenue._sum.total ?? 0);
+  const estimatedRevenueDollars = Number(estimatedRevenue._sum.total ?? 0);
+  const avgResponseTimeSeconds = Math.round(avgResponseRows[0]?.avg ?? 0);
 
   // Build daily trend data
   const dailyTrend = dailyStats.map((d) => ({
@@ -57,5 +144,15 @@ export async function GET(request: NextRequest, { params }: { params: { tenantId
     monthUsage,
     contactCount,
     dailyTrend,
+    valueMetrics: {
+      missedCallsRecovered,
+      appointmentsBooked,
+      quoteRequestsCaptured: quoteRequestRows[0]?.count ?? 0,
+      emergenciesEscalated,
+      ordersPlaced,
+      estimatedRevenueDollars,
+      avgResponseTimeSeconds,
+      unresolvedUrgentLeads,
+    },
   });
 }

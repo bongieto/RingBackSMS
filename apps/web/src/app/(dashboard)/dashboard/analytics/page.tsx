@@ -9,7 +9,18 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { Button } from '@/components/ui/button';
 import { analyticsApi } from '@/lib/api';
-import { Phone, MessageSquare, ShoppingBag, Calendar, DollarSign } from 'lucide-react';
+import { AlertTriangle, Calendar, Clock, DollarSign, HelpCircle, MessageSquare, Phone, ShoppingBag } from 'lucide-react';
+
+interface ValueMetrics {
+  missedCallsRecovered: number;
+  appointmentsBooked: number;
+  quoteRequestsCaptured: number;
+  emergenciesEscalated: number;
+  ordersPlaced: number;
+  estimatedRevenueDollars: number;
+  avgResponseTimeSeconds: number;
+  unresolvedUrgentLeads: number;
+}
 
 const PERIODS = [
   { label: '7 days', value: 7 },
@@ -41,8 +52,18 @@ export default function AnalyticsPage() {
 
   const dailyTrend: Array<{ date: string; conversations: number }> = analytics?.dailyTrend ?? [];
 
-  const formatRevenue = (cents: number) => {
-    return `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+  const valueMetrics = analytics?.valueMetrics as ValueMetrics | undefined;
+
+  const formatDollars = (dollars: number) => {
+    return `$${dollars.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  const formatResponseTime = (seconds: number) => {
+    if (seconds <= 0) return '—';
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `${minutes}m`;
+    return `${Math.round(minutes / 60)}h`;
   };
 
   return (
@@ -66,12 +87,63 @@ export default function AnalyticsPage() {
         }
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-        <StatCard title="Missed Calls" value={analytics?.missedCalls ?? 0} icon={Phone} iconColor="text-blue-500" />
-        <StatCard title="Conversations" value={analytics?.conversations ?? 0} icon={MessageSquare} iconColor="text-purple-500" />
-        <StatCard title="Orders" value={analytics?.orders ?? 0} icon={ShoppingBag} iconColor="text-green-500" />
-        <StatCard title="Meetings" value={analytics?.meetings ?? 0} icon={Calendar} iconColor="text-orange-500" />
-        <StatCard title="Revenue" value={formatRevenue(analytics?.revenue ?? 0)} icon={DollarSign} iconColor="text-emerald-500" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+        <StatCard
+          title="Missed Calls Recovered"
+          value={valueMetrics?.missedCallsRecovered ?? analytics?.missedCalls ?? 0}
+          icon={Phone}
+          iconColor="text-blue-500"
+        />
+        <StatCard
+          title="Customers Engaged"
+          value={analytics?.conversations ?? 0}
+          icon={MessageSquare}
+          iconColor="text-purple-500"
+        />
+        <StatCard
+          title="Orders Placed"
+          value={valueMetrics?.ordersPlaced ?? analytics?.orders ?? 0}
+          icon={ShoppingBag}
+          iconColor="text-green-500"
+        />
+        <StatCard
+          title="Appointments Booked"
+          value={valueMetrics?.appointmentsBooked ?? analytics?.meetings ?? 0}
+          icon={Calendar}
+          iconColor="text-orange-500"
+        />
+        <StatCard
+          title="Quote Requests"
+          value={valueMetrics?.quoteRequestsCaptured ?? 0}
+          icon={HelpCircle}
+          iconColor="text-cyan-500"
+        />
+        <StatCard
+          title="Urgent Escalations"
+          value={valueMetrics?.emergenciesEscalated ?? 0}
+          icon={AlertTriangle}
+          iconColor="text-red-500"
+          changeType={(valueMetrics?.emergenciesEscalated ?? 0) > 0 ? 'negative' : 'neutral'}
+        />
+        <StatCard
+          title="Estimated Revenue"
+          value={formatDollars(valueMetrics?.estimatedRevenueDollars ?? analytics?.revenue ?? 0)}
+          icon={DollarSign}
+          iconColor="text-emerald-500"
+        />
+        <StatCard
+          title="Avg Response Time"
+          value={formatResponseTime(valueMetrics?.avgResponseTimeSeconds ?? recovery?.avgResponseTimeSeconds ?? 0)}
+          icon={Clock}
+          iconColor="text-slate-500"
+        />
+        <StatCard
+          title="Urgent Leads Open"
+          value={valueMetrics?.unresolvedUrgentLeads ?? 0}
+          icon={AlertTriangle}
+          iconColor="text-amber-500"
+          changeType={(valueMetrics?.unresolvedUrgentLeads ?? 0) > 0 ? 'negative' : 'positive'}
+        />
       </div>
 
       {/* Recovery Funnel */}

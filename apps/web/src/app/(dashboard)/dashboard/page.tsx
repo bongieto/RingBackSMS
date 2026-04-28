@@ -1,7 +1,18 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { Phone, MessageSquare, ShoppingBag, Calendar, TrendingUp, Clock, DollarSign } from 'lucide-react';
+import {
+  AlertTriangle,
+  Calendar,
+  Clock,
+  DollarSign,
+  HelpCircle,
+  MessageSquare,
+  Phone,
+  ShoppingBag,
+  TrendingUp,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { PosStatusCard } from '@/components/dashboard/PosStatusCard';
 import { Header } from '@/components/layout/Header';
@@ -12,6 +23,43 @@ import { analyticsApi, conversationApi, tenantApi } from '@/lib/api';
 import { formatRelativeTime, maskPhone } from '@/lib/utils';
 import { getProfile } from '@/lib/businessTypeProfile';
 import { useTenantId } from '@/components/providers/TenantProvider';
+
+interface ValueMetrics {
+  missedCallsRecovered: number;
+  appointmentsBooked: number;
+  quoteRequestsCaptured: number;
+  emergenciesEscalated: number;
+  ordersPlaced: number;
+  estimatedRevenueDollars: number;
+  avgResponseTimeSeconds: number;
+  unresolvedUrgentLeads: number;
+}
+
+interface ValueMetricCard {
+  key: string;
+  title: string;
+  value: string | number;
+  icon: LucideIcon;
+  iconColor: string;
+  change: string;
+  changeType?: 'positive' | 'negative' | 'neutral';
+}
+
+function formatDollars(value: number): string {
+  return `$${value.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function formatResponseTime(seconds: number): string {
+  if (seconds <= 0) return '—';
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  return `${hours}h`;
+}
 
 export default function DashboardPage() {
   const { tenantId } = useTenantId();
@@ -36,6 +84,100 @@ export default function DashboardPage() {
   const recentConversations = conversationsData?.data ?? [];
   const profile = getProfile((tenant as { businessType?: string } | undefined)?.businessType);
   const showCard = (key: string) => profile.dashboardCards.includes(key as never);
+  const valueMetrics = analytics?.valueMetrics as ValueMetrics | undefined;
+  const revenueDollars =
+    valueMetrics?.estimatedRevenueDollars ?? ((analytics?.revenue as number | undefined) ?? 0);
+  const valueCards: ValueMetricCard[] = [
+    {
+      key: 'missedCallsRecovered',
+      title: 'Missed Calls Recovered',
+      value: valueMetrics?.missedCallsRecovered ?? analytics?.missedCalls ?? 0,
+      icon: Phone,
+      iconColor: 'text-blue-500',
+      change: 'Auto-texted after missed calls',
+      changeType: 'positive',
+    },
+    {
+      key: 'conversations',
+      title: 'Customers Engaged',
+      value: analytics?.conversations ?? 0,
+      icon: MessageSquare,
+      iconColor: 'text-purple-500',
+      change: 'Active SMS conversations',
+      changeType: 'positive',
+    },
+    ...(showCard('orders')
+      ? [{
+          key: 'ordersPlaced',
+          title: profile.catalogNoun === 'products' ? 'Product Holds' : 'Orders Placed',
+          value: valueMetrics?.ordersPlaced ?? analytics?.orders ?? 0,
+          icon: ShoppingBag,
+          iconColor: 'text-green-500',
+          change: 'Captured via SMS',
+          changeType: 'positive' as const,
+        }]
+      : []),
+    ...(showCard('meetings')
+      ? [{
+          key: 'appointmentsBooked',
+          title: 'Appointments Booked',
+          value: valueMetrics?.appointmentsBooked ?? analytics?.meetings ?? 0,
+          icon: Calendar,
+          iconColor: 'text-orange-500',
+          change: 'Scheduled or requested',
+          changeType: 'positive' as const,
+        }]
+      : []),
+    ...(showCard('revenue')
+      ? [{
+          key: 'estimatedRevenue',
+          title: 'Estimated Revenue',
+          value: formatDollars(revenueDollars),
+          icon: DollarSign,
+          iconColor: 'text-emerald-500',
+          change: 'Non-cancelled order value',
+          changeType: 'positive' as const,
+        }]
+      : []),
+    ...(profile.catalogNoun !== 'menu'
+      ? [{
+          key: 'quoteRequestsCaptured',
+          title: 'Quote Requests',
+          value: valueMetrics?.quoteRequestsCaptured ?? 0,
+          icon: HelpCircle,
+          iconColor: 'text-cyan-500',
+          change: 'Pricing and estimate leads',
+          changeType: 'positive' as const,
+        }]
+      : []),
+    {
+      key: 'emergenciesEscalated',
+      title: 'Urgent Escalations',
+      value: valueMetrics?.emergenciesEscalated ?? 0,
+      icon: AlertTriangle,
+      iconColor: 'text-red-500',
+      change: 'Safety or urgent requests',
+      changeType: (valueMetrics?.emergenciesEscalated ?? 0) > 0 ? 'negative' : 'neutral',
+    },
+    {
+      key: 'avgResponseTime',
+      title: 'Avg Response Time',
+      value: formatResponseTime(valueMetrics?.avgResponseTimeSeconds ?? 0),
+      icon: Clock,
+      iconColor: 'text-slate-500',
+      change: 'Owner response to missed calls',
+      changeType: 'neutral',
+    },
+    {
+      key: 'unresolvedUrgentLeads',
+      title: 'Urgent Leads Open',
+      value: valueMetrics?.unresolvedUrgentLeads ?? 0,
+      icon: AlertTriangle,
+      iconColor: 'text-amber-500',
+      change: 'Needs follow-up',
+      changeType: (valueMetrics?.unresolvedUrgentLeads ?? 0) > 0 ? 'negative' : 'positive',
+    },
+  ];
 
   return (
     <div>
@@ -48,58 +190,19 @@ export default function DashboardPage() {
         <ActionItemsCard />
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {showCard('missedCalls') && (
+      {/* Value Metrics */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+        {valueCards.map((card) => (
           <StatCard
-            title="Missed Calls"
-            value={analytics?.missedCalls ?? 0}
-            icon={Phone}
-            iconColor="text-blue-500"
-            change="Last 30 days"
-            changeType="neutral"
+            key={card.key}
+            title={card.title}
+            value={card.value}
+            icon={card.icon}
+            iconColor={card.iconColor}
+            change={card.change}
+            changeType={card.changeType}
           />
-        )}
-        {showCard('conversations') && (
-          <StatCard
-            title="Conversations"
-            value={analytics?.conversations ?? 0}
-            icon={MessageSquare}
-            iconColor="text-purple-500"
-            change="Auto-replied"
-            changeType="positive"
-          />
-        )}
-        {showCard('orders') && (
-          <StatCard
-            title={profile.catalogNoun === 'products' ? 'Reservations' : 'Orders'}
-            value={analytics?.orders ?? 0}
-            icon={ShoppingBag}
-            iconColor="text-green-500"
-            change="Via SMS"
-            changeType="positive"
-          />
-        )}
-        {showCard('revenue') && (
-          <StatCard
-            title="Revenue"
-            value={`$${((analytics?.revenue as number) ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-            icon={DollarSign}
-            iconColor="text-emerald-500"
-            change="Order revenue"
-            changeType="positive"
-          />
-        )}
-        {showCard('meetings') && (
-          <StatCard
-            title="Meetings"
-            value={analytics?.meetings ?? 0}
-            icon={Calendar}
-            iconColor="text-orange-500"
-            change="Scheduled"
-            changeType="positive"
-          />
-        )}
+        ))}
       </div>
 
       {/* POS Status */}
