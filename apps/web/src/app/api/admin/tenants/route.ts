@@ -12,12 +12,29 @@ import { buildConsentMessage } from '@/lib/server/services/consentService';
 const BUSINESS_TYPE_TO_TEMPLATE: Record<string, string> = {
   RESTAURANT: 'restaurant',
   FOOD_TRUCK: 'food_truck',
-  SERVICE: 'salon',
+  SERVICE: 'home_services',
   CONSULTANT: 'consultant',
   MEDICAL: 'medical',
   RETAIL: 'retail',
   OTHER: 'restaurant',
 };
+
+const INDUSTRY_TEMPLATE_KEYS = [
+  'restaurant',
+  'food_truck',
+  'home_services',
+  'hvac',
+  'plumbing',
+  'electrical',
+  'medical',
+  'home_care',
+  'hospice',
+  'salon',
+  'auto_shop',
+  'retail',
+  'consultant',
+  'generic_service',
+] as const;
 
 const blankToUndefined = (value: unknown) => {
   if (typeof value !== 'string') return value;
@@ -91,6 +108,7 @@ export async function POST(request: NextRequest) {
     ownerEmail: z.preprocess(blankToUndefined, z.string().email().optional()),
     ownerPhone: z.preprocess(blankToUndefined, z.string().optional()),
     greeting: z.preprocess(blankToUndefined, z.string().optional()),
+    industryTemplateKey: z.preprocess(blankToUndefined, z.enum(INDUSTRY_TEMPLATE_KEYS).optional()),
   });
 
   let body: z.infer<typeof CreateSchema>;
@@ -108,7 +126,7 @@ export async function POST(request: NextRequest) {
     ownerPhone: body.ownerPhone,
   });
 
-  const templateKey = BUSINESS_TYPE_TO_TEMPLATE[body.businessType] ?? 'restaurant';
+  const templateKey = body.industryTemplateKey ?? BUSINESS_TYPE_TO_TEMPLATE[body.businessType] ?? 'restaurant';
   const template = await prisma.industryTemplate.findUnique({
     where: { industryKey: templateKey },
     select: { followupOpenerDefault: true, voiceGreetingDefault: true },

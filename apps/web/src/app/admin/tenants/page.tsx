@@ -26,6 +26,40 @@ interface AdminTenant {
 const PLANS = ['FREE', 'PRO', 'BUSINESS', 'SCALE'];
 const BUSINESS_TYPES = ['RESTAURANT', 'FOOD_TRUCK', 'SERVICE', 'CONSULTANT', 'MEDICAL', 'RETAIL', 'OTHER'];
 
+const VERTICAL_OPTIONS: Record<string, Array<{ key: string; label: string }>> = {
+  RESTAURANT: [
+    { key: 'restaurant', label: 'Restaurant' },
+    { key: 'food_truck', label: 'Food truck' },
+  ],
+  FOOD_TRUCK: [
+    { key: 'food_truck', label: 'Food truck' },
+  ],
+  SERVICE: [
+    { key: 'home_services', label: 'Home services' },
+    { key: 'hvac', label: 'HVAC' },
+    { key: 'plumbing', label: 'Plumbing' },
+    { key: 'electrical', label: 'Electrical' },
+    { key: 'salon', label: 'Salon / spa' },
+    { key: 'auto_shop', label: 'Auto shop' },
+    { key: 'generic_service', label: 'Generic service business' },
+  ],
+  MEDICAL: [
+    { key: 'medical', label: 'Medical / dental' },
+    { key: 'home_care', label: 'Home care' },
+    { key: 'hospice', label: 'Hospice' },
+  ],
+  RETAIL: [
+    { key: 'retail', label: 'Retail' },
+  ],
+  CONSULTANT: [
+    { key: 'consultant', label: 'Consultant' },
+  ],
+  OTHER: [
+    { key: 'restaurant', label: 'Restaurant' },
+    { key: 'generic_service', label: 'Generic service business' },
+  ],
+};
+
 const PLAN_BADGE: Record<string, string> = {
   FREE:     'bg-slate-700 text-slate-300',
   PRO:      'bg-blue-900 text-blue-300',
@@ -48,6 +82,7 @@ function AddTenantModal({ onClose, onCreated }: AddTenantModalProps) {
     ownerEmail: '',
     ownerPhone: '',
     greeting: '',
+    industryTemplateKey: 'restaurant',
   });
 
   const mutation = useMutation({
@@ -57,6 +92,7 @@ function AddTenantModal({ onClose, onCreated }: AddTenantModalProps) {
       ownerEmail: form.ownerEmail.trim() || undefined,
       ownerPhone: form.ownerPhone.trim() || undefined,
       greeting: form.greeting.trim() || undefined,
+      industryTemplateKey: form.industryTemplateKey || undefined,
     }).then((r) => r.data.data),
     onSuccess: () => {
       toast.success('Tenant created');
@@ -67,6 +103,7 @@ function AddTenantModal({ onClose, onCreated }: AddTenantModalProps) {
   });
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const verticalOptions = VERTICAL_OPTIONS[form.businessType] ?? VERTICAL_OPTIONS.OTHER;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -94,7 +131,11 @@ function AddTenantModal({ onClose, onCreated }: AddTenantModalProps) {
               <label className="block text-xs text-slate-400 mb-1">Business Type</label>
               <select
                 value={form.businessType}
-                onChange={(e) => set('businessType', e.target.value)}
+                onChange={(e) => {
+                  const businessType = e.target.value;
+                  const defaultVertical = VERTICAL_OPTIONS[businessType]?.[0]?.key ?? '';
+                  setForm((f) => ({ ...f, businessType, industryTemplateKey: defaultVertical }));
+                }}
                 className="w-full h-10 rounded-md border border-slate-700 bg-slate-800 text-white px-3 text-sm"
               >
                 {BUSINESS_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -110,6 +151,24 @@ function AddTenantModal({ onClose, onCreated }: AddTenantModalProps) {
                 {PLANS.map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Industry Profile</label>
+            <select
+              value={form.industryTemplateKey}
+              onChange={(e) => set('industryTemplateKey', e.target.value)}
+              className="w-full h-10 rounded-md border border-slate-700 bg-slate-800 text-white px-3 text-sm"
+            >
+              {verticalOptions.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-500">
+              Controls prompts, safety rules, intake fields, and readiness scenarios.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
