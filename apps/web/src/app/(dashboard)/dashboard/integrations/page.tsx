@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { posApi, tenantApi, calcomApi } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/utils';
 import {
-  CheckCircle, XCircle, RefreshCw, Link2, Unlink,
+  CheckCircle, RefreshCw, Link2, Unlink,
   ShoppingBag, Store, UtensilsCrossed, Lock, ArrowRight, Settings2,
   Download, Upload, Clock, AlertTriangle, ChevronRight, Zap, ArrowLeft,
 } from 'lucide-react';

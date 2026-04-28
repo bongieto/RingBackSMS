@@ -3,7 +3,7 @@ import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { OrderStatus } from '@prisma/client';
 import { getOrderById, updateOrderStatus } from '@/lib/server/services/orderService';
 import { refundOrderPayment } from '@/lib/server/services/paymentService';
-import { sendSms, sendSmsWithRetry } from '@/lib/server/services/twilioService';
+import { sendSmsWithRetry } from '@/lib/server/services/twilioService';
 import { looksEncrypted } from '@/lib/server/encryption';
 import { sms as i18nSms } from '@/lib/server/i18n';
 import { prisma } from '@/lib/server/db';

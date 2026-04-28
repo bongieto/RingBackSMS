@@ -6,7 +6,7 @@ import { useOrganization } from '@clerk/nextjs';
 import { Zap, ShoppingBag, Calendar, MessageSquare, ChevronDown, ChevronUp, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

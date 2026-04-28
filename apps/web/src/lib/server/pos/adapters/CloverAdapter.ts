@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult, getAppBaseUrl } from './base';
+import { BasePosAdapter, PosOrderItem, PosOrderResult, SyncResult, getAppBaseUrl } from './base';
 import { logger } from '../../logger';
 
 function getCloverBaseUrl(): string {
@@ -128,7 +128,7 @@ export class CloverAdapter extends BasePosAdapter {
   async createOrder(
     tenantId: string,
     items: PosOrderItem[],
-    metadata: { locationId: string; idempotencyKey: string },
+    _metadata: { locationId: string; idempotencyKey: string },
   ): Promise<PosOrderResult> {
     const tokens = await this.loadTokens(tenantId);
     if (!tokens) throw new Error('Tenant not connected to Clover');

@@ -21,6 +21,14 @@ interface AdminTenant {
   posProvider: string | null;
   createdAt: string;
   _count: { conversations: number; orders: number; contacts: number };
+  health: {
+    status: 'healthy' | 'warning';
+    issues: string[];
+    configPresent: boolean;
+    industryTemplateKey: string | null;
+    enabledFlows: string[];
+    missingDefaultFlows: string[];
+  };
 }
 
 const PLANS = ['FREE', 'PRO', 'BUSINESS', 'SCALE'];
@@ -395,6 +403,7 @@ export default function AdminTenantsPage() {
                   <th className="px-5 py-3">Plan</th>
                   <th className="px-5 py-3">Phone</th>
                   <th className="px-5 py-3">POS</th>
+                  <th className="px-5 py-3">Health</th>
                   <th className="px-5 py-3 text-right">Convos</th>
                   <th className="px-5 py-3 text-right">Orders</th>
                   <th className="px-5 py-3">Status</th>
@@ -441,6 +450,20 @@ export default function AdminTenantsPage() {
                     </td>
                     <td className="px-5 py-3 text-xs text-slate-400">
                       {t.posProvider ?? <span className="text-slate-600">—</span>}
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="space-y-1">
+                        <span className={`text-xs px-2 py-0.5 rounded border ${
+                          t.health.status === 'healthy'
+                            ? 'border-green-700 text-green-400'
+                            : 'border-amber-700 text-amber-300'
+                        }`}>
+                          {t.health.status === 'healthy' ? 'Healthy' : 'Needs repair'}
+                        </span>
+                        <div className="text-[11px] text-slate-500">
+                          {t.health.industryTemplateKey ?? 'default profile'} · {t.health.enabledFlows.join(', ') || 'no flows'}
+                        </div>
+                      </div>
                     </td>
                     <td className="px-5 py-3 text-right text-slate-300">{t._count.conversations}</td>
                     <td className="px-5 py-3 text-right text-slate-300">{t._count.orders}</td>

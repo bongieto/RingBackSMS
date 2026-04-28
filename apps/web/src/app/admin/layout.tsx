@@ -2,7 +2,6 @@ import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 import { AuthTokenProvider } from '@/components/providers/AuthTokenProvider';
 import { ViewSwitcher } from '@/components/layout/ViewSwitcher';
-import { Logo } from '@/components/Logo';
 
 export const dynamic = 'force-dynamic';
 

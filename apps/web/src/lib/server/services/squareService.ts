@@ -1,5 +1,5 @@
 import { Client, Environment } from 'square';
-import { encrypt, decrypt, encryptNullable } from '../encryption';
+import { encrypt, decrypt } from '../encryption';
 import { logger } from '../logger';
 import axios from 'axios';
 import { prisma } from '../db';

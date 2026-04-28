@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ChefHat } from 'lucide-react';
 import { useTenantId } from '@/components/providers/TenantProvider';
@@ -75,7 +75,7 @@ export default function KitchenPage() {
     refetchInterval: 10000,
   });
 
-  const orders = data ?? [];
+  const orders = useMemo(() => data ?? [], [data]);
 
   // Request Notification permission once on mount. Some browsers only
   // honor requests from a user gesture — this attempt is harmless if it

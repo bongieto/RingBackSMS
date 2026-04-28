@@ -1,5 +1,5 @@
 import { auth } from '@clerk/nextjs/server';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { apiError } from './response';
 import { prisma } from './db';
 import { isSuperAdmin } from './agency';

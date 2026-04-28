@@ -6,7 +6,11 @@ import { Plan, BusinessType } from '@prisma/client';
 import { prisma } from '@/lib/server/db';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
-import { sanitizeTenantResponse } from '@/lib/server/services/tenantService';
+import {
+  buildTenantHealthSnapshot,
+  ensureTenantHealth,
+  sanitizeTenantResponse,
+} from '@/lib/server/services/tenantService';
 
 
 export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
@@ -17,6 +21,12 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
     where: { id: params.id },
     include: {
       config: true,
+      flows: {
+        select: {
+          type: true,
+          isEnabled: true,
+        },
+      },
       agency: {
         select: {
           id: true,
@@ -61,6 +71,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
 
   return apiSuccess({
     ...safeTenant,
+    health: buildTenantHealthSnapshot(tenant),
     smsLast30Days,
     recentConversations,
   });
@@ -80,6 +91,7 @@ const UpdateSchema = z.object({
   businessHoursEnd: z.string().optional(),
   timezone: z.string().optional(),
   aiPersonality: z.string().nullable().optional(),
+  repairHealth: z.boolean().optional(),
 });
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
@@ -96,7 +108,18 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   const existing = await prisma.tenant.findUnique({ where: { id: params.id } });
   if (!existing) return apiError('Tenant not found', 404);
 
-  const { greeting, ownerEmail, ownerPhone, businessHoursStart, businessHoursEnd, timezone, aiPersonality, ...tenantFields } = body;
+  if (body.repairHealth) {
+    const health = await ensureTenantHealth(params.id);
+    logger.info('Admin repaired tenant health', {
+      adminAction: true,
+      tenantId: params.id,
+      health,
+    });
+    return apiSuccess({ id: params.id, health });
+  }
+
+  const { greeting, ownerEmail, ownerPhone, businessHoursStart, businessHoursEnd, timezone, aiPersonality, repairHealth, ...tenantFields } = body;
+  void greeting; void ownerEmail; void ownerPhone; void businessHoursStart; void businessHoursEnd; void timezone; void aiPersonality; void repairHealth;
 
   const tenant = await prisma.tenant.update({
     where: { id: params.id },

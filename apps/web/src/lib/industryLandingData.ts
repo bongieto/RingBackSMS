@@ -3,7 +3,6 @@ import {
   Bot,
   Clock,
   MessageCircle,
-  PhoneOff,
   ShieldCheck,
   TrendingUp,
   Zap,

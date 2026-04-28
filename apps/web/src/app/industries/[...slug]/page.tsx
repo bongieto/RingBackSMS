@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { SignedIn, SignedOut } from '@clerk/nextjs';
-import { ArrowRight, Check, ChevronRight, Star, TrendingUp } from 'lucide-react';
+import { ArrowRight, Check, ChevronRight, Star } from 'lucide-react';
 import {
   getIndustryLanding,
   getAllIndustrySlugPaths,

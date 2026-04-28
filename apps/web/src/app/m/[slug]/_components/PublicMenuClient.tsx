@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { MessageSquare, Phone, Plus, Minus, ChevronDown, ChevronUp } from 'lucide-react';
+import { MessageSquare, Phone, Plus, Minus, ChevronDown } from 'lucide-react';
 
 interface ModifierOption {
   id: string;

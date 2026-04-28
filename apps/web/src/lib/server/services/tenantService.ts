@@ -19,6 +19,104 @@ export interface CreateTenantInput {
   timezone?: string;
 }
 
+type TenantHealthInput = {
+  name: string;
+  businessType: BusinessType;
+  config: { industryTemplateKey?: string | null } | null;
+  flows: Array<{ type: string; isEnabled: boolean }>;
+};
+
+export interface TenantHealthSnapshot {
+  status: 'healthy' | 'warning';
+  issues: string[];
+  configPresent: boolean;
+  industryTemplateKey: string | null;
+  enabledFlows: string[];
+  missingDefaultFlows: string[];
+}
+
+function defaultFlowTypesForBusinessType(businessType: BusinessType): FlowType[] {
+  const profile = getProfile(businessType);
+  return Array.from(new Set([...profile.enabledFlows, FlowType.FALLBACK]));
+}
+
+export function buildTenantHealthSnapshot(tenant: TenantHealthInput): TenantHealthSnapshot {
+  const configuredFlows = tenant.flows.map((flow) => flow.type);
+  const enabledFlows = tenant.flows
+    .filter((flow) => flow.isEnabled)
+    .map((flow) => flow.type);
+  const requiredFlows = defaultFlowTypesForBusinessType(tenant.businessType);
+  const missingDefaultFlows = requiredFlows.filter((flow) => !configuredFlows.includes(flow));
+  const issues = [
+    ...(!tenant.config ? ['Missing tenant config'] : []),
+    ...(missingDefaultFlows.length > 0
+      ? [`Missing default flows: ${missingDefaultFlows.join(', ')}`]
+      : []),
+    ...(enabledFlows.length === 0 ? ['No enabled flows'] : []),
+  ];
+
+  return {
+    status: issues.length > 0 ? 'warning' : 'healthy',
+    issues,
+    configPresent: Boolean(tenant.config),
+    industryTemplateKey: tenant.config?.industryTemplateKey ?? null,
+    enabledFlows,
+    missingDefaultFlows,
+  };
+}
+
+export async function ensureTenantHealth(tenantId: string): Promise<TenantHealthSnapshot> {
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    include: {
+      config: { select: { industryTemplateKey: true } },
+      flows: { select: { type: true, isEnabled: true } },
+    },
+  });
+
+  if (!tenant) throw new NotFoundError('Tenant');
+
+  const profile = getProfile(tenant.businessType);
+  const requiredFlows = defaultFlowTypesForBusinessType(tenant.businessType);
+  const existingFlowTypes = new Set(tenant.flows.map((flow) => flow.type));
+
+  if (!tenant.config) {
+    await prisma.tenantConfig.create({
+      data: {
+        tenantId: tenant.id,
+        greeting: profile.defaultGreeting(tenant.name),
+        aiPersonality: profile.aiPersonalityHint,
+        timezone: 'America/Chicago',
+        businessDays: profile.defaultHours.days,
+        businessHoursStart: profile.defaultHours.start,
+        businessHoursEnd: profile.defaultHours.end,
+      },
+    });
+  }
+
+  const missingFlows = requiredFlows.filter((flow) => !existingFlowTypes.has(flow));
+  if (missingFlows.length > 0) {
+    await prisma.flow.createMany({
+      data: missingFlows.map((type) => ({
+        tenantId: tenant.id,
+        type,
+        isEnabled: true,
+      })),
+    });
+  }
+
+  const repaired = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    include: {
+      config: { select: { industryTemplateKey: true } },
+      flows: { select: { type: true, isEnabled: true } },
+    },
+  });
+
+  if (!repaired) throw new NotFoundError('Tenant');
+  return buildTenantHealthSnapshot(repaired);
+}
+
 export async function createTenant(input: CreateTenantInput) {
   const profile = getProfile(input.businessType);
   const slug = await generateUniqueTenantSlug(input.name);
@@ -115,6 +213,13 @@ export async function ensureTenantForClerkOrg(input: {
 }
 
 export async function getTenantById(id: string) {
+  const existing = await prisma.tenant.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!existing) throw new NotFoundError('Tenant');
+  await ensureTenantHealth(existing.id);
+
   const tenant = await prisma.tenant.findUnique({
     where: { id },
     include: {
@@ -138,7 +243,16 @@ export async function getTenantByClerkOrg(clerkOrgId: string) {
   });
 
   if (!tenant) throw new NotFoundError('Tenant');
-  return tenant;
+  await ensureTenantHealth(tenant.id);
+
+  return prisma.tenant.findUniqueOrThrow({
+    where: { clerkOrgId },
+    include: {
+      config: true,
+      flows: { where: { isEnabled: true } },
+      menuItems: { where: { isAvailable: true } },
+    },
+  });
 }
 
 /**

@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import { CheckCircle2, XCircle, AlertCircle, RefreshCw, Wifi } from 'lucide-react';
@@ -316,7 +316,7 @@ function TenantIntegrationsSection() {
   const [providerFilter, setProviderFilter] = useState<'all' | PosProvider | 'none'>('all');
   const [healthFilter, setHealthFilter] = useState<'all' | PosHealth>('all');
 
-  const rows = data ?? [];
+  const rows = useMemo(() => data ?? [], [data]);
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {

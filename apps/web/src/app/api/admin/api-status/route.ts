@@ -63,7 +63,7 @@ export async function GET(_request: NextRequest) {
     toastCount,
     shopifyCount,
     twilioResult,
-    minimaxResult,
+    _minimaxResult,
     stripeResult,
     resendResult,
   ] = await Promise.all([

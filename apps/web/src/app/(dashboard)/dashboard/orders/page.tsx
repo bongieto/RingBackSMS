@@ -3,11 +3,10 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/nextjs';
-import { ShoppingBag, Clock, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { ShoppingBag, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { orderApi } from '@/lib/api';
 import { formatDate, formatRelativeTime, maskPhone, formatCurrency } from '@/lib/utils';

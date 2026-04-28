@@ -1,5 +1,5 @@
 import { Prisma, PosProviderType } from '@prisma/client';
-import { encrypt, decrypt, encryptNullable, decryptNullable } from '../../encryption';
+import { encrypt, decrypt } from '../../encryption';
 import { logger } from '../../logger';
 import { prisma } from '../../db';
 

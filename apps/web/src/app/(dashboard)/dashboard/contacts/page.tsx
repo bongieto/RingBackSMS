@@ -6,9 +6,9 @@ import { useTenantId } from '@/components/providers/TenantProvider';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import {
-  Users, Phone, Mail, Tag, X, Plus, ChevronLeft, ChevronRight,
+  Users, Tag, X, Plus, ChevronLeft, ChevronRight,
   MessageSquare, ShoppingBag, Calendar, Trash2, Send, Download,
-  Clock, User, Star, UserX, UserCheck, FileText, Activity,
+  User, Star, UserX, UserCheck, FileText, Activity,
 } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -666,7 +666,7 @@ function DetailsTab({ name, setName, email, setEmail, status, setStatus, tags, s
 
 // ── Notes Tab ─────────────────────────────────────────────────────────────────
 
-function NotesTab({ contactId, tenantId }: { contactId: string; tenantId: string }) {
+function NotesTab({ contactId }: { contactId: string; tenantId: string }) {
   const queryClient = useQueryClient();
   const [newNote, setNewNote] = useState('');
 

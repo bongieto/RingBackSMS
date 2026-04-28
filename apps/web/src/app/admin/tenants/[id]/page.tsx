@@ -48,6 +48,14 @@ interface TenantDetail {
   smsLast30Days: number;
   recentConversations: Array<{ id: string; callerPhone: string; flowType: string | null; createdAt: string }>;
   _count: { conversations: number; orders: number; contacts: number };
+  health: {
+    status: 'healthy' | 'warning';
+    issues: string[];
+    configPresent: boolean;
+    industryTemplateKey: string | null;
+    enabledFlows: string[];
+    missingDefaultFlows: string[];
+  };
   config: {
     greeting: string;
     timezone: string;
@@ -176,6 +184,17 @@ export default function AdminTenantDetailPage() {
     onError: () => toast.error('Update failed'),
   });
 
+  const repairMutation = useMutation({
+    mutationFn: () =>
+      api.patch(`/admin/tenants/${id}`, { repairHealth: true }).then((r) => r.data.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-tenant', id] });
+      queryClient.invalidateQueries({ queryKey: ['admin-tenants'] });
+      toast.success('Tenant health repaired');
+    },
+    onError: () => toast.error('Repair failed'),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: () => api.delete(`/admin/tenants/${id}`).then((r) => r.data),
     onSuccess: () => {
@@ -302,6 +321,57 @@ export default function AdminTenantDetailPage() {
               </Card>
             ))}
           </div>
+
+          <Card className="bg-slate-900 border-slate-800">
+            <CardHeader>
+              <CardTitle className="text-white text-sm">Tenant Health</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <span className={`text-xs px-2 py-0.5 rounded border ${
+                    tenant.health.status === 'healthy'
+                      ? 'border-green-700 text-green-400'
+                      : 'border-amber-700 text-amber-300'
+                  }`}>
+                    {tenant.health.status === 'healthy' ? 'Healthy' : 'Needs repair'}
+                  </span>
+                  <div className="mt-3 grid gap-2 text-slate-300">
+                    <div className="flex gap-2">
+                      <span className="text-slate-500 w-32">Config</span>
+                      <span>{tenant.health.configPresent ? 'Present' : 'Missing'}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="text-slate-500 w-32">Industry</span>
+                      <span>{tenant.health.industryTemplateKey ?? 'Default from business type'}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <span className="text-slate-500 w-32">Enabled flows</span>
+                      <span>{tenant.health.enabledFlows.join(', ') || 'None'}</span>
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-slate-700 text-slate-300 hover:text-white"
+                  onClick={() => repairMutation.mutate()}
+                  disabled={repairMutation.isPending}
+                >
+                  {repairMutation.isPending ? 'Repairing...' : 'Repair defaults'}
+                </Button>
+              </div>
+              {tenant.health.issues.length > 0 ? (
+                <ul className="space-y-1 text-amber-300">
+                  {tenant.health.issues.map((issue) => (
+                    <li key={issue}>{issue}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-slate-500">Required config and default flows are present.</p>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Recent conversations */}
           <Card className="bg-slate-900 border-slate-800">

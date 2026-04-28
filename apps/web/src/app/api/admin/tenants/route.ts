@@ -6,7 +6,7 @@ import { BusinessType, Plan } from '@prisma/client';
 import { prisma } from '@/lib/server/db';
 import { apiError, apiPaginated, apiCreated } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
-import { createTenant } from '@/lib/server/services/tenantService';
+import { buildTenantHealthSnapshot, createTenant } from '@/lib/server/services/tenantService';
 import { buildConsentMessage } from '@/lib/server/services/consentService';
 
 const BUSINESS_TYPE_TO_TEMPLATE: Record<string, string> = {
@@ -82,6 +82,17 @@ export async function GET(request: NextRequest) {
         twilioPhoneNumber: true,
         posProvider: true,
         createdAt: true,
+        config: {
+          select: {
+            industryTemplateKey: true,
+          },
+        },
+        flows: {
+          select: {
+            type: true,
+            isEnabled: true,
+          },
+        },
         _count: {
           select: {
             conversations: true,
@@ -94,7 +105,12 @@ export async function GET(request: NextRequest) {
     prisma.tenant.count({ where }),
   ]);
 
-  return apiPaginated(tenants, total, page, pageSize);
+  const tenantsWithHealth = tenants.map((tenant) => ({
+    ...tenant,
+    health: buildTenantHealthSnapshot(tenant),
+  }));
+
+  return apiPaginated(tenantsWithHealth, total, page, pageSize);
 }
 
 export async function POST(request: NextRequest) {

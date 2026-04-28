@@ -10,7 +10,6 @@ import {
   Settings,
   UtensilsCrossed,
   Briefcase,
-  Zap,
   CreditCard,
   Plug2,
   PhoneForwarded,

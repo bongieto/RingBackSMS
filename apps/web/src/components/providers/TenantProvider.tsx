@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useOrganization } from '@clerk/nextjs';
 import { Loader2 } from 'lucide-react';
 import { tenantApi } from '@/lib/api';
@@ -31,19 +31,19 @@ const TenantContext = createContext<TenantContextType>({
 export function TenantProvider({ children }: { children: React.ReactNode }) {
   const { organization, isLoaded } = useOrganization();
   const router = useRouter();
-  const pathname = usePathname();
   const [resolvedTenantId, setResolvedTenantId] = useState<string | undefined>(undefined);
   const [businessType, setBusinessType] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   // Track the org id we last resolved so we can reset on org switch
   const lastOrgId = useRef<string | null>(null);
 
+  const organizationId = organization?.id;
   const metadataTenantId = organization?.publicMetadata?.tenantId as string | undefined;
 
   useEffect(() => {
     if (!isLoaded) return;
 
-    if (!organization) {
+    if (!organizationId) {
       setIsLoading(false);
       return;
     }
@@ -52,12 +52,12 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     // the loading spinner while we resolve the new tenant. This
     // prevents the dashboard from briefly rendering with stale data
     // from the previous org.
-    if (lastOrgId.current && lastOrgId.current !== organization.id) {
+    if (lastOrgId.current && lastOrgId.current !== organizationId) {
       setResolvedTenantId(undefined);
       setBusinessType(undefined);
       setIsLoading(true);
     }
-    lastOrgId.current = organization.id;
+    lastOrgId.current = organizationId;
 
     let cancelled = false;
 
@@ -124,7 +124,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [isLoaded, organization?.id, metadataTenantId, router]);
+  }, [isLoaded, organizationId, metadataTenantId, resolvedTenantId, router]);
 
   return (
     <TenantContext.Provider value={{ tenantId: resolvedTenantId, businessType, isLoading }}>

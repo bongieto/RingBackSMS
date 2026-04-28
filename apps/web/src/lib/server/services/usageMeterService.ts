@@ -4,7 +4,6 @@ import Stripe from 'stripe';
 import { PLAN_LIMITS } from '@ringback/shared-types';
 import { Plan } from '@ringback/shared-types';
 import { logger } from '../logger';
-import { PlanLimitError } from '../errors';
 import { prisma } from '../db';
 import { buildRedisOptions } from '../redisConfig';
 

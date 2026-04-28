@@ -1,7 +1,7 @@
 import { Client, Environment, CatalogObject } from 'square';
 import axios from 'axios';
 import { createHash } from 'crypto';
-import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult, getAppBaseUrl } from './base';
+import { BasePosAdapter, PosOrderItem, PosOrderResult, SyncResult, getAppBaseUrl } from './base';
 import { encrypt } from '../../encryption';
 import { logger } from '../../logger';
 

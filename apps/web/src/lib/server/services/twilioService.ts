@@ -1,5 +1,5 @@
 import twilio from 'twilio';
-import { encrypt, decrypt, encryptNullable, decryptNullable } from '../encryption';
+import { encrypt, decrypt, decryptNullable } from '../encryption';
 import { logger } from '../logger';
 import { prisma } from '../db';
 

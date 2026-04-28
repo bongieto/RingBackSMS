@@ -20,9 +20,7 @@ import {
   startOfMonth,
   endOfMonth,
   addWeeks,
-  subWeeks,
   addMonths,
-  subMonths,
   eachDayOfInterval,
   isSameDay,
   isSameMonth,
@@ -166,7 +164,7 @@ export default function MeetingsPage() {
     refetchInterval: 60_000,
   });
 
-  const meetings = data?.data ?? [];
+  const meetings = useMemo(() => data?.data ?? [], [data?.data]);
 
   // Mutations
   const updateMutation = useMutation({

@@ -2,7 +2,6 @@ import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'crypt
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12; // 96-bit IV for GCM
-const TAG_LENGTH = 16; // 128-bit auth tag
 
 function getEncryptionKey(): Buffer {
   const key = process.env.ENCRYPTION_KEY;

@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import twilio from 'twilio';
 import { prisma } from '@/lib/server/db';
-import { sendSms, sendSmsWithRetry } from '@/lib/server/services/twilioService';
+import { sendSms } from '@/lib/server/services/twilioService';
 import { logger } from '@/lib/server/logger';
 import { checkRateLimit } from '@/lib/server/rateLimit';
 import { getValidationToken } from '@/lib/server/services/twilioService';

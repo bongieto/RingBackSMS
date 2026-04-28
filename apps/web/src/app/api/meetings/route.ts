@@ -3,7 +3,7 @@ import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { MeetingStatus } from '@prisma/client';
 import { z } from 'zod';
-import { apiSuccess, apiCreated, apiPaginated, apiError } from '@/lib/server/response';
+import { apiCreated, apiPaginated, apiError } from '@/lib/server/response';
 import { ValidationError } from '@/lib/server/errors';
 import { sendMeetingRequestEmail } from '@/lib/server/services/emailService';
 import { logger } from '@/lib/server/logger';

@@ -16,7 +16,7 @@ import { logger } from '@/lib/server/logger';
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { provider: string } },
+  { params: _params }: { params: { provider: string } },
 ) {
   const tenantId = new URL(request.url).searchParams.get('tenantId') ?? '';
   const authResult = await verifyTenantAccess(tenantId);

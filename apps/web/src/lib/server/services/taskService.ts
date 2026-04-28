@@ -1,4 +1,4 @@
-import { Prisma, Task, TaskPriority, TaskSource, TaskStatus, OrderStatus, MeetingStatus, HandoffStatus } from '@prisma/client';
+import { Task, TaskPriority, TaskSource, TaskStatus, OrderStatus, MeetingStatus, HandoffStatus } from '@prisma/client';
 import { prisma } from '../db';
 import { logger } from '../logger';
 

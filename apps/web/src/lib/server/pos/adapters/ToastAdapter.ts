@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { BasePosAdapter, PosTokenData, PosOrderItem, PosOrderResult, SyncResult } from './base';
+import { BasePosAdapter, PosOrderItem, PosOrderResult, SyncResult } from './base';
 import { logger } from '../../logger';
 
 const TOAST_API_BASE = 'https://ws-api.toasttab.com';
