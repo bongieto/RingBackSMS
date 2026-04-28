@@ -21,6 +21,23 @@ const FLOW_COLORS: Record<string, 'success' | 'secondary' | 'outline' | 'default
   CUSTOM: 'default',
 };
 
+interface ConversationIntake {
+  verticalLabel: string;
+  captured: Array<{ key: string; label: string; value: string }>;
+  missing?: Array<{ key: string; label: string }>;
+}
+
+interface ConversationListItem {
+  id: string;
+  callerPhone: string;
+  flowType: string | null;
+  isActive: boolean;
+  messages: unknown[];
+  updatedAt: string;
+  handoffStatus?: string;
+  intake?: unknown;
+}
+
 function getApiErrorMessage(error: unknown): string {
   if (!axios.isAxiosError(error)) return 'Unable to load conversations. Please refresh and try again.';
   const status = error.response?.status;
@@ -28,6 +45,61 @@ function getApiErrorMessage(error: unknown): string {
   if (status === 403) return 'This organization does not have access to the selected tenant.';
   if (status === 404) return 'No tenant was found for this organization.';
   return 'Unable to load conversations. Please refresh and try again.';
+}
+
+function readConversationIntake(value: unknown): ConversationIntake | null {
+  if (!value || typeof value !== 'object') return null;
+  const intake = value as Partial<ConversationIntake>;
+  if (!Array.isArray(intake.captured) || intake.captured.length === 0) return null;
+  const captured = intake.captured.filter((field) =>
+    field &&
+    typeof field.key === 'string' &&
+    typeof field.label === 'string' &&
+    typeof field.value === 'string',
+  );
+  if (captured.length === 0) return null;
+  return {
+    verticalLabel: typeof intake.verticalLabel === 'string' ? intake.verticalLabel : 'Lead',
+    captured,
+    missing: Array.isArray(intake.missing)
+      ? intake.missing.filter((field) => field && typeof field.key === 'string' && typeof field.label === 'string')
+      : [],
+  };
+}
+
+function formatIntakeSummary(intake: ConversationIntake): string {
+  const priority = [
+    'issue',
+    'system_type',
+    'care_need',
+    'relationship',
+    'vehicle',
+    'tow_needed',
+    'service',
+    'product',
+    'variant',
+    'urgency',
+    'preferred_time',
+    'start_date',
+    'address',
+    'location',
+    'hold_request',
+  ];
+  const fields = [...intake.captured].sort((a, b) => {
+    const ai = priority.indexOf(a.key);
+    const bi = priority.indexOf(b.key);
+    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+  });
+  return fields.slice(0, 3).map((field) => field.value).join(' · ');
+}
+
+function intakeSearchText(intake: ConversationIntake | null): string {
+  if (!intake) return '';
+  return [
+    intake.verticalLabel,
+    ...intake.captured.flatMap((field) => [field.label, field.value]),
+    ...(intake.missing ?? []).map((field) => field.label),
+  ].join(' ');
 }
 
 export default function ConversationsPage() {
@@ -61,9 +133,12 @@ export default function ConversationsPage() {
     staleTime: 30_000,
   });
 
-  const filtered = conversations.filter((c: { callerPhone: string }) =>
-    c.callerPhone.includes(search)
-  );
+  const filtered = conversations.filter((c: ConversationListItem) => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return true;
+    const intake = readConversationIntake(c.intake);
+    return `${c.callerPhone} ${intakeSearchText(intake)}`.toLowerCase().includes(needle);
+  });
 
   return (
     <div>
@@ -100,9 +175,11 @@ export default function ConversationsPage() {
             </div>
           ) : (
             <div className="divide-y">
-              {filtered.map((conv: { id: string; callerPhone: string; flowType: string | null; isActive: boolean; messages: unknown[]; updatedAt: string; handoffStatus?: string }) => {
+              {filtered.map((conv: ConversationListItem) => {
                 const messages = Array.isArray(conv.messages) ? conv.messages : [];
                 const lastMsg = messages[messages.length - 1] as { content?: string } | undefined;
+                const intake = readConversationIntake(conv.intake);
+                const intakeSummary = intake ? formatIntakeSummary(intake) : null;
                 return (
                   <Link
                     key={conv.id}
@@ -125,6 +202,16 @@ export default function ConversationsPage() {
                             Human
                           </Badge>
                         )}
+                        {intake && (
+                          <Badge variant="outline" className="text-xs">
+                            {intake.verticalLabel}
+                          </Badge>
+                        )}
+                        {intake?.missing && intake.missing.length > 0 && (
+                          <Badge variant="outline" className="text-xs text-amber-600">
+                            Missing {intake.missing.length}
+                          </Badge>
+                        )}
                         {conv.isActive && (
                           <span className="h-2 w-2 rounded-full bg-green-500 inline-block" />
                         )}
@@ -136,6 +223,11 @@ export default function ConversationsPage() {
                           return null;
                         })()}
                       </div>
+                      {intakeSummary && (
+                        <p className="mb-0.5 truncate text-xs font-medium text-foreground">
+                          {intakeSummary}
+                        </p>
+                      )}
                       <p className="text-xs text-muted-foreground truncate">
                         {lastMsg?.content ?? 'No messages'}
                       </p>
