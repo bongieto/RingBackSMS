@@ -309,6 +309,12 @@ export default function AiReadinessPage() {
     [failedResults],
   );
   const status = readinessStatus(readiness?.score ?? 0);
+  const savedIndustryOverride = config?.industryTemplateKey ?? '';
+  const hasIndustryOverride = savedIndustryOverride.length > 0;
+  const hasPendingIndustryChange = industryTemplateKey !== savedIndustryOverride;
+  const selectedIndustryLabel =
+    INDUSTRY_OPTIONS.find((option) => option.key === industryTemplateKey)?.label ??
+    'Auto-detect from business type and website';
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -372,8 +378,18 @@ export default function AiReadinessPage() {
               <div className="space-y-5">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
-                    <div className="text-sm text-muted-foreground">Detected industry</div>
-                    <div className="text-2xl font-bold">{readiness.verticalLabel}</div>
+                    <div className="text-sm text-muted-foreground">Active industry profile</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-2xl font-bold">{readiness.verticalLabel}</div>
+                      <Badge variant="outline" className="text-xs">
+                        {hasIndustryOverride ? 'Manual override' : 'Auto-selected'}
+                      </Badge>
+                    </div>
+                    <div className="mt-1 text-sm text-muted-foreground">
+                      {hasIndustryOverride
+                        ? 'Using the profile saved below.'
+                        : 'Selected automatically from the tenant business type, name, and website context.'}
+                    </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="text-right">
@@ -418,12 +434,12 @@ export default function AiReadinessPage() {
               Industry Settings
             </CardTitle>
             <CardDescription>
-              Choose the closest vertical so prompts, safety rules, and tests match the business.
+              We auto-select the active profile. Change it only if the summary above looks wrong.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="industryTemplateKey">Industry profile</Label>
+              <Label htmlFor="industryTemplateKey">Profile override</Label>
               <select
                 id="industryTemplateKey"
                 value={industryTemplateKey}
@@ -436,10 +452,16 @@ export default function AiReadinessPage() {
                   </option>
                 ))}
               </select>
+              <p className="text-xs text-muted-foreground">
+                {industryTemplateKey
+                  ? `Override selected: ${selectedIndustryLabel}. Save settings to apply it to prompts, safety rules, intake fields, and readiness tests.`
+                  : 'No override selected. The app will keep choosing the best profile automatically.'}
+                {hasPendingIndustryChange ? ' Unsaved change.' : ''}
+              </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="customKeywords">Custom escalation keywords</Label>
+              <Label htmlFor="customKeywords">Always hand off when customer mentions</Label>
               <Input
                 id="customKeywords"
                 value={customKeywords}
@@ -447,7 +469,7 @@ export default function AiReadinessPage() {
                 placeholder="refund, angry, manager, urgent"
               />
               <p className="text-xs text-muted-foreground">
-                Comma-separated words that should stop automation and create a follow-up task.
+                Comma-separated words that stop automation and create a staff follow-up task.
               </p>
             </div>
           </CardContent>

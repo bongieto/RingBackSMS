@@ -191,6 +191,77 @@ function inferPhoneConfirmation(message: string): string | null {
   ]);
 }
 
+function fieldLooksLike(field: IntakeField, patterns: RegExp[]): boolean {
+  const text = `${field.key} ${field.label}`.replace(/[_-]/g, ' ');
+  return patterns.some((pattern) => pattern.test(text));
+}
+
+function inferGateCode(message: string): string | null {
+  return firstMatch(message, [
+    /\b(?:gate|door|access|entry)\s+(?:code|pin)\s*(?:is|:)?\s*([A-Za-z0-9#*-]{3,12})\b/i,
+    /\b(?:code|pin)\s*(?:is|:)?\s*([A-Za-z0-9#*-]{3,12})\b/i,
+  ]);
+}
+
+function inferPetsOnSite(message: string): string | null {
+  if (has(message, /\b(?:no pets?|no dogs?|no cats?)\b/i)) return 'no pets';
+  return firstMatch(message, [
+    /\b((?:\d+\s+)?(?:dog|dogs|cat|cats|pet|pets)(?:\s+(?:inside|outside|on site|at home))?)\b/i,
+    /\b(?:there (?:is|are)|we have|I have)\s+((?:\d+\s+)?(?:dog|dogs|cat|cats|pet|pets))\b/i,
+  ]);
+}
+
+function inferParkingInstructions(message: string): string | null {
+  return firstMatch(message, [
+    /\b((?:park|parking)\s+(?:in|on|at|by|behind|near)\s+[^.!,;]{3,80})/i,
+    /\b((?:use|enter through|go through)\s+(?:the\s+)?(?:side|back|front|garage|alley|driveway)[^.!,;]{0,60})/i,
+  ]);
+}
+
+function inferBudgetRange(message: string): string | null {
+  return firstMatch(message, [
+    /\b(?:budget|price range)\s*(?:is|:)?\s*(\$?\d[\d,]*(?:\s*[-–]\s*\$?\d[\d,]*)?)\b/i,
+    /\b(?:under|below|less than|up to)\s+(\$?\d[\d,]*)\b/i,
+    /\b(\$?\d[\d,]*\s*[-–]\s*\$?\d[\d,]*)\b/,
+  ]);
+}
+
+function inferPreferredTechnician(message: string): string | null {
+  return firstMatch(message, [
+    /\b(?:prefer|request|with|send)\s+([A-Z][a-z]{2,20})(?:\s+(?:again|please))?\b/,
+    /\b(?:same tech|same technician|first available|any technician|no preference)\b/i,
+  ]);
+}
+
+function inferSerialNumber(message: string): string | null {
+  return firstMatch(message, [
+    /\b(?:serial|model|unit)\s*(?:number|#|no\.?)?\s*(?:is|:)?\s*([A-Za-z0-9-]{4,30})\b/i,
+  ]);
+}
+
+function inferReferencePhoto(message: string): string | null {
+  if (has(message, /\b(?:photo|picture|image|screenshot|pic)\s+(?:attached|sent|included)\b/i)) return 'attached';
+  if (has(message, /\b(?:can|will|I'll|I can)\s+send\s+(?:a\s+)?(?:photo|picture|image|screenshot|pic)\b/i)) return 'customer can send photo';
+  return null;
+}
+
+function inferCustomConfiguredField(field: IntakeField, message: string): string | null {
+  if (fieldLooksLike(field, [/\b(gate|door|access|entry)\s*(code|pin)?\b/i, /\bcode\b/i])) {
+    return inferGateCode(message);
+  }
+  if (fieldLooksLike(field, [/\b(pet|dog|cat|animal)s?\b/i])) return inferPetsOnSite(message);
+  if (fieldLooksLike(field, [/\b(parking|driveway|entrance|entry|access instruction)s?\b/i])) {
+    return inferParkingInstructions(message);
+  }
+  if (fieldLooksLike(field, [/\b(budget|price range|spend|cost range)\b/i])) return inferBudgetRange(message);
+  if (fieldLooksLike(field, [/\b(preferred|requested)?\s*(tech|technician|provider|stylist|staff)\b/i])) {
+    return inferPreferredTechnician(message);
+  }
+  if (fieldLooksLike(field, [/\b(serial|model|unit)\s*(number|#|no)?\b/i])) return inferSerialNumber(message);
+  if (fieldLooksLike(field, [/\b(photo|picture|image|screenshot|reference)\b/i])) return inferReferencePhoto(message);
+  return null;
+}
+
 function requiredForFlow(flowType: FlowType): Array<'booking' | 'quote' | 'handoff'> {
   if (flowType === FlowType.MEETING) return ['booking'];
   if (flowType === FlowType.INQUIRY) return ['quote'];
@@ -269,6 +340,11 @@ export function extractVerticalIntake(input: {
     setField(fields, profile.intakeFields, 'product', inferRetailProduct(message), 'medium');
     setField(fields, profile.intakeFields, 'variant', inferRetailVariant(message), 'medium');
     setField(fields, profile.intakeFields, 'hold_request', inferHoldRequest(message), 'high');
+  }
+
+  for (const field of profile.intakeFields) {
+    if (fields.has(field.key)) continue;
+    setField(fields, profile.intakeFields, field.key, inferCustomConfiguredField(field, message), 'medium');
   }
 
   const captured = [...fields.values()].filter((field) =>

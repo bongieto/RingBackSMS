@@ -100,4 +100,31 @@ describe('extractVerticalIntake', () => {
       ]),
     );
   });
+
+  it('captures common custom service fields when they are configured', () => {
+    const ctx = tenant('hvac');
+    ctx.config = {
+      intakeFieldOverrides: [
+        { key: 'gate_code', label: 'Gate code', requiredFor: ['booking'], examples: ['Gate code is 4451'] },
+        { key: 'pets_on_site', label: 'Pets on site', requiredFor: ['booking'], examples: ['two dogs inside'] },
+        { key: 'parking_instructions', label: 'Parking instructions', requiredFor: ['booking'], examples: ['park in driveway'] },
+        { key: 'equipment_serial_number', label: 'Equipment serial number', requiredFor: ['quote'], examples: ['model ABC123'] },
+      ],
+    } as TenantContext['config'];
+
+    const intake = extractVerticalIntake({
+      tenantContext: ctx,
+      inboundMessage: 'AC is out at 123 Main St. Gate code is 4451, two dogs inside, park in the driveway. Model ABC123.',
+      flowType: FlowType.MEETING,
+    });
+
+    expect(intake?.captured).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'gate_code', value: '4451' }),
+        expect.objectContaining({ key: 'pets_on_site', value: expect.stringMatching(/dogs/i) }),
+        expect.objectContaining({ key: 'parking_instructions', value: expect.stringMatching(/park in the driveway/i) }),
+        expect.objectContaining({ key: 'equipment_serial_number', value: 'ABC123' }),
+      ]),
+    );
+  });
 });

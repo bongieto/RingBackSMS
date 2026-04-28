@@ -1535,6 +1535,16 @@ async function processInboundSmsInner(
     });
   }
 
+  {
+    const { enrichIntakeWithStructuredAi } = await import('./intakeEnrichmentService');
+    result.intake = await enrichIntakeWithStructuredAi({
+      tenantContext,
+      inboundMessage,
+      flowType: result.flowType,
+      intake: result.intake,
+    });
+  }
+
   // Strip emoji + non-GSM-7 pictographs before sending. A single emoji
   // bumps the whole SMS to UCS-2 encoding, halving the 160-char
   // segment size and doubling cost. LLM replies regularly leak
