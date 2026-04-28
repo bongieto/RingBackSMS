@@ -111,6 +111,12 @@ const CATEGORY_LABELS: Record<ReadinessCategory, string> = {
   impossible: 'Boundary',
 };
 
+const REQUIRED_FOR_LABELS: Record<string, string> = {
+  booking: 'Ask before booking',
+  quote: 'Ask before quoting',
+  handoff: 'Include for staff follow-up',
+};
+
 interface IntakeDraftField {
   key: string;
   label: string;
@@ -339,7 +345,7 @@ export default function AiReadinessPage() {
     <div>
       <Header
         title="AI Readiness"
-        description="Tune the tenant's industry profile, safety handoff rules, and readiness gaps."
+        description="Choose what the AI should collect, when it should notify staff, and check that common customer conversations work."
         action={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -366,7 +372,7 @@ export default function AiReadinessPage() {
               Readiness Summary
             </CardTitle>
             <CardDescription>
-              This uses the same industry scenario pack as the admin Bot Tester.
+              We test sample customer conversations for this kind of business so you can see whether the AI is ready to answer safely.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -431,10 +437,10 @@ export default function AiReadinessPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Settings2 className="h-5 w-5 text-slate-500" />
-              Industry Settings
+              Business Type & AI Behavior
             </CardTitle>
             <CardDescription>
-              We auto-select the active profile. Change it only if the summary above looks wrong.
+              This controls the AI's default wording, safety rules, details to collect, and readiness tests.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -458,6 +464,9 @@ export default function AiReadinessPage() {
                   : 'No override selected. The app will keep choosing the best profile automatically.'}
                 {hasPendingIndustryChange ? ' Unsaved change.' : ''}
               </p>
+              <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
+                Most businesses can leave this on auto-detect. Use the dropdown only when the active profile above does not match the business.
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -469,7 +478,7 @@ export default function AiReadinessPage() {
                 placeholder="refund, angry, manager, urgent"
               />
               <p className="text-xs text-muted-foreground">
-                Comma-separated words that stop automation and create a staff follow-up task.
+                Example: refund, complaint, manager, chargeback. If a customer uses one of these words, the AI stops and creates a staff follow-up task.
               </p>
             </div>
           </CardContent>
@@ -481,10 +490,10 @@ export default function AiReadinessPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Bot className="h-5 w-5 text-purple-500" />
-              AI Instructions
+              Special Instructions for the AI
             </CardTitle>
             <CardDescription>
-              Tenant-specific behavior that is appended to the AI system prompt.
+              Optional rules for this business, written in plain English. Use this for preferences that are not covered by the fields below.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -494,7 +503,7 @@ export default function AiReadinessPage() {
               maxLength={500}
               rows={7}
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              placeholder={'Example: Always ask HVAC callers whether the issue is heating, cooling, or maintenance. Never promise same-day service unless the owner confirms.'}
+              placeholder={'Example: If someone asks about catering, collect the date, guest count, allergies, and pickup time. Never promise same-day service unless staff confirms.'}
             />
             <div className="text-xs text-muted-foreground">
               {customAiInstructions.length} / 500 characters
@@ -506,18 +515,18 @@ export default function AiReadinessPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-red-500" />
-              Safety Boundary
+              Emergency & Safety Rules
             </CardTitle>
             <CardDescription>
-              Emergency handling is policy-driven and runs before normal intent routing.
+              These rules run before normal AI replies, so urgent or risky messages are handled consistently.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-900">
-              Emergency cases should tell customers that this business is not an emergency service and that they should call 911 for immediate danger.
+              If a customer describes immediate danger, the AI tells them this business is not an emergency service and instructs them to call 911.
             </div>
             <div className="text-muted-foreground">
-              Industry policies cover medical emergencies, home-service hazards, food allergy safety, and legal/financial boundaries. Custom escalation keywords are for tenant-specific handoffs.
+              Built-in safety rules cover medical emergencies, home-service hazards, severe food allergy concerns, and legal or financial boundaries.
             </div>
           </CardContent>
         </Card>
@@ -529,10 +538,16 @@ export default function AiReadinessPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <ClipboardList className="h-5 w-5 text-blue-500" />
-                Intake Fields
+                Details the AI Should Collect
               </CardTitle>
+              <CardDescription>
+                These are the customer details the AI watches for in normal text messages. Captured details show up on the conversation for staff.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
+              <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+                Example: an HVAC business may collect issue, urgency, address, preferred time, gate code, and pets on site.
+              </div>
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
@@ -544,7 +559,7 @@ export default function AiReadinessPage() {
                   ])}
                 >
                   <Plus className="mr-2 h-4 w-4" />
-                  Add field
+                  Add detail
                 </Button>
                 <Button
                   type="button"
@@ -582,21 +597,30 @@ export default function AiReadinessPage() {
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="space-y-1">
-                          <Label>Key</Label>
+                          <Label>System key</Label>
                           <Input value={field.key} onChange={(event) => setIntakeFields((fields) => fields.map((f, i) => i === index ? { ...f, key: event.target.value } : f))} />
+                          <p className="text-xs text-muted-foreground">
+                            Short internal name, like gate_code or preferred_time.
+                          </p>
                         </div>
                         <div className="space-y-1">
-                          <Label>Label</Label>
+                          <Label>Staff label</Label>
                           <Input value={field.label} onChange={(event) => setIntakeFields((fields) => fields.map((f, i) => i === index ? { ...f, label: event.target.value } : f))} />
+                          <p className="text-xs text-muted-foreground">
+                            Friendly name shown in conversations and tasks.
+                          </p>
                         </div>
                       </div>
                       <div className="space-y-1">
-                        <Label>Examples</Label>
+                        <Label>Example customer wording</Label>
                         <Input
                           value={field.examples}
                           onChange={(event) => setIntakeFields((fields) => fields.map((f, i) => i === index ? { ...f, examples: event.target.value } : f))}
-                          placeholder="AC not cooling, tomorrow morning"
+                          placeholder="gate code is 4451, two dogs inside"
                         />
+                        <p className="text-xs text-muted-foreground">
+                          A few examples help the AI understand what this detail looks like in a text message.
+                        </p>
                       </div>
                       <div className="flex flex-wrap gap-3 text-sm">
                         {['booking', 'quote', 'handoff'].map((requiredFor) => (
@@ -612,7 +636,7 @@ export default function AiReadinessPage() {
                                 return { ...f, requiredFor: next };
                               }))}
                             />
-                            Required for {requiredFor}
+                            {REQUIRED_FOR_LABELS[requiredFor]}
                           </label>
                         ))}
                       </div>
@@ -627,8 +651,11 @@ export default function AiReadinessPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Plug2 className="h-5 w-5 text-emerald-500" />
-                Recommended Integrations
+                Suggested Connections
               </CardTitle>
+              <CardDescription>
+                Optional tools that can make this business easier to run, based on the active profile.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-2">
@@ -644,124 +671,137 @@ export default function AiReadinessPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Escalation Policies</CardTitle>
+              <CardTitle>Advanced: When the AI Should Stop and Notify Staff</CardTitle>
+              <CardDescription>
+                Most businesses can leave these defaults alone. Open this only when you need custom staff handoff rules.
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEscalationRules((rules) => [
-                    ...rules,
-                    {
-                      id: `custom_rule_${rules.length + 1}`,
-                      label: 'Custom escalation',
-                      severity: 'HIGH',
-                      keywords: '',
-                      customerReply: "I'm connecting you with a team member who can help. Someone will follow up with you shortly!",
-                      ownerSubject: 'Customer needs follow-up',
-                      ownerMessage: '',
-                      taskTitle: '',
-                      taskPriority: 'HIGH',
-                      stopAutomation: true,
-                      enabled: true,
-                    },
-                  ])}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add rule
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEscalationRules(escalationToDraft(readiness.escalationPolicies))}
-                >
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                  Restore defaults
-                </Button>
-              </div>
-              <div className="space-y-3">
-                {escalationRules.map((rule, index) => (
-                  <div key={`${rule.id}-${index}`} className="rounded-lg border p-3 space-y-3">
-                    <div className="flex items-center justify-between gap-3">
+            <CardContent>
+              <details className="space-y-3">
+                <summary className="cursor-pointer rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium">
+                  Show advanced handoff rules
+                </summary>
+                <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+                  These rules decide when the AI should stop replying, send a safe holding message, and create a staff follow-up task.
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEscalationRules((rules) => [
+                      ...rules,
+                      {
+                        id: `custom_rule_${rules.length + 1}`,
+                        label: 'Custom escalation',
+                        severity: 'HIGH',
+                        keywords: '',
+                        customerReply: "I'm connecting you with a team member who can help. Someone will follow up with you shortly!",
+                        ownerSubject: 'Customer needs follow-up',
+                        ownerMessage: '',
+                        taskTitle: '',
+                        taskPriority: 'HIGH',
+                        stopAutomation: true,
+                        enabled: true,
+                      },
+                    ])}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add rule
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEscalationRules(escalationToDraft(readiness.escalationPolicies))}
+                  >
+                    <RotateCcw className="mr-2 h-4 w-4" />
+                    Restore defaults
+                  </Button>
+                </div>
+                <div className="space-y-3">
+                  {escalationRules.map((rule, index) => (
+                    <div key={`${rule.id}-${index}`} className="rounded-lg border p-3 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={rule.enabled}
+                            onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, enabled: event.target.checked } : r))}
+                          />
+                          Enabled
+                        </label>
+                        <Badge variant="outline">{rule.severity}</Badge>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label>Rule ID</Label>
+                          <Input value={rule.id} onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, id: event.target.value } : r))} />
+                          <p className="text-xs text-muted-foreground">Internal name for this rule.</p>
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Rule name</Label>
+                          <Input value={rule.label} onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, label: event.target.value } : r))} />
+                          <p className="text-xs text-muted-foreground">Friendly name shown to staff.</p>
+                        </div>
+                        <div className="space-y-1">
+                          <Label>How serious is this?</Label>
+                          <select
+                            value={rule.severity}
+                            onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, severity: event.target.value } : r))}
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          >
+                            {['LOW', 'NORMAL', 'HIGH', 'EMERGENCY'].map((severity) => (
+                              <option key={severity} value={severity}>{severity}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Staff task priority</Label>
+                          <select
+                            value={rule.taskPriority}
+                            onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, taskPriority: event.target.value } : r))}
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          >
+                            {['NORMAL', 'HIGH', 'URGENT'].map((priority) => (
+                              <option key={priority} value={priority}>{priority}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Customer words that trigger this rule</Label>
+                        <Input
+                          value={rule.keywords}
+                          onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, keywords: event.target.value } : r))}
+                          placeholder="refund, manager, urgent"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>What the AI says to the customer</Label>
+                        <textarea
+                          value={rule.customerReply}
+                          onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, customerReply: event.target.value } : r))}
+                          rows={3}
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Staff notification subject</Label>
+                        <Input value={rule.ownerSubject} onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, ownerSubject: event.target.value } : r))} />
+                      </div>
                       <label className="flex items-center gap-2 text-sm">
                         <input
                           type="checkbox"
-                          checked={rule.enabled}
-                          onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, enabled: event.target.checked } : r))}
+                          checked={rule.stopAutomation}
+                          onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, stopAutomation: event.target.checked } : r))}
                         />
-                        Enabled
+                        Stop AI replies and hand off to staff
                       </label>
-                      <Badge variant="outline">{rule.severity}</Badge>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <Label>Rule ID</Label>
-                        <Input value={rule.id} onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, id: event.target.value } : r))} />
-                      </div>
-                      <div className="space-y-1">
-                        <Label>Label</Label>
-                        <Input value={rule.label} onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, label: event.target.value } : r))} />
-                      </div>
-                      <div className="space-y-1">
-                        <Label>Severity</Label>
-                        <select
-                          value={rule.severity}
-                          onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, severity: event.target.value } : r))}
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        >
-                          {['LOW', 'NORMAL', 'HIGH', 'EMERGENCY'].map((severity) => (
-                            <option key={severity} value={severity}>{severity}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="space-y-1">
-                        <Label>Task priority</Label>
-                        <select
-                          value={rule.taskPriority}
-                          onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, taskPriority: event.target.value } : r))}
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        >
-                          {['NORMAL', 'HIGH', 'URGENT'].map((priority) => (
-                            <option key={priority} value={priority}>{priority}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Keywords</Label>
-                      <Input
-                        value={rule.keywords}
-                        onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, keywords: event.target.value } : r))}
-                        placeholder="refund, manager, urgent"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Customer response</Label>
-                      <textarea
-                        value={rule.customerReply}
-                        onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, customerReply: event.target.value } : r))}
-                        rows={3}
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label>Owner notification subject</Label>
-                      <Input value={rule.ownerSubject} onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, ownerSubject: event.target.value } : r))} />
-                    </div>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={rule.stopAutomation}
-                        onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, stopAutomation: event.target.checked } : r))}
-                      />
-                      Stop AI flow and hand off to a human
-                    </label>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              </details>
             </CardContent>
           </Card>
 
