@@ -371,6 +371,16 @@ const appointmentIntake: IntakeField[] = [
   { key: 'name', label: 'Customer name', examples: ['Jordan'], requiredFor: ['booking'] },
 ];
 
+const restaurantIntake: IntakeField[] = [
+  { key: 'order_type', label: 'Order type', examples: ['pickup', 'dine-in', 'catering'], requiredFor: ['quote', 'handoff'] },
+  { key: 'event_date_time', label: 'Catering event date/time', examples: ['Saturday at 2 PM'], requiredFor: ['quote'] },
+  { key: 'party_size', label: 'Party size', examples: ['25 guests', 'party of 8'], requiredFor: ['quote'] },
+  { key: 'allergy_notes', label: 'Allergy notes', examples: ['peanut allergy', 'no shellfish'], requiredFor: ['handoff'] },
+  { key: 'preferred_pickup_time', label: 'Preferred pickup time', examples: ['today at 6 PM'], requiredFor: [] },
+  { key: 'customer_name', label: 'Customer name', examples: ['Maria'], requiredFor: [] },
+  { key: 'phone_confirmation', label: 'Phone confirmation', examples: ['call me at 555-123-4567'], requiredFor: [] },
+];
+
 const salonIntake: IntakeField[] = [
   { key: 'service', label: 'Requested service', examples: ['haircut', 'balayage', 'manicure'], requiredFor: ['booking'] },
   { key: 'stylist_preference', label: 'Stylist preference', examples: ['Maria', 'first available'], requiredFor: ['booking'] },
@@ -496,7 +506,7 @@ export const VERTICAL_PROFILES: Record<VerticalKey, VerticalProfile> = {
     escalationPolicies: [
       { id: 'refund', label: 'Refund request', severity: 'HIGH', keywords: ['refund', 'wrong order', 'complaint'], customerReply: "I'll connect you with a team member who can help with that.", ownerSubject: 'Customer needs order help', stopAutomation: true },
     ],
-    intakeFields: [],
+    intakeFields: restaurantIntake,
     recommendedIntegrations: ['Square', 'Toast', 'Clover', 'Stripe', 'Star CloudPRNT'],
     valueMetrics: ['orders recovered', 'revenue captured', 'average prep ETA', 'refund escalations'],
     readinessScenarios: restaurantScenarioPack,

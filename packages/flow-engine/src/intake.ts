@@ -155,6 +155,42 @@ function inferHoldRequest(message: string): string | null {
   return has(message, /\b(?:hold|save|reserve|set aside)\b/i) ? 'yes' : null;
 }
 
+function inferRestaurantOrderType(message: string): string | null {
+  if (has(message, /\b(?:catering|cater|party tray|tray order|event|birthday|office lunch|corporate lunch|large order)\b/i)) return 'catering';
+  if (has(message, /\b(?:dine[-\s]?in|eat there|table for|reservation|party of)\b/i)) return 'dine-in';
+  if (has(message, /\b(?:pickup|pick up|takeout|take out|to go|carryout|carry out)\b/i)) return 'pickup';
+  return null;
+}
+
+function inferPartySize(message: string): string | null {
+  return firstMatch(message, [
+    /\b(?:party of|table for)\s+(\d{1,4})\b/i,
+    /\b(\d{1,4}\s+(?:people|persons|guests|attendees|employees|kids|adults))\b/i,
+    /\b(?:for|serves?)\s+(\d{1,4})\b/i,
+  ]);
+}
+
+function inferAllergyNotes(message: string): string | null {
+  return firstMatch(message, [
+    /\b((?:peanut|tree nut|nut|shellfish|shrimp|dairy|milk|egg|soy|gluten|wheat|fish|sesame)\s+allerg(?:y|ies|ic))\b/i,
+    /\b(allerg(?:y|ies|ic)\s+(?:to\s+)?(?:peanut|tree nut|nut|shellfish|shrimp|dairy|milk|egg|soy|gluten|wheat|fish|sesame)[a-z\s]*)\b/i,
+    /\b(no\s+(?:peanuts?|nuts?|shellfish|shrimp|dairy|milk|egg|soy|gluten|wheat|fish|sesame))\b/i,
+  ]);
+}
+
+function inferCustomerName(message: string): string | null {
+  return firstMatch(message, [
+    /\b(?:my name is|this is|name is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/i,
+    /\b(?:for|under)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b/i,
+  ]);
+}
+
+function inferPhoneConfirmation(message: string): string | null {
+  return firstMatch(message, [
+    /\b((?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})\b/,
+  ]);
+}
+
 function requiredForFlow(flowType: FlowType): Array<'booking' | 'quote' | 'handoff'> {
   if (flowType === FlowType.MEETING) return ['booking'];
   if (flowType === FlowType.INQUIRY) return ['quote'];
@@ -172,6 +208,20 @@ export function extractVerticalIntake(input: {
 
   const fields = new Map<string, StructuredIntakeField>();
   const message = input.inboundMessage;
+
+  if (profile.key === 'restaurant') {
+    const orderType = inferRestaurantOrderType(message);
+    setField(fields, profile.intakeFields, 'order_type', orderType, 'high');
+    if (orderType === 'catering') {
+      setField(fields, profile.intakeFields, 'event_date_time', inferPreferredTime(message), 'medium');
+    } else {
+      setField(fields, profile.intakeFields, 'preferred_pickup_time', inferPreferredTime(message), 'medium');
+    }
+    setField(fields, profile.intakeFields, 'party_size', inferPartySize(message), 'high');
+    setField(fields, profile.intakeFields, 'allergy_notes', inferAllergyNotes(message), 'high');
+    setField(fields, profile.intakeFields, 'customer_name', inferCustomerName(message), 'medium');
+    setField(fields, profile.intakeFields, 'phone_confirmation', inferPhoneConfirmation(message), 'high');
+  }
 
   if (['home_services', 'plumbing', 'electrical', 'generic_service'].includes(profile.key)) {
     setField(fields, profile.intakeFields, 'issue', inferIssue(message), 'medium');

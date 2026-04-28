@@ -64,4 +64,40 @@ describe('extractVerticalIntake', () => {
       ]),
     );
   });
+
+  it('captures restaurant catering intake without replacing order flow', () => {
+    const intake = extractVerticalIntake({
+      tenantContext: tenant('restaurant', BusinessType.RESTAURANT),
+      inboundMessage: 'I need catering for 25 guests Saturday at 2 PM. This is Maria, call me at 555-123-4567.',
+      flowType: FlowType.FALLBACK,
+    });
+
+    expect(intake?.verticalKey).toBe('restaurant');
+    expect(intake?.captured).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'order_type', value: 'catering' }),
+        expect.objectContaining({ key: 'party_size', value: expect.stringMatching(/25 guests/i) }),
+        expect.objectContaining({ key: 'event_date_time', value: expect.stringMatching(/Saturday/i) }),
+        expect.objectContaining({ key: 'customer_name', value: expect.stringMatching(/Maria/i) }),
+        expect.objectContaining({ key: 'phone_confirmation', value: expect.stringMatching(/555-123-4567/) }),
+      ]),
+    );
+  });
+
+  it('captures restaurant pickup and allergy notes', () => {
+    const intake = extractVerticalIntake({
+      tenantContext: tenant('restaurant', BusinessType.RESTAURANT),
+      inboundMessage: 'Pickup order today at 6 PM for Jordan. Peanut allergy, please no peanuts.',
+      flowType: FlowType.ORDER,
+    });
+
+    expect(intake?.captured).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'order_type', value: 'pickup' }),
+        expect.objectContaining({ key: 'preferred_pickup_time', value: expect.stringMatching(/today/i) }),
+        expect.objectContaining({ key: 'allergy_notes', value: expect.stringMatching(/peanut/i) }),
+        expect.objectContaining({ key: 'customer_name', value: expect.stringMatching(/Jordan/i) }),
+      ]),
+    );
+  });
 });
