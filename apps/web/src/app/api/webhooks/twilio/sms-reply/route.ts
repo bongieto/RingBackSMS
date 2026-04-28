@@ -15,6 +15,8 @@ import {
   declineConsent,
   suppressCaller,
   isCallerSuppressed,
+  buildConsentReprompt,
+  getActionablePreConsentMessage,
 } from '@/lib/server/services/consentService';
 import { checkEscalation } from '@/lib/server/services/escalationService';
 import { waitUntil } from '@/lib/server/waitUntil';
@@ -139,7 +141,25 @@ export async function POST(request: NextRequest) {
       waitUntil(
         (async () => {
           try {
+            const replayMessage = getActionablePreConsentMessage(pendingConsent.replyBody);
             await approveConsent(pendingConsent.id, normalizedBody);
+            if (replayMessage) {
+              try {
+                await processInboundSms({
+                  tenantId: tenant.id,
+                  callerPhone: From,
+                  inboundMessage: replayMessage,
+                  messageSid: `${MessageSid}:consent-replay:${pendingConsent.id}`,
+                });
+                return;
+              } catch (err) {
+                logger.error('Consent replay failed; falling back to opener', {
+                  err,
+                  tenantId: tenant.id,
+                  messageSid: MessageSid,
+                });
+              }
+            }
             // Send the industry-specific follow-up opener (or a default)
             const opener =
               tenant.config?.followupOpener ??
@@ -155,20 +175,36 @@ export async function POST(request: NextRequest) {
       waitUntil(
         (async () => {
           try {
+            const replayMessage = getActionablePreConsentMessage(normalizedBody);
             await prisma.smsConsentRequest.update({
               where: { id: pendingConsent.id },
-              data: { repromptSent: true },
+              data: {
+                repromptSent: true,
+                ...(replayMessage ? { replyBody: replayMessage } : {}),
+              },
             });
             await sendSms(
               tenant.id,
               From,
-              'Just reply YES to get help by text, or STOP to opt out.',
+              buildConsentReprompt(normalizedBody),
             );
           } catch (err) {
             logger.error('Re-prompt failed', { err, tenantId: tenant.id });
           }
         })()
       );
+    } else {
+      const replayMessage = getActionablePreConsentMessage(normalizedBody);
+      if (replayMessage) {
+        waitUntil(
+          prisma.smsConsentRequest
+            .update({
+              where: { id: pendingConsent.id },
+              data: { replyBody: replayMessage },
+            })
+            .catch((err) => logger.error('Failed to store pending consent request', { err, tenantId: tenant.id })),
+        );
+      }
     }
     // If reprompt already sent and still ambiguous → silently ignore
     return twimlResponse;

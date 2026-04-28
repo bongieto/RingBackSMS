@@ -81,6 +81,34 @@ export function isOptOutKeyword(body: string): boolean {
   return STRICT_OPT_OUT_WORDS.has(normalized);
 }
 
+const ACTIONABLE_PRE_CONSENT_RE =
+  /\b(menu|order|where|location|find\s+you|hours?|open|closed?|book|schedule|appointment|pickup|delivery|quote|price|cost|callback|call\s+me|call\s+back)\b|\?$/i;
+
+/**
+ * If a caller asks a real business question before replying YES, keep that
+ * request so the consent approval can answer it instead of dropping context.
+ * We intentionally do not treat YES/STOP/NO-like words as replayable work.
+ */
+export function getActionablePreConsentMessage(body: string | null | undefined): string | null {
+  const trimmed = body?.trim();
+  if (!trimmed) return null;
+  if (isConsentAffirmative(trimmed) || isOptOutKeyword(trimmed) || isConsentDecline(trimmed)) {
+    return null;
+  }
+  return ACTIONABLE_PRE_CONSENT_RE.test(trimmed) ? trimmed.slice(0, 500) : null;
+}
+
+export function buildConsentReprompt(body: string): string {
+  const actionable = getActionablePreConsentMessage(body);
+  if (actionable && /\bmenu\b/i.test(actionable)) {
+    return 'Reply YES to get the menu by text, or STOP to opt out.';
+  }
+  if (actionable && /\b(where|location|find\s+you)\b/i.test(actionable)) {
+    return 'Reply YES to get our location by text, or STOP to opt out.';
+  }
+  return 'Just reply YES to get help by text, or STOP to opt out.';
+}
+
 /**
  * Consent-decline check — only call this when the caller has a PENDING
  * consent request. Matches a broader set of "no" responses.
