@@ -9,6 +9,17 @@ import { webApi } from '@/lib/api';
 import { toast } from 'sonner';
 import { AlertTriangle, CheckCircle2, Send, RefreshCw, Bot, User as UserIcon, Zap, CreditCard } from 'lucide-react';
 
+type ReadinessCategory =
+  | 'happy_path'
+  | 'after_hours'
+  | 'emergency'
+  | 'handoff'
+  | 'pricing'
+  | 'booking'
+  | 'cancellation'
+  | 'vague'
+  | 'impossible';
+
 interface AdminTenant {
   id: string;
   name: string;
@@ -38,6 +49,12 @@ interface ReadinessResult {
   recommendedIntegrations: string[];
   valueMetrics: string[];
   intakeFields: Array<{ key: string; label: string; examples: string[] }>;
+  categoryBreakdown: Array<{
+    category: ReadinessCategory;
+    passed: number;
+    total: number;
+    score: number;
+  }>;
   escalationPolicies: Array<{
     id: string;
     label: string;
@@ -49,6 +66,7 @@ interface ReadinessResult {
   results: Array<{
     id: string;
     label: string;
+    category: ReadinessCategory;
     message: string;
     passed: boolean;
     failures: string[];
@@ -57,6 +75,44 @@ interface ReadinessResult {
     flowType: string;
     flowStep: string | null;
   }>;
+}
+
+const CATEGORY_LABELS: Record<ReadinessCategory, string> = {
+  happy_path: 'Happy path',
+  after_hours: 'After-hours',
+  emergency: 'Emergency',
+  handoff: 'Handoff',
+  pricing: 'Pricing',
+  booking: 'Booking',
+  cancellation: 'Cancellation',
+  vague: 'Vague',
+  impossible: 'Boundary',
+};
+
+function categoryLabel(category: ReadinessCategory): string {
+  return CATEGORY_LABELS[category] ?? category;
+}
+
+function readinessStatus(score: number): {
+  label: string;
+  className: string;
+} {
+  if (score >= 1) {
+    return {
+      label: 'Ready',
+      className: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
+    };
+  }
+  if (score >= 0.8) {
+    return {
+      label: 'Needs review',
+      className: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
+    };
+  }
+  return {
+    label: 'Not ready',
+    className: 'bg-red-500/10 text-red-300 border-red-500/30',
+  };
 }
 
 /**
@@ -220,6 +276,16 @@ export default function BotTesterPage() {
     return false;
   }, [messages]);
 
+  const failedReadinessAreas = useMemo(() => {
+    if (!readiness) return [];
+    return readiness.categoryBreakdown.filter((area) => area.passed < area.total);
+  }, [readiness]);
+
+  const readinessFixes = useMemo(() => {
+    if (!readiness) return [];
+    return [...new Set(readiness.results.flatMap((result) => result.suggestedFixes))];
+  }, [readiness]);
+
   async function resetSession() {
     if (!tenantId) return;
     try {
@@ -306,31 +372,72 @@ export default function BotTesterPage() {
           </Button>
         </CardHeader>
         {readiness && (
-          <CardContent className="pt-0 space-y-3">
-            <div className="flex flex-wrap items-center gap-3 text-sm">
-              <span className="font-semibold text-white">
-                {readiness.verticalLabel}
-              </span>
-              <span
-                className={`font-mono text-xs px-2 py-1 rounded border ${
-                  readiness.passed === readiness.total
-                    ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
-                    : 'bg-amber-500/10 text-amber-300 border-amber-500/30'
-                }`}
-              >
-                {Math.round(readiness.score * 100)}% · {readiness.passed}/{readiness.total}
-              </span>
-              {readiness.valueMetrics.slice(0, 4).map((metric) => (
-                <span key={metric} className="text-xs text-slate-400">
-                  {metric}
-                </span>
-              ))}
+          <CardContent className="pt-0 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-3">
+              <div className="rounded border border-slate-800 bg-slate-950/70 p-4">
+                <div className="text-xs uppercase tracking-wide text-slate-500">
+                  {readiness.verticalLabel}
+                </div>
+                <div className="mt-2 text-4xl font-semibold text-white">
+                  {Math.round(readiness.score * 100)}%
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <span
+                    className={`font-mono text-xs px-2 py-1 rounded border ${readinessStatus(readiness.score).className}`}
+                  >
+                    {readinessStatus(readiness.score).label}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {readiness.passed}/{readiness.total}
+                  </span>
+                </div>
+              </div>
+              <div className="rounded border border-slate-800 bg-slate-950/70 p-4">
+                <div className="flex flex-wrap gap-2">
+                  {readiness.categoryBreakdown.map((area) => (
+                    <span
+                      key={area.category}
+                      className={`text-xs px-2 py-1 rounded border ${
+                        area.passed === area.total
+                          ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                          : 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+                      }`}
+                    >
+                      {categoryLabel(area.category)} {area.passed}/{area.total}
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-3 text-sm text-slate-300">
+                  {failedReadinessAreas.length === 0
+                    ? 'All readiness categories passed for this tenant.'
+                    : `Needs attention: ${failedReadinessAreas.map((area) => categoryLabel(area.category)).join(', ')}.`}
+                </div>
+                {readinessFixes.length > 0 && (
+                  <div className="mt-3 space-y-1 text-xs text-slate-400">
+                    {readinessFixes.slice(0, 3).map((fix) => (
+                      <div key={fix}>Fix: {fix}</div>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {readiness.valueMetrics.slice(0, 5).map((metric) => (
+                    <span key={metric} className="text-xs text-slate-500">
+                      {metric}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {readiness.results.map((result) => (
                 <div
                   key={result.id}
-                  className="rounded border border-slate-800 bg-slate-950/70 p-3 text-sm"
+                  className={`rounded border p-3 text-sm ${
+                    result.passed
+                      ? 'border-slate-800 bg-slate-950/70'
+                      : 'border-amber-500/30 bg-amber-500/5'
+                  }`}
                 >
                   <div className="flex items-start gap-2">
                     {result.passed ? (
@@ -339,11 +446,16 @@ export default function BotTesterPage() {
                       <AlertTriangle className="w-4 h-4 mt-0.5 text-amber-400" />
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className="font-medium text-slate-100">{result.label}</div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="font-medium text-slate-100">{result.label}</div>
+                        <span className="font-mono text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                          {categoryLabel(result.category)}
+                        </span>
+                      </div>
                       <div className="mt-1 text-xs text-slate-500 truncate">
                         “{result.message}”
                       </div>
-                      <div className="mt-2 text-xs text-slate-400 line-clamp-3">
+                      <div className="mt-2 text-xs text-slate-400">
                         {result.reply}
                       </div>
                       <div className="mt-2 flex flex-wrap gap-1">

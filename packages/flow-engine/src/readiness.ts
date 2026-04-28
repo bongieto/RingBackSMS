@@ -6,12 +6,14 @@ import {
   matchEscalationPolicy,
   matchSafetyPolicy,
   resolveEscalationPolicies,
+  type ReadinessScenarioCategory,
   type ReadinessScenarioSeed,
 } from './verticals';
 
 export interface ReadinessScenarioResult {
   id: string;
   label: string;
+  category: ReadinessScenarioCategory;
   message: string;
   passed: boolean;
   failures: string[];
@@ -32,6 +34,12 @@ export interface ReadinessSuiteResult {
   recommendedIntegrations: string[];
   valueMetrics: string[];
   intakeFields: Array<{ key: string; label: string; examples: string[] }>;
+  categoryBreakdown: Array<{
+    category: ReadinessScenarioCategory;
+    passed: number;
+    total: number;
+    score: number;
+  }>;
   escalationPolicies: Array<{
     id: string;
     label: string;
@@ -132,6 +140,33 @@ function suggestFixes(
   return [...fixes];
 }
 
+const CATEGORY_ORDER: ReadinessScenarioCategory[] = [
+  'happy_path',
+  'after_hours',
+  'emergency',
+  'handoff',
+  'pricing',
+  'booking',
+  'cancellation',
+  'vague',
+  'impossible',
+];
+
+function buildCategoryBreakdown(results: ReadinessScenarioResult[]): ReadinessSuiteResult['categoryBreakdown'] {
+  return CATEGORY_ORDER.flatMap((category) => {
+    const categoryResults = results.filter((result) => result.category === category);
+    if (categoryResults.length === 0) return [];
+    const passed = categoryResults.filter((result) => result.passed).length;
+    const total = categoryResults.length;
+    return [{
+      category,
+      passed,
+      total,
+      score: total === 0 ? 1 : passed / total,
+    }];
+  });
+}
+
 export async function runVerticalReadinessSuite(input: {
   tenantContext: TenantContext;
   scenarios?: ReadinessScenarioSeed[];
@@ -209,6 +244,7 @@ export async function runVerticalReadinessSuite(input: {
     results.push({
       id: scenario.id,
       label: scenario.label,
+      category: scenario.category,
       message: scenario.message,
       passed: failures.length === 0,
       failures,
@@ -232,6 +268,7 @@ export async function runVerticalReadinessSuite(input: {
     recommendedIntegrations: profile.recommendedIntegrations,
     valueMetrics: profile.valueMetrics,
     intakeFields: profile.intakeFields.map(({ key, label, examples }) => ({ key, label, examples })),
+    categoryBreakdown: buildCategoryBreakdown(results),
     escalationPolicies: resolveEscalationPolicies({
       businessType: input.tenantContext.businessType,
       industryTemplateKey:

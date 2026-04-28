@@ -41,6 +41,7 @@ export type {
   ResolvedEscalationPolicy,
   IntakeField,
   ReadinessScenarioSeed,
+  ReadinessScenarioCategory,
   PolicySeverity,
 } from './verticals';
 export {

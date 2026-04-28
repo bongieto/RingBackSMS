@@ -20,6 +20,16 @@ export type VerticalKey =
 
 export type PolicySeverity = 'LOW' | 'NORMAL' | 'HIGH' | 'EMERGENCY';
 export type EscalationTaskPriority = 'URGENT' | 'HIGH' | 'NORMAL';
+export type ReadinessScenarioCategory =
+  | 'happy_path'
+  | 'after_hours'
+  | 'emergency'
+  | 'handoff'
+  | 'pricing'
+  | 'booking'
+  | 'cancellation'
+  | 'vague'
+  | 'impossible';
 
 export interface SafetyPolicy {
   id: string;
@@ -73,6 +83,7 @@ export interface IntakeField {
 export interface ReadinessScenarioSeed {
   id: string;
   label: string;
+  category: ReadinessScenarioCategory;
   message: string;
   expect: {
     flowType?: FlowType;
@@ -331,7 +342,20 @@ function scenario(
   message: string,
   expect: ReadinessScenarioSeed['expect'],
 ): ReadinessScenarioSeed {
-  return { id, label, message, expect };
+  return { id, label, category: inferScenarioCategory(id, label), message, expect };
+}
+
+function inferScenarioCategory(id: string, label: string): ReadinessScenarioCategory {
+  const text = `${id} ${label}`.toLowerCase();
+  if (/after[-\s]?hours/.test(text)) return 'after_hours';
+  if (/emergency|hazard|safety|allergy|stranded|boundary/.test(text)) return 'emergency';
+  if (/handoff|human|manager|staff|person|refund|wrong order/.test(text)) return 'handoff';
+  if (/pricing|price|quote|estimate|cost/.test(text)) return 'pricing';
+  if (/booking|book|schedule|appointment|ordering|order:|pickup order|lunch order/.test(text)) return 'booking';
+  if (/cancellation|cancel|reschedule|change/.test(text)) return 'cancellation';
+  if (/vague/.test(text)) return 'vague';
+  if (/impossible|guarantee|diagnos|exact/.test(text)) return 'impossible';
+  return 'happy_path';
 }
 
 const serviceIntake: IntakeField[] = [
