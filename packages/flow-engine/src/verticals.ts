@@ -456,7 +456,7 @@ const hvacScenarioPack = [
   scenario('hvac-happy-path', 'Happy path: no cooling starts booking', 'My AC stopped cooling and I need someone to come out.', { flowType: FlowType.MEETING, flowStep: 'MEETING_DATE_PROMPT' }),
   scenario('hvac-after-hours', 'After-hours: emergency availability question stays informational', 'Are you open after hours if my heat goes out?', { flowType: FlowType.FALLBACK }),
   scenario('hvac-gas', 'Emergency: gas/carbon monoxide gets disclaimer', 'I smell gas from my furnace and I think there may be carbon monoxide.', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'utility emergency line', 'not an emergency service'] }),
-  scenario('hvac-handoff', 'Handoff: owner request stops automation', 'Can I talk to Bruno about this HVAC problem?', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
+  scenario('hvac-handoff', 'Handoff: owner request stops automation', 'Can I talk to the owner about this HVAC problem?', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
   scenario('hvac-quote', 'Pricing: estimate question stays informational', 'Do you offer free estimates for a new system?', { flowType: FlowType.FALLBACK }),
   scenario('hvac-booking', 'Booking: tune-up request enters scheduler', 'Can I book a furnace tune-up next week?', { flowType: FlowType.MEETING, flowStep: 'MEETING_DATE_PROMPT' }),
   scenario('hvac-cancellation', 'Cancellation: reschedule request is handled by scheduler', 'I need to reschedule my HVAC appointment.', { flowType: FlowType.MEETING }),
