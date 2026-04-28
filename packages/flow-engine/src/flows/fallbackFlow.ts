@@ -220,6 +220,7 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
       (tenantContext.config as { industryTemplateKey?: string | null }).industryTemplateKey,
     tenantName: tenantContext.tenantName,
     websiteContext: tenantContext.config.websiteContext,
+    intakeFieldOverrides: (tenantContext.config as { intakeFieldOverrides?: unknown }).intakeFieldOverrides,
   };
   const verticalProfile = getVerticalProfile(verticalInput);
   const verticalGuidance = buildVerticalPromptGuidance(verticalInput);

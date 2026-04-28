@@ -4,6 +4,7 @@ import {
   getVerticalProfile,
   matchEscalationPolicy,
   matchSafetyPolicy,
+  resolveIntakeFields,
   resolveEscalationPolicies,
   VERTICAL_PROFILES,
   type VerticalKey,
@@ -139,6 +140,25 @@ describe('vertical profiles', () => {
     expect(match?.ownerSubject).toBe('Care start-date change requested');
     expect(match?.stopAutomation).toBe(false);
     expect(match?.taskPriority).toBe('NORMAL');
+  });
+
+  test('applies tenant intake field overrides without losing industry defaults', () => {
+    const fields = resolveIntakeFields({
+      businessType: 'SERVICE',
+      industryTemplateKey: 'hvac',
+      intakeFieldOverrides: {
+        fields: [
+          { key: 'system_type', label: 'Equipment type', examples: ['mini split'], requiredFor: ['booking'] },
+          { key: 'budget', label: 'Budget range', examples: ['$500-$1000'], requiredFor: ['quote'] },
+          { key: 'preferred_time', enabled: false },
+        ],
+      },
+    });
+
+    expect(fields.find((field) => field.key === 'issue')).toBeTruthy();
+    expect(fields.find((field) => field.key === 'preferred_time')).toBeFalsy();
+    expect(fields.find((field) => field.key === 'system_type')?.label).toBe('Equipment type');
+    expect(fields.find((field) => field.key === 'budget')?.requiredFor).toEqual(['quote']);
   });
 
   test('major industry profiles include comprehensive readiness packs', () => {

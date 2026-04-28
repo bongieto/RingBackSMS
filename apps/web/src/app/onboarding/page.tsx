@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useOrganization, useUser } from '@clerk/nextjs';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Building2, Phone, MessageSquare, Check, Loader2 } from 'lucide-react';
+import { Building2, MessageSquare, Check, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,12 +19,42 @@ import type { BusinessType } from '@ringback/shared-types';
 const BUSINESS_TYPES = [
   { value: 'RESTAURANT', label: 'Restaurant / Food', emoji: '🍜', templateKey: 'restaurant' },
   { value: 'FOOD_TRUCK', label: 'Food Truck', emoji: '🚚', templateKey: 'food_truck' },
-  { value: 'SERVICE', label: 'Service Business', emoji: '🔧', templateKey: 'salon' },
+  { value: 'SERVICE', label: 'Service Business', emoji: '🔧', templateKey: 'home_services' },
   { value: 'CONSULTANT', label: 'Consultant', emoji: '💼', templateKey: 'consultant' },
   { value: 'MEDICAL', label: 'Medical / Health', emoji: '🏥', templateKey: 'medical' },
   { value: 'RETAIL', label: 'Retail', emoji: '🛍️', templateKey: 'retail' },
   { value: 'OTHER', label: 'Other', emoji: '✨', templateKey: null },
 ];
+
+const VERTICAL_OPTIONS: Record<string, Array<{ key: string; label: string; hint: string }>> = {
+  RESTAURANT: [
+    { key: 'restaurant', label: 'Restaurant', hint: 'Pickup orders, catering, menu questions' },
+    { key: 'food_truck', label: 'Food truck', hint: 'Location questions, short menus, pickup orders' },
+  ],
+  FOOD_TRUCK: [
+    { key: 'food_truck', label: 'Food truck', hint: 'Location questions, short menus, pickup orders' },
+  ],
+  SERVICE: [
+    { key: 'home_services', label: 'Home services', hint: 'General field service, estimates, booking' },
+    { key: 'hvac', label: 'HVAC', hint: 'Heating, cooling, hazards, tune-ups' },
+    { key: 'plumbing', label: 'Plumbing', hint: 'Leaks, drains, water heaters, urgent water issues' },
+    { key: 'electrical', label: 'Electrical', hint: 'Panels, wiring, sparks, safety escalation' },
+    { key: 'salon', label: 'Salon / spa', hint: 'Appointments, stylist preference, services' },
+    { key: 'auto_shop', label: 'Auto shop', hint: 'Vehicle intake, towing, repair estimates' },
+    { key: 'generic_service', label: 'Generic service business', hint: 'Flexible service intake' },
+  ],
+  MEDICAL: [
+    { key: 'medical', label: 'Medical / dental', hint: 'Appointments, office info, 911 boundary' },
+    { key: 'home_care', label: 'Home care', hint: 'Care consultations, family intake, urgent handoff' },
+    { key: 'hospice', label: 'Hospice', hint: 'Consultations and sensitive family inquiries' },
+  ],
+  RETAIL: [
+    { key: 'retail', label: 'Retail', hint: 'Product availability, holds, order questions' },
+  ],
+  CONSULTANT: [
+    { key: 'consultant', label: 'Consultant', hint: 'Lead qualification and consultation booking' },
+  ],
+};
 
 interface IndustryTemplate {
   industryKey: string;
@@ -62,6 +92,7 @@ export default function OnboardingPage() {
     hoursPreset: '' as '' | 'weekday-9-5' | 'daily-11-9' | 'custom',
     voiceGreeting: '',
     timezone: 'America/Chicago',
+    industryTemplateKey: '',
   });
 
   // Fetch industry templates for capability pills on business type cards
@@ -81,7 +112,10 @@ export default function OnboardingPage() {
     const industry = searchParams?.get('industry');
     if (!industry) return;
     const bt = INDUSTRY_TO_BUSINESS_TYPE[industry];
-    if (bt) setForm((f) => (f.businessType ? f : { ...f, businessType: bt }));
+    if (bt) {
+      const defaultVertical = VERTICAL_OPTIONS[bt]?.[0]?.key ?? '';
+      setForm((f) => (f.businessType ? f : { ...f, businessType: bt, industryTemplateKey: defaultVertical }));
+    }
   }, [searchParams]);
 
   // Clerk's useUser() returns null on first render and hydrates async, so
@@ -111,6 +145,7 @@ export default function OnboardingPage() {
       const configPatch: Record<string, unknown> = {};
       if (form.voiceGreeting) configPatch.voiceGreeting = form.voiceGreeting;
       if (form.websiteUrl) configPatch.websiteUrl = form.websiteUrl;
+      if (form.industryTemplateKey) configPatch.industryTemplateKey = form.industryTemplateKey;
       if (form.hoursPreset === 'weekday-9-5') {
         configPatch.businessDays = [1, 2, 3, 4, 5];
         configPatch.businessHoursStart = '09:00';
@@ -195,7 +230,11 @@ export default function OnboardingPage() {
                     return (
                       <button
                         key={bt.value}
-                        onClick={() => setForm(f => ({ ...f, businessType: bt.value }))}
+                        onClick={() => setForm(f => ({
+                          ...f,
+                          businessType: bt.value,
+                          industryTemplateKey: VERTICAL_OPTIONS[bt.value]?.[0]?.key ?? bt.templateKey ?? '',
+                        }))}
                         className={cn(
                           'flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 text-sm transition-colors text-left',
                           isSelected
@@ -235,6 +274,33 @@ export default function OnboardingPage() {
                   );
                 })()}
               </div>
+
+              {form.businessType && VERTICAL_OPTIONS[form.businessType]?.length > 1 && (
+                <div className="space-y-1.5">
+                  <Label>Closest industry profile</Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {VERTICAL_OPTIONS[form.businessType].map((option) => {
+                      const isSelected = form.industryTemplateKey === option.key;
+                      return (
+                        <button
+                          key={option.key}
+                          type="button"
+                          onClick={() => setForm(f => ({ ...f, industryTemplateKey: option.key }))}
+                          className={cn(
+                            'rounded-lg border-2 p-3 text-left transition-colors',
+                            isSelected
+                              ? 'border-blue-500 bg-blue-50 text-blue-700'
+                              : 'border-border hover:border-blue-200 hover:bg-muted/50'
+                          )}
+                        >
+                          <div className="text-sm font-medium">{option.label}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">{option.hint}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -394,7 +460,10 @@ export default function OnboardingPage() {
               </div>
               <div className="bg-muted/50 rounded-lg p-4 text-left space-y-2 text-sm">
                 <p className="font-medium">Then:</p>
-                {profile.onboardingNextSteps.map((s) => (
+                  {[
+                    ...profile.onboardingNextSteps,
+                    { emoji: '🛡️', title: 'Run AI readiness', description: 'Verify safety, intake, and handoff scenarios', href: '/dashboard/ai-readiness' },
+                  ].map((s) => (
                   <p key={s.title}>
                     {s.emoji} <strong>{s.title}</strong> — {s.description}
                   </p>

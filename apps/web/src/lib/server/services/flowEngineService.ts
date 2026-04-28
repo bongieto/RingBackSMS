@@ -962,6 +962,16 @@ async function processInboundSmsInner(
           callerPhone,
           conversationId,
         }).catch((err) => logger.warn('Failed to create vertical safety task', { error: err }));
+
+        await prisma.escalationEvent.create({
+          data: {
+            tenantId,
+            callerPhone,
+            conversationId,
+            triggerKeyword: safetyMatch.policy.id,
+            messageBody: inboundMessage,
+          },
+        }).catch((err) => logger.warn('Failed to record vertical safety escalation event', { error: err }));
       }
     }
 
@@ -1627,6 +1637,16 @@ async function processInboundSmsInner(
       callerPhone,
       conversationId: conversationId as string,
     }).catch((err) => logger.warn('Failed to create handoff task', { error: err }));
+
+    await prisma.escalationEvent.create({
+      data: {
+        tenantId,
+        callerPhone,
+        conversationId: conversationId as string,
+        triggerKeyword: escalationMatch.triggerKeyword || escalationMatch.policy.id,
+        messageBody: inboundMessage,
+      },
+    }).catch((err) => logger.warn('Failed to record escalation event', { error: err }));
   }
 
   // Process side effects + send SMS + record usage, wrapped in an error

@@ -1,6 +1,6 @@
 import { FlowType } from '@ringback/shared-types';
 import type { TenantContext } from './types';
-import { getVerticalProfile, type IntakeField, type VerticalKey } from './verticals';
+import { getVerticalProfileWithOverrides, type IntakeField, type VerticalKey } from './verticals';
 
 export interface StructuredIntakeField {
   key: string;
@@ -203,7 +203,10 @@ export function extractVerticalIntake(input: {
   inboundMessage: string;
   flowType: FlowType;
 }): StructuredIntake | undefined {
-  const profile = getVerticalProfile(input.tenantContext);
+  const profile = getVerticalProfileWithOverrides({
+    ...input.tenantContext,
+    intakeFieldOverrides: (input.tenantContext.config as { intakeFieldOverrides?: unknown }).intakeFieldOverrides,
+  });
   if (profile.intakeFields.length === 0) return undefined;
 
   const fields = new Map<string, StructuredIntakeField>();

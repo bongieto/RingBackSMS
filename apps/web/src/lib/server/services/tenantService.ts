@@ -215,6 +215,8 @@ export async function updateTenantConfig(
     consentMessage: string | null;
     customEscalationKeywords: string[];
     escalationPolicyOverrides: unknown | null;
+    intakeFieldOverrides: unknown | null;
+    verticalOnboarding: unknown | null;
     salesTaxRate: number | null;
     passStripeFeesToCustomer: boolean;
   }>

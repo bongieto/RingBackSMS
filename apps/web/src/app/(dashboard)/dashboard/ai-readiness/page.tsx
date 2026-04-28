@@ -8,9 +8,12 @@ import {
   CheckCircle2,
   ClipboardList,
   Plug2,
+  Plus,
   RefreshCw,
+  RotateCcw,
   Save,
   Settings2,
+  Trash2,
   ShieldCheck,
   XCircle,
 } from 'lucide-react';
@@ -43,7 +46,8 @@ interface ReadinessResult {
   total: number;
   recommendedIntegrations: string[];
   valueMetrics: string[];
-  intakeFields: Array<{ key: string; label: string; examples: string[] }>;
+  intakeFields: Array<{ key: string; label: string; examples: string[]; requiredFor: string[] }>;
+  defaultIntakeFields: Array<{ key: string; label: string; examples: string[]; requiredFor: string[] }>;
   categoryBreakdown: Array<{
     category: ReadinessCategory;
     passed: number;
@@ -55,6 +59,11 @@ interface ReadinessResult {
     label: string;
     severity: string;
     keywords: string[];
+    customerReply: string;
+    ownerSubject: string;
+    ownerMessage?: string;
+    taskTitle?: string;
+    taskPriority?: string;
     stopAutomation: boolean;
     source: string;
   }>;
@@ -102,6 +111,28 @@ const CATEGORY_LABELS: Record<ReadinessCategory, string> = {
   impossible: 'Boundary',
 };
 
+interface IntakeDraftField {
+  key: string;
+  label: string;
+  examples: string;
+  requiredFor: string[];
+  enabled: boolean;
+}
+
+interface EscalationDraftRule {
+  id: string;
+  label: string;
+  severity: string;
+  keywords: string;
+  customerReply: string;
+  ownerSubject: string;
+  ownerMessage: string;
+  taskTitle: string;
+  taskPriority: string;
+  stopAutomation: boolean;
+  enabled: boolean;
+}
+
 function readinessStatus(score: number) {
   if (score >= 1) return { label: 'Ready', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
   if (score >= 0.8) return { label: 'Needs review', className: 'bg-amber-50 text-amber-700 border-amber-200' };
@@ -123,12 +154,116 @@ function joinKeywords(value: unknown): string {
     : '';
 }
 
+function intakeToDraft(fields: ReadinessResult['intakeFields']): IntakeDraftField[] {
+  return fields.map((field) => ({
+    key: field.key,
+    label: field.label,
+    examples: field.examples.join(', '),
+    requiredFor: field.requiredFor ?? [],
+    enabled: true,
+  }));
+}
+
+function intakeOverrideToDraft(value: unknown, fallback: ReadinessResult['intakeFields']): IntakeDraftField[] {
+  const raw = Array.isArray(value)
+    ? value
+    : value && typeof value === 'object' && Array.isArray((value as { fields?: unknown }).fields)
+      ? (value as { fields: unknown[] }).fields
+      : null;
+  if (!raw) return intakeToDraft(fallback);
+  return raw
+    .filter((field): field is Record<string, unknown> => typeof field === 'object' && field !== null)
+    .map((field) => ({
+      key: typeof field.key === 'string' ? field.key : '',
+      label: typeof field.label === 'string' ? field.label : '',
+      examples: Array.isArray(field.examples) ? field.examples.filter((x): x is string => typeof x === 'string').join(', ') : '',
+      requiredFor: Array.isArray(field.requiredFor) ? field.requiredFor.filter((x): x is string => typeof x === 'string') : [],
+      enabled: field.enabled !== false,
+    }))
+    .filter((field) => field.key);
+}
+
+function escalationToDraft(rules: ReadinessResult['escalationPolicies']): EscalationDraftRule[] {
+  return rules.map((rule) => ({
+    id: rule.id,
+    label: rule.label,
+    severity: rule.severity,
+    keywords: rule.keywords.join(', '),
+    customerReply: rule.customerReply,
+    ownerSubject: rule.ownerSubject,
+    ownerMessage: rule.ownerMessage ?? '',
+    taskTitle: rule.taskTitle ?? '',
+    taskPriority: rule.taskPriority ?? (rule.severity === 'EMERGENCY' ? 'URGENT' : rule.severity === 'HIGH' ? 'HIGH' : 'NORMAL'),
+    stopAutomation: rule.stopAutomation,
+    enabled: true,
+  }));
+}
+
+function escalationOverrideToDraft(value: unknown, fallback: ReadinessResult['escalationPolicies']): EscalationDraftRule[] {
+  const raw = value && typeof value === 'object' && Array.isArray((value as { rules?: unknown }).rules)
+    ? (value as { rules: unknown[] }).rules
+    : null;
+  if (!raw) return escalationToDraft(fallback);
+  return raw
+    .filter((rule): rule is Record<string, unknown> => typeof rule === 'object' && rule !== null)
+    .map((rule) => ({
+      id: typeof rule.id === 'string' ? rule.id : '',
+      label: typeof rule.label === 'string' ? rule.label : '',
+      severity: typeof rule.severity === 'string' ? rule.severity : 'HIGH',
+      keywords: Array.isArray(rule.keywords) ? rule.keywords.filter((x): x is string => typeof x === 'string').join(', ') : '',
+      customerReply: typeof rule.customerReply === 'string' ? rule.customerReply : "I'm connecting you with a team member who can help. Someone will follow up with you shortly!",
+      ownerSubject: typeof rule.ownerSubject === 'string' ? rule.ownerSubject : 'Customer needs follow-up',
+      ownerMessage: typeof rule.ownerMessage === 'string' ? rule.ownerMessage : '',
+      taskTitle: typeof rule.taskTitle === 'string' ? rule.taskTitle : '',
+      taskPriority: typeof rule.taskPriority === 'string' ? rule.taskPriority : 'HIGH',
+      stopAutomation: typeof rule.stopAutomation === 'boolean' ? rule.stopAutomation : true,
+      enabled: rule.enabled !== false,
+    }))
+    .filter((rule) => rule.id);
+}
+
+function toIntakeOverride(fields: IntakeDraftField[]) {
+  return {
+    fields: fields
+      .filter((field) => field.key.trim())
+      .map((field) => ({
+        key: field.key.trim(),
+        enabled: field.enabled,
+        label: field.label.trim() || field.key.trim(),
+        examples: splitKeywords(field.examples),
+        requiredFor: field.requiredFor,
+      })),
+  };
+}
+
+function toEscalationOverride(rules: EscalationDraftRule[]) {
+  return {
+    rules: rules
+      .filter((rule) => rule.id.trim())
+      .map((rule) => ({
+        id: rule.id.trim(),
+        enabled: rule.enabled,
+        label: rule.label.trim() || rule.id.trim(),
+        severity: rule.severity,
+        keywords: splitKeywords(rule.keywords),
+        customerReply: rule.customerReply.trim(),
+        ownerSubject: rule.ownerSubject.trim() || 'Customer needs follow-up',
+        ownerMessage: rule.ownerMessage.trim() || undefined,
+        taskTitle: rule.taskTitle.trim() || undefined,
+        taskPriority: rule.taskPriority,
+        stopAutomation: rule.stopAutomation,
+      })),
+  };
+}
+
 export default function AiReadinessPage() {
   const { tenantId } = useTenantId();
   const queryClient = useQueryClient();
   const [industryTemplateKey, setIndustryTemplateKey] = useState('');
   const [customKeywords, setCustomKeywords] = useState('');
   const [customAiInstructions, setCustomAiInstructions] = useState('');
+  const [intakeFields, setIntakeFields] = useState<IntakeDraftField[]>([]);
+  const [escalationRules, setEscalationRules] = useState<EscalationDraftRule[]>([]);
 
   const { data: tenant } = useQuery({
     queryKey: ['tenant-me'],
@@ -148,6 +283,8 @@ export default function AiReadinessPage() {
     industryTemplateKey?: string | null;
     customEscalationKeywords?: string[] | null;
     customAiInstructions?: string | null;
+    escalationPolicyOverrides?: unknown;
+    intakeFieldOverrides?: unknown;
   } | undefined;
 
   useEffect(() => {
@@ -156,6 +293,12 @@ export default function AiReadinessPage() {
     setCustomKeywords(joinKeywords(config.customEscalationKeywords));
     setCustomAiInstructions(config.customAiInstructions ?? '');
   }, [config]);
+
+  useEffect(() => {
+    if (!readiness) return;
+    setIntakeFields(intakeOverrideToDraft(config?.intakeFieldOverrides, readiness.intakeFields));
+    setEscalationRules(escalationOverrideToDraft(config?.escalationPolicyOverrides, readiness.escalationPolicies));
+  }, [readiness, config?.intakeFieldOverrides, config?.escalationPolicyOverrides]);
 
   const failedResults = useMemo(
     () => readiness?.results.filter((result) => !result.passed) ?? [],
@@ -173,6 +316,8 @@ export default function AiReadinessPage() {
         industryTemplateKey: industryTemplateKey || null,
         customEscalationKeywords: splitKeywords(customKeywords),
         customAiInstructions: customAiInstructions.trim() || null,
+        intakeFieldOverrides: toIntakeOverride(intakeFields),
+        escalationPolicyOverrides: toEscalationOverride(escalationRules),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tenant-me'] });
@@ -365,16 +510,89 @@ export default function AiReadinessPage() {
                 Intake Fields
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              {readiness.intakeFields.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No industry intake fields configured.</p>
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIntakeFields((fields) => [
+                    ...fields,
+                    { key: `custom_${fields.length + 1}`, label: 'Custom field', examples: '', requiredFor: [], enabled: true },
+                  ])}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add field
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIntakeFields(intakeToDraft(readiness.defaultIntakeFields))}
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Restore defaults
+                </Button>
+              </div>
+              {intakeFields.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No intake fields configured.</p>
               ) : (
                 <div className="space-y-3">
-                  {readiness.intakeFields.map((field) => (
-                    <div key={field.key} className="rounded-lg border p-3">
-                      <div className="font-medium">{field.label}</div>
-                      <div className="text-xs text-muted-foreground mt-1">
-                        Examples: {field.examples.join(', ')}
+                  {intakeFields.map((field, index) => (
+                    <div key={`${field.key}-${index}`} className="rounded-lg border p-3 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={field.enabled}
+                            onChange={(event) => setIntakeFields((fields) => fields.map((f, i) => i === index ? { ...f, enabled: event.target.checked } : f))}
+                          />
+                          Enabled
+                        </label>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setIntakeFields((fields) => fields.filter((_, i) => i !== index))}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label>Key</Label>
+                          <Input value={field.key} onChange={(event) => setIntakeFields((fields) => fields.map((f, i) => i === index ? { ...f, key: event.target.value } : f))} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label>Label</Label>
+                          <Input value={field.label} onChange={(event) => setIntakeFields((fields) => fields.map((f, i) => i === index ? { ...f, label: event.target.value } : f))} />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Examples</Label>
+                        <Input
+                          value={field.examples}
+                          onChange={(event) => setIntakeFields((fields) => fields.map((f, i) => i === index ? { ...f, examples: event.target.value } : f))}
+                          placeholder="AC not cooling, tomorrow morning"
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-3 text-sm">
+                        {['booking', 'quote', 'handoff'].map((requiredFor) => (
+                          <label key={requiredFor} className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={field.requiredFor.includes(requiredFor)}
+                              onChange={(event) => setIntakeFields((fields) => fields.map((f, i) => {
+                                if (i !== index) return f;
+                                const next = event.target.checked
+                                  ? [...new Set([...f.requiredFor, requiredFor])]
+                                  : f.requiredFor.filter((item) => item !== requiredFor);
+                                return { ...f, requiredFor: next };
+                              }))}
+                            />
+                            Required for {requiredFor}
+                          </label>
+                        ))}
                       </div>
                     </div>
                   ))}
@@ -406,18 +624,119 @@ export default function AiReadinessPage() {
             <CardHeader>
               <CardTitle>Escalation Policies</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEscalationRules((rules) => [
+                    ...rules,
+                    {
+                      id: `custom_rule_${rules.length + 1}`,
+                      label: 'Custom escalation',
+                      severity: 'HIGH',
+                      keywords: '',
+                      customerReply: "I'm connecting you with a team member who can help. Someone will follow up with you shortly!",
+                      ownerSubject: 'Customer needs follow-up',
+                      ownerMessage: '',
+                      taskTitle: '',
+                      taskPriority: 'HIGH',
+                      stopAutomation: true,
+                      enabled: true,
+                    },
+                  ])}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add rule
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEscalationRules(escalationToDraft(readiness.escalationPolicies))}
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Restore defaults
+                </Button>
+              </div>
               <div className="space-y-3">
-                {readiness.escalationPolicies.slice(0, 6).map((policy) => (
-                  <div key={policy.id} className="rounded-lg border p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="font-medium">{policy.label}</div>
-                      <Badge variant="outline">{policy.severity}</Badge>
+                {escalationRules.map((rule, index) => (
+                  <div key={`${rule.id}-${index}`} className="rounded-lg border p-3 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={rule.enabled}
+                          onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, enabled: event.target.checked } : r))}
+                        />
+                        Enabled
+                      </label>
+                      <Badge variant="outline">{rule.severity}</Badge>
                     </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      {policy.keywords.slice(0, 6).join(', ')}
-                      {policy.keywords.length > 6 ? ', ...' : ''}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label>Rule ID</Label>
+                        <Input value={rule.id} onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, id: event.target.value } : r))} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Label</Label>
+                        <Input value={rule.label} onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, label: event.target.value } : r))} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Severity</Label>
+                        <select
+                          value={rule.severity}
+                          onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, severity: event.target.value } : r))}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        >
+                          {['LOW', 'NORMAL', 'HIGH', 'EMERGENCY'].map((severity) => (
+                            <option key={severity} value={severity}>{severity}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label>Task priority</Label>
+                        <select
+                          value={rule.taskPriority}
+                          onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, taskPriority: event.target.value } : r))}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        >
+                          {['NORMAL', 'HIGH', 'URGENT'].map((priority) => (
+                            <option key={priority} value={priority}>{priority}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
+                    <div className="space-y-1">
+                      <Label>Keywords</Label>
+                      <Input
+                        value={rule.keywords}
+                        onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, keywords: event.target.value } : r))}
+                        placeholder="refund, manager, urgent"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Customer response</Label>
+                      <textarea
+                        value={rule.customerReply}
+                        onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, customerReply: event.target.value } : r))}
+                        rows={3}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Owner notification subject</Label>
+                      <Input value={rule.ownerSubject} onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, ownerSubject: event.target.value } : r))} />
+                    </div>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={rule.stopAutomation}
+                        onChange={(event) => setEscalationRules((rules) => rules.map((r, i) => i === index ? { ...r, stopAutomation: event.target.checked } : r))}
+                      />
+                      Stop AI flow and hand off to a human
+                    </label>
                   </div>
                 ))}
               </div>

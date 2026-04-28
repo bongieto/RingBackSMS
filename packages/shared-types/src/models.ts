@@ -84,6 +84,8 @@ export const TenantConfigSchema = z.object({
   customAiInstructions: z.string().nullable().optional(),
   customEscalationKeywords: z.array(z.string()).default([]).optional(),
   escalationPolicyOverrides: z.unknown().nullable().optional(),
+  intakeFieldOverrides: z.unknown().nullable().optional(),
+  verticalOnboarding: z.unknown().nullable().optional(),
   squareSyncEnabled: z.boolean().default(false),
   squareAutoSync: z.boolean().default(false),
   posSyncEnabled: z.boolean().default(false),

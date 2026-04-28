@@ -60,6 +60,7 @@ export async function buildSystemPrompt(tenantId: string): Promise<string> {
     industryTemplateKey: config?.industryTemplateKey,
     tenantName: tenant.name,
     websiteContext: config?.websiteContext,
+    intakeFieldOverrides: config?.intakeFieldOverrides,
   };
   const verticalProfile = getVerticalProfile(verticalInput);
 

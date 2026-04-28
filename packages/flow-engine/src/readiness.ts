@@ -3,6 +3,7 @@ import { runFlowEngine } from './engine';
 import type { ChatFn, TenantContext } from './types';
 import {
   getVerticalProfile,
+  getVerticalProfileWithOverrides,
   matchEscalationPolicy,
   matchSafetyPolicy,
   resolveEscalationPolicies,
@@ -33,7 +34,8 @@ export interface ReadinessSuiteResult {
   results: ReadinessScenarioResult[];
   recommendedIntegrations: string[];
   valueMetrics: string[];
-  intakeFields: Array<{ key: string; label: string; examples: string[] }>;
+  intakeFields: Array<{ key: string; label: string; examples: string[]; requiredFor: string[] }>;
+  defaultIntakeFields: Array<{ key: string; label: string; examples: string[]; requiredFor: string[] }>;
   categoryBreakdown: Array<{
     category: ReadinessScenarioCategory;
     passed: number;
@@ -45,6 +47,11 @@ export interface ReadinessSuiteResult {
     label: string;
     severity: string;
     keywords: string[];
+    customerReply: string;
+    ownerSubject: string;
+    ownerMessage?: string;
+    taskTitle?: string;
+    taskPriority?: string;
     stopAutomation: boolean;
     source: string;
   }>;
@@ -173,13 +180,22 @@ export async function runVerticalReadinessSuite(input: {
   chatFn?: ChatFn;
   callerPhoneBase?: string;
 }): Promise<ReadinessSuiteResult> {
-  const profile = getVerticalProfile({
+  const defaultProfile = getVerticalProfile({
     businessType: input.tenantContext.businessType,
     industryTemplateKey:
       input.tenantContext.industryTemplateKey ??
       (input.tenantContext.config as { industryTemplateKey?: string | null }).industryTemplateKey,
     tenantName: input.tenantContext.tenantName,
     websiteContext: input.tenantContext.config.websiteContext,
+  });
+  const profile = getVerticalProfileWithOverrides({
+    businessType: input.tenantContext.businessType,
+    industryTemplateKey:
+      input.tenantContext.industryTemplateKey ??
+      (input.tenantContext.config as { industryTemplateKey?: string | null }).industryTemplateKey,
+    tenantName: input.tenantContext.tenantName,
+    websiteContext: input.tenantContext.config.websiteContext,
+    intakeFieldOverrides: (input.tenantContext.config as { intakeFieldOverrides?: unknown }).intakeFieldOverrides,
   });
   const scenarios = input.scenarios ?? profile.readinessScenarios;
   const chatFn = input.chatFn ?? defaultChatFn();
@@ -267,7 +283,8 @@ export async function runVerticalReadinessSuite(input: {
     results,
     recommendedIntegrations: profile.recommendedIntegrations,
     valueMetrics: profile.valueMetrics,
-    intakeFields: profile.intakeFields.map(({ key, label, examples }) => ({ key, label, examples })),
+    intakeFields: profile.intakeFields.map(({ key, label, examples, requiredFor }) => ({ key, label, examples, requiredFor })),
+    defaultIntakeFields: defaultProfile.intakeFields.map(({ key, label, examples, requiredFor }) => ({ key, label, examples, requiredFor })),
     categoryBreakdown: buildCategoryBreakdown(results),
     escalationPolicies: resolveEscalationPolicies({
       businessType: input.tenantContext.businessType,
@@ -278,11 +295,16 @@ export async function runVerticalReadinessSuite(input: {
       websiteContext: input.tenantContext.config.websiteContext,
       customKeywords: (input.tenantContext.config as { customEscalationKeywords?: unknown }).customEscalationKeywords,
       policyOverrides: (input.tenantContext.config as { escalationPolicyOverrides?: unknown }).escalationPolicyOverrides,
-    }).map(({ id, label, severity, keywords, stopAutomation, source }) => ({
+    }).map(({ id, label, severity, keywords, customerReply, ownerSubject, ownerMessage, taskTitle, taskPriority, stopAutomation, source }) => ({
       id,
       label,
       severity,
       keywords,
+      customerReply,
+      ownerSubject,
+      ownerMessage,
+      taskTitle,
+      taskPriority,
       stopAutomation,
       source,
     })),

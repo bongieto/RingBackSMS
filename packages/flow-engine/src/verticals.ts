@@ -80,6 +80,14 @@ export interface IntakeField {
   requiredFor: Array<'booking' | 'quote' | 'handoff'>;
 }
 
+export interface IntakeFieldOverride {
+  key: string;
+  enabled?: boolean;
+  label?: string;
+  examples?: string[];
+  requiredFor?: Array<'booking' | 'quote' | 'handoff'>;
+}
+
 export interface ReadinessScenarioSeed {
   id: string;
   label: string;
@@ -231,6 +239,51 @@ function cleanKeywords(value: unknown): string[] | undefined {
 
 function cleanString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function cleanStringList(value: unknown, max = 20): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const strings = value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, max);
+  return [...new Set(strings)];
+}
+
+function cleanRequiredFor(value: unknown): IntakeField['requiredFor'] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const allowed = new Set(['booking', 'quote', 'handoff']);
+  const requiredFor = value
+    .filter((item): item is IntakeField['requiredFor'][number] =>
+      typeof item === 'string' && allowed.has(item),
+    );
+  return [...new Set(requiredFor)] as IntakeField['requiredFor'];
+}
+
+function readIntakeOverrides(value: unknown): IntakeFieldOverride[] {
+  const rawFields =
+    Array.isArray(value)
+      ? value
+      : isRecord(value) && Array.isArray(value.fields)
+        ? value.fields
+        : [];
+
+  return rawFields.flatMap((field): IntakeFieldOverride[] => {
+    if (!isRecord(field)) return [];
+    const key = cleanString(field.key);
+    if (!key) return [];
+    const label = cleanString(field.label);
+    const examples = cleanStringList(field.examples);
+    const requiredFor = cleanRequiredFor(field.requiredFor);
+    return [{
+      key,
+      ...(typeof field.enabled === 'boolean' && { enabled: field.enabled }),
+      ...(label && { label }),
+      ...(examples !== undefined && { examples }),
+      ...(requiredFor !== undefined && { requiredFor }),
+    }];
+  });
 }
 
 function readPolicyOverrides(value: unknown): EscalationPolicyOverride[] {
@@ -818,6 +871,48 @@ export function getVerticalProfile(input: {
   return VERTICAL_PROFILES[getVerticalKey(input)];
 }
 
+export function resolveIntakeFields(input: {
+  businessType?: string | null;
+  industryTemplateKey?: string | null;
+  tenantName?: string | null;
+  websiteContext?: string | null;
+  intakeFieldOverrides?: unknown;
+}): IntakeField[] {
+  const profile = getVerticalProfile(input);
+  const fields = new Map<string, IntakeField>();
+  for (const field of profile.intakeFields) fields.set(field.key, field);
+
+  for (const override of readIntakeOverrides(input.intakeFieldOverrides)) {
+    if (override.enabled === false) {
+      fields.delete(override.key);
+      continue;
+    }
+    const existing = fields.get(override.key);
+    fields.set(override.key, {
+      key: override.key,
+      label: override.label ?? existing?.label ?? override.key,
+      examples: override.examples ?? existing?.examples ?? [],
+      requiredFor: override.requiredFor ?? existing?.requiredFor ?? [],
+    });
+  }
+
+  return [...fields.values()];
+}
+
+export function getVerticalProfileWithOverrides(input: {
+  businessType?: string | null;
+  industryTemplateKey?: string | null;
+  tenantName?: string | null;
+  websiteContext?: string | null;
+  intakeFieldOverrides?: unknown;
+}): VerticalProfile {
+  const profile = getVerticalProfile(input);
+  return {
+    ...profile,
+    intakeFields: resolveIntakeFields(input),
+  };
+}
+
 export function resolveEscalationPolicies(input: {
   businessType?: string | null;
   industryTemplateKey?: string | null;
@@ -995,8 +1090,9 @@ export function buildVerticalPromptGuidance(input: {
   industryTemplateKey?: string | null;
   tenantName?: string | null;
   websiteContext?: string | null;
+  intakeFieldOverrides?: unknown;
 }): string {
-  const profile = getVerticalProfile(input);
+  const profile = getVerticalProfileWithOverrides(input);
   const intake = profile.intakeFields.length
     ? `\nUseful ${profile.catalogNoun} intake fields: ${profile.intakeFields
         .map((field) => `${field.label} (${field.examples.join(' / ')})`)

@@ -64,6 +64,8 @@ export const UpdateTenantConfigRequestSchema = z.object({
   industryTemplateKey: z.string().max(100).nullable().optional(),
   customEscalationKeywords: z.array(z.string().trim().min(1).max(80)).max(50).optional(),
   escalationPolicyOverrides: z.unknown().nullable().optional(),
+  intakeFieldOverrides: z.unknown().nullable().optional(),
+  verticalOnboarding: z.unknown().nullable().optional(),
   // Pricing / pass-through
   salesTaxRate: z.number().min(0).max(0.5).nullable().optional(), // 0–50% sanity cap
   passStripeFeesToCustomer: z.boolean().optional(),

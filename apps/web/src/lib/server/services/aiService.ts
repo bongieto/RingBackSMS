@@ -3,7 +3,7 @@ import { buildSystemPrompt } from './promptBuilder';
 import { logger } from '../logger';
 import { prisma } from '../db';
 import { getProfile } from '@/lib/businessTypeProfile';
-import { buildCatalogPromptContext, getVerticalProfile } from '@ringback/flow-engine';
+import { buildCatalogPromptContext, getVerticalProfileWithOverrides } from '@ringback/flow-engine';
 
 function stripThinkTags(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
@@ -36,11 +36,12 @@ export async function buildTenantSystemPrompt(tenantId: string): Promise<string>
   const enabledFlows = tenant.flows.map((f) => f.type.toLowerCase()).join(', ');
   const tz = config?.timezone ?? 'America/Chicago';
 
-  const verticalProfile = getVerticalProfile({
+  const verticalProfile = getVerticalProfileWithOverrides({
     businessType: tenant.businessType,
     industryTemplateKey: config?.industryTemplateKey,
     tenantName: tenant.name,
     websiteContext: config?.websiteContext,
+    intakeFieldOverrides: config?.intakeFieldOverrides,
   });
   const catalogContext = buildCatalogPromptContext({
     catalogNoun: verticalProfile.catalogNoun,
