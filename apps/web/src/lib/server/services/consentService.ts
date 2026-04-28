@@ -1,6 +1,9 @@
 import { prisma } from '../db';
 import { logger } from '../logger';
+import { Prisma } from '@prisma/client';
 import { currentTurnId } from '../turn/TurnContext';
+import { decryptMessages, encryptMessages } from '../encryption';
+import { getCallerState, setCallerState } from './stateService';
 import {
   renderGreetingTemplate,
   buildGreetingVars,
@@ -82,7 +85,7 @@ export function isOptOutKeyword(body: string): boolean {
 }
 
 const ACTIONABLE_PRE_CONSENT_RE =
-  /\b(menu|order|where|location|find\s+you|hours?|open|closed?|book|schedule|appointment|pickup|delivery|quote|price|cost|callback|call\s+me|call\s+back)\b|\?$/i;
+  /\b(menu|order|where|location|find\s+you|hours?|open|closed?|book|schedule|appointment|pickup|delivery|quote|price|cost|callback|call\s+me|call\s+back|do\s+you\s+have|have\s+any|got\s+any|available|availability|in\s+stock|can\s+i\s+get|can\s+i\s+order|need|want)\b|\?$/i;
 
 /**
  * If a caller asks a real business question before replying YES, keep that
@@ -106,6 +109,9 @@ export function buildConsentReprompt(body: string): string {
   if (actionable && /\b(where|location|find\s+you)\b/i.test(actionable)) {
     return 'Reply YES to get our location by text, or STOP to opt out.';
   }
+  if (actionable) {
+    return "Reply YES and I'll answer that by text, or STOP to opt out.";
+  }
   return 'Just reply YES to get help by text, or STOP to opt out.';
 }
 
@@ -127,6 +133,121 @@ export async function isCallerSuppressed(
     select: { id: true },
   });
   return Boolean(row);
+}
+
+export async function hasActiveConsent(
+  tenantId: string,
+  callerPhone: string,
+): Promise<boolean> {
+  if (await isCallerSuppressed(tenantId, callerPhone)) return false;
+  const row = await prisma.smsConsentRequest.findFirst({
+    where: {
+      tenantId,
+      callerPhone,
+      status: 'CONSENTED',
+    },
+    orderBy: { consentedAt: 'desc' },
+    select: { id: true },
+  });
+  return Boolean(row);
+}
+
+type ConsentTranscriptMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+  sender: 'customer' | 'bot';
+  timestamp?: Date;
+};
+
+export async function appendConsentTranscript(
+  tenantId: string,
+  callerPhone: string,
+  messages: ConsentTranscriptMessage[],
+): Promise<string | null> {
+  const cleanMessages = messages
+    .map((message) => ({
+      role: message.role,
+      content: message.content.trim(),
+      timestamp: message.timestamp ?? new Date(),
+      sender: message.sender,
+    }))
+    .filter((message) => message.content.length > 0);
+
+  if (cleanMessages.length === 0) return null;
+
+  const rawState = await getCallerState(tenantId, callerPhone);
+  const state =
+    rawState?.lastMessageAt && Date.now() - rawState.lastMessageAt <= 30 * 60 * 1000
+      ? rawState
+      : null;
+  const stateConversationId = state?.conversationId ?? null;
+  const recentCutoff = new Date(Date.now() - 30 * 60 * 1000);
+
+  let conversation = stateConversationId
+    ? await prisma.conversation.findFirst({
+        where: { id: stateConversationId, tenantId, callerPhone },
+        select: { id: true, messages: true },
+      })
+    : null;
+
+  if (!conversation) {
+    conversation = await prisma.conversation.findFirst({
+      where: {
+        tenantId,
+        callerPhone,
+        isActive: true,
+        updatedAt: { gte: recentCutoff },
+      },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true, messages: true },
+    });
+  }
+
+  let conversationId: string;
+  if (conversation) {
+    const existing = decryptMessages(conversation.messages);
+    const updated = [...existing, ...cleanMessages];
+    const result = await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        messages: encryptMessages(updated) as unknown as Prisma.InputJsonValue,
+        updatedAt: new Date(),
+      },
+      select: { id: true },
+    });
+    conversationId = result.id;
+  } else {
+    const result = await prisma.conversation.create({
+      data: {
+        tenantId,
+        callerPhone,
+        messages: encryptMessages(cleanMessages) as unknown as Prisma.InputJsonValue,
+        isActive: true,
+      },
+      select: { id: true },
+    });
+    conversationId = result.id;
+  }
+
+  await setCallerState({
+    tenantId,
+    callerPhone,
+    conversationId,
+    currentFlow: state?.currentFlow ?? null,
+    flowStep: state?.flowStep ?? null,
+    orderDraft: state?.orderDraft ?? null,
+    meetingDraft: state?.meetingDraft ?? null,
+    paymentPending: state?.paymentPending ?? null,
+    pendingCustomization: state?.pendingCustomization ?? null,
+    pendingClarification: state?.pendingClarification ?? null,
+    customerName: state?.customerName ?? null,
+    lastAwaitingPaymentReplyAt: state?.lastAwaitingPaymentReplyAt ?? null,
+    lastMessageAt: Date.now(),
+    messageCount: (state?.messageCount ?? 0) + cleanMessages.length,
+    dedupKey: state?.dedupKey ?? null,
+  });
+
+  return conversationId;
 }
 
 /**
@@ -184,12 +305,16 @@ export async function approveConsent(
   requestId: string,
   replyBody: string,
 ): Promise<void> {
+  const existing = await prisma.smsConsentRequest.findUnique({
+    where: { id: requestId },
+    select: { replyBody: true },
+  });
   const req = await prisma.smsConsentRequest.update({
     where: { id: requestId },
     data: {
       status: 'CONSENTED',
       consentedAt: new Date(),
-      replyBody,
+      replyBody: existing?.replyBody ?? replyBody,
     },
     select: { tenantId: true, callerPhone: true },
   });

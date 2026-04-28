@@ -7,8 +7,10 @@ import { checkRateLimit } from '@/lib/server/rateLimit';
 import { getValidationToken } from '@/lib/server/services/twilioService';
 import {
   isCallerSuppressed,
+  hasActiveConsent,
   buildConsentMessage,
   createConsentRequest,
+  appendConsentTranscript,
   logConsentEvent,
 } from '@/lib/server/services/consentService';
 import { linkMissedCallToContact } from '@/lib/server/services/contactLinking';
@@ -361,6 +363,27 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      if (await hasActiveConsent(tenant.id, from)) {
+        const opener =
+          tenant.config?.followupOpener ??
+          `Thanks! How can ${businessName} help you today?`;
+        console.log('[consent-sms] caller-already-consented');
+        const messageSid = await sendSms(tenant.id, from, opener);
+        await appendConsentTranscript(tenant.id, from, [
+          { role: 'assistant', content: opener, sender: 'bot' },
+        ]).catch((err) =>
+          logger.error('Failed to append returning consent transcript', { err, tenantId: tenant.id }),
+        );
+        await prisma.missedCall.update({
+          where: { twilioCallSid: callSid },
+          data: { smsSent: true },
+        }).catch(() => {});
+        await logConsentEvent(tenant.id, from, 'already_consented', {
+          messageSid,
+        }).catch(() => {});
+        return;
+      }
+
       const { id: consentRequestId, alreadyPending } = await createConsentRequest(tenant.id, from, to);
       console.log('[consent-sms] create-result', JSON.stringify({ consentRequestId, alreadyPending }));
       if (alreadyPending) return;
@@ -386,6 +409,11 @@ export async function POST(request: NextRequest) {
       console.log('[consent-sms] calling-twilio');
       const messageSid = await sendSms(tenant.id, from, consentMsg);
       console.log('[consent-sms] twilio-accepted', JSON.stringify({ messageSid }));
+      await appendConsentTranscript(tenant.id, from, [
+        { role: 'assistant', content: consentMsg, sender: 'bot' },
+      ]).catch((err) =>
+        logger.error('Failed to append consent transcript', { err, tenantId: tenant.id }),
+      );
 
       await prisma.smsConsentRequest.update({
         where: { id: consentRequestId },

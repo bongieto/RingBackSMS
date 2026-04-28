@@ -39,6 +39,12 @@ export interface ProcessInboundSmsOptions {
    * simulate conversations without touching Twilio, Stripe, or Square.
    */
   testMode?: boolean;
+  /**
+   * Used by the consent replay path. The customer's original pre-consent
+   * text is already visible in the transcript, so replay it through the
+   * engine without writing a duplicate user bubble.
+   */
+  persistInboundMessage?: boolean;
 }
 
 export interface ProcessInboundSmsTestResult {
@@ -1565,8 +1571,11 @@ async function processInboundSmsInner(
   // 2026-04-18; the closed-hours notice also re-prepended because
   // `!existingConversationId` became true on the second SMS.
   let conversationId: string | null = existingConversationId;
+  const shouldPersistInboundMessage = options?.persistInboundMessage !== false;
   const newMessages = [
-    { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },
+    ...(shouldPersistInboundMessage
+      ? [{ role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' }]
+      : []),
     { role: 'assistant', content: result.smsReply, timestamp: new Date(), sender: 'bot' },
   ];
   const nextConversationIntake = mergeConversationIntake(undefined, result.intake);
@@ -1630,12 +1639,11 @@ async function processInboundSmsInner(
 
   // Notify owner if escalation
   if (isEscalation && escalationMatch && !testMode) {
-    await sendNotification({
+    await sendOwnerNotification({
       tenantId,
       subject: escalationMatch.ownerSubject,
       message: escalationMatch.ownerMessage,
-      channel: 'email',
-    }).catch((err) => logger.warn('Failed to send escalation notification', { error: err }));
+    }).catch((err) => logger.warn('Failed to send escalation owner notification', { error: err }));
 
     // Create an action item for the owner
     await createTask({

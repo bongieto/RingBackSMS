@@ -1,7 +1,7 @@
 import { prisma } from '../db';
 import { logger } from '../logger';
 import { sendSms } from './twilioService';
-import { sendNotification } from './notificationService';
+import { sendOwnerNotification } from './notificationService';
 import { createTask } from './taskService';
 import { matchEscalationPolicy, matchSafetyPolicy } from '@ringback/flow-engine';
 
@@ -12,7 +12,8 @@ import { matchEscalationPolicy, matchSafetyPolicy } from '@ringback/flow-engine'
  * 2. Notifies the tenant via all configured channels
  * 3. Logs the escalation event
  *
- * Returns true if an escalation was triggered, false otherwise.
+ * Returns true when automation should stop for the escalation. Non-stopping
+ * escalation rules are handled by the flow engine so the owner is notified once.
  */
 export async function checkEscalation(
   tenantId: string,
@@ -88,21 +89,20 @@ export async function checkEscalation(
     stopAutomation: match.stopAutomation,
   });
 
+  if (!match.stopAutomation) return false;
+
   // 1. Send holding message to customer
-  if (match.stopAutomation) {
-    await sendSms(tenantId, callerPhone, match.customerReply).catch((err) =>
-      logger.error('Failed to send escalation holding message', { err, tenantId }),
-    );
-  }
+  await sendSms(tenantId, callerPhone, match.customerReply).catch((err) =>
+    logger.error('Failed to send escalation holding message', { err, tenantId }),
+  );
 
   // 2. Notify tenant via all configured channels
-  await sendNotification({
+  await sendOwnerNotification({
     tenantId,
     subject: match.ownerSubject,
     message: match.ownerMessage,
-    channel: 'email',
   }).catch((err) =>
-    logger.warn('Escalation email notification failed', { err, tenantId }),
+    logger.warn('Escalation owner notification failed', { err, tenantId }),
   );
 
   await createTask({

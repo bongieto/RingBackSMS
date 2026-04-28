@@ -15,6 +15,7 @@ import {
   declineConsent,
   suppressCaller,
   isCallerSuppressed,
+  appendConsentTranscript,
   buildConsentReprompt,
   getActionablePreConsentMessage,
 } from '@/lib/server/services/consentService';
@@ -125,6 +126,16 @@ export async function POST(request: NextRequest) {
             From,
             "Got it — we won't text you again. Call us anytime.",
           );
+          await appendConsentTranscript(tenant.id, From, [
+            { role: 'user', content: normalizedBody, sender: 'customer' },
+            {
+              role: 'assistant',
+              content: "Got it — we won't text you again. Call us anytime.",
+              sender: 'bot',
+            },
+          ]).catch((err) =>
+            logger.error('Failed to append opt-out transcript', { err, tenantId: tenant.id }),
+          );
         } catch (err) {
           logger.error('Opt-out handling failed', { err, tenantId: tenant.id });
         }
@@ -142,6 +153,11 @@ export async function POST(request: NextRequest) {
         (async () => {
           try {
             const replayMessage = getActionablePreConsentMessage(pendingConsent.replyBody);
+            await appendConsentTranscript(tenant.id, From, [
+              { role: 'user', content: normalizedBody, sender: 'customer' },
+            ]).catch((err) =>
+              logger.error('Failed to append consent approval transcript', { err, tenantId: tenant.id }),
+            );
             await approveConsent(pendingConsent.id, normalizedBody);
             if (replayMessage) {
               try {
@@ -150,7 +166,7 @@ export async function POST(request: NextRequest) {
                   callerPhone: From,
                   inboundMessage: replayMessage,
                   messageSid: `${MessageSid}:consent-replay:${pendingConsent.id}`,
-                });
+                }, { persistInboundMessage: false });
                 return;
               } catch (err) {
                 logger.error('Consent replay failed; falling back to opener', {
@@ -165,6 +181,11 @@ export async function POST(request: NextRequest) {
               tenant.config?.followupOpener ??
               `Thanks! How can ${tenant.name} help you today?`;
             await sendSms(tenant.id, From, opener);
+            await appendConsentTranscript(tenant.id, From, [
+              { role: 'assistant', content: opener, sender: 'bot' },
+            ]).catch((err) =>
+              logger.error('Failed to append consent opener transcript', { err, tenantId: tenant.id }),
+            );
           } catch (err) {
             logger.error('Consent approval failed', { err, tenantId: tenant.id });
           }
@@ -176,6 +197,7 @@ export async function POST(request: NextRequest) {
         (async () => {
           try {
             const replayMessage = getActionablePreConsentMessage(normalizedBody);
+            const reprompt = buildConsentReprompt(normalizedBody);
             await prisma.smsConsentRequest.update({
               where: { id: pendingConsent.id },
               data: {
@@ -186,7 +208,13 @@ export async function POST(request: NextRequest) {
             await sendSms(
               tenant.id,
               From,
-              buildConsentReprompt(normalizedBody),
+              reprompt,
+            );
+            await appendConsentTranscript(tenant.id, From, [
+              { role: 'user', content: normalizedBody, sender: 'customer' },
+              { role: 'assistant', content: reprompt, sender: 'bot' },
+            ]).catch((err) =>
+              logger.error('Failed to append consent reprompt transcript', { err, tenantId: tenant.id }),
             );
           } catch (err) {
             logger.error('Re-prompt failed', { err, tenantId: tenant.id });
@@ -195,6 +223,13 @@ export async function POST(request: NextRequest) {
       );
     } else {
       const replayMessage = getActionablePreConsentMessage(normalizedBody);
+      waitUntil(
+        appendConsentTranscript(tenant.id, From, [
+          { role: 'user', content: normalizedBody, sender: 'customer' },
+        ]).catch((err) =>
+          logger.error('Failed to append pending consent message', { err, tenantId: tenant.id }),
+        ),
+      );
       if (replayMessage) {
         waitUntil(
           prisma.smsConsentRequest
