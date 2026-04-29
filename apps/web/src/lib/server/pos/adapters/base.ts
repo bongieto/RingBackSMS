@@ -62,7 +62,7 @@ export abstract class BasePosAdapter {
   abstract readonly displayName: string;
   abstract readonly authType: 'oauth' | 'apikey';
 
-  abstract getOAuthUrl(tenantId: string): string;
+  abstract getOAuthUrl(tenantId: string, state: string): string;
   abstract exchangeCode(tenantId: string, code: string): Promise<void>;
   abstract refreshToken(tenantId: string): Promise<void>;
   abstract syncCatalogFromPOS(tenantId: string): Promise<SyncResult>;

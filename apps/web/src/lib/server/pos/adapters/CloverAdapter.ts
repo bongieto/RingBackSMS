@@ -25,12 +25,12 @@ export class CloverAdapter extends BasePosAdapter {
   readonly displayName = 'Clover';
   readonly authType = 'oauth' as const;
 
-  getOAuthUrl(tenantId: string): string {
+  getOAuthUrl(tenantId: string, state: string): string {
     const baseUrl = getCloverBaseUrl();
 
     const params = new URLSearchParams({
       client_id: process.env.CLOVER_APP_ID ?? '',
-      state: tenantId,
+      state,
       redirect_uri: `${getAppBaseUrl()}/api/integrations/clover/callback`,
     });
 

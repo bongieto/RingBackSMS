@@ -19,19 +19,17 @@ export class ShopifyAdapter extends BasePosAdapter {
   /**
    * The shop domain must be stored in posRaw.shopDomain before calling this.
    */
-  getOAuthUrl(tenantId: string): string {
+  getOAuthUrl(tenantId: string, state: string): string {
     // The shopDomain should be provided as part of the state or pre-configured.
     // For the URL generation we need the shop domain — it should be set in
     // advance via a configure step and stored in posRaw.
     // Since we can't do async here, the caller must pass the shopDomain
     // via the tenantId param encoded as "tenantId:shopDomain" or the shop
     // must be pre-configured. We'll parse it if encoded.
-    let actualTenantId = tenantId;
     let shopDomain = '';
 
     if (tenantId.includes(':')) {
       const parts = tenantId.split(':');
-      actualTenantId = parts[0];
       shopDomain = parts[1];
     }
 
@@ -44,7 +42,7 @@ export class ShopifyAdapter extends BasePosAdapter {
     const params = new URLSearchParams({
       client_id: process.env.SHOPIFY_CLIENT_ID ?? '',
       scope: getScopes(),
-      state: actualTenantId,
+      state,
       redirect_uri: `${getAppBaseUrl()}/api/integrations/shopify/callback`,
     });
 

@@ -1,10 +1,25 @@
 /** @type {import('next').NextConfig} */
 
-// Report-only CSP — permissive baseline to observe without breaking
-// Clerk / Stripe / Twilio / Vercel widgets. Flip to enforcing after review.
-const cspReportOnly = [
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Enforce CSP in production. Development stays report-only because Next's
+// dev runtime needs eval-like tooling that should never ship to prod.
+const scriptSrc = [
+  "'self'",
+  "'unsafe-inline'",
+  ...(isProduction ? [] : ["'unsafe-eval'"]),
+  'https://*.clerk.accounts.dev',
+  'https://*.clerk.com',
+  'https://clerk.ringbacksms.com',
+  'https://challenges.cloudflare.com',
+  'https://js.stripe.com',
+  'https://*.stripe.com',
+  'https://va.vercel-scripts.com',
+].join(' ');
+
+const csp = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.accounts.dev https://*.clerk.com https://clerk.ringbacksms.com https://challenges.cloudflare.com https://js.stripe.com https://*.stripe.com https://va.vercel-scripts.com",
+  `script-src ${scriptSrc}`,
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data: https://fonts.gstatic.com",
@@ -25,7 +40,7 @@ const securityHeaders = [
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
   { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()' },
   { key: 'X-DNS-Prefetch-Control', value: 'on' },
-  { key: 'Content-Security-Policy-Report-Only', value: cspReportOnly },
+  { key: isProduction ? 'Content-Security-Policy' : 'Content-Security-Policy-Report-Only', value: csp },
 ];
 
 const nextConfig = {

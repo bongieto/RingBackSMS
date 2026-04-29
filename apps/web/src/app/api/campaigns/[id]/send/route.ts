@@ -1,10 +1,11 @@
 import { NextRequest } from 'next/server';
-import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
+import { requireTenantRole, isNextResponse } from '@/lib/server/auth';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { prisma } from '@/lib/server/db';
 import { queueCampaign, sendCampaign } from '@/lib/server/services/campaignService';
 import { waitUntil } from '@/lib/server/waitUntil';
 import { logger } from '@/lib/server/logger';
+import { TenantMemberRole } from '@prisma/client';
 
 /**
  * POST /api/campaigns/:id/send — queue eligible recipients, then
@@ -17,7 +18,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     select: { tenantId: true, status: true },
   });
   if (!campaign) return apiError('Campaign not found', 404);
-  const authResult = await verifyTenantAccess(campaign.tenantId);
+  const authResult = await requireTenantRole(campaign.tenantId, [
+    TenantMemberRole.OWNER,
+    TenantMemberRole.MANAGER,
+  ]);
   if (isNextResponse(authResult)) return authResult;
 
   if (campaign.status === 'SENT' || campaign.status === 'SENDING') {

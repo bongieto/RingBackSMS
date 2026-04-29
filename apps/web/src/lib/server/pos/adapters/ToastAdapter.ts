@@ -9,7 +9,7 @@ export class ToastAdapter extends BasePosAdapter {
   readonly displayName = 'Toast';
   readonly authType = 'apikey' as const;
 
-  getOAuthUrl(_tenantId: string): string {
+  getOAuthUrl(_tenantId: string, _state: string): string {
     throw new Error(
       'Toast uses API key authentication. Configure via the settings form.',
     );

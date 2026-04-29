@@ -51,7 +51,12 @@ export async function exchangeAuthCode(
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    logger.warn('[calcom] token exchange failed', { status: res.status, body });
+    const errorBody = body as { error?: string; error_description?: string };
+    logger.warn('[calcom] token exchange failed', {
+      status: res.status,
+      error: errorBody.error,
+      errorDescription: errorBody.error_description,
+    });
     throw new Error(
       (body as { error?: string; error_description?: string })?.error_description ??
         (body as { error?: string }).error ??
@@ -110,7 +115,12 @@ async function refreshAccessToken(refreshToken: string): Promise<TokenPair> {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    logger.warn('[calcom] refresh failed', { status: res.status, body });
+    const errorBody = body as { error?: string; error_description?: string };
+    logger.warn('[calcom] refresh failed', {
+      status: res.status,
+      error: errorBody.error,
+      errorDescription: errorBody.error_description,
+    });
     throw new Error('cal.com refresh failed');
   }
   const tok = body as CalcomTokenResponse;

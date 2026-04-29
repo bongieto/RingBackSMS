@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
+import { TenantMemberRole } from '@prisma/client';
+import { requireTenantRole, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
@@ -14,7 +15,10 @@ const BodySchema = z.object({
 
 export async function POST(req: NextRequest) {
   const tenantId = new URL(req.url).searchParams.get('tenantId') ?? '';
-  const authResult = await verifyTenantAccess(tenantId);
+  const authResult = await requireTenantRole(tenantId, [
+    TenantMemberRole.OWNER,
+    TenantMemberRole.MANAGER,
+  ]);
   if (isNextResponse(authResult)) return authResult;
 
   let body: z.infer<typeof BodySchema>;

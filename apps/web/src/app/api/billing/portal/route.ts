@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
+import { TenantMemberRole } from '@prisma/client';
+import { requireTenantRole, isNextResponse } from '@/lib/server/auth';
 import { createBillingPortalSession } from '@/lib/server/services/billingService';
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
@@ -19,7 +20,10 @@ export async function POST(req: NextRequest) {
     }
 
     const body = PortalSchema.parse(await req.json());
-    const authResult = await verifyTenantAccess(body.tenantId);
+    const authResult = await requireTenantRole(body.tenantId, [
+      TenantMemberRole.OWNER,
+      TenantMemberRole.MANAGER,
+    ]);
     if (isNextResponse(authResult)) return authResult;
     const url = await createBillingPortalSession(body.tenantId, body.returnUrl);
     return apiSuccess({ url });

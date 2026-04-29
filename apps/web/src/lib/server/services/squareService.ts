@@ -3,6 +3,7 @@ import { encrypt, decrypt } from '../encryption';
 import { logger } from '../logger';
 import axios from 'axios';
 import { prisma } from '../db';
+import { signPosOAuthState } from '../pos/oauthState';
 
 /** Resolve the public app origin from the first env var we find. */
 function getAppOrigin(): string {
@@ -42,7 +43,7 @@ export function getOAuthUrl(tenantId: string): string {
   const params = new URLSearchParams({
     client_id: (process.env.SQUARE_APPLICATION_ID || process.env.SQUARE_APP_ID) ?? '',
     scope: 'MERCHANT_PROFILE_READ ITEMS_READ ITEMS_WRITE ORDERS_WRITE PAYMENTS_WRITE',
-    state: tenantId,
+    state: signPosOAuthState(tenantId, 'square'),
     redirect_uri: getSquareRedirectUri(),
   });
 

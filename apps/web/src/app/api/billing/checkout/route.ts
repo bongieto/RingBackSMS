@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
+import { TenantMemberRole } from '@prisma/client';
+import { requireTenantRole, isNextResponse } from '@/lib/server/auth';
 import { createCheckoutSession } from '@/lib/server/services/billingService';
 import { Plan } from '@ringback/shared-types';
 import { z } from 'zod';
@@ -23,7 +24,10 @@ export async function POST(req: NextRequest) {
     }
 
     const body = CheckoutSchema.parse(await req.json());
-    const authResult = await verifyTenantAccess(body.tenantId);
+    const authResult = await requireTenantRole(body.tenantId, [
+      TenantMemberRole.OWNER,
+      TenantMemberRole.MANAGER,
+    ]);
     if (isNextResponse(authResult)) return authResult;
     const url = await createCheckoutSession(body.tenantId, body.plan, body.successUrl, body.cancelUrl, body.interval);
     return apiSuccess({ url });

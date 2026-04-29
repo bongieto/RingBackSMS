@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
+import { TenantMemberRole } from '@prisma/client';
+import { requireTenantRole, isNextResponse } from '@/lib/server/auth';
 import { buildAuthorizeUrl, signState } from '@/lib/server/services/calcomService';
 import { apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
@@ -16,7 +17,10 @@ function getRedirectUri(): string {
 
 export async function GET(req: NextRequest) {
   const tenantId = new URL(req.url).searchParams.get('tenantId') ?? '';
-  const authResult = await verifyTenantAccess(tenantId);
+  const authResult = await requireTenantRole(tenantId, [
+    TenantMemberRole.OWNER,
+    TenantMemberRole.MANAGER,
+  ]);
   if (isNextResponse(authResult)) return authResult;
 
   try {

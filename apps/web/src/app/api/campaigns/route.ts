@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
+import { verifyTenantAccess, requireTenantRole, isNextResponse } from '@/lib/server/auth';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { prisma } from '@/lib/server/db';
+import { TenantMemberRole } from '@prisma/client';
 
 const CreateBody = z.object({
   tenantId: z.string().min(1),
@@ -28,7 +29,10 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return apiError('Invalid body', 400);
-  const authResult = await verifyTenantAccess(parsed.data.tenantId);
+  const authResult = await requireTenantRole(parsed.data.tenantId, [
+    TenantMemberRole.OWNER,
+    TenantMemberRole.MANAGER,
+  ]);
   if (isNextResponse(authResult)) return authResult;
   const campaign = await prisma.smsCampaign.create({
     data: {

@@ -1,13 +1,17 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
+import { requireTenantRole, isNextResponse } from '@/lib/server/auth';
 import { updateTenantConfig } from '@/lib/server/services/tenantService';
 import { UpdateTenantConfigRequestSchema } from '@ringback/shared-types';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { AppError } from '@/lib/server/errors';
+import { TenantMemberRole } from '@prisma/client';
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const authResult = await verifyTenantAccess(params.id);
+  const authResult = await requireTenantRole(params.id, [
+    TenantMemberRole.OWNER,
+    TenantMemberRole.MANAGER,
+  ]);
   if (isNextResponse(authResult)) return authResult;
   try {
     const body = UpdateTenantConfigRequestSchema.parse(await req.json());

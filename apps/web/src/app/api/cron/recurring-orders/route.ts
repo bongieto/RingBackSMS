@@ -19,7 +19,7 @@ import { logger } from '@/lib/server/logger';
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   const auth = req.headers.get('authorization') ?? '';
-  if (secret && !auth.endsWith(secret)) {
+  if (!secret || auth !== `Bearer ${secret}`) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

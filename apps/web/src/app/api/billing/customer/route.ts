@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
+import { TenantMemberRole } from '@prisma/client';
+import { requireTenantRole, isNextResponse } from '@/lib/server/auth';
 import { createStripeCustomer } from '@/lib/server/services/billingService';
 import { z } from 'zod';
 import { apiCreated, apiError } from '@/lib/server/response';
@@ -13,7 +14,10 @@ const CustomerSchema = z.object({
 export async function POST(req: NextRequest) {
   try {
     const body = CustomerSchema.parse(await req.json());
-    const authResult = await verifyTenantAccess(body.tenantId);
+    const authResult = await requireTenantRole(body.tenantId, [
+      TenantMemberRole.OWNER,
+      TenantMemberRole.MANAGER,
+    ]);
     if (isNextResponse(authResult)) return authResult;
     const customerId = await createStripeCustomer(body.tenantId, body.email, body.name);
     return apiCreated({ customerId });

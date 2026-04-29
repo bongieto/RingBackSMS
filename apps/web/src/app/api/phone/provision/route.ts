@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
+import { TenantMemberRole } from '@prisma/client';
+import { requireTenantRole, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { provisionPhoneNumber } from '@/lib/server/services/twilioService';
 import { z } from 'zod';
@@ -18,7 +19,10 @@ const ProvisionSchema = z.object({
 export async function POST(req: NextRequest) {
   try {
     const { phoneNumber, tenantId } = ProvisionSchema.parse(await req.json());
-    const authResult = await verifyTenantAccess(tenantId);
+    const authResult = await requireTenantRole(tenantId, [
+      TenantMemberRole.OWNER,
+      TenantMemberRole.MANAGER,
+    ]);
     if (isNextResponse(authResult)) return authResult;
 
     // Twilio provisioning is billed — limit 5/hour per tenant

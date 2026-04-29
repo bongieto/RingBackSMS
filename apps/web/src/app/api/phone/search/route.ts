@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
+import { TenantMemberRole } from '@prisma/client';
+import { requireTenantRole, isNextResponse } from '@/lib/server/auth';
 import { searchAvailableNumbers, searchNearbyNumbers } from '@/lib/server/services/twilioService';
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
@@ -26,7 +27,10 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 export async function POST(req: NextRequest) {
   try {
     const { areaCode, tenantId } = SearchSchema.parse(await req.json());
-    const authResult = await verifyTenantAccess(tenantId);
+    const authResult = await requireTenantRole(tenantId, [
+      TenantMemberRole.OWNER,
+      TenantMemberRole.MANAGER,
+    ]);
     if (isNextResponse(authResult)) return authResult;
 
     // Twilio number search is billed — limit 10/min per tenant

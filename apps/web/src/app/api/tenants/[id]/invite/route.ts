@@ -1,11 +1,12 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { auth, clerkClient } from '@clerk/nextjs/server';
-import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
+import { requireTenantRole, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { sendTenantOwnerInviteEmail } from '@/lib/server/services/emailService';
 import { logger } from '@/lib/server/logger';
+import { TenantMemberRole } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,7 +26,10 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const authResult = await verifyTenantAccess(params.id);
+  const authResult = await requireTenantRole(params.id, [
+    TenantMemberRole.OWNER,
+    TenantMemberRole.MANAGER,
+  ]);
   if (isNextResponse(authResult)) return authResult;
 
   let body: z.infer<typeof InviteSchema>;
@@ -104,7 +108,10 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  const authResult = await verifyTenantAccess(params.id);
+  const authResult = await requireTenantRole(params.id, [
+    TenantMemberRole.OWNER,
+    TenantMemberRole.MANAGER,
+  ]);
   if (isNextResponse(authResult)) return authResult;
 
   try {

@@ -40,14 +40,14 @@ export class SquareAdapter extends BasePosAdapter {
   readonly displayName = 'Square';
   readonly authType = 'oauth' as const;
 
-  getOAuthUrl(tenantId: string): string {
+  getOAuthUrl(tenantId: string, state: string): string {
     const baseUrl = getSquareBaseUrl();
 
     const params = new URLSearchParams({
       client_id: (process.env.SQUARE_APPLICATION_ID || process.env.SQUARE_APP_ID) ?? '',
       scope:
         'MERCHANT_PROFILE_READ ITEMS_READ ITEMS_WRITE ORDERS_WRITE PAYMENTS_WRITE',
-      state: tenantId,
+      state,
       redirect_uri: `${getAppBaseUrl()}/api/integrations/square/callback`,
     });
 

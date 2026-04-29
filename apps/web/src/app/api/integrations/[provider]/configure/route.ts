@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
+import { TenantMemberRole } from '@prisma/client';
+import { requireTenantRole, isNextResponse } from '@/lib/server/auth';
 import { posRegistry } from '@/lib/server/pos/registry';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
@@ -8,7 +9,10 @@ export async function POST(request: NextRequest, { params }: { params: { provide
   try {
     const body = await request.json();
     const tenantId = body.tenantId as string;
-    const authResult = await verifyTenantAccess(tenantId);
+    const authResult = await requireTenantRole(tenantId, [
+      TenantMemberRole.OWNER,
+      TenantMemberRole.MANAGER,
+    ]);
     if (isNextResponse(authResult)) return authResult;
 
     const credentials = body.credentials;

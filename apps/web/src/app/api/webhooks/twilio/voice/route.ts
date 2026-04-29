@@ -328,15 +328,15 @@ export async function POST(request: NextRequest) {
   // regenerate audio every time business hours shift.
   const voiceAudioUrl = hasPlaceholders ? null : voiceAudioUrlRaw;
 
-  // TCPA consent-first flow — send consent request SMS. Using console.log
-  // directly (not Winston) because Vercel's serverless log pipeline seems to
-  // be dropping Winston JSON output. console.* is always captured verbatim.
-  console.log('[consent-sms] start', JSON.stringify({ tenantId: tenant.id, from }));
+  // TCPA consent-first flow — send consent request SMS. Keep all operational
+  // logging on the shared logger so phone numbers are redacted before they
+  // reach hosting logs.
+  logger.info('Consent SMS start', { tenantId: tenant.id, from });
 
   const consentPromise = (async () => {
     try {
       const suppressed = await isCallerSuppressed(tenant.id, from);
-      console.log('[consent-sms] suppressed-check', JSON.stringify({ suppressed }));
+      logger.debug('Consent SMS suppression checked', { tenantId: tenant.id, suppressed });
       if (suppressed) return;
 
       // Spam/robocall gate: Twilio Lookup tells us when the inbound
@@ -349,12 +349,13 @@ export async function POST(request: NextRequest) {
       if (tenant.config?.spamFilterEnabled !== false) {
         const spam = await classifyCaller(from);
         if (!spam.allow) {
-          console.log('[consent-sms] spam-blocked', JSON.stringify({
+          logger.info('Consent SMS spam blocked', {
+            tenantId: tenant.id,
             from,
             reason: spam.reason,
             lineType: spam.lineType,
             cached: spam.cached,
-          }));
+          });
           await logConsentEvent(tenant.id, from, 'sms_send_failed', {
             errorCode: 'spam_blocked',
             errorMessage: spam.reason,
@@ -367,7 +368,7 @@ export async function POST(request: NextRequest) {
         const opener =
           tenant.config?.followupOpener ??
           `Thanks! How can ${businessName} help you today?`;
-        console.log('[consent-sms] caller-already-consented');
+        logger.debug('Consent SMS caller already consented', { tenantId: tenant.id, from });
         const messageSid = await sendSms(tenant.id, from, opener);
         await appendConsentTranscript(tenant.id, from, [
           { role: 'assistant', content: opener, sender: 'bot' },
@@ -385,7 +386,11 @@ export async function POST(request: NextRequest) {
       }
 
       const { id: consentRequestId, alreadyPending } = await createConsentRequest(tenant.id, from, to);
-      console.log('[consent-sms] create-result', JSON.stringify({ consentRequestId, alreadyPending }));
+      logger.debug('Consent request created', {
+        tenantId: tenant.id,
+        consentRequestId,
+        alreadyPending,
+      });
       if (alreadyPending) return;
 
       // Consent SMS now supports full placeholder substitution — the
@@ -406,9 +411,9 @@ export async function POST(request: NextRequest) {
             }
           : undefined,
       });
-      console.log('[consent-sms] calling-twilio');
+      logger.debug('Sending consent SMS', { tenantId: tenant.id, from });
       const messageSid = await sendSms(tenant.id, from, consentMsg);
-      console.log('[consent-sms] twilio-accepted', JSON.stringify({ messageSid }));
+      logger.debug('Consent SMS accepted by Twilio', { tenantId: tenant.id, messageSid });
       await appendConsentTranscript(tenant.id, from, [
         { role: 'assistant', content: consentMsg, sender: 'bot' },
       ]).catch((err) =>
@@ -426,13 +431,15 @@ export async function POST(request: NextRequest) {
     } catch (err: any) {
       // Write error details to the DB so we can actually see them
       // (Vercel's log viewer hides console output).
-      console.error('[consent-sms] FAILED', JSON.stringify({
+      logger.error('Consent SMS failed', {
+        tenantId: tenant.id,
+        from,
         errCode: err?.code,
         errStatus: err?.status,
         errMoreInfo: err?.moreInfo,
         message: err?.message,
         name: err?.name,
-      }));
+      });
       await logConsentEvent(tenant.id, from, 'sms_send_failed', {
         errorCode: err?.code ?? null,
         errorStatus: err?.status ?? null,

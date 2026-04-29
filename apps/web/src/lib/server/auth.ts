@@ -1,8 +1,10 @@
 import { auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
+import { TenantMemberRole } from '@prisma/client';
 import { apiError } from './response';
 import { prisma } from './db';
 import { isSuperAdmin } from './agency';
+import { resolveTenantRole } from './roles';
 
 export interface AuthContext {
   userId: string;
@@ -56,6 +58,36 @@ export async function verifyTenantAccess(tenantId: string): Promise<TenantAuthCo
   }
 
   return { userId, orgId, tenantId };
+}
+
+/**
+ * Verifies tenant access and enforces one of the requested app roles.
+ * Use for mutating tenant settings, billing, integrations, campaigns,
+ * team management, and other owner/manager surfaces.
+ */
+export async function requireTenantRole(
+  tenantId: string,
+  allowedRoles: TenantMemberRole[],
+): Promise<TenantAuthContext & { role: TenantMemberRole } | NextResponse> {
+  const { userId, orgId, orgRole } = await auth();
+  if (!userId) return apiError('Authentication required', 401);
+  if (!orgId) return apiError('Organization membership required', 401);
+
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { clerkOrgId: true },
+  });
+
+  if (!tenant || tenant.clerkOrgId !== orgId) {
+    return apiError('Forbidden', 403);
+  }
+
+  const role = await resolveTenantRole(userId, orgRole, tenantId);
+  if (!allowedRoles.includes(role)) {
+    return apiError('Forbidden', 403);
+  }
+
+  return { userId, orgId, tenantId, role };
 }
 
 export function isNextResponse(val: unknown): val is NextResponse {
