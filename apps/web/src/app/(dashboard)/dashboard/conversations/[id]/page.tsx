@@ -16,6 +16,8 @@ import { conversationApi } from '@/lib/api';
 import { formatDate, maskPhone } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 
+const MESSAGE_PAGE_SIZE = 50;
+
 function getApiErrorStatus(error: unknown): number | undefined {
   return axios.isAxiosError(error) ? error.response?.status : undefined;
 }
@@ -32,6 +34,15 @@ interface Message {
   content: string;
   timestamp: string;
   sender?: 'bot' | 'human' | 'customer';
+}
+
+interface MessagePage {
+  totalMessages: number;
+  messagesLoaded: number;
+  hasMoreMessages: boolean;
+  nextBeforeIndex: number | null;
+  startIndex: number;
+  endIndex: number;
 }
 
 interface ConversationIntake {
@@ -70,7 +81,7 @@ export default function ConversationDetailPage() {
 
   const { data: conversation, error, isError, isLoading } = useQuery({
     queryKey: ['conversation', id],
-    queryFn: () => conversationApi.get(id),
+    queryFn: () => conversationApi.get(id, { messageLimit: MESSAGE_PAGE_SIZE }),
     enabled: Boolean(id),
     retry: (failureCount, err) => {
       const status = getApiErrorStatus(err);
@@ -88,12 +99,21 @@ export default function ConversationDetailPage() {
       queryClient.setQueryData(['conversation', id], (old: Record<string, unknown> | undefined) => {
         if (!old) return old;
         const msgs = Array.isArray(old.messages) ? old.messages : [];
+        const page = old.messagePage as MessagePage | undefined;
         return {
           ...old,
           messages: [
             ...msgs,
             { role: 'assistant', content: message, timestamp: new Date().toISOString(), sender: 'human' },
           ],
+          messagePage: page
+            ? {
+                ...page,
+                totalMessages: page.totalMessages + 1,
+                messagesLoaded: page.messagesLoaded + 1,
+                endIndex: page.endIndex + 1,
+              }
+            : page,
         };
       });
 
@@ -115,13 +135,62 @@ export default function ConversationDetailPage() {
   const handoffMutation = useMutation({
     mutationFn: (status: 'AI' | 'HUMAN') => conversationApi.setHandoff(id, status),
     onSuccess: (data) => {
-      queryClient.setQueryData(['conversation', id], data);
+      queryClient.setQueryData(['conversation', id], (old: Record<string, unknown> | undefined) =>
+        old
+          ? {
+              ...old,
+              handoffStatus: data?.handoffStatus,
+              handoffAt: data?.handoffAt,
+              updatedAt: data?.updatedAt,
+            }
+          : data,
+      );
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       const newStatus = data?.handoffStatus ?? 'AI';
       toast.success(newStatus === 'HUMAN' ? 'You took over the conversation' : 'AI is back in control');
     },
     onError: () => {
       toast.error('Failed to change handoff status');
+    },
+  });
+
+  const loadOlderMutation = useMutation({
+    mutationFn: async () => {
+      const current = queryClient.getQueryData<Record<string, unknown>>(['conversation', id]);
+      const page = current?.messagePage as MessagePage | undefined;
+      if (!page?.hasMoreMessages || page.nextBeforeIndex == null) return null;
+      return conversationApi.get(id, {
+        messageLimit: MESSAGE_PAGE_SIZE,
+        before: page.nextBeforeIndex,
+      });
+    },
+    onSuccess: (older) => {
+      if (!older) return;
+      queryClient.setQueryData(['conversation', id], (current: Record<string, unknown> | undefined) => {
+        if (!current) return older;
+        const currentMessages = Array.isArray(current.messages) ? current.messages : [];
+        const olderMessages = Array.isArray(older.messages) ? older.messages : [];
+        const currentPage = current.messagePage as MessagePage | undefined;
+        const olderPage = older.messagePage as MessagePage | undefined;
+
+        return {
+          ...current,
+          messages: [...olderMessages, ...currentMessages],
+          messagePage: olderPage && currentPage
+            ? {
+                ...currentPage,
+                totalMessages: olderPage.totalMessages,
+                messagesLoaded: olderMessages.length + currentMessages.length,
+                hasMoreMessages: olderPage.hasMoreMessages,
+                nextBeforeIndex: olderPage.nextBeforeIndex,
+                startIndex: olderPage.startIndex,
+              }
+            : current.messagePage,
+        };
+      });
+    },
+    onError: () => {
+      toast.error('Failed to load older messages');
     },
   });
 
@@ -162,6 +231,8 @@ export default function ConversationDetailPage() {
   }
 
   const messages: Message[] = Array.isArray(conversation.messages) ? conversation.messages : [];
+  const messagePage = conversation.messagePage as MessagePage | undefined;
+  const totalMessages = messagePage?.totalMessages ?? conversation.messageCount ?? messages.length;
   const isHumanMode = conversation.handoffStatus === 'HUMAN';
   const intake = readConversationIntake(conversation.intake);
 
@@ -192,7 +263,7 @@ export default function ConversationDetailPage() {
           {isHumanMode ? 'Human Mode' : 'AI Mode'}
         </Badge>
         <span className="text-sm text-muted-foreground self-center">
-          {messages.length} messages
+          {totalMessages} messages
         </span>
         <div className="ml-auto">
           {isHumanMode ? (
@@ -252,6 +323,21 @@ export default function ConversationDetailPage() {
       <Card>
         <CardContent className="p-6">
           <div className="space-y-4 max-h-[600px] overflow-y-auto">
+            {messagePage?.hasMoreMessages && (
+              <div className="flex justify-center">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => loadOlderMutation.mutate()}
+                  disabled={loadOlderMutation.isPending}
+                >
+                  {loadOlderMutation.isPending
+                    ? 'Loading...'
+                    : `Load older messages (${messages.length} of ${totalMessages} shown)`}
+                </Button>
+              </div>
+            )}
             {messages.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">No messages</p>
             ) : (

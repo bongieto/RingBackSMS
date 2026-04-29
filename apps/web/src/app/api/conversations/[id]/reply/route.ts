@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import { sendSms } from '@/lib/server/services/twilioService';
 import { encryptMessages, decryptMessages } from '@/lib/server/encryption';
 import { summarizeConversationMessages } from '@/lib/server/conversationSummary';
+import { buildConversationMessageWindow } from '@/lib/server/conversationMessages';
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
@@ -56,8 +57,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       },
       include: { orders: true, meetings: true },
     });
-    // Decrypt messages for the response so the client sees plain messages
-    const responseData = { ...updated, messages: decryptMessages(updated.messages) };
+    const messageWindow = buildConversationMessageWindow(updated.messages);
+    const responseData = { ...updated, ...messageWindow };
     logger.info('Manual reply sent', { conversationId: params.id });
     return apiSuccess(responseData);
   } catch (err: any) {

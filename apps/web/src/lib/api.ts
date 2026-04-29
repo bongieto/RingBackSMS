@@ -90,7 +90,8 @@ export const orderApi = {
 export const conversationApi = {
   list: (tenantId: string, params?: Record<string, unknown>) =>
     webApi.get('/conversations', { params: { tenantId, ...params } }).then((r) => r.data),
-  get: (id: string) => webApi.get(`/conversations/${id}`).then((r) => r.data.data),
+  get: (id: string, params?: Record<string, unknown>) =>
+    webApi.get(`/conversations/${id}`, { params }).then((r) => r.data.data),
   reply: (id: string, message: string) =>
     webApi.post(`/conversations/${id}/reply`, { message }).then((r) => r.data.data),
   setHandoff: (id: string, status: 'AI' | 'HUMAN') =>
