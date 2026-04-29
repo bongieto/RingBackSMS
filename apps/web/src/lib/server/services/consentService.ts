@@ -3,6 +3,7 @@ import { logger } from '../logger';
 import { Prisma } from '@prisma/client';
 import { currentTurnId } from '../turn/TurnContext';
 import { decryptMessages, encryptMessages } from '../encryption';
+import { summarizeConversationMessages } from '../conversationSummary';
 import { getCallerState, setCallerState } from './stateService';
 import {
   renderGreetingTemplate,
@@ -207,21 +208,25 @@ export async function appendConsentTranscript(
   if (conversation) {
     const existing = decryptMessages(conversation.messages);
     const updated = [...existing, ...cleanMessages];
+    const summary = summarizeConversationMessages(updated);
     const result = await prisma.conversation.update({
       where: { id: conversation.id },
       data: {
         messages: encryptMessages(updated) as unknown as Prisma.InputJsonValue,
+        ...summary,
         updatedAt: new Date(),
       },
       select: { id: true },
     });
     conversationId = result.id;
   } else {
+    const summary = summarizeConversationMessages(cleanMessages);
     const result = await prisma.conversation.create({
       data: {
         tenantId,
         callerPhone,
         messages: encryptMessages(cleanMessages) as unknown as Prisma.InputJsonValue,
+        ...summary,
         isActive: true,
       },
       select: { id: true },

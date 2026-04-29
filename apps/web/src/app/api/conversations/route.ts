@@ -2,6 +2,10 @@ import { NextRequest } from 'next/server';
 import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { decryptMessages } from '@/lib/server/encryption';
+import {
+  messagesFromPreview,
+  summarizeConversationMessages,
+} from '@/lib/server/conversationSummary';
 import { apiPaginated, apiError } from '@/lib/server/response';
 
 export async function GET(request: NextRequest) {
@@ -18,10 +22,66 @@ export async function GET(request: NextRequest) {
 
   const where = { tenantId, ...(isActive !== undefined && { isActive }) };
   const [conversations, total] = await Promise.all([
-    prisma.conversation.findMany({ where, orderBy: { updatedAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize }),
+    prisma.conversation.findMany({
+      where,
+      orderBy: { updatedAt: 'desc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: {
+        id: true,
+        tenantId: true,
+        callerPhone: true,
+        missedCallId: true,
+        flowType: true,
+        handoffStatus: true,
+        handoffAt: true,
+        isActive: true,
+        intake: true,
+        causingTurnId: true,
+        createdAt: true,
+        updatedAt: true,
+        lastMessagePreview: true,
+        messageCount: true,
+        messageSummarySyncedAt: true,
+      },
+    }),
     prisma.conversation.count({ where }),
   ]);
-  // Decrypt messages for each conversation in the response
-  const decrypted = conversations.map((c) => ({ ...c, messages: decryptMessages(c.messages) }));
-  return apiPaginated(decrypted, total, page, pageSize);
+
+  const missingSummaryIds = conversations
+    .filter((conversation) => !conversation.messageSummarySyncedAt)
+    .map((conversation) => conversation.id);
+
+  const fallbackSummaries = new Map<string, ReturnType<typeof summarizeConversationMessages>>();
+  if (missingSummaryIds.length > 0) {
+    const legacyRows = await prisma.conversation.findMany({
+      where: { id: { in: missingSummaryIds }, tenantId },
+      select: { id: true, messages: true },
+    });
+
+    await Promise.all(
+      legacyRows.map(async (row) => {
+        const summary = summarizeConversationMessages(decryptMessages(row.messages));
+        fallbackSummaries.set(row.id, summary);
+        await prisma.conversation.update({
+          where: { id: row.id },
+          data: summary,
+        });
+      }),
+    );
+  }
+
+  const summarized = conversations.map((conversation) => {
+    const fallback = fallbackSummaries.get(conversation.id);
+    const lastMessagePreview = fallback?.lastMessagePreview ?? conversation.lastMessagePreview;
+    const messageCount = fallback?.messageCount ?? conversation.messageCount;
+    return {
+      ...conversation,
+      lastMessagePreview,
+      messageCount,
+      messages: messagesFromPreview(lastMessagePreview),
+    };
+  });
+
+  return apiPaginated(summarized, total, page, pageSize);
 }

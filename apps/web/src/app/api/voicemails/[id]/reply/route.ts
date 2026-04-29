@@ -5,6 +5,7 @@ import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { sendSms } from '@/lib/server/services/twilioService';
 import { encryptMessages, decryptMessages } from '@/lib/server/encryption';
+import { summarizeConversationMessages } from '@/lib/server/conversationSummary';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
 
@@ -56,22 +57,27 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     };
 
     if (!conversation) {
+      const summary = summarizeConversationMessages([newMessage]);
       conversation = await prisma.conversation.create({
         data: {
           tenantId: missedCall.tenantId,
           callerPhone: missedCall.callerPhone,
           missedCallId: missedCall.id,
           messages: encryptMessages([newMessage]) as unknown as Prisma.InputJsonValue,
+          ...summary,
           handoffStatus: 'HUMAN',
           handoffAt: new Date(),
         },
       });
     } else {
       const existing = decryptMessages(conversation.messages);
+      const updatedMessages = [...existing, newMessage];
+      const summary = summarizeConversationMessages(updatedMessages);
       conversation = await prisma.conversation.update({
         where: { id: conversation.id },
         data: {
-          messages: encryptMessages([...existing, newMessage]) as unknown as Prisma.InputJsonValue,
+          messages: encryptMessages(updatedMessages) as unknown as Prisma.InputJsonValue,
+          ...summary,
           handoffStatus: 'HUMAN',
           handoffAt: conversation.handoffAt ?? new Date(),
           updatedAt: new Date(),

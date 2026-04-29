@@ -16,6 +16,7 @@ import { isWithinBusinessHours, getBusinessHoursDisplay, getNextOpenDisplay, get
 import { getActiveOrderCount } from './queueService';
 import { prisma } from '../db';
 import { encryptMessages, decryptMessages } from '../encryption';
+import { summarizeConversationMessages } from '../conversationSummary';
 import { ensureTenantSlug } from '../slugify';
 import { Prisma } from '@prisma/client';
 import { recordDecision, mergeDecisions, currentTurnId, setTurnSnapshots } from '../turn/TurnContext';
@@ -208,10 +209,12 @@ async function processInboundSmsInner(
         ...messages,
         { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },
       ];
+      const summary = summarizeConversationMessages(updatedMessages);
       await prisma.conversation.update({
         where: { id: existingConversationId },
         data: {
           messages: encryptMessages(updatedMessages) as unknown as Prisma.InputJsonValue,
+          ...summary,
           updatedAt: new Date(),
         },
       });
@@ -291,19 +294,24 @@ async function processInboundSmsInner(
             select: { messages: true },
           });
           const messages = decryptMessages(existing?.messages);
+          const updatedMessages = [...messages, ...newMessages];
+          const summary = summarizeConversationMessages(updatedMessages);
           await prisma.conversation.update({
             where: { id: gateConvoId },
             data: {
-              messages: encryptMessages([...messages, ...newMessages]) as unknown as Prisma.InputJsonValue,
+              messages: encryptMessages(updatedMessages) as unknown as Prisma.InputJsonValue,
+              ...summary,
               updatedAt: new Date(),
             },
           });
         } else {
+          const summary = summarizeConversationMessages(newMessages);
           const conv = await prisma.conversation.create({
             data: {
               tenantId,
               callerPhone,
               messages: encryptMessages(newMessages) as unknown as Prisma.InputJsonValue,
+              ...summary,
               isActive: true,
             },
           });
@@ -404,19 +412,24 @@ async function processInboundSmsInner(
               select: { messages: true },
             });
             const messages = decryptMessages(existing?.messages);
+            const updatedMessages = [...messages, ...newMessages];
+            const summary = summarizeConversationMessages(updatedMessages);
             await prisma.conversation.update({
               where: { id: cbConvoId },
               data: {
-                messages: encryptMessages([...messages, ...newMessages]) as unknown as Prisma.InputJsonValue,
+                messages: encryptMessages(updatedMessages) as unknown as Prisma.InputJsonValue,
+                ...summary,
                 updatedAt: new Date(),
               },
             });
           } else {
+            const summary = summarizeConversationMessages(newMessages);
             const conv = await prisma.conversation.create({
               data: {
                 tenantId,
                 callerPhone,
                 messages: encryptMessages(newMessages) as unknown as Prisma.InputJsonValue,
+                ...summary,
                 isActive: true,
               },
             });
@@ -552,19 +565,24 @@ async function processInboundSmsInner(
               select: { messages: true },
             });
             const messages = decryptMessages(existing?.messages);
+            const updatedMessages = [...messages, ...newMessages];
+            const summary = summarizeConversationMessages(updatedMessages);
             await prisma.conversation.update({
               where: { id: existingConversationId },
               data: {
-                messages: encryptMessages([...messages, ...newMessages]) as unknown as Prisma.InputJsonValue,
+                messages: encryptMessages(updatedMessages) as unknown as Prisma.InputJsonValue,
+                ...summary,
                 updatedAt: new Date(),
               },
             });
           } else {
+            const summary = summarizeConversationMessages(newMessages);
             const conv = await prisma.conversation.create({
               data: {
                 tenantId,
                 callerPhone,
                 messages: encryptMessages(newMessages) as unknown as Prisma.InputJsonValue,
+                ...summary,
                 isActive: true,
               },
             });
@@ -812,20 +830,25 @@ async function processInboundSmsInner(
             select: { messages: true },
           });
           const messages = decryptMessages(existing?.messages);
+          const updatedMessages = [...messages, ...newMessages];
+          const summary = summarizeConversationMessages(updatedMessages);
           await prisma.conversation.update({
             where: { id: convoId },
             data: {
-              messages: encryptMessages([...messages, ...newMessages]) as unknown as Prisma.InputJsonValue,
+              messages: encryptMessages(updatedMessages) as unknown as Prisma.InputJsonValue,
+              ...summary,
               updatedAt: new Date(),
             },
           });
         } else if (preResult.reply) {
+          const summary = summarizeConversationMessages(newMessages);
           const conv = await prisma.conversation.create({
             data: {
               tenantId,
               callerPhone,
               flowType: preResult.flowType,
               messages: encryptMessages(newMessages) as unknown as Prisma.InputJsonValue,
+              ...summary,
               isActive: true,
             },
           });
@@ -899,10 +922,13 @@ async function processInboundSmsInner(
           select: { messages: true },
         });
         const messages = decryptMessages(existing?.messages);
+        const updatedMessages = [...messages, ...newMessages];
+        const summary = summarizeConversationMessages(updatedMessages);
         await prisma.conversation.update({
           where: { id: conversationId },
           data: {
-            messages: encryptMessages([...messages, ...newMessages]) as unknown as Prisma.InputJsonValue,
+            messages: encryptMessages(updatedMessages) as unknown as Prisma.InputJsonValue,
+            ...summary,
             flowType: FlowType.FALLBACK,
             handoffStatus: 'HUMAN',
             handoffAt: new Date(),
@@ -911,12 +937,14 @@ async function processInboundSmsInner(
           },
         });
       } else {
+        const summary = summarizeConversationMessages(newMessages);
         const conversation = await prisma.conversation.create({
           data: {
             tenantId,
             callerPhone,
             flowType: FlowType.FALLBACK,
             messages: encryptMessages(newMessages) as unknown as Prisma.InputJsonValue,
+            ...summary,
             isActive: true,
             handoffStatus: 'HUMAN',
             handoffAt: new Date(),
@@ -1581,12 +1609,14 @@ async function processInboundSmsInner(
   const nextConversationIntake = mergeConversationIntake(undefined, result.intake);
 
   if (!conversationId) {
+    const summary = summarizeConversationMessages(newMessages);
     const conversation = await prisma.conversation.create({
       data: {
         tenantId,
         callerPhone,
         flowType: result.flowType,
         messages: encryptMessages(newMessages) as unknown as Prisma.InputJsonValue,
+        ...summary,
         ...(nextConversationIntake && { intake: nextConversationIntake as unknown as Prisma.InputJsonValue }),
         isActive: true,
         causingTurnId: currentTurnId() ?? null,
@@ -1604,10 +1634,12 @@ async function processInboundSmsInner(
     const messages = decryptMessages(existing?.messages);
     const updatedMessages = [...messages, ...newMessages];
     const mergedIntake = mergeConversationIntake(existing?.intake, result.intake);
+    const summary = summarizeConversationMessages(updatedMessages);
     await prisma.conversation.update({
       where: { id: conversationId },
       data: {
         messages: encryptMessages(updatedMessages) as unknown as Prisma.InputJsonValue,
+        ...summary,
         ...(mergedIntake && { intake: mergedIntake as unknown as Prisma.InputJsonValue }),
         flowType: result.flowType,
         updatedAt: new Date(),

@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ArrowRight, ChevronRight } from 'lucide-react';
-import { SignedIn, SignedOut } from '@clerk/nextjs';
 import { getHubs, getNichesForHub, type HubSlug } from '@/lib/industryLandingData';
 import { MobileNav } from '@/components/landing/MobileNav';
+import { IndustryNavAuthLinks } from '@/components/landing/AuthCtas';
 import { Logo } from '@/components/Logo';
 
 const SITE_URL = 'https://ringbacksms.com';
@@ -36,13 +36,7 @@ export default function IndustriesIndexPage() {
             <Link href="/industries" className="text-blue-600">Industries</Link>
             <Link href="/#features" className="hover:text-blue-600">Features</Link>
             <Link href="/#pricing" className="hover:text-blue-600">Pricing</Link>
-            <SignedOut>
-              <Link href="/sign-in" className="hover:text-blue-600">Sign In</Link>
-              <Link href="/sign-up" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Start Free</Link>
-            </SignedOut>
-            <SignedIn>
-              <Link href="/dashboard" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Dashboard</Link>
-            </SignedIn>
+            <IndustryNavAuthLinks />
           </div>
           <MobileNav />
         </div>

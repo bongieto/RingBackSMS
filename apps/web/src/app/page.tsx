@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import { SignedIn, SignedOut } from '@clerk/nextjs';
 import type { Metadata } from 'next';
 import {
   Phone,
@@ -35,6 +34,7 @@ import {
 } from 'lucide-react';
 import { MobileNav } from '@/components/landing/MobileNav';
 import { PricingSection } from '@/components/landing/PricingSection';
+import { DesktopNavAuthLinks, FinalAuthCta, HeroAuthCtas } from '@/components/landing/AuthCtas';
 import { Logo } from '@/components/Logo';
 
 /* ─── SEO Metadata ────────────────────────────────────────────────────────── */
@@ -671,25 +671,7 @@ export default function HomePage() {
               <a href="#faq" className="hover:text-blue-600 transition-colors">FAQ</a>
             </div>
             <div className="flex items-center gap-3">
-              <SignedOut>
-                <Link href="/sign-in" className="hidden sm:block text-sm font-medium text-slate-600 hover:text-blue-600 transition-colors">
-                  Sign In
-                </Link>
-                <Link
-                  href="/sign-up"
-                  className="hidden sm:inline-flex px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-                >
-                  Start Free
-                </Link>
-              </SignedOut>
-              <SignedIn>
-                <Link
-                  href="/dashboard"
-                  className="hidden sm:inline-flex px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-                >
-                  Dashboard
-                </Link>
-              </SignedIn>
+              <DesktopNavAuthLinks />
               <MobileNav />
             </div>
           </div>
@@ -727,30 +709,7 @@ export default function HomePage() {
                   busy running your business.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-4 sm:justify-center lg:justify-start">
-                  <SignedOut>
-                    <Link
-                      href="/sign-up"
-                      className="inline-flex items-center justify-center gap-2 px-5 py-3 sm:px-8 sm:py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/25 text-base sm:text-lg"
-                    >
-                      Start Free Today
-                      <ArrowRight className="h-5 w-5" />
-                    </Link>
-                    <a
-                      href="#how-it-works"
-                      className="inline-flex items-center justify-center gap-2 px-5 py-3 sm:px-8 sm:py-4 bg-white text-slate-700 font-semibold rounded-xl hover:bg-slate-50 transition-colors border border-slate-200 text-base sm:text-lg"
-                    >
-                      See How It Works
-                    </a>
-                  </SignedOut>
-                  <SignedIn>
-                    <Link
-                      href="/dashboard"
-                      className="inline-flex items-center justify-center gap-2 px-5 py-3 sm:px-8 sm:py-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-600/25 text-base sm:text-lg"
-                    >
-                      Go to Dashboard
-                      <ArrowRight className="h-5 w-5" />
-                    </Link>
-                  </SignedIn>
+                  <HeroAuthCtas />
                 </div>
                 <div className="flex flex-wrap items-center justify-center lg:justify-start gap-x-6 gap-y-2 text-sm text-slate-500">
                   <span className="flex items-center gap-1.5"><Check className="h-4 w-4 text-green-500" /> No credit card required</span>
@@ -1108,24 +1067,7 @@ export default function HomePage() {
               revenue today. Your first 50 SMS are free, forever.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <SignedOut>
-                <Link
-                  href="/sign-up"
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3 sm:px-10 sm:py-4 bg-white text-blue-600 font-bold rounded-xl hover:bg-blue-50 transition-colors text-base sm:text-lg shadow-lg"
-                >
-                  Get Started Free
-                  <ArrowRight className="h-5 w-5" />
-                </Link>
-              </SignedOut>
-              <SignedIn>
-                <Link
-                  href="/dashboard"
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3 sm:px-10 sm:py-4 bg-white text-blue-600 font-bold rounded-xl hover:bg-blue-50 transition-colors text-base sm:text-lg shadow-lg"
-                >
-                  Go to Dashboard
-                  <ArrowRight className="h-5 w-5" />
-                </Link>
-              </SignedIn>
+              <FinalAuthCta />
             </div>
             <div className="flex items-center justify-center gap-6 text-sm text-blue-200 mt-6">
               <span className="flex items-center gap-1.5"><Check className="h-4 w-4" /> Free forever plan</span>

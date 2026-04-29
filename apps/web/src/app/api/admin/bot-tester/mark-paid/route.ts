@@ -5,6 +5,7 @@ import { getCallerState, setCallerState } from '@/lib/server/services/stateServi
 import { sms as i18nSms } from '@/lib/server/i18n';
 import { prisma } from '@/lib/server/db';
 import { encryptMessages, decryptMessages } from '@/lib/server/encryption';
+import { summarizeConversationMessages } from '@/lib/server/conversationSummary';
 import { logger } from '@/lib/server/logger';
 import { Prisma } from '@prisma/client';
 
@@ -127,10 +128,12 @@ export async function POST(request: NextRequest) {
         },
         { role: 'assistant', content: reply, timestamp: new Date(), sender: 'bot' },
       ];
+      const summary = summarizeConversationMessages(updated);
       await prisma.conversation.update({
         where: { id: pending.conversationId },
         data: {
           messages: encryptMessages(updated) as unknown as Prisma.InputJsonValue,
+          ...summary,
           updatedAt: new Date(),
         },
       });

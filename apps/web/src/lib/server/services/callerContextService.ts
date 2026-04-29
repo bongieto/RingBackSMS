@@ -1,5 +1,4 @@
 import { prisma } from '../db';
-import { decryptMessages } from '../encryption';
 import type { Contact, MissedCall } from '@prisma/client';
 
 export type CallerTier = 'NEW' | 'RAPID_REDIAL' | 'SAME_DAY' | 'RETURNING';
@@ -88,7 +87,7 @@ export async function getCallerContext(
     prisma.conversation.findFirst({
       where: { tenantId, callerPhone },
       orderBy: { updatedAt: 'desc' },
-      select: { id: true, updatedAt: true, messages: true },
+      select: { id: true, updatedAt: true, lastMessagePreview: true },
     }),
     prisma.order.findFirst({
       where: { tenantId, callerPhone },
@@ -105,23 +104,10 @@ export async function getCallerContext(
 
   let lastConversation: LastConversationSummary | null = null;
   if (lastConversationRow) {
-    let lastMessagePreview: string | null = null;
-    try {
-      const raw = Array.isArray(lastConversationRow.messages)
-        ? (lastConversationRow.messages as unknown[])
-        : [];
-      const decrypted = decryptMessages(raw as any) as Array<{ content?: string }>;
-      const last = decrypted[decrypted.length - 1];
-      if (last && typeof last.content === 'string') {
-        lastMessagePreview = last.content.slice(0, 200);
-      }
-    } catch {
-      lastMessagePreview = null;
-    }
     lastConversation = {
       id: lastConversationRow.id,
       lastMessageAt: lastConversationRow.updatedAt,
-      lastMessagePreview,
+      lastMessagePreview: lastConversationRow.lastMessagePreview,
     };
   }
 

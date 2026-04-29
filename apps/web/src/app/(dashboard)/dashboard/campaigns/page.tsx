@@ -33,7 +33,7 @@ export default function CampaignsPage() {
     queryKey: ['campaigns', tenantId],
     queryFn: () => webApi.get('/campaigns', { params: { tenantId } }).then((r) => r.data.data),
     enabled: !!tenantId,
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
   });
 
   const createMutation = useMutation({

@@ -19,7 +19,7 @@ import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ActionItemsCard } from '@/components/dashboard/ActionItemsCard';
 import { Badge } from '@/components/ui/badge';
-import { analyticsApi, conversationApi, tenantApi } from '@/lib/api';
+import { analyticsApi, conversationApi } from '@/lib/api';
 import { formatRelativeTime, maskPhone } from '@/lib/utils';
 import { getProfile } from '@/lib/businessTypeProfile';
 import { useTenantId } from '@/components/providers/TenantProvider';
@@ -62,7 +62,7 @@ function formatResponseTime(seconds: number): string {
 }
 
 export default function DashboardPage() {
-  const { tenantId } = useTenantId();
+  const { tenantId, tenant, businessType } = useTenantId();
 
   const { data: analytics } = useQuery({
     queryKey: ['analytics', tenantId],
@@ -76,13 +76,8 @@ export default function DashboardPage() {
     enabled: !!tenantId,
   });
 
-  const { data: tenant } = useQuery({
-    queryKey: ['tenant-me'],
-    queryFn: () => tenantApi.getMe(),
-  });
-
   const recentConversations = conversationsData?.data ?? [];
-  const profile = getProfile((tenant as { businessType?: string } | undefined)?.businessType);
+  const profile = getProfile(businessType);
   const showCard = (key: string) => profile.dashboardCards.includes(key as never);
   const valueMetrics = analytics?.valueMetrics as ValueMetrics | undefined;
   const revenueDollars =
@@ -206,12 +201,12 @@ export default function DashboardPage() {
       </div>
 
       {/* POS Status */}
-      {tenant && (
+      {tenant?.plan && (
         <div className="mb-6">
           <PosStatusCard
-            posProvider={tenant.posProvider}
-            posMerchantId={tenant.posMerchantId}
-            posTokenExpiresAt={tenant.posTokenExpiresAt}
+            posProvider={tenant.posProvider ?? null}
+            posMerchantId={tenant.posMerchantId ?? null}
+            posTokenExpiresAt={tenant.posTokenExpiresAt ?? null}
             plan={tenant.plan}
           />
         </div>

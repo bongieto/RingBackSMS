@@ -115,6 +115,34 @@ function matchClosure(body: string): { matched: true; reply: string | null } | {
   return { matched: false };
 }
 
+const HOURS_RE =
+  /\b(what\s+(time|hours?)|when\s+(are\s+you|do\s+you)\s+(open|close|closed?)|are\s+you\s+open|still\s+open|open\s+now|open\s+late|late\s+(tonight|today)|after\s+hours?|business\s+hours?|your\s+hours?|what\s+(?:are|r)\s+(?:your\s+)?hours?|answer\s+questions?\s+after\s+hours?)\b/i;
+
+function buildHoursReply(input: FlowInput): string | null {
+  const { tenantContext, inboundMessage } = input;
+  const hours = tenantContext.hoursInfo;
+  if (!hours || !HOURS_RE.test(inboundMessage)) return null;
+
+  const weekly = hours.weeklyHoursDisplay;
+  const today = hours.todayHoursDisplay;
+  const nextOpen = hours.nextOpenDisplay;
+  const closesAt = hours.closesAtDisplay;
+  const asksAfterHours = /\bafter\s+hours?\b/i.test(inboundMessage);
+
+  if (hours.openNow) {
+    if (asksAfterHours) {
+      return `Our regular hours are ${weekly}. After hours, text us here and we'll follow up when we reopen.`;
+    }
+    return `Yes, we're open now. Today's hours are ${today}${closesAt ? `; we close at ${closesAt}` : ''}.`;
+  }
+
+  if (/closed/i.test(today)) {
+    return `We're closed today${nextOpen ? ` and reopen ${nextOpen}` : ''}. Regular hours: ${weekly}.`;
+  }
+
+  return `We're currently closed. Today's hours are ${today}${nextOpen ? `; we reopen ${nextOpen}` : ''}.`;
+}
+
 export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput> {
   const { tenantContext, inboundMessage, currentState, chatFn, callerMemory } = input;
   const t0 = Date.now();
@@ -150,6 +178,34 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
       sideEffects: [],
       flowType: FlowType.FALLBACK,
     };
+  }
+
+  const hoursReply = buildHoursReply(input);
+  if (hoursReply) {
+    pushDecision(input, {
+      handler: 'fallbackFlow.hours',
+      phase: 'PRE_HANDLER',
+      outcome: 'hours_reply',
+      reason: 'answered from tenant hoursInfo',
+      evidence: {
+        openNow: tenantContext.hoursInfo?.openNow,
+        todayHoursDisplay: tenantContext.hoursInfo?.todayHoursDisplay,
+        nextOpenDisplay: tenantContext.hoursInfo?.nextOpenDisplay,
+      },
+      durationMs: Date.now() - t0,
+    });
+    const nextState: CallerState = {
+      tenantId: tenantContext.tenantId,
+      callerPhone: input.callerPhone,
+      conversationId: currentState?.conversationId ?? null,
+      currentFlow: FlowType.FALLBACK,
+      flowStep: 'FALLBACK',
+      orderDraft: currentState?.orderDraft ?? null,
+      lastMessageAt: Date.now(),
+      messageCount: (currentState?.messageCount ?? 0) + 1,
+      dedupKey: null,
+    };
+    return { nextState, smsReply: hoursReply, sideEffects: [], flowType: FlowType.FALLBACK };
   }
 
   // Ungrounded-action guard bank. When the caller's message implies

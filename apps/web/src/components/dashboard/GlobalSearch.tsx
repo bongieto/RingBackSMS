@@ -12,15 +12,28 @@ export function GlobalSearch() {
   const { tenantId } = useTenantId();
   const router = useRouter();
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   const { data: results } = useQuery({
-    queryKey: ['global-search', tenantId, query],
-    queryFn: () => searchApi.search(tenantId!, query),
-    enabled: !!tenantId && query.length >= 2,
-    staleTime: 5000,
+    queryKey: ['global-search', tenantId, debouncedQuery],
+    queryFn: () => searchApi.search(tenantId!, debouncedQuery),
+    enabled: !!tenantId && debouncedQuery.length >= 2,
+    staleTime: 30_000,
   });
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      setDebouncedQuery('');
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(trimmed);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -37,6 +50,9 @@ export function GlobalSearch() {
     results.conversations?.length > 0 ||
     results.orders?.length > 0
   );
+  const trimmedQuery = query.trim();
+  const hasSearchText = trimmedQuery.length >= 2;
+  const isWaitingForDebounce = hasSearchText && debouncedQuery !== trimmedQuery;
 
   const navigate = (path: string) => {
     setOpen(false);
@@ -65,11 +81,15 @@ export function GlobalSearch() {
         )}
       </div>
 
-      {open && query.length >= 2 && (
+      {open && hasSearchText && (
         <div className="absolute top-full mt-1 w-full bg-white rounded-lg border shadow-lg z-50 max-h-80 overflow-y-auto">
-          {!hasResults ? (
+          {isWaitingForDebounce ? (
             <div className="p-4 text-sm text-muted-foreground text-center">
-              No results for &ldquo;{query}&rdquo;
+              Searching...
+            </div>
+          ) : !hasResults ? (
+            <div className="p-4 text-sm text-muted-foreground text-center">
+              No results for &ldquo;{trimmedQuery}&rdquo;
             </div>
           ) : (
             <div className="py-1">

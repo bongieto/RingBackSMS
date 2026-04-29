@@ -84,8 +84,8 @@ function useTaskBadge() {
   const { data } = useQuery<{ open: number; urgent: number }>({
     queryKey: ['tasks-count'],
     queryFn: () => axios.get('/api/tasks/count').then((r) => r.data.data),
-    refetchInterval: 30_000,
-    staleTime: 15_000,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
   });
   return data ?? { open: 0, urgent: 0 };
 }

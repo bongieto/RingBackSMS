@@ -442,7 +442,7 @@ const salonIntake: IntakeField[] = [
 
 const homeServiceScenarioPack = [
   scenario('service-happy-path', 'Happy path: service request starts booking', 'My AC stopped cooling and I need someone to come out.', { flowType: FlowType.MEETING, flowStep: 'MEETING_DATE_PROMPT' }),
-  scenario('service-after-hours', 'After-hours: hours question stays informational', 'Are you open after hours for service calls?', { flowType: FlowType.FALLBACK }),
+  scenario('service-after-hours', 'After-hours: hours question gives configured hours', 'Are you open after hours for service calls?', { flowType: FlowType.FALLBACK, replyIncludes: ['hours'] }),
   scenario('service-emergency', 'Emergency: safety hazard gets disclaimer', 'I smell gas from my furnace and there may be carbon monoxide.', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'not an emergency service'], replyExcludes: ['open slots'] }),
   scenario('service-handoff', 'Handoff: human request stops automation', 'Can I talk to a manager about this repair?', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
   scenario('service-pricing', 'Pricing: quote question stays informational', 'How much for an AC tune-up?', { flowType: FlowType.FALLBACK }),
@@ -454,7 +454,7 @@ const homeServiceScenarioPack = [
 
 const hvacScenarioPack = [
   scenario('hvac-happy-path', 'Happy path: no cooling starts booking', 'My AC stopped cooling and I need someone to come out.', { flowType: FlowType.MEETING, flowStep: 'MEETING_DATE_PROMPT' }),
-  scenario('hvac-after-hours', 'After-hours: emergency availability question stays informational', 'Are you open after hours if my heat goes out?', { flowType: FlowType.FALLBACK }),
+  scenario('hvac-after-hours', 'After-hours: emergency availability question gives configured hours', 'Are you open after hours if my heat goes out?', { flowType: FlowType.FALLBACK, replyIncludes: ['hours'] }),
   scenario('hvac-gas', 'Emergency: gas/carbon monoxide gets disclaimer', 'I smell gas from my furnace and I think there may be carbon monoxide.', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'utility emergency line', 'not an emergency service'] }),
   scenario('hvac-handoff', 'Handoff: owner request stops automation', 'Can I talk to the owner about this HVAC problem?', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
   scenario('hvac-quote', 'Pricing: estimate question stays informational', 'Do you offer free estimates for a new system?', { flowType: FlowType.FALLBACK }),
@@ -466,7 +466,7 @@ const hvacScenarioPack = [
 
 const medicalScenarioPack = [
   scenario('medical-happy-path', 'Happy path: appointment request enters scheduler', 'I need to book an appointment.', { flowType: FlowType.MEETING }),
-  scenario('medical-after-hours', 'After-hours: hours question stays informational', 'Are you open after hours for appointments?', { flowType: FlowType.FALLBACK }),
+  scenario('medical-after-hours', 'After-hours: hours question gives configured hours', 'Are you open after hours for appointments?', { flowType: FlowType.FALLBACK, replyIncludes: ['hours'] }),
   scenario('medical-emergency', 'Emergency: urgent medical issue gets 911 disclaimer', 'Urgent, my father fell and needs help right now.', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'not an emergency service'] }),
   scenario('medical-handoff', 'Handoff: staff request stops automation', 'Can I speak to a person at the office?', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
   scenario('medical-pricing', 'Pricing: cost question stays informational', 'How much does a consultation cost?', { flowType: FlowType.FALLBACK }),
@@ -478,7 +478,7 @@ const medicalScenarioPack = [
 
 const homeCareScenarioPack = [
   scenario('care-info', 'Happy path: care info stays informational', 'What services do you provide for seniors?', { flowType: FlowType.FALLBACK }),
-  scenario('care-after-hours', 'After-hours: availability question stays informational', 'Do you answer questions after hours?', { flowType: FlowType.FALLBACK }),
+  scenario('care-after-hours', 'After-hours: availability question gives configured hours', 'Do you answer questions after hours?', { flowType: FlowType.FALLBACK, replyIncludes: ['hours'] }),
   scenario('care-emergency', 'Emergency: fall injury gets 911 disclaimer', 'My dad fell and cannot get up.', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'not an emergency service'] }),
   scenario('care-handoff', 'Handoff: staff request stops automation', 'Can I speak to a real person about care for my mom?', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
   scenario('care-pricing', 'Pricing: care cost question stays informational', 'How much does weekday home care cost?', { flowType: FlowType.FALLBACK }),
@@ -490,7 +490,7 @@ const homeCareScenarioPack = [
 
 const salonScenarioPack = [
   scenario('salon-happy-path', 'Happy path: service booking enters scheduler', 'Can I book a haircut Friday?', { flowType: FlowType.MEETING }),
-  scenario('salon-after-hours', 'After-hours: hours question stays informational', 'Are you open late on Thursday?', { flowType: FlowType.FALLBACK }),
+  scenario('salon-after-hours', 'After-hours: hours question gives configured hours', 'Are you open late on Thursday?', { flowType: FlowType.FALLBACK, replyIncludes: ['hours'] }),
   scenario('salon-urgent', 'Urgent-but-not-emergency: same-day request can book', 'Can I get a same-day haircut appointment?', { flowType: FlowType.MEETING }),
   scenario('salon-handoff', 'Handoff: stylist request stops automation', 'Can I speak to a person about color correction?', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
   scenario('salon-price', 'Pricing: service price stays informational', 'How much is a manicure?', { flowType: FlowType.FALLBACK }),
@@ -502,7 +502,7 @@ const salonScenarioPack = [
 
 const autoScenarioPack = [
   scenario('auto-happy-path', 'Happy path: repair request enters scheduler', 'My brakes are squealing and I need service.', { flowType: FlowType.MEETING }),
-  scenario('auto-after-hours', 'After-hours: hours question stays informational', 'Are you open after hours for drop off?', { flowType: FlowType.FALLBACK }),
+  scenario('auto-after-hours', 'After-hours: hours question gives configured hours', 'Are you open after hours for drop off?', { flowType: FlowType.FALLBACK, replyIncludes: ['hours'] }),
   scenario('auto-safety', 'Emergency: stranded unsafe caller gets safety guidance', 'I am stranded on the highway after an accident.', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'not an emergency service'] }),
   scenario('auto-handoff', 'Handoff: manager request stops automation', 'Can I talk to a manager about my repair?', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
   scenario('auto-pricing', 'Pricing: estimate question stays informational', 'How much is a brake inspection?', { flowType: FlowType.FALLBACK }),
@@ -514,7 +514,7 @@ const autoScenarioPack = [
 
 const retailScenarioPack = [
   scenario('retail-happy-path', 'Happy path: stock question routes to inquiry', 'Do you have blue hoodies in medium?', { flowType: FlowType.INQUIRY }),
-  scenario('retail-after-hours', 'After-hours: hours question stays informational', 'Are you open late tonight?', { flowType: FlowType.FALLBACK }),
+  scenario('retail-after-hours', 'After-hours: hours question gives configured hours', 'Are you open late tonight?', { flowType: FlowType.FALLBACK, replyIncludes: ['hours'] }),
   scenario('retail-urgent', 'Urgent-but-not-emergency: pickup request is captured', 'I need to pick this up today if possible.', { flowType: FlowType.FALLBACK }),
   scenario('retail-handoff', 'Handoff: return/refund stops automation', 'I want a refund for my order.', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
   scenario('retail-pricing', 'Pricing: product price routes to inquiry', 'How much is the blue hoodie?', { flowType: FlowType.INQUIRY }),
@@ -530,7 +530,7 @@ const retailScenarioPack = [
 
 const restaurantScenarioPack = [
   scenario('restaurant-happy-path', 'Happy path: order intent routes to ordering', 'I want to order dinner', { flowType: FlowType.ORDER }),
-  scenario('restaurant-after-hours', 'After-hours: hours question stays informational', 'Are you open late tonight?', { flowType: FlowType.FALLBACK }),
+  scenario('restaurant-after-hours', 'After-hours: hours question gives configured hours', 'Are you open late tonight?', { flowType: FlowType.FALLBACK, replyIncludes: ['hours'] }),
   scenario('restaurant-allergy', 'Emergency: allergy concern escalates safely', 'I think I am having an allergic reaction', { flowType: FlowType.FALLBACK, replyIncludes: ['911', 'not an emergency service'] }),
   scenario('restaurant-handoff', 'Handoff: wrong order stops automation', 'My order was wrong and I want to talk to a manager.', { flowType: FlowType.FALLBACK, replyIncludes: ['team member'] }),
   scenario('restaurant-pricing', 'Pricing: item price question stays answerable', 'How much are the tacos?', { flowType: FlowType.FALLBACK }),
@@ -665,7 +665,7 @@ export const VERTICAL_PROFILES: Record<VerticalKey, VerticalProfile> = {
     defaultFlows: [FlowType.MEETING, FlowType.FALLBACK],
     safetyPolicies: [medicalSafety],
     escalationPolicies: [],
-    intakeFields: salonIntake,
+    intakeFields: appointmentIntake,
     recommendedIntegrations: ['Google Calendar', 'EHR scheduling', 'secure intake forms'],
     valueMetrics: ['appointments requested', 'urgent handoffs', 'unresolved patient requests'],
     readinessScenarios: medicalScenarioPack,

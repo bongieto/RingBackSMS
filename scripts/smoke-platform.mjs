@@ -32,7 +32,91 @@ if (!process.env.DATABASE_URL) {
 
 const prisma = new PrismaClient();
 
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function formatTime(time) {
+  const [hour, minute] = String(time).split(':').map(Number);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return String(time);
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+  return `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`;
+}
+
+function formatDaysLabel(days) {
+  if (!Array.isArray(days) || days.length === 0 || days.length === 7) return 'Every day';
+  const sorted = [...days].sort((a, b) => a - b);
+  const ranges = [];
+  let i = 0;
+  while (i < sorted.length) {
+    const start = sorted[i];
+    let end = start;
+    while (i + 1 < sorted.length && sorted[i + 1] === end + 1) {
+      i += 1;
+      end = sorted[i];
+    }
+    if (end - start >= 2) ranges.push(`${DAY_NAMES[start]}-${DAY_NAMES[end]}`);
+    else if (end !== start) ranges.push(DAY_NAMES[start], DAY_NAMES[end]);
+    else ranges.push(DAY_NAMES[start]);
+    i += 1;
+  }
+  return ranges.join(', ');
+}
+
+function buildSmokeHoursInfo(config) {
+  const schedule =
+    config?.businessSchedule && Object.keys(config.businessSchedule).length > 0
+      ? config.businessSchedule
+      : null;
+  if (schedule) {
+    const [dayKey, firstDay] = Object.entries(schedule)[0] ?? [];
+    const todayHoursDisplay = firstDay ? `${formatTime(firstDay.open)} - ${formatTime(firstDay.close)}` : 'Closed today';
+    const weeklyHoursDisplay = Object.entries(schedule)
+      .map(([day, hours]) => `${DAY_NAMES[Number(day)]} ${formatTime(hours.open)} - ${formatTime(hours.close)}`)
+      .join(', ');
+    return {
+      openNow: true,
+      nextOpenDisplay: null,
+      todayHoursDisplay,
+      weeklyHoursDisplay: weeklyHoursDisplay || todayHoursDisplay,
+      minutesUntilClose: null,
+      closesAtDisplay: firstDay ? formatTime(firstDay.close) : null,
+      closingSoon: false,
+    };
+  }
+
+  if (!config?.businessHoursStart || !config?.businessHoursEnd) {
+    return {
+      openNow: true,
+      nextOpenDisplay: null,
+      todayHoursDisplay: 'Always open',
+      weeklyHoursDisplay: 'Always open',
+      minutesUntilClose: null,
+      closesAtDisplay: null,
+      closingSoon: false,
+    };
+  }
+
+  const hours = `${formatTime(config.businessHoursStart)} - ${formatTime(config.businessHoursEnd)}`;
+  return {
+    openNow: true,
+    nextOpenDisplay: null,
+    todayHoursDisplay: hours,
+    weeklyHoursDisplay: `${formatDaysLabel(config.businessDays)} ${hours}`,
+    minutesUntilClose: null,
+    closesAtDisplay: formatTime(config.businessHoursEnd),
+    closingSoon: false,
+  };
+}
+
 function toTenantContext(tenant) {
+  const config = {
+    ...tenant.config,
+    businessDays: tenant.config?.businessDays,
+    businessSchedule: tenant.config?.businessSchedule,
+    closedDates: tenant.config?.closedDates,
+    salesTaxRate: tenant.config?.salesTaxRate == null ? null : Number(tenant.config.salesTaxRate),
+  };
+
   return {
     tenantId: tenant.id,
     tenantName: tenant.name,
@@ -40,13 +124,7 @@ function toTenantContext(tenant) {
     industryTemplateKey: tenant.config?.industryTemplateKey,
     tenantSlug: tenant.slug,
     tenantPhoneNumber: tenant.twilioPhoneNumber,
-    config: {
-      ...tenant.config,
-      businessDays: tenant.config?.businessDays,
-      businessSchedule: tenant.config?.businessSchedule,
-      closedDates: tenant.config?.closedDates,
-      salesTaxRate: tenant.config?.salesTaxRate == null ? null : Number(tenant.config.salesTaxRate),
-    },
+    config,
     flows: tenant.flows.map((flow) => ({
       id: flow.id,
       tenantId: flow.tenantId,
@@ -68,6 +146,7 @@ function toTenantContext(tenant) {
       squareVariationId: item.squareVariationId,
       lastSyncedAt: item.lastSyncedAt,
     })),
+    hoursInfo: buildSmokeHoursInfo(config),
   };
 }
 

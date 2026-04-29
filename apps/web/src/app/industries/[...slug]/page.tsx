@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { SignedIn, SignedOut } from '@clerk/nextjs';
 import { ArrowRight, Check, ChevronRight, Star } from 'lucide-react';
 import {
   getIndustryLanding,
@@ -12,6 +11,7 @@ import {
   type HubSlug,
 } from '@/lib/industryLandingData';
 import { MobileNav } from '@/components/landing/MobileNav';
+import { IndustryNavAuthLinks } from '@/components/landing/AuthCtas';
 import { PricingSection } from '@/components/landing/PricingSection';
 import { IndustryJsonLd } from './IndustryJsonLd';
 import { Logo } from '@/components/Logo';
@@ -143,13 +143,7 @@ export default function IndustryLandingPage({ params }: PageProps) {
             <Link href="/#features" className="hover:text-blue-600">Features</Link>
             <Link href="/#pricing" className="hover:text-blue-600">Pricing</Link>
             <Link href="/#faq" className="hover:text-blue-600">FAQ</Link>
-            <SignedOut>
-              <Link href="/sign-in" className="hover:text-blue-600">Sign In</Link>
-              <Link href="/sign-up" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Start Free</Link>
-            </SignedOut>
-            <SignedIn>
-              <Link href="/dashboard" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Dashboard</Link>
-            </SignedIn>
+            <IndustryNavAuthLinks />
           </div>
           <MobileNav />
         </div>

@@ -11,7 +11,8 @@ export function ActionItemsCard() {
   const { data: tasks } = useQuery<TaskItem[]>({
     queryKey: ['tasks', 'OPEN'],
     queryFn: () => taskApi.list('OPEN'),
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
   });
 
   if (!tasks || tasks.length === 0) return null;

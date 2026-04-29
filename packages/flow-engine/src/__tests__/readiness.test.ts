@@ -84,17 +84,23 @@ describe('vertical readiness suite', () => {
     expect(result.total).toBeGreaterThanOrEqual(3);
     expect(result.score).toBe(1);
     const hazard = result.results.find((r) => r.id === 'hvac-gas');
+    const afterHours = result.results.find((r) => r.id === 'hvac-after-hours');
     expect(hazard?.reply).toContain('911');
     expect(hazard?.flowType).toBe(FlowType.FALLBACK);
+    expect(afterHours?.reply).toContain('hours');
+    expect(afterHours?.reply).toContain('8:00 AM - 6:00 PM');
   });
 
   test('restaurant cancellation deflects instead of opening a new order', async () => {
     const result = await runVerticalReadinessSuite({ tenantContext: restaurantTenant });
     const cancellation = result.results.find((r) => r.id === 'restaurant-cancellation');
+    const afterHours = result.results.find((r) => r.id === 'restaurant-after-hours');
 
     expect(result.score).toBe(1);
     expect(cancellation?.flowType).toBe(FlowType.FALLBACK);
     expect(cancellation?.reply).toContain('pending order');
     expect(cancellation?.reply).not.toContain('what can I get');
+    expect(afterHours?.reply).toContain('hours');
+    expect(afterHours?.reply).toContain('8:00 AM - 6:00 PM');
   });
 });

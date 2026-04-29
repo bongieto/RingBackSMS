@@ -33,6 +33,8 @@ interface ConversationListItem {
   flowType: string | null;
   isActive: boolean;
   messages: unknown[];
+  lastMessagePreview?: string | null;
+  messageCount?: number;
   updatedAt: string;
   handoffStatus?: string;
   intake?: unknown;
@@ -178,6 +180,7 @@ export default function ConversationsPage() {
               {filtered.map((conv: ConversationListItem) => {
                 const messages = Array.isArray(conv.messages) ? conv.messages : [];
                 const lastMsg = messages[messages.length - 1] as { content?: string } | undefined;
+                const lastMessagePreview = conv.lastMessagePreview ?? lastMsg?.content ?? 'No messages';
                 const intake = readConversationIntake(conv.intake);
                 const intakeSummary = intake ? formatIntakeSummary(intake) : null;
                 return (
@@ -229,7 +232,7 @@ export default function ConversationsPage() {
                         </p>
                       )}
                       <p className="text-xs text-muted-foreground truncate">
-                        {lastMsg?.content ?? 'No messages'}
+                        {lastMessagePreview}
                       </p>
                     </div>
                     <div className="text-xs text-muted-foreground shrink-0">

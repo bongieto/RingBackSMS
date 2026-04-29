@@ -409,6 +409,9 @@ model Conversation {
   missedCallId  String?
   missedCall    MissedCall?   @relation(fields: [missedCallId], references: [id])
   messages      Json          @default("[]")
+  lastMessagePreview String?   @db.Text
+  messageCount       Int       @default(0)
+  messageSummarySyncedAt DateTime?
   intake        Json?
   flowType      FlowType?
   handoffStatus HandoffStatus @default(AI)
@@ -425,6 +428,8 @@ model Conversation {
 
   @@index([tenantId, callerPhone])
   @@index([tenantId, isActive])
+  @@index([tenantId, updatedAt])
+  @@index([tenantId, isActive, updatedAt])
 }
 
 model Order {

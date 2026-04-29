@@ -8,12 +8,24 @@ import { tenantApi } from '@/lib/api';
 
 interface TenantContextType {
   tenantId: string | undefined;
+  tenant: TenantSummary | undefined;
   businessType: string | undefined;
   isLoading: boolean;
 }
 
+interface TenantSummary {
+  id: string;
+  businessType?: string;
+  onboardingCompletedAt?: string | null;
+  posProvider?: string | null;
+  posMerchantId?: string | null;
+  posTokenExpiresAt?: string | null;
+  plan?: string;
+}
+
 const TenantContext = createContext<TenantContextType>({
   tenantId: undefined,
+  tenant: undefined,
   businessType: undefined,
   isLoading: true,
 });
@@ -32,6 +44,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
   const { organization, isLoaded } = useOrganization();
   const router = useRouter();
   const [resolvedTenantId, setResolvedTenantId] = useState<string | undefined>(undefined);
+  const [tenant, setTenant] = useState<TenantSummary | undefined>(undefined);
   const [businessType, setBusinessType] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   // Track the org id we last resolved so we can reset on org switch
@@ -48,12 +61,15 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const orgChanged = Boolean(lastOrgId.current && lastOrgId.current !== organizationId);
+
     // If the org changed (user switched orgs), reset state and show
     // the loading spinner while we resolve the new tenant. This
     // prevents the dashboard from briefly rendering with stale data
     // from the previous org.
-    if (lastOrgId.current && lastOrgId.current !== organizationId) {
+    if (orgChanged) {
       setResolvedTenantId(undefined);
+      setTenant(undefined);
       setBusinessType(undefined);
       setIsLoading(true);
     }
@@ -64,12 +80,12 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     // Small delay on org switch to let Clerk's session settle. Without
     // this the /api/tenants/me call can fire before Clerk's server-side
     // auth() reflects the new orgId, causing a 403 or stale tenant.
-    const delay = resolvedTenantId === undefined ? 300 : 0;
+    const delay = orgChanged ? 300 : 0;
 
     const timer = setTimeout(() => {
       tenantApi
         .getMe()
-        .then((tenant: { id: string; businessType?: string; onboardingCompletedAt?: string | null }) => {
+        .then((tenant: TenantSummary) => {
           if (cancelled) return;
           if (!tenant.onboardingCompletedAt) {
             setIsLoading(false);
@@ -77,6 +93,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
             return;
           }
           setResolvedTenantId(tenant.id);
+          setTenant(tenant);
           setBusinessType(tenant.businessType);
           setIsLoading(false);
         })
@@ -95,7 +112,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
               if (cancelled) return;
               tenantApi
                 .getMe()
-                .then((tenant: { id: string; businessType?: string; onboardingCompletedAt?: string | null }) => {
+                .then((tenant: TenantSummary) => {
                   if (cancelled) return;
                   if (!tenant.onboardingCompletedAt) {
                     setIsLoading(false);
@@ -103,11 +120,13 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
                     return;
                   }
                   setResolvedTenantId(tenant.id);
+                  setTenant(tenant);
                   setBusinessType(tenant.businessType);
                   setIsLoading(false);
                 })
                 .catch(() => {
                   if (cancelled) return;
+                  setTenant(metadataTenantId ? { id: metadataTenantId } : undefined);
                   setResolvedTenantId(metadataTenantId);
                   setIsLoading(false);
                 });
@@ -115,6 +134,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
             return;
           }
           // Other transient error — fall back to metadata
+          setTenant(metadataTenantId ? { id: metadataTenantId } : undefined);
           setResolvedTenantId(metadataTenantId);
           setIsLoading(false);
         });
@@ -124,10 +144,10 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [isLoaded, organizationId, metadataTenantId, resolvedTenantId, router]);
+  }, [isLoaded, organizationId, metadataTenantId, router]);
 
   return (
-    <TenantContext.Provider value={{ tenantId: resolvedTenantId, businessType, isLoading }}>
+    <TenantContext.Provider value={{ tenantId: resolvedTenantId, tenant, businessType, isLoading }}>
       {isLoading || !resolvedTenantId ? (
         <div className="flex min-h-screen items-center justify-center">
           <Loader2 className="h-6 w-6 animate-spin text-gray-400" />

@@ -5,6 +5,14 @@ import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { apiError, apiSuccess } from '@/lib/server/response';
 import { prisma } from '@/lib/server/db';
 import { logger } from '@/lib/server/logger';
+import {
+  getBusinessHoursDisplay,
+  getClosesAtDisplay,
+  getMinutesUntilClose,
+  getNextOpenDisplay,
+  getTodayHoursDisplay,
+  isWithinBusinessHours,
+} from '@/lib/server/businessHours';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,6 +31,17 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
   });
 
   if (!tenant || !tenant.config) return apiError('Tenant not found', 404);
+
+  const hoursConfig = {
+    businessHoursStart: tenant.config.businessHoursStart,
+    businessHoursEnd: tenant.config.businessHoursEnd,
+    businessDays: tenant.config.businessDays as number[],
+    businessSchedule: tenant.config.businessSchedule as Record<string, { open: string; close: string }> | null,
+    closedDates: tenant.config.closedDates as string[],
+    timezone: tenant.config.timezone,
+  };
+  const openNow = isWithinBusinessHours(hoursConfig);
+  const minutesUntilClose = openNow ? getMinutesUntilClose(hoursConfig) : null;
 
   const tenantContext: TenantContext = {
     tenantId: tenant.id,
@@ -59,6 +78,15 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       squareVariationId: item.squareVariationId,
       lastSyncedAt: item.lastSyncedAt,
     })),
+    hoursInfo: {
+      openNow,
+      nextOpenDisplay: openNow ? null : getNextOpenDisplay(hoursConfig),
+      todayHoursDisplay: getTodayHoursDisplay(hoursConfig),
+      weeklyHoursDisplay: getBusinessHoursDisplay(hoursConfig),
+      minutesUntilClose,
+      closesAtDisplay: openNow ? getClosesAtDisplay(hoursConfig) : null,
+      closingSoon: minutesUntilClose != null && minutesUntilClose > 0 && minutesUntilClose <= 15,
+    },
   };
 
   try {

@@ -49,6 +49,18 @@ describe('extractVerticalIntake', () => {
     );
   });
 
+  it('does not ask generic medical tenants for salon-specific intake', () => {
+    const intake = extractVerticalIntake({
+      tenantContext: tenant('medical', BusinessType.MEDICAL),
+      inboundMessage: 'I need an appointment tomorrow for a consultation.',
+      flowType: FlowType.MEETING,
+    });
+
+    expect(intake?.verticalKey).toBe('medical');
+    expect(intake?.missing.map((field) => field.key)).toEqual(expect.arrayContaining(['name']));
+    expect(intake?.missing.map((field) => field.key)).not.toContain('stylist_preference');
+  });
+
   it('captures auto-shop vehicle and tow need', () => {
     const intake = extractVerticalIntake({
       tenantContext: tenant('auto_shop'),

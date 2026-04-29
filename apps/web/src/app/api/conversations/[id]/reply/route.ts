@@ -4,6 +4,7 @@ import { prisma } from '@/lib/server/db';
 import { Prisma } from '@prisma/client';
 import { sendSms } from '@/lib/server/services/twilioService';
 import { encryptMessages, decryptMessages } from '@/lib/server/encryption';
+import { summarizeConversationMessages } from '@/lib/server/conversationSummary';
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
@@ -45,10 +46,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       ...existing,
       { role: 'assistant', content: message, timestamp: new Date().toISOString(), sender: 'human' },
     ];
+    const summary = summarizeConversationMessages(updatedMessages);
     const updated = await prisma.conversation.update({
       where: { id: params.id },
       data: {
         messages: encryptMessages(updatedMessages) as unknown as Prisma.InputJsonValue,
+        ...summary,
         updatedAt: new Date(),
       },
       include: { orders: true, meetings: true },
