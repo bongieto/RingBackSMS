@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useOrganization } from '@clerk/nextjs';
 import { Zap, ShoppingBag, Calendar, MessageSquare, ChevronDown, ChevronUp, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
@@ -13,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { tenantApi } from '@/lib/api';
+import { useTenantId } from '@/components/providers/TenantProvider';
 
 interface Flow {
   id: string;
@@ -49,8 +49,7 @@ const FLOW_META: Record<string, { icon: React.ElementType; title: string; descri
 };
 
 export default function FlowsPage() {
-  const { organization } = useOrganization();
-  const tenantId = organization?.publicMetadata?.tenantId as string | undefined;
+  const { tenantId } = useTenantId();
   const queryClient = useQueryClient();
 
   const { data: flows = [], isLoading } = useQuery<Flow[]>({

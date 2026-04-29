@@ -1,7 +1,6 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useOrganization } from '@clerk/nextjs';
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Header } from '@/components/layout/Header';
@@ -9,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { Button } from '@/components/ui/button';
 import { analyticsApi } from '@/lib/api';
+import { useTenantId } from '@/components/providers/TenantProvider';
 import { AlertTriangle, Calendar, Clock, DollarSign, HelpCircle, MessageSquare, Phone, ShoppingBag } from 'lucide-react';
 
 const DailyConversationsChart = dynamic(
@@ -38,8 +38,7 @@ const PERIODS = [
 ];
 
 export default function AnalyticsPage() {
-  const { organization } = useOrganization();
-  const tenantId = organization?.publicMetadata?.tenantId as string | undefined;
+  const { tenantId } = useTenantId();
   const [days, setDays] = useState(30);
 
   const { data: analytics, isLoading } = useQuery({

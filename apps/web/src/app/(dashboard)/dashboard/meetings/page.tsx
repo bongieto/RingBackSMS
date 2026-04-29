@@ -2,7 +2,6 @@
 
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useOrganization } from '@clerk/nextjs';
 import {
   Calendar,
   Plus,
@@ -35,6 +34,7 @@ import { Label } from '@/components/ui/label';
 import { meetingApi } from '@/lib/api';
 import { maskPhone, cn } from '@/lib/utils';
 import { CalendarSettingsCard } from '@/components/meetings/CalendarSettingsCard';
+import { useTenantId } from '@/components/providers/TenantProvider';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -88,8 +88,7 @@ type CalendarMode = 'week' | 'month';
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function MeetingsPage() {
-  const { organization } = useOrganization();
-  const tenantId = organization?.publicMetadata?.tenantId as string | undefined;
+  const { tenantId } = useTenantId();
   const queryClient = useQueryClient();
 
   // State

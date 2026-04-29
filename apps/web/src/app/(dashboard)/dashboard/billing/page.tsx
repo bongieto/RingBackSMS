@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { useOrganization } from '@clerk/nextjs';
 import { CreditCard, Zap, TrendingUp, Building2, MessageSquare, Bot, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
@@ -10,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { billingApi, tenantApi, analyticsApi } from '@/lib/api';
+import { useTenantId } from '@/components/providers/TenantProvider';
 import { PLAN_LIMITS, Plan } from '@ringback/shared-types';
 
 const PLAN_PRICES: Record<string, { monthly: string; annual: string }> = {
@@ -33,8 +33,7 @@ const PLAN_ICONS: Record<string, React.ElementType> = {
 };
 
 export default function BillingPage() {
-  const { organization } = useOrganization();
-  const tenantId = organization?.publicMetadata?.tenantId as string | undefined;
+  const { tenantId } = useTenantId();
   const [billingInterval, setBillingInterval] = useState<'monthly' | 'annual'>('monthly');
 
   const { data: tenant, isLoading: tenantLoading } = useQuery({

@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useOrganization } from '@clerk/nextjs';
 import { ShoppingBag, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
@@ -10,6 +9,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { orderApi } from '@/lib/api';
 import { formatDate, formatRelativeTime, maskPhone, formatCurrency } from '@/lib/utils';
+import { useTenantId } from '@/components/providers/TenantProvider';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,8 +75,7 @@ const STATUS_ACTIONS: Record<string, StatusAction[]> = {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function OrdersPage() {
-  const { organization } = useOrganization();
-  const tenantId = organization?.publicMetadata?.tenantId as string | undefined;
+  const { tenantId } = useTenantId();
   const queryClient = useQueryClient();
 
   const [statusFilter, setStatusFilter] = useState<string>('ALL');

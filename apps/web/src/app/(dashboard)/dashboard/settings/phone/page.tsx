@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useOrganization } from '@clerk/nextjs';
 import { toast } from 'sonner';
 import { Phone, Loader2, CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
@@ -13,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { phoneApi } from '@/lib/api';
+import { useTenantId } from '@/components/providers/TenantProvider';
 
 const CallForwardingWizard = dynamic(
   () => import('@/components/settings/CallForwardingWizard').then((mod) => mod.CallForwardingWizard),
@@ -36,8 +36,7 @@ interface PhoneStatus {
 }
 
 export default function PhoneSetupPage() {
-  const { organization } = useOrganization();
-  const tenantId = organization?.publicMetadata?.tenantId as string | undefined;
+  const { tenantId } = useTenantId();
   const queryClient = useQueryClient();
 
   const [areaCode, setAreaCode] = useState('');

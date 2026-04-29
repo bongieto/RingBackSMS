@@ -2,7 +2,6 @@
 
 import { Fragment, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useOrganization } from '@clerk/nextjs';
 import { toast } from 'sonner';
 import { Voicemail, Phone, MessageSquare, ChevronLeft, ChevronRight, Trash2, PhoneCall, Reply } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
@@ -13,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { voicemailApi, replyTemplateApi } from '@/lib/api';
 import { maskPhone } from '@/lib/utils';
+import { useTenantId } from '@/components/providers/TenantProvider';
 
 interface VoicemailContact {
   id: string;
@@ -90,8 +90,7 @@ function formatDuration(seconds: number | null): string {
 }
 
 export default function VoicemailsPage() {
-  const { organization } = useOrganization();
-  const tenantId = organization?.publicMetadata?.tenantId as string | undefined;
+  const { tenantId } = useTenantId();
 
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
