@@ -9,10 +9,12 @@ import { buildConversationMessageWindow } from '@/lib/server/conversationMessage
 import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
+import { logTiming, startTimer } from '@/lib/server/perf';
 
 const ReplySchema = z.object({ message: z.string().min(1) });
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+  const timer = startTimer();
   try {
     const { message } = ReplySchema.parse(await req.json());
     const conversation = await prisma.conversation.findUnique({ where: { id: params.id } });
@@ -60,8 +62,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const messageWindow = buildConversationMessageWindow(updated.messages);
     const responseData = { ...updated, ...messageWindow };
     logger.info('Manual reply sent', { conversationId: params.id });
+    logTiming('Conversation reply API completed', timer, {
+      tenantId: conversation.tenantId,
+      conversationId: params.id,
+      messageLength: message.length,
+      returnedMessages: messageWindow.messages.length,
+    });
     return apiSuccess(responseData);
   } catch (err: any) {
+    logger.error('Conversation reply API failed', {
+      conversationId: params.id,
+      latencyMs: timer.elapsedMs(),
+      err: err?.message ?? String(err),
+    });
     return apiError('Internal server error', 500);
   }
 }

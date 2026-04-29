@@ -21,11 +21,13 @@ import {
 } from '@/lib/server/services/consentService';
 import { checkEscalation } from '@/lib/server/services/escalationService';
 import { waitUntil } from '@/lib/server/waitUntil';
+import { logTiming, startTimer } from '@/lib/server/perf';
 
 // Give the handler 30s so background AI + SMS work can finish on Vercel
 export const maxDuration = 30;
 
 export async function POST(request: NextRequest) {
+  const requestTimer = startTimer();
   const text = await request.text();
   const params = new URLSearchParams(text);
   const body: Record<string, string> = {};
@@ -76,6 +78,7 @@ export async function POST(request: NextRequest) {
   });
 
   if (!tenant || !tenant.isActive) {
+    logTiming('Twilio SMS webhook ignored inactive tenant', requestTimer, { to: To });
     return new Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
       headers: { 'Content-Type': 'text/xml' }, status: 200,
     });
@@ -100,6 +103,11 @@ export async function POST(request: NextRequest) {
   const twimlResponse = new Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
     headers: { 'Content-Type': 'text/xml' }, status: 200,
   });
+  logTiming('Twilio SMS webhook accepted', requestTimer, {
+    tenantId: tenant.id,
+    messageSid: MessageSid,
+    bodyLen: Body.length,
+  });
 
   // ── TCPA Consent Gate ─────────────────────────────────────────────────────
   // Intercept before the AI flow engine. Three checks in order:
@@ -113,6 +121,7 @@ export async function POST(request: NextRequest) {
   if (isOptOutKeyword(normalizedBody)) {
     waitUntil(
       (async () => {
+        const backgroundTimer = startTimer();
         try {
           // Close any pending consent request before suppressing
           const pending = await findPendingConsent(tenant.id, From);
@@ -138,6 +147,11 @@ export async function POST(request: NextRequest) {
           );
         } catch (err) {
           logger.error('Opt-out handling failed', { err, tenantId: tenant.id });
+        } finally {
+          logTiming('Twilio SMS opt-out background completed', backgroundTimer, {
+            tenantId: tenant.id,
+            messageSid: MessageSid,
+          });
         }
       })()
     );
@@ -151,6 +165,7 @@ export async function POST(request: NextRequest) {
       // Consent granted — approve, then send the follow-up opener
       waitUntil(
         (async () => {
+          const backgroundTimer = startTimer();
           try {
             const replayMessage = getActionablePreConsentMessage(pendingConsent.replyBody);
             await appendConsentTranscript(tenant.id, From, [
@@ -188,6 +203,11 @@ export async function POST(request: NextRequest) {
             );
           } catch (err) {
             logger.error('Consent approval failed', { err, tenantId: tenant.id });
+          } finally {
+            logTiming('Twilio SMS consent approval background completed', backgroundTimer, {
+              tenantId: tenant.id,
+              messageSid: MessageSid,
+            });
           }
         })()
       );
@@ -195,6 +215,7 @@ export async function POST(request: NextRequest) {
       // Ambiguous reply — re-prompt once
       waitUntil(
         (async () => {
+          const backgroundTimer = startTimer();
           try {
             const replayMessage = getActionablePreConsentMessage(normalizedBody);
             const reprompt = buildConsentReprompt(normalizedBody);
@@ -218,6 +239,11 @@ export async function POST(request: NextRequest) {
             );
           } catch (err) {
             logger.error('Re-prompt failed', { err, tenantId: tenant.id });
+          } finally {
+            logTiming('Twilio SMS consent reprompt background completed', backgroundTimer, {
+              tenantId: tenant.id,
+              messageSid: MessageSid,
+            });
           }
         })()
       );
@@ -254,12 +280,17 @@ export async function POST(request: NextRequest) {
 
   waitUntil(
     (async () => {
+      const backgroundTimer = startTimer();
+      let path = 'flow_engine';
       try {
         // Review capture runs BEFORE the AI so bare "5" replies don't
         // get parsed as part of an order flow.
         const { tryConsumeReviewReply } = await import('@/lib/server/services/reviewService');
         const consumed = await tryConsumeReviewReply(tenant.id, From, Body);
-        if (consumed) return;
+        if (consumed) {
+          path = 'review_reply';
+          return;
+        }
 
         // Day-before meeting confirmations. A bare "C" / "yes" reply
         // when the caller has a pending confirmation prompt becomes a
@@ -274,6 +305,7 @@ export async function POST(request: NextRequest) {
           Body,
         );
         if (meetingConfirm.consumed) {
+          path = 'meeting_confirmation';
           if (meetingConfirm.rescheduled) {
             const { deleteCallerState } = await import(
               '@/lib/server/services/stateService'
@@ -287,7 +319,10 @@ export async function POST(request: NextRequest) {
         // If triggered, the escalation service sends a holding message
         // and notifies the tenant — we skip the AI flow entirely.
         const escalated = await checkEscalation(tenant.id, From, Body);
-        if (escalated) return;
+        if (escalated) {
+          path = 'escalation';
+          return;
+        }
 
         // Route to AI flow engine
         await processInboundSms({
@@ -298,6 +333,12 @@ export async function POST(request: NextRequest) {
         });
       } catch (err) {
         logger.error('Async SMS processing error', { err, tenantId: tenant.id, messageSid: MessageSid });
+      } finally {
+        logTiming('Twilio SMS webhook background completed', backgroundTimer, {
+          tenantId: tenant.id,
+          messageSid: MessageSid,
+          path,
+        });
       }
     })()
   );

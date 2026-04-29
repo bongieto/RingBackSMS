@@ -3,13 +3,22 @@
 import { useQuery } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/nextjs';
 import { useState } from 'react';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import dynamic from 'next/dynamic';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { Button } from '@/components/ui/button';
 import { analyticsApi } from '@/lib/api';
 import { AlertTriangle, Calendar, Clock, DollarSign, HelpCircle, MessageSquare, Phone, ShoppingBag } from 'lucide-react';
+
+const DailyConversationsChart = dynamic(
+  () => import('./AnalyticsCharts').then((mod) => mod.DailyConversationsChart),
+  { ssr: false, loading: () => <div className="h-[250px] animate-pulse rounded bg-muted" /> },
+);
+const UsageBreakdownChart = dynamic(
+  () => import('./AnalyticsCharts').then((mod) => mod.UsageBreakdownChart),
+  { ssr: false, loading: () => <div className="h-[300px] animate-pulse rounded bg-muted" /> },
+);
 
 interface ValueMetrics {
   missedCallsRecovered: number;
@@ -223,21 +232,7 @@ export default function AnalyticsPage() {
             <CardTitle>Daily Conversations</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={250}>
-              <LineChart data={dailyTrend}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="date"
-                  tickFormatter={(d) => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                  fontSize={12}
-                />
-                <YAxis allowDecimals={false} />
-                <Tooltip
-                  labelFormatter={(d) => new Date(String(d) + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                />
-                <Line type="monotone" dataKey="conversations" stroke="#8b5cf6" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
+            <DailyConversationsChart data={dailyTrend} />
           </CardContent>
         </Card>
       )}
@@ -248,15 +243,7 @@ export default function AnalyticsPage() {
             <CardTitle>Usage Breakdown</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={usageChartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <UsageBreakdownChart data={usageChartData} />
           </CardContent>
         </Card>
       )}

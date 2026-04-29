@@ -1,17 +1,38 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import { Header } from '@/components/layout/Header';
 import { useTenantId } from '@/components/providers/TenantProvider';
 import { Tabs, TabList, TabTrigger, TabPanel } from '@/components/ui/tabs';
 import { getProfile, type MenuTab } from '@/lib/businessTypeProfile';
-import { MenusTab } from './_components/MenusTab';
-import { CategoriesTab } from './_components/CategoriesTab';
-import { ItemsTab } from './_components/ItemsTab';
-import { OptionGroupsTab } from './_components/OptionGroupsTab';
-import { OptionsTab } from './_components/OptionsTab';
-import { ImportTab } from './_components/ImportTab';
+
+const tabLoading = () => <div className="py-8 text-sm text-muted-foreground">Loading…</div>;
+const MenusTab = dynamic(() => import('./_components/MenusTab').then((mod) => mod.MenusTab), {
+  ssr: false,
+  loading: tabLoading,
+});
+const CategoriesTab = dynamic(() => import('./_components/CategoriesTab').then((mod) => mod.CategoriesTab), {
+  ssr: false,
+  loading: tabLoading,
+});
+const ItemsTab = dynamic(() => import('./_components/ItemsTab').then((mod) => mod.ItemsTab), {
+  ssr: false,
+  loading: tabLoading,
+});
+const OptionGroupsTab = dynamic(() => import('./_components/OptionGroupsTab').then((mod) => mod.OptionGroupsTab), {
+  ssr: false,
+  loading: tabLoading,
+});
+const OptionsTab = dynamic(() => import('./_components/OptionsTab').then((mod) => mod.OptionsTab), {
+  ssr: false,
+  loading: tabLoading,
+});
+const ImportTab = dynamic(() => import('./_components/ImportTab').then((mod) => mod.ImportTab), {
+  ssr: false,
+  loading: tabLoading,
+});
 
 export default function MenuPage() {
   const { tenantId, businessType } = useTenantId();

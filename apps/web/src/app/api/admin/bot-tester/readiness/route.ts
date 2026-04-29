@@ -13,11 +13,13 @@ import {
   getTodayHoursDisplay,
   isWithinBusinessHours,
 } from '@/lib/server/businessHours';
+import { logTiming, startTimer } from '@/lib/server/perf';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
+  const timer = startTimer();
   const auth = await requireBotTesterAdmin();
   if (isNextResponse(auth)) return auth;
 
@@ -101,10 +103,18 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await runVerticalReadinessSuite({ tenantContext });
+    logTiming('Admin bot tester readiness completed', timer, {
+      tenantId,
+      vertical: result.verticalKey,
+      score: result.score,
+      passed: result.passed,
+      total: result.total,
+    });
     return apiSuccess(result);
   } catch (err: any) {
     logger.error('Bot tester readiness failed', {
       tenantId,
+      latencyMs: timer.elapsedMs(),
       err: err?.message,
     });
     return apiError(`Readiness run failed: ${err?.message ?? 'unknown'}`, 500);

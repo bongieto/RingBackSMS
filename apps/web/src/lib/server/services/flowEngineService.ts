@@ -22,6 +22,7 @@ import { Prisma } from '@prisma/client';
 import { recordDecision, mergeDecisions, currentTurnId, setTurnSnapshots } from '../turn/TurnContext';
 import { withTurn } from '../turn/withTurn';
 import type { DecisionDraft, TurnOutcome } from '@ringback/shared-types';
+import { logTiming, startTimer as startPerfTimer } from '../perf';
 
 export interface ProcessInboundSmsInput {
   tenantId: string;
@@ -619,6 +620,7 @@ async function processInboundSmsInner(
   // Load tenant context and caller context in parallel — these are independent
   // queries, and the caller context has historically been a noticeable serial
   // step on every inbound SMS. Parallelizing saves ~200-300ms per reply.
+  const contextTimer = startPerfTimer();
   const [tenant, callerContext] = await Promise.all([
     prisma.tenant.findUnique({
       where: { id: tenantId },
@@ -645,6 +647,12 @@ async function processInboundSmsInner(
       return null;
     }),
   ]);
+  logTiming('Flow engine context loaded', contextTimer, {
+    tenantId,
+    callerPhone,
+    hasCallerContext: callerContext != null,
+    testMode,
+  });
 
   if (!tenant || !tenant.config) {
     logger.error('Tenant or config not found', { tenantId });
@@ -1197,6 +1205,7 @@ async function processInboundSmsInner(
   // row. Safe when Turn Record is disabled — mergeDecisions no-ops.
   const flowDecisions: DecisionDraft[] = [];
 
+  const engineTimer = startPerfTimer();
   const result = await runFlowEngine({
     tenantContext,
     callerPhone,
@@ -1208,6 +1217,15 @@ async function processInboundSmsInner(
     callerMemory,
     getActiveOrderCount,
     decisions: flowDecisions,
+  });
+  logTiming('Flow engine decision completed', engineTimer, {
+    tenantId,
+    callerPhone,
+    flowType: result.flowType,
+    sideEffectCount: result.sideEffects.length,
+    decisionCount: flowDecisions.length,
+    replyLen: result.smsReply?.length ?? 0,
+    testMode,
   });
   mergeDecisions(flowDecisions);
 
@@ -1571,11 +1589,20 @@ async function processInboundSmsInner(
 
   {
     const { enrichIntakeWithStructuredAi } = await import('./intakeEnrichmentService');
+    const intakeTimer = startPerfTimer();
     result.intake = await enrichIntakeWithStructuredAi({
       tenantContext,
       inboundMessage,
       flowType: result.flowType,
       intake: result.intake,
+    });
+    logTiming('Flow engine intake enrichment completed', intakeTimer, {
+      tenantId,
+      callerPhone,
+      flowType: result.flowType,
+      capturedFields: result.intake?.captured.length ?? 0,
+      missingFields: result.intake?.missing.length ?? 0,
+      testMode,
     });
   }
 
@@ -1705,6 +1732,7 @@ async function processInboundSmsInner(
   // reset the flow to FALLBACK so the next message doesn't re-run the
   // same failed step.
   try {
+    const sideEffectsTimer = startPerfTimer();
     // Process side effects. Each is wrapped in its own try/catch so a
     // failure in one effect doesn't cascade and silently drop subsequent
     // effects. Two classes of effects:
@@ -1723,6 +1751,7 @@ async function processInboundSmsInner(
     // Everything that talks to external systems (Stripe, Square, Twilio,
     // email/Slack notifications) stays skipped.
     const TEST_MODE_EXECUTABLE = new Set(['SAVE_ORDER']);
+    let criticalFailureEffect: string | null = null;
     const runEffect = async (effect: SideEffect) => {
       if (criticalFailure) return; // abort chain once a critical effect fails
       if (testMode && !TEST_MODE_EXECUTABLE.has(effect.type)) return;
@@ -1732,6 +1761,7 @@ async function processInboundSmsInner(
         const msg = effectErr?.message ?? String(effectErr);
         if (CRITICAL_EFFECTS.has(effect.type)) {
           criticalFailure = { effect: effect.type, error: msg };
+          criticalFailureEffect = effect.type;
           logger.error('Critical side effect failed — aborting chain', {
             tenantId,
             effect: effect.type,
@@ -1799,6 +1829,17 @@ async function processInboundSmsInner(
     if (tenantMeta && !testMode) {
       await incrementSmsUsage(tenantId, tenantMeta.stripeSubscriptionId, tenantMeta.plan);
     }
+
+    logTiming('Flow engine side effects and outbound work completed', sideEffectsTimer, {
+      tenantId,
+      callerPhone,
+      flowType: result.flowType,
+      sideEffectCount: result.sideEffects.length,
+      criticalFailure: criticalFailureEffect,
+      sentPrimarySms: !criticalFailure && !!result.smsReply?.trim() && !testMode,
+      sentPaymentSms: !criticalFailure && !!sideEffectContext.paymentLink && !testMode,
+      testMode,
+    });
 
     logger.info('Inbound SMS processed', {
       tenantId,

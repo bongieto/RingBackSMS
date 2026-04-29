@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -23,7 +24,6 @@ import {
 } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { ReplyTemplatesCard } from '@/components/settings/ReplyTemplatesCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -33,6 +33,20 @@ import { Tabs, TabList, TabPanel, TabTrigger } from '@/components/ui/tabs';
 import { useTenantId } from '@/components/providers/TenantProvider';
 import { tenantApi, phoneApi, notificationApi } from '@/lib/api';
 import { getProfile } from '@/lib/businessTypeProfile';
+
+const ReplyTemplatesCard = dynamic(
+  () => import('@/components/settings/ReplyTemplatesCard').then((mod) => mod.ReplyTemplatesCard),
+  {
+    loading: () => (
+      <Card>
+        <CardHeader>
+          <CardTitle>Reply Templates</CardTitle>
+          <CardDescription>Loading quick-reply snippets...</CardDescription>
+        </CardHeader>
+      </Card>
+    ),
+  },
+);
 
 interface DayScheduleEntry {
   open: string;

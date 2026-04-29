@@ -26,6 +26,7 @@ import { createTask } from '@/lib/server/services/taskService';
 import { maskPhone } from '@/lib/server/phoneUtils';
 import { waitUntil } from '@/lib/server/waitUntil';
 import { classifyCaller } from '@/lib/server/services/spamLookupService';
+import { logTiming, startTimer } from '@/lib/server/perf';
 
 // Give the handler 30s so background SMS/TTS work can finish on Vercel
 export const maxDuration = 30;
@@ -142,6 +143,7 @@ function escapeXml(s: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  const requestTimer = startTimer();
   const text = await request.text();
   const params = new URLSearchParams(text);
   const body: Record<string, string> = {};
@@ -334,10 +336,18 @@ export async function POST(request: NextRequest) {
   logger.info('Consent SMS start', { tenantId: tenant.id, from });
 
   const consentPromise = (async () => {
+    const consentTimer = startTimer();
     try {
       const suppressed = await isCallerSuppressed(tenant.id, from);
       logger.debug('Consent SMS suppression checked', { tenantId: tenant.id, suppressed });
-      if (suppressed) return;
+      if (suppressed) {
+        logTiming('Voice webhook consent background completed', consentTimer, {
+          tenantId: tenant.id,
+          callSid,
+          path: 'suppressed',
+        });
+        return;
+      }
 
       // Spam/robocall gate: Twilio Lookup tells us when the inbound
       // number is invalid or matches the unbranded-VoIP fingerprint
@@ -360,6 +370,11 @@ export async function POST(request: NextRequest) {
             errorCode: 'spam_blocked',
             errorMessage: spam.reason,
           }).catch(() => {});
+          logTiming('Voice webhook consent background completed', consentTimer, {
+            tenantId: tenant.id,
+            callSid,
+            path: 'spam_blocked',
+          });
           return;
         }
       }
@@ -382,6 +397,11 @@ export async function POST(request: NextRequest) {
         await logConsentEvent(tenant.id, from, 'already_consented', {
           messageSid,
         }).catch(() => {});
+        logTiming('Voice webhook consent background completed', consentTimer, {
+          tenantId: tenant.id,
+          callSid,
+          path: 'already_consented',
+        });
         return;
       }
 
@@ -391,7 +411,14 @@ export async function POST(request: NextRequest) {
         consentRequestId,
         alreadyPending,
       });
-      if (alreadyPending) return;
+      if (alreadyPending) {
+        logTiming('Voice webhook consent background completed', consentTimer, {
+          tenantId: tenant.id,
+          callSid,
+          path: 'already_pending',
+        });
+        return;
+      }
 
       // Consent SMS now supports full placeholder substitution — the
       // tenant's stored consentMessage (editable in Settings) can use
@@ -428,6 +455,11 @@ export async function POST(request: NextRequest) {
         where: { twilioCallSid: callSid },
         data: { smsSent: true },
       }).catch(() => {});
+      logTiming('Voice webhook consent background completed', consentTimer, {
+        tenantId: tenant.id,
+        callSid,
+        path: 'consent_request_sent',
+      });
     } catch (err: any) {
       // Write error details to the DB so we can actually see them
       // (Vercel's log viewer hides console output).
@@ -447,6 +479,11 @@ export async function POST(request: NextRequest) {
         errorMessage: err?.message ?? String(err),
         errorName: err?.name ?? null,
       }).catch(() => {});
+      logTiming('Voice webhook consent background completed', consentTimer, {
+        tenantId: tenant.id,
+        callSid,
+        path: 'failed',
+      });
     }
   })();
 
@@ -463,7 +500,7 @@ export async function POST(request: NextRequest) {
     transcribeCallbackUrl: `${baseUrl}/api/webhooks/twilio/transcription-callback`,
   });
 
-  logger.info('Voice webhook responded with TwiML', { tenantId: tenant.id, callSid, tier });
+  logTiming('Voice webhook responded with TwiML', requestTimer, { tenantId: tenant.id, callSid, tier });
 
   return new Response(twiml, {
     headers: { 'Content-Type': 'text/xml' },

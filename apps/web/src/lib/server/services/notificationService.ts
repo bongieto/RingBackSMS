@@ -3,6 +3,7 @@ import { logger } from '../logger';
 import { maskPhone } from '../phoneUtils';
 import { sendSms } from './twilioService';
 import { prisma } from '../db';
+import { logTiming, startTimer } from '../perf';
 
 let resendClient: Resend | null = null;
 
@@ -25,6 +26,7 @@ export interface NotificationPayload {
 }
 
 export async function sendNotification(payload: NotificationPayload): Promise<void> {
+  const timer = startTimer();
   const config = await prisma.tenantConfig.findUnique({
     where: { tenantId: payload.tenantId },
   });
@@ -57,6 +59,16 @@ export async function sendNotification(payload: NotificationPayload): Promise<vo
       }
       break;
   }
+  logTiming('Tenant notification completed', timer, {
+    tenantId: payload.tenantId,
+    channel: payload.channel,
+    priority: payload.priority ?? 'NORMAL',
+    configured: {
+      email: !!config.ownerEmail,
+      sms: !!config.ownerPhone,
+      slack: !!config.slackWebhook,
+    },
+  });
 }
 
 async function sendEmailNotification(
@@ -116,6 +128,7 @@ export async function sendOwnerNotification(payload: {
   subject: string;
   message: string;
 }): Promise<void> {
+  const timer = startTimer();
   const config = await prisma.tenantConfig.findUnique({
     where: { tenantId: payload.tenantId },
   });
@@ -161,7 +174,7 @@ export async function sendOwnerNotification(payload: {
   }
 
   await Promise.all(tasks);
-  logger.info('Owner notification fanned out', {
+  logTiming('Owner notification fanned out', timer, {
     tenantId: payload.tenantId,
     subject: payload.subject,
     channels: {
@@ -182,6 +195,7 @@ export async function sendHighPriorityAlert(payload: {
   subject: string;
   message: string;
 }): Promise<void> {
+  const timer = startTimer();
   const config = await prisma.tenantConfig.findUnique({
     where: { tenantId: payload.tenantId },
   });
@@ -225,6 +239,15 @@ export async function sendHighPriorityAlert(payload: {
   }
 
   await Promise.all(tasks);
+  logTiming('High-priority owner alert fanned out', timer, {
+    tenantId: payload.tenantId,
+    subject: payload.subject,
+    channels: {
+      sms: !!config.ownerPhone,
+      email: !!config.ownerEmail,
+      slack: !!config.slackWebhook,
+    },
+  });
 }
 
 export async function sendMissedCallAlert(

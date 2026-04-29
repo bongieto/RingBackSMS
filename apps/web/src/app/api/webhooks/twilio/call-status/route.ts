@@ -6,8 +6,10 @@ import { logger } from '@/lib/server/logger';
 import { TwilioCallStatusSchema } from '@ringback/shared-types';
 import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/server/rateLimit';
 import { buildGreetingVars, renderGreetingTemplate } from '@/lib/server/businessHours';
+import { logTiming, startTimer } from '@/lib/server/perf';
 
 export async function POST(request: NextRequest) {
+  const timer = startTimer();
   const ip = getClientIp(request.headers);
   const rl = await checkRateLimit(`twilio-status:${ip}`, 120, 60);
   if (!rl.allowed) return rateLimitResponse(rl);
@@ -29,7 +31,10 @@ export async function POST(request: NextRequest) {
     include: { config: true },
   });
 
-  if (!tenant || !tenant.isActive) return new Response('OK', { status: 200 });
+  if (!tenant || !tenant.isActive) {
+    logTiming('Twilio call-status webhook ignored inactive tenant', timer, { to: To, callStatus: CallStatus });
+    return new Response('OK', { status: 200 });
+  }
 
   // Verify Twilio signature — fail-closed if token is missing
   const authToken = getValidationToken(tenant);
@@ -63,7 +68,11 @@ export async function POST(request: NextRequest) {
 
     if (existing) {
       // Already handled by voice webhook — nothing to do
-      logger.debug('Call already tracked by voice webhook', { callSid: CallSid });
+      logTiming('Twilio call-status webhook skipped existing call', timer, {
+        tenantId: tenant.id,
+        callSid: CallSid,
+        callStatus: CallStatus,
+      });
       return new Response('OK', { status: 200 });
     }
 
@@ -91,9 +100,14 @@ export async function POST(request: NextRequest) {
       await sendSms(tenant.id, From, rendered);
       await prisma.missedCall.update({ where: { id: missedCall.id }, data: { smsSent: true } });
     }
-    logger.info('Missed call handled via status callback fallback', { tenantId: tenant.id, callSid: CallSid });
+    logTiming('Twilio call-status webhook fallback completed', timer, {
+      tenantId: tenant.id,
+      callSid: CallSid,
+      callStatus: CallStatus,
+      sentSms: !missedCall.smsSent,
+    });
   } catch (err) {
-    logger.error('call-status webhook error', { err, tenantId: tenant.id });
+    logger.error('call-status webhook error', { err, tenantId: tenant.id, latencyMs: timer.elapsedMs() });
   }
 
   return new Response('OK', { status: 200 });

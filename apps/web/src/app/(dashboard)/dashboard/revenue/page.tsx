@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useQuery } from '@tanstack/react-query';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { DollarSign, ShoppingBag, TrendingUp, Clock } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +10,15 @@ import { StatCard } from '@/components/dashboard/StatCard';
 import { Button } from '@/components/ui/button';
 import { useTenantId } from '@/components/providers/TenantProvider';
 import { webApi } from '@/lib/api';
+
+const RevenueByDayChart = dynamic(
+  () => import('./RevenueCharts').then((mod) => mod.RevenueByDayChart),
+  { ssr: false, loading: () => <div className="h-[250px] animate-pulse rounded bg-muted" /> },
+);
+const OrdersByHourChart = dynamic(
+  () => import('./RevenueCharts').then((mod) => mod.OrdersByHourChart),
+  { ssr: false, loading: () => <div className="h-[220px] animate-pulse rounded bg-muted" /> },
+);
 
 const PERIODS = [
   { label: '7d', value: 7 },
@@ -72,22 +81,7 @@ export default function RevenuePage() {
             <CardTitle>Revenue by day</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={250}>
-              <LineChart data={data.dailySeries.map((d) => ({ ...d, dollars: d.revenueCents / 100 }))}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="date"
-                  tickFormatter={(d) => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                  fontSize={12}
-                />
-                <YAxis tickFormatter={(v) => `$${v}`} fontSize={12} />
-                <Tooltip
-                  formatter={(v: number) => [`$${v.toFixed(2)}`, 'Revenue']}
-                  labelFormatter={(d) => new Date(String(d) + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                />
-                <Line type="monotone" dataKey="dollars" stroke="#10b981" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
+            <RevenueByDayChart data={data.dailySeries} />
           </CardContent>
         </Card>
       )}
@@ -120,30 +114,7 @@ export default function RevenuePage() {
               <CardTitle>Orders by hour</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={data.hourHistogram}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="hour"
-                    tickFormatter={(h) => {
-                      if (h === 0) return '12a';
-                      if (h === 12) return '12p';
-                      return h < 12 ? `${h}a` : `${h - 12}p`;
-                    }}
-                    fontSize={11}
-                    interval={1}
-                  />
-                  <YAxis allowDecimals={false} fontSize={12} />
-                  <Tooltip
-                    labelFormatter={(h) => {
-                      const hour = Number(h);
-                      const label = hour === 0 ? '12 AM' : hour < 12 ? `${hour} AM` : hour === 12 ? '12 PM' : `${hour - 12} PM`;
-                      return label;
-                    }}
-                  />
-                  <Bar dataKey="orders" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <OrdersByHourChart data={data.hourHistogram} />
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-2">
                 <Clock className="h-3 w-3" />
                 Plan staffing around your peak hours.

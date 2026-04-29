@@ -7,8 +7,10 @@ import {
   summarizeConversationMessages,
 } from '@/lib/server/conversationSummary';
 import { apiPaginated, apiError } from '@/lib/server/response';
+import { logTiming, startTimer } from '@/lib/server/perf';
 
 export async function GET(request: NextRequest) {
+  const timer = startTimer();
   const { searchParams } = new URL(request.url);
   const tenantId = searchParams.get('tenantId') ?? '';
   if (!tenantId) return apiError('tenantId is required', 400);
@@ -83,5 +85,14 @@ export async function GET(request: NextRequest) {
     };
   });
 
+  logTiming('Conversation list API completed', timer, {
+    tenantId,
+    page,
+    pageSize,
+    isActive,
+    resultCount: summarized.length,
+    total,
+    summaryBackfillCount: missingSummaryIds.length,
+  });
   return apiPaginated(summarized, total, page, pageSize);
 }

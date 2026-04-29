@@ -3,8 +3,10 @@ import twilio from 'twilio';
 import { prisma } from '@/lib/server/db';
 import { logger } from '@/lib/server/logger';
 import { getValidationToken } from '@/lib/server/services/twilioService';
+import { logTiming, startTimer } from '@/lib/server/perf';
 
 export async function POST(request: NextRequest) {
+  const timer = startTimer();
   const text = await request.text();
   const params = new URLSearchParams(text);
   const body: Record<string, string> = {};
@@ -50,7 +52,11 @@ export async function POST(request: NextRequest) {
 
   // Only process completed recordings
   if (recordingStatus !== 'completed') {
-    logger.debug('Recording not completed, skipping', { callSid, status: recordingStatus });
+    logTiming('Twilio recording callback skipped incomplete recording', timer, {
+      callSid,
+      status: recordingStatus,
+      tenantId: missedCall.tenantId,
+    });
     return new Response('OK', { status: 200 });
   }
 
@@ -58,7 +64,11 @@ export async function POST(request: NextRequest) {
 
   // Skip very short recordings (< 2 seconds) — likely just silence/hangup
   if (duration < 2) {
-    logger.debug('Recording too short, skipping', { callSid, duration });
+    logTiming('Twilio recording callback skipped short recording', timer, {
+      callSid,
+      duration,
+      tenantId: missedCall.tenantId,
+    });
     return new Response('OK', { status: 200 });
   }
 
@@ -72,9 +82,14 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    logger.info('Voicemail saved', { callSid, duration, recordingUrl });
+    logTiming('Twilio recording callback saved voicemail', timer, {
+      callSid,
+      tenantId: missedCall.tenantId,
+      duration,
+      recordingUrl,
+    });
   } catch (err) {
-    logger.error('Failed to save voicemail', { err, callSid });
+    logger.error('Failed to save voicemail', { err, callSid, latencyMs: timer.elapsedMs() });
   }
 
   return new Response('OK', { status: 200 });

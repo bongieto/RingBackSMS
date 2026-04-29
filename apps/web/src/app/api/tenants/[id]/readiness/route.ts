@@ -13,11 +13,13 @@ import {
   getTodayHoursDisplay,
   isWithinBusinessHours,
 } from '@/lib/server/businessHours';
+import { logTiming, startTimer } from '@/lib/server/perf';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
+  const timer = startTimer();
   const auth = await verifyTenantAccess(params.id);
   if (isNextResponse(auth)) return auth;
 
@@ -90,10 +92,19 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
   };
 
   try {
-    return apiSuccess(await runVerticalReadinessSuite({ tenantContext }));
+    const result = await runVerticalReadinessSuite({ tenantContext });
+    logTiming('Tenant readiness API completed', timer, {
+      tenantId: params.id,
+      vertical: result.verticalKey,
+      score: result.score,
+      passed: result.passed,
+      total: result.total,
+    });
+    return apiSuccess(result);
   } catch (err: any) {
     logger.error('Tenant readiness failed', {
       tenantId: params.id,
+      latencyMs: timer.elapsedMs(),
       err: err?.message,
     });
     return apiError(`Readiness run failed: ${err?.message ?? 'unknown'}`, 500);

@@ -5,12 +5,14 @@ import { logger } from '@/lib/server/logger';
 import { getValidationToken } from '@/lib/server/services/twilioService';
 import { analyzeVoicemail } from '@/lib/server/services/aiService';
 import { createTask } from '@/lib/server/services/taskService';
+import { logTiming, startTimer } from '@/lib/server/perf';
 
 /**
  * Fire-and-forget: read the transcript back from the DB, run AI analysis,
  * and write the summary + intent. Kept here so the webhook stays fast.
  */
 async function summarizeAndTagVoicemail(missedCallId: string): Promise<void> {
+  const timer = startTimer();
   try {
     const row = await prisma.missedCall.findUnique({
       where: { id: missedCallId },
@@ -35,8 +37,14 @@ async function summarizeAndTagVoicemail(missedCallId: string): Promise<void> {
         missedCallId,
       }).catch((err) => logger.warn('Failed to create voicemail task', { err, missedCallId }));
     }
+    logTiming('Voicemail AI summary completed', timer, {
+      missedCallId,
+      tenantId: row.tenantId,
+      intent,
+      taskCreated: intent !== 'SPAM',
+    });
   } catch (err) {
-    logger.error('summarizeAndTagVoicemail failed', { err, missedCallId });
+    logger.error('summarizeAndTagVoicemail failed', { err, missedCallId, latencyMs: timer.elapsedMs() });
     await prisma.missedCall
       .update({ where: { id: missedCallId }, data: { transcriptionStatus: 'failed' } })
       .catch(() => {});
@@ -44,6 +52,7 @@ async function summarizeAndTagVoicemail(missedCallId: string): Promise<void> {
 }
 
 export async function POST(request: NextRequest) {
+  const timer = startTimer();
   const text = await request.text();
   const params = new URLSearchParams(text);
   const body: Record<string, string> = {};
@@ -90,6 +99,11 @@ export async function POST(request: NextRequest) {
       where: { id: missedCall.id },
       data: { transcriptionStatus: 'failed' },
     }).catch((err) => logger.error('Failed to mark transcription failed', { err, callSid }));
+    logTiming('Twilio transcription callback marked failed', timer, {
+      tenantId: missedCall.tenantId,
+      callSid,
+      transcriptionStatus,
+    });
     return new Response('OK', { status: 200 });
   }
 
@@ -104,7 +118,7 @@ export async function POST(request: NextRequest) {
       data: { voicemailTranscript: cappedTranscript },
     });
   } catch (err) {
-    logger.error('Failed to save transcript', { err, callSid });
+    logger.error('Failed to save transcript', { err, callSid, latencyMs: timer.elapsedMs() });
     return new Response('OK', { status: 200 });
   }
 
@@ -112,6 +126,11 @@ export async function POST(request: NextRequest) {
   summarizeAndTagVoicemail(missedCall.id).catch((err) =>
     logger.error('summarizeAndTagVoicemail rejected', { err, callSid })
   );
+  logTiming('Twilio transcription callback saved transcript', timer, {
+    tenantId: missedCall.tenantId,
+    callSid,
+    transcriptChars: cappedTranscript.length,
+  });
 
   return new Response('OK', { status: 200 });
 }
