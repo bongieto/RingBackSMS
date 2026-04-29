@@ -2,10 +2,25 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useOrganization } from '@clerk/nextjs';
 import { toast } from 'sonner';
 import Link from 'next/link';
-import { Phone, Sparkles, Globe, MapPin, CheckCircle, X, Copy, CalendarOff, Plus, CreditCard, Send, Users, Star } from 'lucide-react';
+import {
+  AlertCircle,
+  CalendarOff,
+  CheckCircle,
+  Copy,
+  CreditCard,
+  Globe,
+  Loader2,
+  MapPin,
+  Phone,
+  Plus,
+  Send,
+  Sparkles,
+  Star,
+  Users,
+  X,
+} from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ReplyTemplatesCard } from '@/components/settings/ReplyTemplatesCard';
@@ -15,6 +30,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabList, TabPanel, TabTrigger } from '@/components/ui/tabs';
+import { useTenantId } from '@/components/providers/TenantProvider';
 import { tenantApi, phoneApi, notificationApi } from '@/lib/api';
 import { getProfile } from '@/lib/businessTypeProfile';
 
@@ -90,21 +106,23 @@ function deriveFlatFromSchedule(schedule: BusinessSchedule) {
 }
 
 export default function SettingsPage() {
-  const { organization } = useOrganization();
+  const { tenantId } = useTenantId();
   const queryClient = useQueryClient();
 
-  // Always fetch the live tenant via /tenants/me instead of relying on
-  // potentially stale Clerk publicMetadata (e.g. left over from a seed).
+  // Always use TenantProvider's /tenants/me result as the source of truth.
+  // Clerk publicMetadata can be stale during org switching and should not
+  // drive settings or phone-number lookups.
   const { data: tenant } = useQuery({
-    queryKey: ['tenant', organization?.id],
+    queryKey: ['tenant', tenantId],
     queryFn: () => tenantApi.getMe(),
-    enabled: !!organization?.id,
+    enabled: !!tenantId,
   });
 
-  const tenantId = (tenant?.id as string | undefined)
-    ?? (organization?.publicMetadata?.tenantId as string | undefined);
   const config: TenantConfig | undefined = tenant?.config;
   const businessType = (tenant as { businessType?: string } | undefined)?.businessType;
+  const tenantName = (tenant as { name?: string } | undefined)?.name;
+  const tenantPhoneNumber = (tenant as { twilioPhoneNumber?: string | null } | undefined)
+    ?.twilioPhoneNumber ?? null;
   const profile = getProfile(businessType);
 
   const [form, setForm] = useState({
@@ -270,7 +288,7 @@ export default function SettingsPage() {
       } as any);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tenant', organization?.id] });
+      queryClient.invalidateQueries({ queryKey: ['tenant', tenantId] });
       setShowSaved(true);
       toast.success('Settings saved!');
     },
@@ -392,7 +410,11 @@ export default function SettingsPage() {
           </TabList>
 
           <TabPanel value="basics" className="space-y-6 max-w-3xl">
-            <PhoneNumberCard tenantId={tenantId} />
+            <PhoneNumberCard
+              tenantId={tenantId}
+              tenantName={tenantName}
+              tenantPhoneNumber={tenantPhoneNumber}
+            />
 
             <Card>
               <CardHeader>
@@ -1434,12 +1456,34 @@ function PrepTimeCard({
   );
 }
 
-function PhoneNumberCard({ tenantId }: { tenantId: string | undefined }) {
-  const { data: phoneStatus } = useQuery({
+function PhoneNumberCard({
+  tenantId,
+  tenantName,
+  tenantPhoneNumber,
+}: {
+  tenantId: string | undefined;
+  tenantName?: string;
+  tenantPhoneNumber?: string | null;
+}) {
+  const {
+    data: phoneStatus,
+    isLoading,
+    isError,
+    isFetching,
+    refetch,
+  } = useQuery({
     queryKey: ['phone-status', tenantId],
     queryFn: () => phoneApi.getStatus(tenantId!),
     enabled: !!tenantId,
   });
+
+  const knownPhoneNumber = tenantPhoneNumber?.trim() || null;
+  const activePhoneNumber = phoneStatus?.phoneNumber ?? knownPhoneNumber;
+  const hasPhoneNumber = Boolean(phoneStatus?.hasPhoneNumber || activePhoneNumber);
+  const statusMismatch =
+    !!knownPhoneNumber &&
+    phoneStatus !== undefined &&
+    phoneStatus.hasPhoneNumber === false;
 
   return (
     <Card>
@@ -1451,10 +1495,30 @@ function PhoneNumberCard({ tenantId }: { tenantId: string | undefined }) {
         <CardDescription>Your RingBackSMS phone number for missed-call replies</CardDescription>
       </CardHeader>
       <CardContent>
-        {phoneStatus?.hasPhoneNumber ? (
-          <div className="flex items-center justify-between gap-3">
+        {isLoading && !knownPhoneNumber ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Checking phone number...
+          </div>
+        ) : isError && !knownPhoneNumber ? (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-2 text-sm text-amber-700">
+              <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <div>
+                <p className="font-medium">Couldn&apos;t verify phone number.</p>
+                <p className="text-muted-foreground">
+                  Refresh this page or contact support before setting up a new number.
+                </p>
+              </div>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isFetching}>
+              {isFetching ? 'Checking...' : 'Retry'}
+            </Button>
+          </div>
+        ) : hasPhoneNumber ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <span className="text-lg font-mono font-semibold">{phoneStatus.phoneNumber}</span>
+              <span className="text-lg font-mono font-semibold">{activePhoneNumber}</span>
               <Badge variant="success">Active</Badge>
             </div>
             <Link href="/dashboard/settings/phone">
@@ -1463,6 +1527,13 @@ function PhoneNumberCard({ tenantId }: { tenantId: string | undefined }) {
                 Forward your number
               </Button>
             </Link>
+            {(isError || statusMismatch) && (
+              <p className="basis-full text-xs text-amber-700">
+                {isError
+                  ? 'Showing the number saved on the tenant record because live status could not refresh.'
+                  : `The tenant record for ${tenantName ?? 'this business'} has a phone number, but live status did not confirm it.`}
+              </p>
+            )}
           </div>
         ) : (
           <div className="flex items-center justify-between">
