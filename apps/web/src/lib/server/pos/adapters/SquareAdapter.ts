@@ -672,45 +672,67 @@ export class SquareAdapter extends BasePosAdapter {
       };
     });
 
-    // Push sales tax, card-fee passthrough, and tip as ad-hoc line items so
-    // Square's calculated order total matches the customer-paid total. Without
-    // these, Square sees only the items subtotal and end-of-day reports
-    // under-count revenue / collected tax. Square's Orders API has dedicated
-    // `taxes` / `serviceCharges` fields too, but those require Catalog
-    // tax/charge objects that not every tenant has set up — ad-hoc line items
-    // work universally.
-    const adjustmentLineItems: Array<{
-      quantity: string;
+    // Place sales tax and the card-fee passthrough in Square's dedicated
+    // order fields rather than as ad-hoc line items, so KDS tickets show
+    // only food. Tip is attached to the payment below as `tipMoney`.
+    //
+    // Square's ad-hoc tax field (no Catalog object required) takes a
+    // percentage, not a flat amount. We compute the percentage from the
+    // known tax cents + items subtotal so Square's calculated tax matches
+    // the dollar amount Stripe actually charged. Rounding can cause Square
+    // and Stripe to disagree by ±$0.01; the external payment recorded
+    // below uses Square's calculated total so the payment-vs-order check
+    // stays balanced inside Square.
+    const subtotalCents = menuLineItems.reduce(
+      (sum, li) =>
+        sum + Number(li.basePriceMoney.amount) * Number(li.quantity),
+      0,
+    );
+
+    const taxes: Array<{
+      uid: string;
       name: string;
-      basePriceMoney: { amount: bigint; currency: 'USD' };
+      type: 'ADDITIVE';
+      percentage: string;
+      scope: 'ORDER';
     }> = [];
-    if (metadata.taxCents && metadata.taxCents > 0) {
-      adjustmentLineItems.push({
-        quantity: '1',
+    if (
+      metadata.taxCents &&
+      metadata.taxCents > 0 &&
+      subtotalCents > 0
+    ) {
+      taxes.push({
+        uid: 'ringback-sales-tax',
         name: 'Sales Tax',
-        basePriceMoney: { amount: BigInt(metadata.taxCents), currency: 'USD' },
+        type: 'ADDITIVE',
+        percentage: ((metadata.taxCents / subtotalCents) * 100).toFixed(4),
+        scope: 'ORDER',
       });
     }
+
+    const serviceCharges: Array<{
+      uid: string;
+      name: string;
+      amountMoney: { amount: bigint; currency: 'USD' };
+      calculationPhase: 'TOTAL_PHASE';
+      taxable: false;
+    }> = [];
     if (metadata.feeCents && metadata.feeCents > 0) {
-      adjustmentLineItems.push({
-        quantity: '1',
+      serviceCharges.push({
+        uid: 'ringback-card-fee',
         name: 'Card processing fee',
-        basePriceMoney: { amount: BigInt(metadata.feeCents), currency: 'USD' },
+        amountMoney: { amount: BigInt(metadata.feeCents), currency: 'USD' },
+        calculationPhase: 'TOTAL_PHASE',
+        taxable: false,
       });
     }
-    if (metadata.tipCents && metadata.tipCents > 0) {
-      adjustmentLineItems.push({
-        quantity: '1',
-        name: 'Tip',
-        basePriceMoney: { amount: BigInt(metadata.tipCents), currency: 'USD' },
-      });
-    }
-    const lineItems = [...menuLineItems, ...adjustmentLineItems];
 
     const response = await client.ordersApi.createOrder({
       order: {
         locationId: metadata.locationId,
-        lineItems,
+        lineItems: menuLineItems,
+        ...(taxes.length > 0 && { taxes }),
+        ...(serviceCharges.length > 0 && { serviceCharges }),
         fulfillments: [fulfillment],
       },
       idempotencyKey: metadata.idempotencyKey,
@@ -737,12 +759,14 @@ export class SquareAdapter extends BasePosAdapter {
     // invisible to staff (confirmed by testing: Owner.com and other
     // third-party integrations that appear on the KDS all record a payment).
     //
-    // We use Square's own calculated order total (not the Stripe total) so
-    // the amounts match exactly and Square doesn't flag the order as
-    // over/under-paid. With the tax/fee/tip ad-hoc line items above,
-    // Square's calculated total now equals the Stripe total, so reports
-    // reflect real revenue + collected tax. Stripe remains the authoritative
-    // financial record on the payment processor side.
+    // We use Square's own calculated order total (not the Stripe total) for
+    // the payment's `amountMoney` so it matches the order Square just
+    // computed and Square doesn't flag the order as over/under-paid. The
+    // tip rides on `tipMoney` so it stays off the kitchen ticket while
+    // still being captured in Square's payment + reporting. Final payment
+    // total = Square order total (subtotal + tax + card fee) + tip, which
+    // equals what Stripe charged. Stripe remains the authoritative record
+    // on the payment processor side.
     let externalPaymentId: string | null = null;
     const squareOrderTotal = (o as any)?.totalMoney?.amount as bigint | number | undefined;
     if (squareOrderTotal != null && Number(squareOrderTotal) > 0) {
@@ -758,6 +782,8 @@ export class SquareAdapter extends BasePosAdapter {
           .update(`${metadata.idempotencyKey}-pay`)
           .digest('hex')
           .slice(0, 40);
+        const tipCents =
+          metadata.tipCents && metadata.tipCents > 0 ? metadata.tipCents : 0;
         const paymentResp = await client.paymentsApi.createPayment({
           sourceId: 'EXTERNAL',
           idempotencyKey: payIdemKey,
@@ -765,6 +791,9 @@ export class SquareAdapter extends BasePosAdapter {
             amount: BigInt(Number(squareOrderTotal)),
             currency: 'USD',
           },
+          ...(tipCents > 0 && {
+            tipMoney: { amount: BigInt(tipCents), currency: 'USD' },
+          }),
           orderId: squareOrderId,
           locationId: metadata.locationId,
           externalDetails: {
@@ -779,6 +808,7 @@ export class SquareAdapter extends BasePosAdapter {
           squareOrderId,
           externalPaymentId,
           amountCents: Number(squareOrderTotal),
+          tipCents,
         });
       } catch (payErr: any) {
         // Non-fatal: the order is already in Square. KDS routing may not
