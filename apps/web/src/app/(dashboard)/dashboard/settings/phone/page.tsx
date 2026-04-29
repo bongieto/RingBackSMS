@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOrganization } from '@clerk/nextjs';
 import { toast } from 'sonner';
@@ -12,7 +13,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { phoneApi } from '@/lib/api';
-import { CallForwardingWizard } from '@/components/settings/CallForwardingWizard';
+
+const CallForwardingWizard = dynamic(
+  () => import('@/components/settings/CallForwardingWizard').then((mod) => mod.CallForwardingWizard),
+  {
+    ssr: false,
+    loading: () => (
+      <Card>
+        <CardContent className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading call forwarding setup...
+        </CardContent>
+      </Card>
+    ),
+  },
+);
 
 interface PhoneStatus {
   hasPhoneNumber: boolean;

@@ -397,7 +397,13 @@ model MissedCall {
   conversations Conversation[]
 
   @@index([tenantId, callerPhone])
+  @@index([tenantId, callerPhone, occurredAt])
   @@index([tenantId, occurredAt])
+  @@index([tenantId, smsSent, occurredAt])
+  @@index([tenantId, firstReplyAt, occurredAt])
+  @@index([tenantId, ownerRespondedAt, occurredAt])
+  @@index([tenantId, voicemailReceivedAt])
+  @@index([tenantId, voicemailIntent, voicemailReceivedAt])
   @@index([contactId])
 }
 
@@ -427,7 +433,9 @@ model Conversation {
   meetings Meeting[]
 
   @@index([tenantId, callerPhone])
+  @@index([tenantId, callerPhone, createdAt])
   @@index([tenantId, isActive])
+  @@index([tenantId, createdAt])
   @@index([tenantId, updatedAt])
   @@index([tenantId, isActive, updatedAt])
 }
@@ -474,6 +482,9 @@ model Order {
   @@index([tenantId, status])
   @@index([tenantId, createdAt])
   @@index([tenantId, callerPhone])
+  @@index([tenantId, callerPhone, createdAt])
+  @@index([tenantId, paymentStatus, callerPhone, createdAt])
+  @@index([tenantId, status, printedAt, createdAt])
 }
 
 /// Per-tenant role for a Clerk user. Clerk provides one `orgRole`
@@ -831,7 +842,9 @@ model Contact {
   @@unique([tenantId, phone])
   @@index([tenantId])
   @@index([tenantId, status])
+  @@index([tenantId, status, updatedAt])
   @@index([tenantId, updatedAt])
+  @@index([tenantId, createdAt])
   @@index([tenantId, nameSearchHash])
   @@index([tenantId, emailSearchHash])
 }
@@ -929,7 +942,10 @@ model Task {
   updatedAt DateTime @updatedAt
 
   @@index([tenantId, status, priority])
+  @@index([tenantId, status, priority, createdAt])
   @@index([tenantId, snoozedUntil])
+  @@index([status, snoozedUntil])
+  @@index([status, updatedAt])
   @@index([missedCallId])
   @@index([orderId])
   @@index([meetingId])
