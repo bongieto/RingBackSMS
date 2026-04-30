@@ -4,6 +4,7 @@ import { CallerState } from '@ringback/shared-types';
 import { pushDecision } from '../decisions';
 import type { CallerMemory } from '../types';
 import { buildCatalogPromptContext, buildVerticalPromptGuidance, getVerticalProfile } from '../verticals';
+import { formatBusinessLimits, getBusinessLimits } from '../businessLimits';
 
 /**
  * Ungrounded-action guards. Each rule pairs a whole-message inbound
@@ -92,6 +93,101 @@ export function findUngroundedGuard(
 
 function stripThinkTags(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+}
+
+function formatRecentConversationForPrompt(
+  recentMessages?: Array<{ role: 'user' | 'assistant'; content: string }>,
+): string {
+  if (!recentMessages?.length) return '';
+  const lines = recentMessages
+    .slice(-6)
+    .map((m) => {
+      const role = m.role === 'assistant' ? 'Business' : 'Customer';
+      const content = m.content.replace(/\s+/g, ' ').trim().slice(0, 180);
+      return content ? `${role}: ${content}` : '';
+    })
+    .filter(Boolean);
+  return lines.length
+    ? `\nRecent conversation (oldest to newest; use only to answer follow-ups, never to override facts):\n${lines.join('\n')}`
+    : '';
+}
+
+function findUnsupportedFactualClaim(
+  replyText: string,
+  memory?: CallerMemory,
+): string | null {
+  const text = replyText.toLowerCase();
+  const hasActiveOrder = Boolean(memory?.activeOrder);
+
+  if (!hasActiveOrder) {
+    if (/\b(order|it)\s+(?:is\s+)?(?:cancelled|canceled)\b/.test(text)) {
+      return 'cancel_confirmation_without_active_order';
+    }
+    if (/\brefund(?:ed| processed| issued| sent)?\b/.test(text)) {
+      return 'refund_claim_without_human_action';
+    }
+    if (/\b(?:ready|preparing|confirmed|out for delivery|on the way)\b/.test(text) && /\border\b/.test(text)) {
+      return 'order_status_without_active_order';
+    }
+  }
+
+  if (/\[[^\]]*\b(would\s+be|goes\s+here|placeholder|insert|link\s+here)\b[^\]]*\]/i.test(replyText)) {
+    return 'template_placeholder_leak';
+  }
+
+  return null;
+}
+
+function findBusinessLimitGuard(
+  message: string,
+  input: FlowInput,
+): { outcome: string; reason: string; reply: string } | null {
+  const limits = getBusinessLimits(input.tenantContext.config);
+  const text = message.toLowerCase();
+  const tenantPhone = input.tenantContext.tenantPhoneNumber?.trim();
+  const callLine = tenantPhone ? ` Please call ${tenantPhone} if you need help from staff.` : '';
+
+  if (limits.noDelivery && /\b(deliver|delivery|doordash|door dash|uber\s*eats|ship|shipping)\b/i.test(text)) {
+    return {
+      outcome: 'blocked_no_delivery',
+      reason: 'tenant businessLimits.noDelivery=true',
+      reply: `We don't offer delivery by text right now. Pickup is available.${callLine}`,
+    };
+  }
+
+  if (
+    limits.noSameDayCatering &&
+    /\b(cater|catering|party tray|party order|large order)\b/i.test(text) &&
+    /\b(today|tonight|same[-\s]?day|asap|right now|this afternoon|this evening)\b/i.test(text)
+  ) {
+    return {
+      outcome: 'blocked_same_day_catering',
+      reason: 'tenant businessLimits.noSameDayCatering=true',
+      reply: `We can't promise same-day catering over text. Please call us for catering requests.${callLine}`,
+    };
+  }
+
+  if (limits.noSubstitutions && /\b(substitute|substitution|swap|replace|instead of|can you do .+ instead)\b/i.test(text)) {
+    return {
+      outcome: 'blocked_substitution',
+      reason: 'tenant businessLimits.noSubstitutions=true',
+      reply: `We can't promise substitutions over text. Staff can confirm what's available.${callLine}`,
+    };
+  }
+
+  if (
+    limits.noAfterHoursPickup &&
+    input.tenantContext.hoursInfo?.openNow === false &&
+    /\b(after hours|late pickup|pick(?:\s|-)?up|pickup|tonight|later)\b/i.test(text)
+  ) {
+    return {
+      outcome: 'blocked_after_hours_pickup',
+      reason: 'tenant businessLimits.noAfterHoursPickup=true',
+      reply: `We don't offer after-hours pickup. Please text us back when we're open to place your order.`,
+    };
+  }
+
+  return null;
 }
 
 // Conversational closures — the customer is just being polite after a
@@ -220,6 +316,34 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
   // "yes can I get 2 lumpia" still route to ORDER. Runs AFTER the
   // closure matcher so polite "ok" / "okay" stay on the closure
   // path instead of tripping the confirm guard.
+  const businessLimitGuard = findBusinessLimitGuard(inboundMessage.trim(), input);
+  if (businessLimitGuard) {
+    pushDecision(input, {
+      handler: 'fallbackFlow.businessLimits',
+      phase: 'FLOW',
+      outcome: businessLimitGuard.outcome,
+      reason: businessLimitGuard.reason,
+      durationMs: Date.now() - t0,
+    });
+    const nextState: CallerState = {
+      tenantId: tenantContext.tenantId,
+      callerPhone: input.callerPhone,
+      conversationId: currentState?.conversationId ?? null,
+      currentFlow: FlowType.FALLBACK,
+      flowStep: 'FALLBACK',
+      orderDraft: currentState?.orderDraft ?? null,
+      lastMessageAt: Date.now(),
+      messageCount: (currentState?.messageCount ?? 0) + 1,
+      dedupKey: null,
+    };
+    return {
+      nextState,
+      smsReply: businessLimitGuard.reply,
+      sideEffects: [],
+      flowType: FlowType.FALLBACK,
+    };
+  }
+
   const guard = findUngroundedGuard(inboundMessage.trim(), callerMemory);
   if (guard) {
     pushDecision(input, {
@@ -341,6 +465,8 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
   const postOrderHint = justCompletedOrder
     ? '\nThe customer JUST completed an order — most messages right now are polite chit-chat ("ok", "see you", "thanks man"), questions ABOUT the existing order, or random non-requests. Treat casual messages as casual. Do NOT try to upsell or re-prompt for a new order.'
     : '';
+  const recentConversationBlock = formatRecentConversationForPrompt(input.recentMessages);
+  const businessLimitsBlock = formatBusinessLimits(tenantContext.config);
 
   // Tenant owner's custom instructions apply across ALL AI-generated
   // replies, not just the order agent. Appended last so they can
@@ -365,6 +491,8 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
 - NEVER emit bracketed placeholder text like "[payment link would be sent here]", "[link]", "[name]", etc. These are template markers, not real output. If you don't have a real URL or value, don't mention one.${postOrderHint}
 
 # Capabilities and context
+${recentConversationBlock}
+${businessLimitsBlock}
 ${capabilities}${businessAddress}${websiteContext}${verticalGuidance}${catalogContext}${callerContextBlock}${activeOrderBlock}${customBlock}`;
 
   const nextState: CallerState = {
@@ -419,6 +547,19 @@ ${capabilities}${businessAddress}${websiteContext}${verticalGuidance}${catalogCo
         phase: 'FLOW',
         outcome: 'deflected_empty_llm',
         reason: 'LLM returned empty or <silence> — served deflection',
+        durationMs: Date.now() - t0,
+      });
+      return { nextState, smsReply: deflection, sideEffects: [], flowType: FlowType.FALLBACK };
+    }
+
+    const unsupportedClaim = findUnsupportedFactualClaim(replyText, callerMemory);
+    if (unsupportedClaim) {
+      pushDecision(input, {
+        handler: 'fallbackFlow.factCheck',
+        phase: 'FLOW',
+        outcome: 'rewrote_unsupported_claim',
+        reason: unsupportedClaim,
+        evidence: { originalReply: replyText.slice(0, 240) },
         durationMs: Date.now() - t0,
       });
       return { nextState, smsReply: deflection, sideEffects: [], flowType: FlowType.FALLBACK };

@@ -23,6 +23,7 @@ import { recordDecision, mergeDecisions, currentTurnId, setTurnSnapshots } from 
 import { withTurn } from '../turn/withTurn';
 import type { DecisionDraft, TurnOutcome } from '@ringback/shared-types';
 import { logTiming, startTimer as startPerfTimer } from '../perf';
+import { getBotBehaviorStamp } from '../botBehaviorVersion';
 
 export interface ProcessInboundSmsInput {
   tenantId: string;
@@ -662,12 +663,14 @@ async function processInboundSmsInner(
   // Populate the Turn's snapshot fields now that we have the tenant in
   // hand. Passing `currentState` on the contact snapshot ensures replays
   // can see the caller's flowStep at the moment of the turn.
+  const botBehavior = getBotBehaviorStamp({ tenantConfig: tenant.config });
   setTurnSnapshots({
-    tenantConfigSnapshot: tenant.config,
+    tenantConfigSnapshot: { ...tenant.config, _botBehavior: botBehavior },
     contactStateSnapshot: {
       flowStep: currentState?.flowStep ?? null,
       currentFlow: currentState?.currentFlow ?? null,
       conversationId: currentState?.conversationId ?? null,
+      botBehavior,
     },
   });
 
@@ -688,6 +691,7 @@ async function processInboundSmsInner(
       closedDates: tenant.config.closedDates as string[],
       // Decimal → number for serializable shared-types shape.
       salesTaxRate: tenant.config.salesTaxRate != null ? Number(tenant.config.salesTaxRate) : null,
+      businessLimits: (tenant.config.businessLimits ?? {}) as any,
     },
     flows: tenant.flows.map((f) => ({
       id: f.id,
@@ -1172,17 +1176,25 @@ async function processInboundSmsInner(
   // break down cost by feature (intent classifier vs. order agent etc.)
   // in later reports.
   const chatFn: ChatFn = (params) =>
-    chatCompletion({ ...params, tenantId, purpose: 'flow_engine_chat' });
+    chatCompletion({
+      ...params,
+      tenantId,
+      purpose: 'flow_engine_chat',
+      metadata: { botBehavior },
+    });
   const chatWithToolsFn: ChatWithToolsFn = (params) =>
-    chatWithTools({ ...params, tenantId, purpose: 'order_agent' });
+    chatWithTools({
+      ...params,
+      tenantId,
+      purpose: 'order_agent',
+      metadata: { botBehavior },
+    });
 
-  // Fetch a short conversation history only when we'll use the AI agent,
-  // so we don't pay the decrypt cost for every tenant.
+  // Fetch a short conversation history for routing/fallback/order context.
+  // This is intentionally capped: enough to answer follow-ups without
+  // dragging the whole thread into every model call.
   let recentMessages: Array<{ role: 'user' | 'assistant'; content: string }> | undefined;
-  if (
-    (tenantContext.config as { aiOrderAgentEnabled?: boolean }).aiOrderAgentEnabled &&
-    existingConversationId
-  ) {
+  if (existingConversationId) {
     try {
       const conv = await prisma.conversation.findUnique({
         where: { id: existingConversationId },
@@ -2124,6 +2136,29 @@ async function processSideEffect(
         // link shortly" reply that never arrived.
         throw err;
       }
+      break;
+    }
+
+    case 'CAPTURE_MENU_PHRASE': {
+      const phrase = effect.payload.phrase.trim();
+      if (!phrase) break;
+      await createTask({
+        tenantId,
+        source: 'CONVERSATION',
+        priority: 'NORMAL',
+        title: `Map menu phrase: "${phrase.slice(0, 60)}"`,
+        description:
+          `Customer used a menu phrase the bot could not safely map: "${phrase}". ` +
+          `Add it as a customer name/alias on the right menu item if appropriate. ` +
+          `Reason: ${effect.payload.reason}. Reply sent: "${effect.payload.replySent.slice(0, 220)}"`,
+        callerPhone,
+        conversationId,
+      }).catch((err) =>
+        logger.warn('Failed to create menu phrase review task', {
+          tenantId,
+          err: (err as Error).message,
+        }),
+      );
       break;
     }
 

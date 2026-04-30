@@ -71,12 +71,100 @@ export function detectEscalationIntent(
 export interface IntentResult {
   intent: FlowType | 'UNCLEAR';
   confidence: number;
+  reason?: string;
+}
+
+function clampConfidence(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(1, n));
+}
+
+function normalizeIntent(
+  rawIntent: unknown,
+  enabledFlowTypes: FlowType[],
+): FlowType | 'UNCLEAR' {
+  if (typeof rawIntent !== 'string') return 'UNCLEAR';
+  const upper = rawIntent.trim().toUpperCase();
+  if (upper === 'UNCLEAR') return 'UNCLEAR';
+  const match = enabledFlowTypes.find((flow) => flow === upper);
+  return match ?? 'UNCLEAR';
+}
+
+function stripJsonFence(text: string): string {
+  return text
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+}
+
+function parseIntentResponse(
+  raw: string,
+  enabledFlowTypes: FlowType[],
+): IntentResult {
+  const text = stripThinkTags(raw).trim();
+  const candidates = [
+    text,
+    stripJsonFence(text),
+    text.match(/\{[\s\S]*\}/)?.[0] ?? '',
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as {
+        intent?: unknown;
+        confidence?: unknown;
+        reason?: unknown;
+      };
+      const intent = normalizeIntent(parsed.intent, enabledFlowTypes);
+      return {
+        intent,
+        confidence: intent === 'UNCLEAR' ? 0 : clampConfidence(parsed.confidence ?? 0.5),
+        reason: typeof parsed.reason === 'string' ? parsed.reason.slice(0, 160) : undefined,
+      };
+    } catch {
+      // Try the next representation before giving up.
+    }
+  }
+
+  // Last-resort tolerant extraction. This keeps one malformed character
+  // from dumping an obvious route into generic fallback.
+  const intentPattern = new RegExp(
+    `\\b(${['UNCLEAR', ...enabledFlowTypes].join('|')})\\b`,
+    'i',
+  );
+  const intent = normalizeIntent(text.match(intentPattern)?.[1], enabledFlowTypes);
+  if (intent === 'UNCLEAR') return { intent: 'UNCLEAR', confidence: 0 };
+
+  const confidenceMatch = text.match(/confidence[^0-9]*([01](?:\.\d+)?|\.\d+)/i);
+  return {
+    intent,
+    confidence: confidenceMatch ? clampConfidence(confidenceMatch[1]) : 0.7,
+    reason: 'tolerant_intent_extraction',
+  };
+}
+
+function formatRecentMessages(
+  recentMessages?: Array<{ role: 'user' | 'assistant'; content: string }>,
+): string {
+  if (!recentMessages?.length) return '';
+  const lines = recentMessages
+    .slice(-6)
+    .map((m) => {
+      const role = m.role === 'assistant' ? 'Business' : 'Customer';
+      return `${role}: ${m.content.replace(/\s+/g, ' ').trim().slice(0, 180)}`;
+    })
+    .filter((line) => !line.endsWith(': '));
+  return lines.length
+    ? `\n\nRecent conversation context (oldest to newest):\n${lines.join('\n')}`
+    : '';
 }
 
 export async function detectIntent(
   message: string,
   tenantContext: TenantContext,
   chatFn: ChatFn,
+  recentMessages?: Array<{ role: 'user' | 'assistant'; content: string }>,
 ): Promise<IntentResult> {
   const enabledFlowTypes = tenantContext.flows
     .filter((f) => f.isEnabled)
@@ -265,13 +353,16 @@ export async function detectIntent(
     ? `\n\nFor reference, here is what ${tenantContext.tenantName} actually does (from their website):\n"${websiteSnippet}"`
     : '';
 
-  const prompt = `The customer sent this SMS: "${message}"
+  const recentContext = formatRecentMessages(recentMessages);
+
+  const prompt = `The customer sent this SMS: "${message}"${recentContext}
 
 Available flows:
 ${availableFlows}${serviceOnlyHint}${websiteContextHint}
 
-Classify the customer's intent. Respond with JSON only:
-{"intent": "<FLOW_TYPE or UNCLEAR>", "confidence": <0.0-1.0>}`;
+Classify the customer's intent. Use the recent context only to resolve follow-ups like "what about parking?" or "same as that."
+Respond with JSON only:
+{"intent": "<FLOW_TYPE or UNCLEAR>", "confidence": <0.0-1.0>, "reason": "<short reason>"}`;
 
   try {
     const raw = await chatFn({
@@ -281,15 +372,7 @@ Classify the customer's intent. Respond with JSON only:
       temperature: 0.1,
     });
 
-    const text = stripThinkTags(raw);
-    const parsed = JSON.parse(text.trim()) as { intent: string; confidence: number };
-
-    const intent =
-      parsed.intent === 'UNCLEAR'
-        ? 'UNCLEAR'
-        : (parsed.intent as FlowType);
-
-    return { intent, confidence: parsed.confidence };
+    return parseIntentResponse(raw, enabledFlowTypes);
   } catch {
     return { intent: 'UNCLEAR', confidence: 0 };
   }

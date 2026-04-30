@@ -17,6 +17,7 @@ import {
   Phone,
   Plus,
   Send,
+  ShieldCheck,
   Sparkles,
   Star,
   Users,
@@ -77,6 +78,35 @@ interface TenantConfig {
   spamFilterEnabled?: boolean;
   followupOpener?: string | null;
   customAiInstructions?: string | null;
+  businessLimits?: BusinessLimits | null;
+}
+
+interface BusinessLimits {
+  noDelivery?: boolean;
+  noRefundsBySms?: boolean;
+  allergyRequiresHuman?: boolean;
+  noSameDayCatering?: boolean;
+  noSubstitutions?: boolean;
+  noAfterHoursPickup?: boolean;
+  notes?: string[];
+}
+
+const DEFAULT_BUSINESS_LIMITS: Required<Omit<BusinessLimits, 'notes'>> & { notes: string[] } = {
+  noDelivery: false,
+  noRefundsBySms: true,
+  allergyRequiresHuman: true,
+  noSameDayCatering: false,
+  noSubstitutions: false,
+  noAfterHoursPickup: false,
+  notes: [],
+};
+
+function normalizeBusinessLimits(limits?: BusinessLimits | null): BusinessLimits {
+  return {
+    ...DEFAULT_BUSINESS_LIMITS,
+    ...(limits ?? {}),
+    notes: Array.isArray(limits?.notes) ? limits.notes : [],
+  };
 }
 
 const TIMEZONES = [
@@ -605,9 +635,11 @@ export default function SettingsPage() {
 
           <TabPanel value="ai" className="space-y-6 max-w-3xl">
             <AiMessagingCard
+              tenantId={tenantId!}
               businessName={(tenant as any)?.name ?? ''}
               form={form}
               setForm={setForm}
+              initialBusinessLimits={config?.businessLimits ?? null}
             />
 
             <Card>
@@ -1023,18 +1055,94 @@ function RecapPreviewButton({
 // ── AI & Messaging card ─────────────────────────────────────────────────────
 
 function AiMessagingCard({
+  tenantId,
   businessName,
   form,
   setForm,
+  initialBusinessLimits,
 }: {
+  tenantId: string;
   businessName: string;
   form: {
     followupOpener: string | null;
     customAiInstructions: string | null;
   };
   setForm: (fn: (f: any) => any) => void;
+  initialBusinessLimits: BusinessLimits | null;
 }) {
+  const queryClient = useQueryClient();
   const consentPreview = `Hey! ${businessName || '{business_name}'} here — we just missed your call and we're sorry about that! I can help you via text if you want. Reply YES to go ahead or STOP to opt out. Msg & data rates may apply.`;
+
+  const [customAiInstructions, setCustomAiInstructions] = useState(form.customAiInstructions ?? '');
+  const [businessLimits, setBusinessLimits] = useState<BusinessLimits>(
+    normalizeBusinessLimits(initialBusinessLimits),
+  );
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (form.customAiInstructions != null) {
+      setCustomAiInstructions(form.customAiInstructions);
+      setDirty(false); // Reset dirty flag when external data syncs in
+    }
+  }, [form.customAiInstructions]);
+
+  useEffect(() => {
+    setBusinessLimits(normalizeBusinessLimits(initialBusinessLimits));
+    setDirty(false);
+  }, [initialBusinessLimits]);
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      tenantApi.updateConfig(tenantId, { customAiInstructions, businessLimits }),
+    onSuccess: () => {
+      toast.success('AI settings saved');
+      queryClient.invalidateQueries({ queryKey: ['tenant'] });
+      setDirty(false);
+    },
+    onError: () => toast.error('Failed to save'),
+  });
+
+  const setLimit = (key: keyof Omit<BusinessLimits, 'notes'>, value: boolean) => {
+    setBusinessLimits((current) => ({ ...current, [key]: value }));
+    setDirty(true);
+  };
+
+  const limitRows: Array<{
+    key: keyof Omit<BusinessLimits, 'notes'>;
+    label: string;
+    description: string;
+  }> = [
+    {
+      key: 'noDelivery',
+      label: 'No delivery by text',
+      description: 'Pickup only unless staff handles the request.',
+    },
+    {
+      key: 'noRefundsBySms',
+      label: 'Refunds require staff',
+      description: 'The bot will not promise or confirm refunds.',
+    },
+    {
+      key: 'allergyRequiresHuman',
+      label: 'Allergies require staff',
+      description: 'The bot will not confirm allergy safety.',
+    },
+    {
+      key: 'noSameDayCatering',
+      label: 'No same-day catering',
+      description: 'Same-day catering requests are deflected to staff.',
+    },
+    {
+      key: 'noSubstitutions',
+      label: 'No substitutions by text',
+      description: 'The bot will not promise swaps or substitutions.',
+    },
+    {
+      key: 'noAfterHoursPickup',
+      label: 'No after-hours pickup',
+      description: 'Pickup requests outside hours are refused.',
+    },
+  ];
 
   return (
     <Card>
@@ -1074,11 +1182,34 @@ function AiMessagingCard({
         </div>
 
         <div>
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+            <Label>Business limits</Label>
+          </div>
+          <div className="mt-2 divide-y rounded-lg border">
+            {limitRows.map((row) => (
+              <div key={row.key} className="flex items-center justify-between gap-4 p-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{row.label}</p>
+                  <p className="text-xs text-muted-foreground">{row.description}</p>
+                </div>
+                <Switch
+                  checked={Boolean(businessLimits[row.key])}
+                  onCheckedChange={(value) => setLimit(row.key, value)}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
           <Label>Custom AI instructions</Label>
           <textarea
-            value={form.customAiInstructions ?? ''}
+            value={customAiInstructions}
             onChange={(e) => {
+              setCustomAiInstructions(e.target.value.slice(0, 500));
               setForm((f) => ({ ...f, customAiInstructions: e.target.value.slice(0, 500) }));
+              setDirty(true);
             }}
             rows={3}
             maxLength={500}
@@ -1086,8 +1217,18 @@ function AiMessagingCard({
             placeholder={`e.g. "We close early on Sundays at 3pm"\n"Always mention our loyalty program after an order"\n"Never quote prices — always say 'prices vary, ask us'"`}
           />
           <p className="text-xs text-muted-foreground mt-1">
-            {(form.customAiInstructions ?? '').length} / 500 characters. Use plain-language rules the assistant should always follow.
+            {customAiInstructions.length} / 500 characters. Use plain-language rules the assistant should always follow.
           </p>
+          {dirty && (
+            <Button
+              size="sm"
+              className="mt-2"
+              onClick={() => saveMutation.mutate()}
+              disabled={saveMutation.isPending}
+            >
+              {saveMutation.isPending ? 'Saving…' : 'Save AI Settings'}
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>

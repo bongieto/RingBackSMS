@@ -58,6 +58,7 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       businessSchedule: tenant.config.businessSchedule as Record<string, { open: string; close: string }> | null | undefined,
       closedDates: tenant.config.closedDates as string[],
       salesTaxRate: tenant.config.salesTaxRate != null ? Number(tenant.config.salesTaxRate) : null,
+      businessLimits: (tenant.config.businessLimits ?? {}) as any,
     },
     flows: tenant.flows.map((flow) => ({
       id: flow.id,

@@ -70,6 +70,7 @@ const mockTenantContext: TenantContext = {
       id: '00000000-0000-0000-0000-000000000010',
       tenantId: '00000000-0000-0000-0000-000000000001',
       name: 'Lumpia Shanghai',
+      aliases: [],
       description: 'Crispy Filipino spring rolls',
       price: 8.99,
       category: 'Appetizers',
@@ -88,6 +89,7 @@ const mockTenantContext: TenantContext = {
       id: '00000000-0000-0000-0000-000000000011',
       tenantId: '00000000-0000-0000-0000-000000000001',
       name: 'Pancit Bihon',
+      aliases: [],
       description: 'Filipino stir-fried noodles',
       price: 11.99,
       category: 'Mains',
@@ -106,6 +108,7 @@ const mockTenantContext: TenantContext = {
       id: '00000000-0000-0000-0000-000000000012',
       tenantId: '00000000-0000-0000-0000-000000000001',
       name: 'Adobo Chicken',
+      aliases: [],
       description: 'Classic Filipino soy-vinegar braised chicken',
       price: 13.99,
       category: 'Mains',
@@ -169,6 +172,33 @@ describe('Flow Engine', () => {
       expect(result.smsReply).toBeTruthy();
       // AI mock returns ORDER intent, so it starts ORDER flow
       expect(mockChatFn).toHaveBeenCalled();
+    });
+
+    it('tolerates malformed classifier output when the intent is still clear', async () => {
+      const chatFn = jest.fn().mockResolvedValue('intent: ORDER, confidence: 0.92');
+      const result = await runFlowEngine({
+        ...baseInput,
+        inboundMessage: 'can I get some food',
+        chatFn,
+      });
+      expect(result.flowType).toBe(FlowType.ORDER);
+    });
+
+    it('passes recent conversation context into intent classification', async () => {
+      const chatFn = jest.fn().mockResolvedValue('{"intent":"FALLBACK","confidence":0.9}');
+      await runFlowEngine({
+        ...baseInput,
+        inboundMessage: 'is there parking?',
+        chatFn,
+        recentMessages: [
+          { role: 'user', content: "what's your address?" },
+          { role: 'assistant', content: 'We are at 123 Main St.' },
+        ],
+      });
+
+      expect(chatFn).toHaveBeenCalledWith(expect.objectContaining({
+        userMessage: expect.stringContaining("what's your address?"),
+      }));
     });
 
     it('starts MENU flow from MENU keyword', async () => {

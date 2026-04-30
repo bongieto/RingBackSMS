@@ -39,6 +39,7 @@ export interface MenuCategory extends CategoryRef {
 export interface MenuItem {
   id: string;
   name: string;
+  aliases?: string[];
   description: string | null;
   price: number;
   priceMin?: number | null;

@@ -20,6 +20,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 const ItemSchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().min(1),
+  aliases: z.array(z.string().trim().min(1).max(80)).max(25).optional(),
   description: z.string().optional(),
   price: z.number().nonnegative(),
   category: z.string().optional(),

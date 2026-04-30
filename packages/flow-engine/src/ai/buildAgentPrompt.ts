@@ -1,6 +1,7 @@
 import type { MenuItem, OrderDraft } from '@ringback/shared-types';
 import type { TenantContext, CallerMemory } from '../types';
 import { formatCart } from './orderAgentTools';
+import { formatBusinessLimits } from '../businessLimits';
 
 function formatMenu(menu: MenuItem[]): string {
   if (menu.length === 0) return '(no menu items available)';
@@ -9,6 +10,7 @@ function formatMenu(menu: MenuItem[]): string {
       const price = `$${m.price.toFixed(2)}`;
       const desc = m.description ? ` — ${m.description}` : '';
       const cat = m.category ? ` (${m.category})` : '';
+      const aliases = m.aliases?.length ? ` | customer names: ${m.aliases.join(', ')}` : '';
       const mods =
         m.modifierGroups && m.modifierGroups.length > 0
           ? ` | modifiers: ${m.modifierGroups
@@ -20,7 +22,7 @@ function formatMenu(menu: MenuItem[]): string {
               )
               .join('; ')}`
           : '';
-      return `- [${m.id}] ${m.name}${cat} — ${price}${desc}${mods}`;
+      return `- [${m.id}] ${m.name}${cat} — ${price}${desc}${aliases}${mods}`;
     })
     .join('\n');
 }
@@ -72,6 +74,15 @@ function normalizeForMatch(s: string): string {
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+export type ItemMatchConfidence = 'high' | 'medium';
+export type ItemMatchSource = 'name' | 'alias' | 'fuzzy';
+export interface ItemMatch {
+  phrase: string;
+  item: MenuItem;
+  confidence: ItemMatchConfidence;
+  source: ItemMatchSource;
 }
 
 /** Strip a leading menu-catalog code prefix like "#A4 ", "#LB13 ",
@@ -139,13 +150,13 @@ export function levenshteinWithinBudget(a: string, b: string, max: number): numb
 export function findItemFuzzyMatches(
   inbound: string,
   menu: MenuItem[],
-): Array<{ phrase: string; item: MenuItem }> {
+): ItemMatch[] {
   const inboundTokens = normalizeForMatch(inbound)
     .split(' ')
     .filter((t) => t.length >= 4);
   if (inboundTokens.length === 0) return [];
 
-  const matches: Array<{ phrase: string; item: MenuItem; score: number }> = [];
+  const matches: Array<ItemMatch & { score: number }> = [];
 
   for (const item of menu) {
     // Same variant generation as findItemPhraseMatches so fuzzy
@@ -196,7 +207,13 @@ export function findItemFuzzyMatches(
     }
 
     if (bestMatch) {
-      matches.push({ phrase: bestMatch.phrase, item, score: bestMatch.score });
+      matches.push({
+        phrase: bestMatch.phrase,
+        item,
+        score: bestMatch.score,
+        confidence: 'medium',
+        source: 'fuzzy',
+      });
     }
   }
 
@@ -205,11 +222,11 @@ export function findItemFuzzyMatches(
   // item, but belt-and-suspenders).
   matches.sort((a, b) => a.score - b.score);
   const seen = new Set<string>();
-  const out: Array<{ phrase: string; item: MenuItem }> = [];
+  const out: ItemMatch[] = [];
   for (const m of matches) {
     if (seen.has(m.item.id)) continue;
     seen.add(m.item.id);
-    out.push({ phrase: m.phrase, item: m.item });
+    out.push({ phrase: m.phrase, item: m.item, confidence: m.confidence, source: m.source });
   }
   return out;
 }
@@ -221,7 +238,7 @@ export function findItemFuzzyMatches(
 export function findItemPhraseMatches(
   inbound: string,
   menu: MenuItem[],
-): Array<{ phrase: string; item: MenuItem }> {
+): ItemMatch[] {
   // Normalize inbound the same way AND generate a "-ng suffix dropped"
   // variant so Tagalog ligature phrasing ("lumpiang prito") matches the
   // menu name ("Lumpia Prito"). We search both spellings.
@@ -253,19 +270,26 @@ export function findItemPhraseMatches(
       if (stripped && !variants.has(stripped)) variants.add(stripped);
       const strippedNoNg = stripped.replace(/(\w)ng\b/g, '$1');
       if (strippedNoNg && !variants.has(strippedNoNg)) variants.add(strippedNoNg);
-      return { item, variants: Array.from(variants).filter((v) => v.length >= 3) };
+      const namedVariants = Array.from(variants)
+        .filter((v) => v.length >= 3)
+        .map((value) => ({ value, source: 'name' as const }));
+      const aliasVariants = (item.aliases ?? [])
+        .map((alias) => normalizeForMatch(alias))
+        .filter((alias) => alias.length >= 3)
+        .map((value) => ({ value, source: 'alias' as const }));
+      return { item, variants: [...namedVariants, ...aliasVariants] };
     })
-    .filter((x): x is { item: MenuItem; variants: string[] } => x !== null);
+    .filter((x): x is { item: MenuItem; variants: Array<{ value: string; source: 'name' | 'alias' }> } => x !== null);
 
   // Sort by longest variant first so more-specific names match before
   // their prefixes ("lumpia prito" before "lumpia").
   candidates.sort((a, b) => {
-    const la = Math.max(...a.variants.map((v) => v.length));
-    const lb = Math.max(...b.variants.map((v) => v.length));
+    const la = Math.max(...a.variants.map((v) => v.value.length));
+    const lb = Math.max(...b.variants.map((v) => v.value.length));
     return lb - la;
   });
 
-  const matched: Array<{ phrase: string; item: MenuItem }> = [];
+  const matched: ItemMatch[] = [];
   const seenIds = new Set<string>();
   // Build a mutable copy of the message; as we match a region, blank it
   // out so a shorter prefix (Lumpia Regular) doesn't also claim the
@@ -277,8 +301,8 @@ export function findItemPhraseMatches(
   for (const cand of candidates) {
     if (seenIds.has(cand.item.id)) continue;
     outer: for (const variant of cand.variants) {
-      const needle = ` ${variant} `;
-      const needlePlural = ` ${variant}s `;
+      const needle = ` ${variant.value} `;
+      const needlePlural = ` ${variant.value}s `;
       for (let i = 0; i < remainings.length; i++) {
         let idx = remainings[i].indexOf(needle);
         let hit = needle;
@@ -287,7 +311,12 @@ export function findItemPhraseMatches(
           hit = needlePlural;
         }
         if (idx !== -1) {
-          matched.push({ phrase: variant, item: cand.item });
+          matched.push({
+            phrase: variant.value,
+            item: cand.item,
+            confidence: 'high',
+            source: variant.source,
+          });
           seenIds.add(cand.item.id);
           for (let j = 0; j < remainings.length; j++) {
             const r = remainings[j];
@@ -313,7 +342,10 @@ function formatItemHints(
   const hits = findItemPhraseMatches(inbound, menu);
   if (hits.length === 0) return '';
   const lines = hits
-    .map((h) => `- Customer phrase "${h.phrase}" → use menu_item_id "${h.item.id}" (${h.item.name}, $${h.item.price.toFixed(2)})`)
+    .map((h) => {
+      const source = h.source === 'alias' ? 'operator alias' : 'menu name';
+      return `- Customer phrase "${h.phrase}" (${source}, ${h.confidence} confidence) → use menu_item_id "${h.item.id}" (${h.item.name}, $${h.item.price.toFixed(2)})`;
+    })
     .join('\n');
   return `\n# Item resolution hints (DETERMINISTIC — follow exactly)\nThese phrase→id bindings were computed by exact-phrase match against the menu. They override any guess you might make from partial-word matching. Use these menu_item_id values verbatim:\n${lines}\n`;
 }
@@ -334,6 +366,7 @@ export function buildOrderAgentSystemPrompt(args: BuildAgentPromptArgs): string 
       ? `/m/${tenantContext.tenantSlug}`
       : '(menu link unavailable)';
   const hours = tenantContext.hoursInfo;
+  const businessLimitsBlock = formatBusinessLimits(tenantContext.config);
   // Note: if we're closed, the order agent hard-gates before reaching
   // this prompt (orderAgent.ts runOrderAgent top). So this block only
   // needs to cover the open case — no closed-copy, no "accept orders
@@ -359,6 +392,7 @@ Your job: understand the customer's natural-language order, call the right tools
 # How you work
 - Parse the customer's message and call tools to add/remove/update cart items.
 - Use EXACT menu_item_id values from the menu below — never invent ids or items.
+- Treat "customer names" on a menu row as operator-approved aliases. If the customer uses one, map it to that row with high confidence.
 - **Match item names LITERALLY, not loosely.** When the customer writes "lumpia prito", that's the item named "Lumpia Prito" — not "Lumpia Regular". When they write a multi-word item name, prefer the menu item whose name contains ALL those words over one that matches only the first word. Non-English words in item names ("prito" = fried, "silog" = rice+egg combo, "inihaw" = grilled, "adobo", "sinigang", etc.) are part of the name — treat them as literal match tokens, not flavor adjectives to ignore. If the customer's phrase isn't a clear match for any single item, call ask_clarification.
 - Split variations into separate add_items entries (e.g. "2 chicken, one spicy one not" = two entries of quantity 1 each with different modifiers).
 - **ALWAYS call add_items for EVERY item mentioned in the message, in a SINGLE batch.** If the customer lists 3 items, you emit one add_items with 3 entries. Never drop an item because modifiers look confusing — the tool is permissive; it will skip bad modifiers and keep the item.
@@ -381,6 +415,7 @@ Your job: understand the customer's natural-language order, call the right tools
 ${tenantContext.tenantName}
 Menu URL: ${menuUrl}
 ${hoursBlock ? `\n# Hours\n${hoursBlock}` : ''}
+${businessLimitsBlock}
 
 # Customer memory
 ${formatMemory(memory)}

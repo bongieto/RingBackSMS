@@ -86,6 +86,23 @@ const chatFn: ChatFn = async ({ systemPrompt, userMessage, maxTokens = 300, temp
   return response.choices[0]?.message?.content ?? (isClassifier ? localIntentFallback(userMessage) : '');
 };
 
+function toRecentMessages(
+  stored: unknown,
+): Array<{ role: 'user' | 'assistant'; content: string }> | undefined {
+  if (!Array.isArray(stored)) return undefined;
+  const messages = stored
+    .filter((m): m is { role: string; content: string } =>
+      m != null &&
+      typeof m === 'object' &&
+      typeof (m as { role?: unknown }).role === 'string' &&
+      typeof (m as { content?: unknown }).content === 'string' &&
+      ((m as { role: string }).role === 'user' || (m as { role: string }).role === 'assistant'),
+    )
+    .slice(-6)
+    .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+  return messages.length > 0 ? messages : undefined;
+}
+
 export interface ProcessInboundSmsInput {
   tenantId: string;
   callerPhone: string;
@@ -106,12 +123,14 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
   // Check if conversation is in HUMAN handoff mode
   const currentState = await getCallerState(tenantId, callerPhone);
   const existingConversationId = currentState?.conversationId ?? null;
+  let recentMessages: Array<{ role: 'user' | 'assistant'; content: string }> | undefined;
 
   if (existingConversationId) {
     const existingConv = await prisma.conversation.findUnique({
       where: { id: existingConversationId },
       select: { handoffStatus: true, tenantId: true, messages: true },
     });
+    recentMessages = toRecentMessages(existingConv?.messages);
 
     if (existingConv?.handoffStatus === 'HUMAN') {
       const messages = Array.isArray(existingConv.messages) ? existingConv.messages : [];
@@ -164,6 +183,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
       businessSchedule: tenant.config.businessSchedule as Record<string, { open: string; close: string }> | null | undefined,
       closedDates: tenant.config.closedDates as string[],
       salesTaxRate: tenant.config.salesTaxRate != null ? Number(tenant.config.salesTaxRate) : null,
+      businessLimits: (tenant.config.businessLimits ?? {}) as any,
     },
     flows: tenant.flows.map((f) => ({
       id: f.id,
@@ -282,6 +302,7 @@ export async function processInboundSms(input: ProcessInboundSmsInput): Promise<
     inboundMessage,
     currentState,
     chatFn,
+    recentMessages,
   });
 
   // Prepend after-hours notice if outside business hours

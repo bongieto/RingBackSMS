@@ -9,10 +9,11 @@ export type SideEffectType =
   | 'CREATE_SQUARE_ORDER'
   | 'CREATE_POS_ORDER'
   | 'CREATE_PAYMENT_LINK'
-  | 'FETCH_CALCOM_SLOTS'
-  | 'CREATE_CALCOM_BOOKING'
-  | 'FETCH_LOCAL_SLOTS'
-  | 'CREATE_LOCAL_BOOKING';
+	  | 'FETCH_CALCOM_SLOTS'
+	  | 'CREATE_CALCOM_BOOKING'
+	  | 'FETCH_LOCAL_SLOTS'
+	  | 'CREATE_LOCAL_BOOKING'
+	  | 'CAPTURE_MENU_PHRASE';
 
 export interface SaveOrderSideEffect {
   type: 'SAVE_ORDER';
@@ -141,6 +142,15 @@ export interface CreateLocalBookingSideEffect {
   };
 }
 
+export interface CaptureMenuPhraseSideEffect {
+  type: 'CAPTURE_MENU_PHRASE';
+  payload: {
+    phrase: string;
+    reason: 'low_confidence_item_mapping' | 'ambiguous_item_name';
+    replySent: string;
+  };
+}
+
 export type SideEffect =
   | SaveOrderSideEffect
   | BookMeetingSideEffect
@@ -151,4 +161,5 @@ export type SideEffect =
   | FetchCalcomSlotsSideEffect
   | CreateCalcomBookingSideEffect
   | FetchLocalSlotsSideEffect
-  | CreateLocalBookingSideEffect;
+  | CreateLocalBookingSideEffect
+  | CaptureMenuPhraseSideEffect;

@@ -197,12 +197,13 @@ async function runFlowEngineCore(input: FlowInput): Promise<FlowOutput> {
     inboundMessage,
     tenantContext,
     input.chatFn,
+    input.recentMessages,
   );
   pushDecision(input, {
     handler: 'detectIntent',
     phase: 'FLOW',
     outcome: intentResult.intent === 'UNCLEAR' ? 'unclear' : `intent_${intentResult.intent.toLowerCase()}`,
-    evidence: { confidence: intentResult.confidence },
+    evidence: { confidence: intentResult.confidence, reason: intentResult.reason },
     durationMs: Date.now() - intentT0,
   });
 

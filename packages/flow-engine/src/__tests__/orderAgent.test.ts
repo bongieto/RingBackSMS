@@ -30,9 +30,10 @@ const tenantContext: TenantContext = {
   menuItems: [
     {
       id: LUMPIA_ID,
-      tenantId: TENANT_ID,
-      name: 'Lumpia Shanghai',
-      description: 'Crispy Filipino spring rolls',
+	      tenantId: TENANT_ID,
+	      name: 'Lumpia Shanghai',
+	      aliases: ['pork rolls', 'egg rolls'],
+	      description: 'Crispy Filipino spring rolls',
       price: 8.99,
       category: 'Appetizers',
       isAvailable: true,
@@ -191,15 +192,33 @@ describe('runOrderAgent', () => {
 
   test('unclear restaurant item with empty cart gets Smart Order Link instead of a guess', async () => {
     const input = mkInput(
-      'lemme get two pork rolls',
+      'lemme get two dessert rolls',
       [],
-      "I couldn't find pork rolls on the menu.",
+      "I couldn't find dessert rolls on the menu.",
     );
     const result = await runOrderAgent(input);
     expect(result.nextState.orderDraft).toBeNull();
-    expect(result.sideEffects).toHaveLength(0);
+    expect(result.sideEffects).toEqual([
+      expect.objectContaining({
+        type: 'CAPTURE_MENU_PHRASE',
+        payload: expect.objectContaining({ phrase: 'lemme get two dessert rolls' }),
+      }),
+    ]);
     expect(result.smsReply).toContain('Smart Order Link');
     expect(result.smsReply).toContain('/m/test-restaurant');
+  });
+
+  test('operator alias lets casual customer phrase add the right item', async () => {
+    const input = mkInput(
+      'lemme get two pork rolls',
+      [],
+      '',
+    );
+    const result = await runOrderAgent(input);
+    expect(result.nextState.orderDraft?.items).toHaveLength(1);
+    expect(result.nextState.orderDraft?.items[0].menuItemId).toBe(LUMPIA_ID);
+    expect(result.nextState.orderDraft?.items[0].quantity).toBe(2);
+    expect(result.smsReply).not.toContain('Smart Order Link');
   });
 
   test('confirm_order without explicit user YES is rejected', async () => {

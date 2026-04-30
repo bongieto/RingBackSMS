@@ -27,6 +27,7 @@ export function ItemForm({
 }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState(item?.name ?? '');
+  const [aliases, setAliases] = useState((item?.aliases ?? []).join(', '));
   const [description, setDescription] = useState(item?.description ?? '');
   const [price, setPrice] = useState(item?.price != null ? String(item.price) : '');
   const [priceMin, setPriceMin] = useState(item?.priceMin != null ? String(item.priceMin) : '');
@@ -45,6 +46,10 @@ export function ItemForm({
     mutationFn: () => {
       const body: Record<string, unknown> = {
         name,
+        aliases: aliases
+          .split(',')
+          .map((a) => a.trim())
+          .filter(Boolean),
         description: description || undefined,
         price: Number(price),
         priceMin: priceMin.trim() ? Number(priceMin) : null,
@@ -121,6 +126,17 @@ export function ItemForm({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Optional"
+            className="mt-1"
+          />
+        </div>
+
+        <div>
+          <Label htmlFor="it-aliases">Customer names</Label>
+          <Input
+            id="it-aliases"
+            value={aliases}
+            onChange={(e) => setAliases(e.target.value)}
+            placeholder="egg rolls, pork rolls, regular lumpia"
             className="mt-1"
           />
         </div>

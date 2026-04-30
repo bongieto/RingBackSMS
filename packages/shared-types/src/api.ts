@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BusinessType, Plan, FlowType, VOICE_TYPES } from './enums';
-import { BusinessScheduleSchema } from './models';
+import { BusinessLimitsSchema, BusinessScheduleSchema } from './models';
 
 // ── Request schemas ───────────────────────────────────────────────────────────
 
@@ -59,6 +59,7 @@ export const UpdateTenantConfigRequestSchema = z.object({
     .optional(),
   ordersAcceptingEnabled: z.boolean().optional(),
   customAiInstructions: z.string().max(500).nullable().optional(),
+  businessLimits: BusinessLimitsSchema.partial().nullable().optional(),
   followupOpener: z.string().max(500).nullable().optional(),
   consentMessage: z.string().max(500).nullable().optional(),
   industryTemplateKey: z.string().max(100).nullable().optional(),

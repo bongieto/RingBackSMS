@@ -94,6 +94,46 @@ describe('decision sink — pushDecision contract', () => {
     expect(d).toBeDefined();
   });
 
+  it('fallbackFlow rewrites unsupported order/refund claims after LLM reply', async () => {
+    const decisions: DecisionDraft[] = [];
+    const hallucinatingChat: ChatFn = jest.fn().mockResolvedValue('Order cancelled!');
+    const out = await processFallbackFlow({
+      tenantContext: baseTenant,
+      callerPhone: '+19990000001',
+      inboundMessage: 'can you help?',
+      currentState: null,
+      chatFn: hallucinatingChat,
+      decisions,
+    });
+
+    expect(out.smsReply).not.toContain('Order cancelled');
+    expect(decisions.some((d) => d.handler === 'fallbackFlow.factCheck')).toBe(true);
+  });
+
+  it('fallbackFlow blocks tenant-configured delivery before the LLM', async () => {
+    const decisions: DecisionDraft[] = [];
+    const chatFn: ChatFn = jest.fn().mockResolvedValue('Sure, delivery is available.');
+    const out = await processFallbackFlow({
+      tenantContext: {
+        ...baseTenant,
+        tenantPhoneNumber: '+12175550100',
+        config: {
+          ...baseTenant.config,
+          businessLimits: { noDelivery: true },
+        } as TenantContext['config'],
+      },
+      callerPhone: '+19990000001',
+      inboundMessage: 'do you deliver?',
+      currentState: null,
+      chatFn,
+      decisions,
+    });
+
+    expect(chatFn).not.toHaveBeenCalled();
+    expect(out.smsReply).toContain("don't offer delivery");
+    expect(decisions.some((d) => d.outcome === 'blocked_no_delivery')).toBe(true);
+  });
+
   it('runFlowEngine records detectIntent + confidenceGate decisions on new turn', async () => {
     const decisions: DecisionDraft[] = [];
     await runFlowEngine({

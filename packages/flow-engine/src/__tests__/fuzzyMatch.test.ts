@@ -5,11 +5,12 @@ import {
   levenshteinWithinBudget,
 } from '../ai/buildAgentPrompt';
 
-function mkItem(id: string, name: string): MenuItem {
+function mkItem(id: string, name: string, aliases: string[] = []): MenuItem {
   return {
     id,
     tenantId: 'tenant',
     name,
+    aliases,
     description: null,
     price: 5.99,
     category: null,
@@ -32,6 +33,7 @@ const menu: MenuItem[] = [
   mkItem('m3', 'Pancit Bihon'),
   mkItem('d1', '#D1 Calamansi Sizzler'),
   mkItem('ad', 'Adobo Chicken'),
+  mkItem('ls', 'Lumpia Shanghai', ['egg rolls', 'pork rolls']),
 ];
 
 describe('levenshteinWithinBudget', () => {
@@ -103,5 +105,15 @@ describe('findItemFuzzyMatches', () => {
 
   test('gibberish leaves fuzzy empty', () => {
     expect(findItemFuzzyMatches('zzzz qqqq wwww', menu)).toHaveLength(0);
+  });
+});
+
+describe('findItemPhraseMatches aliases', () => {
+  test('operator aliases are high-confidence exact matches', () => {
+    const matches = findItemPhraseMatches('lemme get 2 pork rolls', menu);
+    expect(matches).toHaveLength(1);
+    expect(matches[0].item.id).toBe('ls');
+    expect(matches[0].source).toBe('alias');
+    expect(matches[0].confidence).toBe('high');
   });
 });

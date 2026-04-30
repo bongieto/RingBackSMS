@@ -324,6 +324,7 @@ export async function updateTenantConfig(
     }> | null;
     ordersAcceptingEnabled: boolean;
     customAiInstructions: string | null;
+    businessLimits: Record<string, unknown> | null;
     followupOpener: string | null;
     industryTemplateKey: string | null;
     consentMessage: string | null;
@@ -517,6 +518,7 @@ export async function upsertMenuItem(
   item: {
     id?: string;
     name: string;
+    aliases?: string[];
     description?: string;
     price: number;
     category?: string;
@@ -533,6 +535,15 @@ export async function upsertMenuItem(
     intakeQuestions?: string[];
   }
 ) {
+  const aliases = Array.from(
+    new Set(
+      (item.aliases ?? [])
+        .map((a) => a.trim())
+        .filter((a) => a.length > 0)
+        .map((a) => a.slice(0, 80)),
+    ),
+  ).slice(0, 25);
+
   // Resolve category: prefer explicit categoryId, else auto-promote the string.
   let categoryId: string | null = item.categoryId ?? null;
   let categoryName: string | null = item.category ?? null;
@@ -560,6 +571,7 @@ export async function upsertMenuItem(
       where: { id: item.id },
       data: {
         name: item.name,
+        aliases,
         description: item.description,
         price: item.price,
         category: categoryName,
@@ -582,6 +594,7 @@ export async function upsertMenuItem(
     data: {
       tenantId,
       name: item.name,
+      aliases,
       description: item.description,
       price: item.price,
       category: categoryName,

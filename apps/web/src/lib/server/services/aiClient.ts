@@ -4,6 +4,7 @@ import { waitUntil } from '@vercel/functions';
 import { logger } from '../logger';
 import { prisma } from '../db';
 import { markLlmCall } from '../turn/TurnContext';
+import { mergeBotBehaviorMetadata } from '../botBehaviorVersion';
 
 const CLAUDE_MODEL =
   process.env.AI_PRIMARY_MODEL?.trim() || 'claude-sonnet-4-20250514';
@@ -84,6 +85,8 @@ export interface ChatCompletionParams {
   tenantId?: string;
   /** Short label like "intent_classifier", "fallback_chat". */
   purpose?: string;
+  /** Extra structured metadata for AiUsageLog. */
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -99,7 +102,7 @@ export interface ChatCompletionParams {
 export async function chatCompletion(
   params: ChatCompletionParams,
 ): Promise<string> {
-  const { systemPrompt, userMessage, maxTokens = 500, temperature = 0.7, tenantId, purpose } =
+  const { systemPrompt, userMessage, maxTokens = 500, temperature = 0.7, tenantId, purpose, metadata } =
     params;
 
   // Try Claude first
@@ -133,6 +136,7 @@ export async function chatCompletion(
         inputTokens: response.usage?.input_tokens ?? 0,
         outputTokens: response.usage?.output_tokens ?? 0,
         latencyMs,
+        metadata: mergeBotBehaviorMetadata(metadata),
       });
       return text;
     } catch (err: any) {
@@ -142,7 +146,7 @@ export async function chatCompletion(
       });
       logAiUsage({
         tenantId, provider: 'claude', model: CLAUDE_MODEL, purpose,
-        success: false, metadata: { error: err?.message },
+        success: false, metadata: mergeBotBehaviorMetadata({ ...metadata, error: err?.message }),
       });
       // Fall through to MiniMax
     }
@@ -177,13 +181,14 @@ export async function chatCompletion(
         inputTokens: response.usage?.prompt_tokens ?? 0,
         outputTokens: response.usage?.completion_tokens ?? 0,
         latencyMs,
+        metadata: mergeBotBehaviorMetadata(metadata),
       });
       return text;
     } catch (err: any) {
       logger.error('[ai] minimax also failed', { error: err?.message });
       logAiUsage({
         tenantId, provider: 'minimax', model: MINIMAX_MODEL, purpose,
-        success: false, metadata: { error: err?.message },
+        success: false, metadata: mergeBotBehaviorMetadata({ ...metadata, error: err?.message }),
       });
       throw new Error(
         `AI unavailable: Claude failed, MiniMax failed (${err?.message})`,
@@ -245,6 +250,8 @@ export interface ChatWithToolsParams {
   tenantId?: string;
   /** Short label like "order_agent". */
   purpose?: string;
+  /** Extra structured metadata for AiUsageLog. */
+  metadata?: Record<string, unknown>;
 }
 
 export interface ChatWithToolsResult {
@@ -272,6 +279,7 @@ export async function chatWithTools(
     temperature = 0.3,
     tenantId,
     purpose,
+    metadata,
   } = params;
 
   // ── Claude ──
@@ -326,7 +334,7 @@ export async function chatWithTools(
         inputTokens: response.usage?.input_tokens ?? 0,
         outputTokens: response.usage?.output_tokens ?? 0,
         latencyMs,
-        metadata: { toolCalls: toolCalls.length },
+        metadata: mergeBotBehaviorMetadata({ ...metadata, toolCalls: toolCalls.length }),
       });
 
       return {
@@ -342,7 +350,7 @@ export async function chatWithTools(
       });
       logAiUsage({
         tenantId, provider: 'claude', model: CLAUDE_MODEL, purpose,
-        success: false, metadata: { error: err?.message },
+        success: false, metadata: mergeBotBehaviorMetadata({ ...metadata, error: err?.message }),
       });
     }
   }
@@ -414,7 +422,7 @@ export async function chatWithTools(
         inputTokens: response.usage?.prompt_tokens ?? 0,
         outputTokens: response.usage?.completion_tokens ?? 0,
         latencyMs,
-        metadata: { toolCalls: toolCalls.length },
+        metadata: mergeBotBehaviorMetadata({ ...metadata, toolCalls: toolCalls.length }),
       });
 
       return {
@@ -429,7 +437,7 @@ export async function chatWithTools(
       });
       logAiUsage({
         tenantId, provider: 'minimax', model: MINIMAX_MODEL, purpose,
-        success: false, metadata: { error: err?.message },
+        success: false, metadata: mergeBotBehaviorMetadata({ ...metadata, error: err?.message }),
       });
       throw new Error(
         `AI tool-use unavailable: Claude failed, MiniMax failed (${err?.message})`,

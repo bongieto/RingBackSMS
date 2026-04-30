@@ -977,7 +977,16 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           pendingClarification: null,
         }),
         smsReply: smartOrderLinkReply,
-        sideEffects: [],
+        sideEffects: [
+          {
+            type: 'CAPTURE_MENU_PHRASE',
+            payload: {
+              phrase: inboundMessage.slice(0, 240),
+              reason: 'low_confidence_item_mapping',
+              replySent: smartOrderLinkReply,
+            },
+          },
+        ],
         flowType: FlowType.ORDER,
       };
     }

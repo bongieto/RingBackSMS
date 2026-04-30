@@ -343,6 +343,7 @@ model TenantConfig {
   consentMessage                 String?   @db.Text
   followupOpener                 String?   @db.Text
   customAiInstructions           String?   @db.Text
+  businessLimits                 Json?
   customEscalationKeywords       String[]  @default([])
   escalationPolicyOverrides      Json?
   intakeFieldOverrides           Json?
@@ -708,6 +709,7 @@ model MenuItem {
   tenantId          String
   tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name              String
+  aliases           String[]  @default([]) // customer-facing alternate names, e.g. "egg rolls", "pork rolls"
   description       String?   @db.Text
   price             Decimal   @db.Decimal(10, 2)
   category          String?               // kept for back-compat with POS sync (Square pushes strings)

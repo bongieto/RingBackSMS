@@ -55,6 +55,18 @@ export const BusinessScheduleSchema = z.record(z.string(), DayScheduleSchema);
 
 export type BusinessSchedule = z.infer<typeof BusinessScheduleSchema>;
 
+export const BusinessLimitsSchema = z.object({
+  noDelivery: z.boolean().default(false),
+  noRefundsBySms: z.boolean().default(true),
+  allergyRequiresHuman: z.boolean().default(true),
+  noSameDayCatering: z.boolean().default(false),
+  noSubstitutions: z.boolean().default(false),
+  noAfterHoursPickup: z.boolean().default(false),
+  notes: z.array(z.string().max(160)).max(20).default([]),
+});
+
+export type BusinessLimits = z.infer<typeof BusinessLimitsSchema>;
+
 export const TenantConfigSchema = z.object({
   id: z.string().uuid(),
   tenantId: z.string().uuid(),
@@ -99,6 +111,7 @@ export const TenantConfigSchema = z.object({
   ordersAcceptingEnabled: z.boolean().default(true),
   aiOrderAgentEnabled: z.boolean().default(false),
   acceptClosedHourOrders: z.boolean().default(true),
+  businessLimits: BusinessLimitsSchema.default({}),
   minutesPerQueuedOrder: z.number().int().default(4),
   salesTaxRate: z.number().nullable().optional(),
   passStripeFeesToCustomer: z.boolean().default(false),
@@ -289,6 +302,7 @@ export const MenuItemSchema = z.object({
   id: z.string().uuid(),
   tenantId: z.string().uuid(),
   name: z.string().min(1),
+  aliases: z.array(z.string()).default([]),
   description: z.string().nullable(),
   price: z.number().nonnegative(),
   category: z.string().nullable(),
