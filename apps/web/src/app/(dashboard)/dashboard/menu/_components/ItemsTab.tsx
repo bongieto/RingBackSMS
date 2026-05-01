@@ -50,20 +50,20 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
       .filter((i) => showDisabled || isCurated(i))
       .filter((i) => !filterCategoryId || i.categoryId === filterCategoryId)
       .filter((i) =>
-	        !q ||
-	        i.name.toLowerCase().includes(q) ||
-	        (i.aliases ?? []).some((a) => a.toLowerCase().includes(q)) ||
-	        (i.description ?? '').toLowerCase().includes(q),
+        !q ||
+        i.name.toLowerCase().includes(q) ||
+        (i.aliases ?? []).some((a) => a.toLowerCase().includes(q)) ||
+        (i.description ?? '').toLowerCase().includes(q),
       );
   }, [items, search, filterCategoryId, showDisabled]);
 
   const toggleMutation = useMutation({
     mutationFn: ({ item, isAvailable }: { item: MenuItem; isAvailable: boolean }) =>
       tenantApi.upsertMenuItem(tenantId, {
-	        id: item.id,
-	        name: item.name,
-	        aliases: item.aliases ?? [],
-	        description: item.description ?? undefined,
+        id: item.id,
+        name: item.name,
+        aliases: item.aliases ?? [],
+        description: item.description ?? undefined,
         price: Number(item.price),
         categoryId: item.categoryId,
         imageUrl: item.imageUrl ?? undefined,
