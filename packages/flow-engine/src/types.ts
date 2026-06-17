@@ -77,6 +77,9 @@ export type ChatFn = (params: {
   userMessage: string;
   maxTokens?: number;
   temperature?: number;
+  /** Hint for the web layer: short calls like intent classification can be
+   *  routed to a cheaper/faster model. Defaults to the generation model. */
+  purpose?: 'intent_classifier' | 'fallback_chat';
 }) => Promise<string>;
 
 /** Tool-use chat function for the AI ORDER agent. Returns text + any tool

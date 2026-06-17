@@ -6,8 +6,19 @@ import { prisma } from '../db';
 import { markLlmCall } from '../turn/TurnContext';
 import { mergeBotBehaviorMetadata } from '../botBehaviorVersion';
 
+// Primary "generation" model — writes customer replies and runs the order
+// agent. Sonnet 4.6 is the cost/latency sweet spot for SMS (1M context, fast).
+// NOTE: the old default `claude-sonnet-4-20250514` (Sonnet 4.0) retired
+// 2026-06-15 and now 404s, silently dropping every reply to the MiniMax
+// backup. Override per-deploy with AI_PRIMARY_MODEL.
 const CLAUDE_MODEL =
-  process.env.AI_PRIMARY_MODEL?.trim() || 'claude-sonnet-4-20250514';
+  process.env.AI_PRIMARY_MODEL?.trim() || 'claude-sonnet-4-6';
+// Classifier model — fast/cheap, for intent detection and other short
+// classify calls. Haiku is ~3x cheaper than Sonnet and lower latency, and
+// "what does this customer want?" doesn't need the strong model. Override
+// with AI_CLASSIFIER_MODEL.
+const CLASSIFIER_MODEL =
+  process.env.AI_CLASSIFIER_MODEL?.trim() || 'claude-haiku-4-5';
 const MINIMAX_MODEL = 'MiniMax-M2.7';
 const TIMEOUT_MS = 8000;
 
@@ -81,6 +92,9 @@ export interface ChatCompletionParams {
   userMessage: string;
   maxTokens?: number;
   temperature?: number;
+  /** Override the Claude model for this call (e.g. a cheap classifier model).
+   *  Defaults to CLAUDE_MODEL. Does not affect the MiniMax fallback. */
+  model?: string;
   /** Used only for usage logging/billing; optional. */
   tenantId?: string;
   /** Short label like "intent_classifier", "fallback_chat". */
@@ -102,8 +116,9 @@ export interface ChatCompletionParams {
 export async function chatCompletion(
   params: ChatCompletionParams,
 ): Promise<string> {
-  const { systemPrompt, userMessage, maxTokens = 500, temperature = 0.7, tenantId, purpose, metadata } =
+  const { systemPrompt, userMessage, maxTokens = 500, temperature = 0.7, model, tenantId, purpose, metadata } =
     params;
+  const claudeModel = model || CLAUDE_MODEL;
 
   // Try Claude first
   const claude = getAnthropicClient();
@@ -112,7 +127,7 @@ export async function chatCompletion(
       const start = Date.now();
       const response = await claude.messages.create(
         {
-          model: CLAUDE_MODEL,
+          model: claudeModel,
           max_tokens: maxTokens,
           system: systemPrompt,
           messages: [{ role: 'user', content: userMessage }],
@@ -127,12 +142,12 @@ export async function chatCompletion(
       const latencyMs = Date.now() - start;
       markLlmCall(latencyMs);
       logger.info('[ai] claude completion', {
-        model: CLAUDE_MODEL,
+        model: claudeModel,
         latencyMs,
         tokens: response.usage?.output_tokens,
       });
       logAiUsage({
-        tenantId, provider: 'claude', model: CLAUDE_MODEL, purpose,
+        tenantId, provider: 'claude', model: claudeModel, purpose,
         inputTokens: response.usage?.input_tokens ?? 0,
         outputTokens: response.usage?.output_tokens ?? 0,
         latencyMs,
@@ -145,7 +160,7 @@ export async function chatCompletion(
         status: err?.status,
       });
       logAiUsage({
-        tenantId, provider: 'claude', model: CLAUDE_MODEL, purpose,
+        tenantId, provider: 'claude', model: claudeModel, purpose,
         success: false, metadata: mergeBotBehaviorMetadata({ ...metadata, error: err?.message }),
       });
       // Fall through to MiniMax
@@ -215,6 +230,8 @@ export async function chatClassify(
 ): Promise<string> {
   return chatCompletion({
     ...params,
+    // Run classification on the cheap/fast model unless the caller pinned one.
+    model: params.model ?? CLASSIFIER_MODEL,
     temperature: 0.1,
     maxTokens: params.maxTokens ?? 100,
   });
@@ -298,7 +315,18 @@ export async function chatWithTools(
         {
           model: CLAUDE_MODEL,
           max_tokens: maxTokens,
-          system: systemPrompt,
+          // Cache the system prompt (menu, hours, brand voice, worked
+          // examples). Render order is tools -> system -> messages, so one
+          // breakpoint on the system block caches the tool definitions too.
+          // Cuts cost/latency on repeat turns; below the model's minimum
+          // cacheable prefix it silently no-ops (no error).
+          system: [
+            {
+              type: 'text',
+              text: systemPrompt,
+              cache_control: { type: 'ephemeral' },
+            },
+          ],
           messages,
           temperature,
           tools: tools as unknown as Anthropic.Messages.Tool[],

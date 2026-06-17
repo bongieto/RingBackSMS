@@ -370,6 +370,7 @@ Respond with JSON only:
       userMessage: prompt,
       maxTokens: 100,
       temperature: 0.1,
+      purpose: 'intent_classifier',
     });
 
     return parseIntentResponse(raw, enabledFlowTypes);
