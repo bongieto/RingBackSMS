@@ -117,6 +117,16 @@ export interface FlowInput {
   currentState: CallerState | null;
   /** @deprecated Use chatFn instead. Kept for backward compat. */
   aiApiKey?: string;
+  /** Recent human-corrected exemplars for this tenant, pre-ranked by
+   *  relevance to the current inbound. The fallback flow embeds these as
+   *  few-shot examples so the bot mirrors how the operator handles
+   *  similar messages. Optional — when absent, the prompt loses the
+   *  block silently. */
+  handoffExemplars?: Array<{
+    id: string;
+    inboundMessage: string;
+    humanReply: string;
+  }>;
   chatFn: ChatFn;
   /** Optional tool-use chat fn for the AI ORDER agent. */
   chatWithToolsFn?: ChatWithToolsFn;

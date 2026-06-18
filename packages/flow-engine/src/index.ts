@@ -72,3 +72,11 @@ export type {
   AgentToolCall,
   AgentToolSchema,
 } from './types';
+export {
+  rankExemplars,
+  formatExemplarsForPrompt,
+  jaccard,
+  tokenize,
+  type ExemplarCandidate,
+  type RankedExemplar,
+} from './learning/exemplarRanking';

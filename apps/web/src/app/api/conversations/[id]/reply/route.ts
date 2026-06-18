@@ -10,6 +10,11 @@ import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
 import { logTiming, startTimer } from '@/lib/server/perf';
+import {
+  findExemplarPairFromMessages,
+  recordHandoffExemplar,
+} from '@/lib/server/services/handoffExemplarService';
+import { waitUntil } from '@vercel/functions';
 
 const ReplySchema = z.object({ message: z.string().min(1) });
 
@@ -49,6 +54,28 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       ...existing,
       { role: 'assistant', content: message, timestamp: new Date().toISOString(), sender: 'human' },
     ];
+
+    // Capture a HandoffExemplar (P6 learning loop): pair this human reply
+    // with the customer inbound it's answering, plus the bot's prior
+    // reply for audit. Fire-and-forget — never blocks the SMS send path.
+    // waitUntil keeps the insert alive past the serverless response so
+    // a few-ms DB write doesn't tear down with the request context.
+    const pair = findExemplarPairFromMessages(
+      existing as Array<{ role?: string; content?: string; sender?: string }>,
+    );
+    if (pair) {
+      waitUntil(
+        recordHandoffExemplar({
+          tenantId: conversation.tenantId,
+          conversationId: conversation.id,
+          callerPhone: conversation.callerPhone,
+          inboundMessage: pair.inboundMessage,
+          humanReply: message,
+          botReplyBefore: pair.botReplyBefore,
+        }),
+      );
+    }
+
     const summary = summarizeConversationMessages(updatedMessages);
     const updated = await prisma.conversation.update({
       where: { id: params.id },

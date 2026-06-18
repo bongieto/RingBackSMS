@@ -1,5 +1,6 @@
 import { runFlowEngine, TenantContext, matchEscalationPolicy, matchSafetyPolicy, type CallerMemory, type ChatFn, type ChatWithToolsFn, type StructuredIntake } from '@ringback/flow-engine';
 import { chatCompletion, chatWithTools } from './aiClient';
+import { findRelevantExemplars } from './handoffExemplarService';
 import { getCallerContext } from './callerContextService';
 import { FlowType, SideEffect } from '@ringback/shared-types';
 import { getCallerState, setCallerState, isDuplicate } from './stateService';
@@ -1212,6 +1213,20 @@ async function processInboundSmsInner(
     }
   }
 
+  // Fetch handoff-exemplar few-shots (P6 learning loop). Already
+  // pre-filtered by tenant + status=APPROVED, then ranked by Jaccard
+  // overlap with the current inbound. Quietly degrades to [] on DB
+  // error so a missed exemplar lookup doesn't fail the turn.
+  const rankedExemplars = await findRelevantExemplars(tenantId, inboundMessage);
+  const handoffExemplars =
+    rankedExemplars.length > 0
+      ? rankedExemplars.map((e) => ({
+          id: e.id,
+          inboundMessage: e.inboundMessage,
+          humanReply: e.humanReply,
+        }))
+      : undefined;
+
   // Sink for Decision drafts pushed by flow-engine handlers. Merged into
   // the ALS-backed Turn context so all decisions land on the same Turn
   // row. Safe when Turn Record is disabled — mergeDecisions no-ops.
@@ -1227,6 +1242,7 @@ async function processInboundSmsInner(
     chatWithToolsFn,
     recentMessages,
     callerMemory,
+    handoffExemplars,
     getActiveOrderCount,
     decisions: flowDecisions,
   });
