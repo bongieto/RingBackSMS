@@ -82,6 +82,24 @@ export type ChatFn = (params: {
   purpose?: 'intent_classifier' | 'fallback_chat';
 }) => Promise<string>;
 
+/** Structured classification function. The model is forced to call a single
+ *  tool whose schema IS the response shape, so we get a typed object back
+ *  instead of a parsed string. Returns null when the call fails or no tool
+ *  was emitted, so callers can fall through to a tolerant parser. Optional
+ *  — when absent, callers fall back to the string-returning ChatFn path. */
+export type ChatStructuredFn = <T = Record<string, unknown>>(params: {
+  systemPrompt: string;
+  userMessage: string;
+  toolName: string;
+  toolDescription: string;
+  schema: {
+    type: 'object';
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+  maxTokens?: number;
+}) => Promise<T | null>;
+
 /** Tool-use chat function for the AI ORDER agent. Returns text + any tool
  *  calls the model emitted. Optional — only needed when
  *  `tenantContext.config.aiOrderAgentEnabled` is true. */
@@ -123,6 +141,10 @@ export interface FlowInput {
   chatFn: ChatFn;
   /** Optional tool-use chat fn for the AI ORDER agent. */
   chatWithToolsFn?: ChatWithToolsFn;
+  /** Optional structured-classification fn. When provided, the intent
+   *  detector uses forced tool-use for a guaranteed-valid response and
+   *  falls back to chatFn + tolerant parsing only if it returns null. */
+  chatStructuredFn?: ChatStructuredFn;
   /** Recent conversation messages (most recent last), passed into AI agent. */
   recentMessages?: Array<{ role: 'user' | 'assistant'; content: string }>;
   callerMemory?: CallerMemory;

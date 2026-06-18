@@ -198,6 +198,7 @@ async function runFlowEngineCore(input: FlowInput): Promise<FlowOutput> {
     tenantContext,
     input.chatFn,
     input.recentMessages,
+    input.chatStructuredFn,
   );
   pushDecision(input, {
     handler: 'detectIntent',

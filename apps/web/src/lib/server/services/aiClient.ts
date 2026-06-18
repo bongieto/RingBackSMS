@@ -261,6 +261,16 @@ export interface ChatWithToolsParams {
   userMessage: string;
   messageHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
   tools: ToolSchema[];
+  /** Optional. `auto` (default) lets the model decide; `{type:'tool',name}`
+   *  forces a specific tool — used by chatClassifyStructured to guarantee
+   *  a typed response. */
+  toolChoice?:
+    | { type: 'auto' }
+    | { type: 'any' }
+    | { type: 'tool'; name: string };
+  /** Override the Claude model (e.g. the cheap classifier for structured
+   *  classification). Defaults to CLAUDE_MODEL. */
+  model?: string;
   maxTokens?: number;
   temperature?: number;
   /** Used only for usage logging/billing; optional. */
@@ -292,12 +302,15 @@ export async function chatWithTools(
     userMessage,
     messageHistory = [],
     tools,
+    toolChoice,
+    model,
     maxTokens = 1024,
     temperature = 0.3,
     tenantId,
     purpose,
     metadata,
   } = params;
+  const claudeModel = model || CLAUDE_MODEL;
 
   // ── Claude ──
   const claude = getAnthropicClient();
@@ -313,7 +326,7 @@ export async function chatWithTools(
       ];
       const response = await claude.messages.create(
         {
-          model: CLAUDE_MODEL,
+          model: claudeModel,
           max_tokens: maxTokens,
           // Cache the system prompt (menu, hours, brand voice, worked
           // examples). Render order is tools -> system -> messages, so one
@@ -330,6 +343,9 @@ export async function chatWithTools(
           messages,
           temperature,
           tools: tools as unknown as Anthropic.Messages.Tool[],
+          ...(toolChoice
+            ? { tool_choice: toolChoice as Anthropic.Messages.ToolChoice }
+            : {}),
         },
         { signal: AbortSignal.timeout(TIMEOUT_MS) },
       );
@@ -351,14 +367,14 @@ export async function chatWithTools(
       const latencyMs = Date.now() - start;
       markLlmCall(latencyMs);
       logger.info('[ai] claude tool-use', {
-        model: CLAUDE_MODEL,
+        model: claudeModel,
         latencyMs,
         tokens: response.usage?.output_tokens,
         toolCalls: toolCalls.length,
         stopReason: response.stop_reason,
       });
       logAiUsage({
-        tenantId, provider: 'claude', model: CLAUDE_MODEL, purpose,
+        tenantId, provider: 'claude', model: claudeModel, purpose,
         inputTokens: response.usage?.input_tokens ?? 0,
         outputTokens: response.usage?.output_tokens ?? 0,
         latencyMs,
@@ -377,7 +393,7 @@ export async function chatWithTools(
         status: err?.status,
       });
       logAiUsage({
-        tenantId, provider: 'claude', model: CLAUDE_MODEL, purpose,
+        tenantId, provider: 'claude', model: claudeModel, purpose,
         success: false, metadata: mergeBotBehaviorMetadata({ ...metadata, error: err?.message }),
       });
     }
@@ -400,6 +416,18 @@ export async function chatWithTools(
         },
       }));
 
+      // Translate Anthropic tool_choice to OpenAI/MiniMax shape:
+      //   {type:'auto'} -> 'auto'
+      //   {type:'any'}  -> 'required'
+      //   {type:'tool', name} -> {type:'function', function:{name}}
+      const openAiToolChoice = toolChoice
+        ? toolChoice.type === 'tool'
+          ? { type: 'function' as const, function: { name: toolChoice.name } }
+          : toolChoice.type === 'any'
+            ? ('required' as const)
+            : ('auto' as const)
+        : undefined;
+
       const response = await minimax.chat.completions.create(
         {
           model: MINIMAX_MODEL,
@@ -414,6 +442,7 @@ export async function chatWithTools(
             { role: 'user', content: userMessage },
           ],
           tools: openAiTools,
+          ...(openAiToolChoice ? { tool_choice: openAiToolChoice } : {}),
         },
         { signal: controller.signal },
       );
@@ -479,4 +508,76 @@ export async function chatWithTools(
     );
   }
   throw new Error('AI tool-use failed on all configured providers');
+}
+
+// ── Structured classification ────────────────────────────────────────────────
+
+export interface ChatClassifyStructuredParams {
+  systemPrompt: string;
+  userMessage: string;
+  /** Name of the single tool the model is forced to call. */
+  toolName: string;
+  /** Description shown to the model — phrase it as the task. */
+  toolDescription: string;
+  /** Anthropic-format JSON Schema for the response shape. */
+  schema: {
+    type: 'object';
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+  maxTokens?: number;
+  /** Override the classifier model. Defaults to CLASSIFIER_MODEL. */
+  model?: string;
+  tenantId?: string;
+  purpose?: string;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Forced-tool-use structured output. The model MUST emit a single
+ * tool_use block whose `input` matches the JSON schema — no JSON parsing,
+ * no fence-stripping, no regex fallbacks. Returns null only when both
+ * providers fail or neither emitted a tool call, so the caller can fall
+ * through to its own tolerant parser as a safety net.
+ *
+ * Routes to the cheap classifier model by default; intent classification
+ * is a short call that doesn't need the strong model.
+ */
+export async function chatClassifyStructured<T = Record<string, unknown>>(
+  params: ChatClassifyStructuredParams,
+): Promise<T | null> {
+  const {
+    systemPrompt,
+    userMessage,
+    toolName,
+    toolDescription,
+    schema,
+    maxTokens = 200,
+    model,
+    tenantId,
+    purpose,
+    metadata,
+  } = params;
+
+  try {
+    const result = await chatWithTools({
+      systemPrompt,
+      userMessage,
+      tools: [{ name: toolName, description: toolDescription, input_schema: schema }],
+      toolChoice: { type: 'tool', name: toolName },
+      model: model ?? CLASSIFIER_MODEL,
+      maxTokens,
+      // Deterministic for classification.
+      temperature: 0,
+      tenantId,
+      purpose: purpose ?? 'intent_classifier_structured',
+      metadata,
+    });
+    const call = result.toolCalls.find((c) => c.name === toolName);
+    if (!call) return null;
+    return call.input as unknown as T;
+  } catch (err: any) {
+    logger.warn('[ai] chatClassifyStructured failed', { error: err?.message });
+    return null;
+  }
 }

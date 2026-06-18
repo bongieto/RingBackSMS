@@ -68,6 +68,7 @@ export type {
   FlowStep,
   CallerMemory,
   ChatFn,
+  ChatStructuredFn,
   ChatWithToolsFn,
   AgentToolCall,
   AgentToolSchema,

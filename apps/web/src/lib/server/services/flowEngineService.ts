@@ -1,5 +1,5 @@
-import { runFlowEngine, TenantContext, matchEscalationPolicy, matchSafetyPolicy, type CallerMemory, type ChatFn, type ChatWithToolsFn, type StructuredIntake } from '@ringback/flow-engine';
-import { chatCompletion, chatClassify, chatWithTools } from './aiClient';
+import { runFlowEngine, TenantContext, matchEscalationPolicy, matchSafetyPolicy, type CallerMemory, type ChatFn, type ChatStructuredFn, type ChatWithToolsFn, type StructuredIntake } from '@ringback/flow-engine';
+import { chatCompletion, chatClassify, chatClassifyStructured, chatWithTools } from './aiClient';
 import { getCallerContext } from './callerContextService';
 import { FlowType, SideEffect } from '@ringback/shared-types';
 import { getCallerState, setCallerState, isDuplicate } from './stateService';
@@ -1195,6 +1195,15 @@ async function processInboundSmsInner(
       purpose: 'order_agent',
       metadata: { botBehavior },
     });
+  // Structured intent classifier: forced tool-use against the cheap model.
+  // Returns null on provider failure so the engine falls back to the
+  // string-parser path automatically.
+  const chatStructuredFn: ChatStructuredFn = (params) =>
+    chatClassifyStructured({
+      ...params,
+      tenantId,
+      metadata: { botBehavior },
+    });
 
   // Fetch a short conversation history for routing/fallback/order context.
   // This is intentionally capped: enough to answer follow-ups without
@@ -1231,6 +1240,7 @@ async function processInboundSmsInner(
     currentState,
     chatFn,
     chatWithToolsFn,
+    chatStructuredFn,
     recentMessages,
     callerMemory,
     getActiveOrderCount,
