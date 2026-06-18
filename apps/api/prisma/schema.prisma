@@ -156,6 +156,7 @@ model Tenant {
   smsConsentRequests SmsConsentRequest[]
   smsSuppressions    SmsSuppression[]
   escalationEvents   EscalationEvent[]
+  handoffExemplars   HandoffExemplar[]
   commissions        CommissionLedger[]
   members            TenantMember[]
   smsCampaigns       SmsCampaign[]
@@ -1028,6 +1029,43 @@ model EscalationEvent {
   createdAt      DateTime @default(now())
 
   @@index([tenantId, createdAt])
+}
+
+/// One row per human-authored outbound SMS sent on a tenant's conversation —
+/// captured automatically when an operator replies to a customer. Pairs the
+/// triggering customer inbound with the human's correcting reply (and the
+/// bot's prior reply for audit). Used as few-shot exemplars in the fallback
+/// LLM prompt, so the bot learns to handle similar messages the way the
+/// operator did. Rows are captured as APPROVED by default; SUPPRESSED is for
+/// the operator to mark exemplars they don't want the bot to learn from.
+model HandoffExemplar {
+  id             String          @id @default(uuid())
+  tenantId       String
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversationId String?
+  callerPhone    String
+  /// The customer's inbound SMS that the human ended up answering.
+  inboundMessage String          @db.Text
+  /// The human operator's reply.
+  humanReply     String          @db.Text
+  /// The bot's most recent prior reply to the same customer (often the
+  /// deflection that triggered handoff). Null when no prior bot reply.
+  botReplyBefore String?         @db.Text
+  status         ExemplarStatus  @default(APPROVED)
+  reviewedAt     DateTime?
+  reviewedBy     String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status, createdAt])
+}
+
+enum ExemplarStatus {
+  /// Captured, eligible for retrieval as a few-shot example.
+  APPROVED
+  /// Explicitly excluded — reviewer flagged as low-quality / off-policy.
+  SUPPRESSED
 }
 
 /// Idempotency log for provider webhook events. One row per provider event

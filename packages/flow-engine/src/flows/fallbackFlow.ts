@@ -5,6 +5,7 @@ import { pushDecision } from '../decisions';
 import type { CallerMemory } from '../types';
 import { buildCatalogPromptContext, buildVerticalPromptGuidance, getVerticalProfile } from '../verticals';
 import { formatBusinessLimits, getBusinessLimits } from '../businessLimits';
+import { formatExemplarsForPrompt } from '../learning/exemplarRanking';
 
 /**
  * Ungrounded-action guards. Each rule pairs a whole-message inbound
@@ -477,6 +478,17 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
       ? `\n\n# Tenant-specific instructions from the owner\n${customInstr.trim()}`
       : '';
 
+  // Handoff-exemplar few-shot block. The host app pre-ranks exemplars by
+  // relevance (Jaccard over inbound tokens — see learning/exemplarRanking)
+  // and passes the top-k via FlowInput. Empty string when none — keeps the
+  // prompt prefix stable for caching.
+  const exemplarBlock =
+    input.handoffExemplars && input.handoffExemplars.length > 0
+      ? formatExemplarsForPrompt(
+          input.handoffExemplars.map((e) => ({ ...e, score: 1 })),
+        )
+      : '';
+
   const systemPrompt = `You are texting on behalf of ${tenantContext.tenantName}. Be ${personality}.
 
 # Output rules
@@ -493,7 +505,7 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
 # Capabilities and context
 ${recentConversationBlock}
 ${businessLimitsBlock}
-${capabilities}${businessAddress}${websiteContext}${verticalGuidance}${catalogContext}${callerContextBlock}${activeOrderBlock}${customBlock}`;
+${capabilities}${businessAddress}${websiteContext}${verticalGuidance}${catalogContext}${callerContextBlock}${exemplarBlock}${activeOrderBlock}${customBlock}`;
 
   const nextState: CallerState = {
     tenantId: tenantContext.tenantId,
