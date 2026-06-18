@@ -2,9 +2,10 @@ import { FlowInput, FlowOutput } from '../types';
 import { FlowType } from '@ringback/shared-types';
 import { CallerState } from '@ringback/shared-types';
 import { pushDecision } from '../decisions';
-import type { CallerMemory } from '../types';
+import type { CallerMemory, TenantContext } from '../types';
 import { buildCatalogPromptContext, buildVerticalPromptGuidance, getVerticalProfile } from '../verticals';
 import { formatBusinessLimits, getBusinessLimits } from '../businessLimits';
+import { formatReadyTime } from './orderFlow';
 
 /**
  * Ungrounded-action guards. Each rule pairs a whole-message inbound
@@ -77,6 +78,20 @@ export const UNGROUNDED_GUARDS: UngroundedGuardRule[] = [
         ? `For refunds please call ${tenantName} directly at ${tenantPhone} — we can't process those over text.`
         : `For refunds please call ${tenantName} directly — we can't process those over text.`,
   },
+  {
+    name: 'pii_change_request',
+    outcome: 'deflected_pii_change',
+    reason: 'account/contact-info change — bot has no path to update these',
+    // The bot literally cannot edit Stripe customer records, the contact
+    // file, or saved payment methods. Without this guard the LLM happily
+    // says "I've updated your address" and the change never happens.
+    re: /^(?:please\s+|can\s+you\s+|could\s+you\s+|i\s+(?:need|want|would\s+like|wanna|wish)\s+to\s+|i['’]?d\s+like\s+to\s+|hey,?\s+)?(?:change|update|switch|edit|modify|fix|correct|new)\s+(?:my\s+|the\s+)?(?:mailing\s+|delivery\s+|billing\s+|home\s+|new\s+)?(?:address|phone(?:\s*number)?|number|email(?:\s*address)?|payment(?:\s*(?:method|info))?|card|credit\s*card|cc)\b[\s\S]{0,80}[\s!.?]*$/i,
+    isGrounded: () => false, // always deflect — never claim we updated anything
+    reply: ({ tenantPhone, tenantName }) =>
+      tenantPhone
+        ? `For account changes (address, phone, payment), please call ${tenantName} at ${tenantPhone} — we can't update those over text.`
+        : `For account changes (address, phone, payment), please call ${tenantName} — we can't update those over text.`,
+  },
 ];
 
 export function findUngroundedGuard(
@@ -136,6 +151,172 @@ function findUnsupportedFactualClaim(
   }
 
   return null;
+}
+
+/**
+ * Post-LLM fact verifier — narrow rewriter + detect-only loggers.
+ *
+ * Rewriter (acts on the reply text):
+ *  - ETA: if there's an active order with a real estimatedReadyTime AND
+ *    the LLM mentioned a duration like "in N minutes" or a time-of-day,
+ *    compare to the real ETA. When off by more than ETA_TOLERANCE_MIN,
+ *    rewrite the time-bearing phrase with the canonical ETA.
+ *
+ * Detect-only (just records a Decision so we can size each problem
+ * before promoting to a rewrite):
+ *  - hours_claim, address_claim, phone_claim
+ *
+ * Returns the (possibly-rewritten) text plus structured findings the
+ * caller pushes into the Decision sink. The function is pure so it can
+ * be unit-tested in isolation.
+ */
+export interface FactVerifierFinding {
+  kind:
+    | 'eta_rewritten'
+    | 'eta_within_tolerance'
+    | 'hours_claim_detected'
+    | 'address_claim_detected'
+    | 'phone_claim_detected';
+  evidence: Record<string, unknown>;
+}
+
+const ETA_TOLERANCE_MIN = 5;
+
+/** Match "in N minutes" / "in about N min" / "in N mins" — capture the
+ *  number AND the whole span so we can rewrite it. */
+const DURATION_RE =
+  /\bin\s+(?:about\s+|approx(?:imately|\.?)\s+|around\s+|roughly\s+)?(\d{1,3})\s*(?:min(?:ute)?s?|m)\b/i;
+
+/** Match a time-of-day cue word followed by a clock time. Avoid bare
+ *  "7:30" without a cue word — that produces too many false positives
+ *  on prices. */
+const TIME_OF_DAY_RE =
+  /\b(?:around|by|at|approx(?:imately|\.?)?|approximately)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i;
+
+/** Phone number anywhere in the reply — North American formats. */
+const PHONE_RE =
+  /(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/;
+
+/** Anything that looks like a US street address fragment. We only need
+ *  to flag the mention; the audit/eval (P5) compares it to the truth. */
+const ADDRESS_LIKE_RE =
+  /\b\d{1,6}\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s+(?:st(?:reet)?|ave(?:nue)?|rd|road|blvd|boulevard|dr(?:ive)?|ln|lane|way|ct|court|pl|place|hwy|highway|pkwy|parkway)\b/i;
+
+/** "hours" / "open" / "close" near a clock time — we treat that as a
+ *  hours claim and log it. Tightening this regex is a P5 follow-up. */
+const HOURS_CLAIM_RE =
+  /\b(?:open|opens|closed?|closes|hours?|we['’]re\s+open|we\s+close)\b[\s\S]{0,30}\d{1,2}(?::\d{2})?\s*(?:am|pm)/i;
+
+export function runFactVerifier(
+  replyText: string,
+  callerMemory: CallerMemory | undefined,
+  tenantContext: TenantContext,
+): { rewrittenText: string; findings: FactVerifierFinding[] } {
+  const findings: FactVerifierFinding[] = [];
+  let text = replyText;
+
+  // ── ETA: rewrite when wrong ────────────────────────────────────────────
+  const activeOrder = callerMemory?.activeOrder;
+  const etaIso = activeOrder?.estimatedReadyTime ?? null;
+  if (etaIso) {
+    const etaMs = Date.parse(etaIso);
+    if (Number.isFinite(etaMs)) {
+      const realMinutesFromNow = Math.max(
+        0,
+        Math.round((etaMs - Date.now()) / 60_000),
+      );
+      const timezone = tenantContext.config?.timezone ?? 'America/Chicago';
+      const canonicalTime = formatReadyTime(realMinutesFromNow, timezone);
+
+      const durMatch = text.match(DURATION_RE);
+      if (durMatch) {
+        const claimedMin = parseInt(durMatch[1], 10);
+        if (
+          Number.isFinite(claimedMin) &&
+          Math.abs(claimedMin - realMinutesFromNow) > ETA_TOLERANCE_MIN
+        ) {
+          const replacement = `in about ${realMinutesFromNow} minutes`;
+          text = text.replace(durMatch[0], replacement);
+          findings.push({
+            kind: 'eta_rewritten',
+            evidence: {
+              claimType: 'duration',
+              claimedMinutes: claimedMin,
+              realMinutesFromNow,
+              canonicalTime,
+              replacedSpan: durMatch[0],
+              replacement,
+            },
+          });
+        } else if (Number.isFinite(claimedMin)) {
+          findings.push({
+            kind: 'eta_within_tolerance',
+            evidence: { claimType: 'duration', claimedMinutes: claimedMin, realMinutesFromNow },
+          });
+        }
+      } else {
+        // No duration claim — check for a time-of-day claim. Rewriting a
+        // time-of-day cleanly requires parsing against the tenant TZ,
+        // which is fiddly enough to risk mangling correct replies. For
+        // now we LOG-only when present and don't match the canonical
+        // string; this gives us a data point without changing customer
+        // text. Promote to a rewrite once we have signal from P5.
+        const todMatch = text.match(TIME_OF_DAY_RE);
+        if (todMatch) {
+          const claimed = todMatch[1].trim().toUpperCase().replace(/\s+/g, ' ');
+          const canonical = canonicalTime.toUpperCase().replace(/\s+/g, ' ');
+          if (claimed !== canonical) {
+            findings.push({
+              kind: 'eta_within_tolerance',
+              evidence: {
+                claimType: 'time_of_day',
+                claimed,
+                canonical,
+                realMinutesFromNow,
+                rewriteSkipped: true,
+              },
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // ── Detect-only loggers (no rewrite) ───────────────────────────────────
+  if (HOURS_CLAIM_RE.test(text)) {
+    findings.push({
+      kind: 'hours_claim_detected',
+      evidence: {
+        replySnippet: text.slice(0, 240),
+        hoursStart: tenantContext.config?.businessHoursStart ?? null,
+        hoursEnd: tenantContext.config?.businessHoursEnd ?? null,
+      },
+    });
+  }
+
+  const addressMatch = text.match(ADDRESS_LIKE_RE);
+  if (addressMatch) {
+    findings.push({
+      kind: 'address_claim_detected',
+      evidence: {
+        mentioned: addressMatch[0],
+        tenantAddress: tenantContext.config?.businessAddress ?? null,
+      },
+    });
+  }
+
+  const phoneMatch = text.match(PHONE_RE);
+  if (phoneMatch) {
+    findings.push({
+      kind: 'phone_claim_detected',
+      evidence: {
+        mentioned: phoneMatch[0],
+        tenantPhone: tenantContext.tenantPhoneNumber ?? null,
+      },
+    });
+  }
+
+  return { rewrittenText: text, findings };
 }
 
 function findBusinessLimitGuard(
@@ -563,6 +744,24 @@ ${capabilities}${businessAddress}${websiteContext}${verticalGuidance}${catalogCo
         durationMs: Date.now() - t0,
       });
       return { nextState, smsReply: deflection, sideEffects: [], flowType: FlowType.FALLBACK };
+    }
+
+    // Narrow fact verifier: rewrites ETA mismatches against the active
+    // order; logs (but does not rewrite) hours/address/phone claims so
+    // we can size each category before promoting to a rewriter. Doesn't
+    // throw — at worst it returns the text unchanged.
+    const verifier = runFactVerifier(replyText, callerMemory, input.tenantContext);
+    if (verifier.findings.length > 0) {
+      for (const finding of verifier.findings) {
+        pushDecision(input, {
+          handler: 'fallbackFlow.factVerifier',
+          phase: 'FLOW',
+          outcome: finding.kind,
+          evidence: finding.evidence,
+          durationMs: Date.now() - t0,
+        });
+      }
+      replyText = verifier.rewrittenText;
     }
 
     // Cap length just in case the model ignores instructions. URL-aware:

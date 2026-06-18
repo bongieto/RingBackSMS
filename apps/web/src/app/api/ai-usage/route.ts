@@ -12,6 +12,9 @@ import { prisma } from '@/lib/server/db';
  */
 const MODEL_COSTS: Record<string, { inPer1k: number; outPer1k: number }> = {
   // Anthropic public pricing, USD per 1k tokens.
+  'claude-sonnet-4-6': { inPer1k: 0.003, outPer1k: 0.015 },
+  'claude-haiku-4-5': { inPer1k: 0.001, outPer1k: 0.005 },
+  // Retired/legacy models kept so historical AiUsageLog rows still cost out.
   'claude-sonnet-4-20250514': { inPer1k: 0.003, outPer1k: 0.015 },
   'claude-3-5-sonnet-20241022': { inPer1k: 0.003, outPer1k: 0.015 },
   'claude-3-5-haiku-20241022': { inPer1k: 0.0008, outPer1k: 0.004 },

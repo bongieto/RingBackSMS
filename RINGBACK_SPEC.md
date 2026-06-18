@@ -9,7 +9,7 @@ The first tenant pre-configured is The Lumpia House & Truck (a Filipino restaura
 - Framework: Express.js (API) + Next.js 14 App Router (frontend)
 - Auth: Clerk (multi-tenant, org-based)
 - SMS/Voice: Twilio (shared platform account with sub-accounts per tenant)
-- AI: Anthropic Claude API (claude-sonnet-4-20250514)
+- AI: Anthropic Claude API (generation: claude-sonnet-4-6; classification: claude-haiku-4-5)
 - State: Redis (ioredis) — per-tenant namespaced keys
 - Database: Supabase (Postgres) with Row Level Security (RLS)
 - Billing: Stripe (subscriptions + usage-based metering)

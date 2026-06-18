@@ -1,4 +1,4 @@
-import { TenantContext, ChatFn } from './types';
+import { TenantContext, ChatFn, ChatStructuredFn } from './types';
 import { BusinessType, FlowType } from '@ringback/shared-types';
 
 function stripThinkTags(text: string): string {
@@ -165,6 +165,7 @@ export async function detectIntent(
   tenantContext: TenantContext,
   chatFn: ChatFn,
   recentMessages?: Array<{ role: 'user' | 'assistant'; content: string }>,
+  chatStructuredFn?: ChatStructuredFn,
 ): Promise<IntentResult> {
   const enabledFlowTypes = tenantContext.flows
     .filter((f) => f.isEnabled)
@@ -364,12 +365,73 @@ Classify the customer's intent. Use the recent context only to resolve follow-up
 Respond with JSON only:
 {"intent": "<FLOW_TYPE or UNCLEAR>", "confidence": <0.0-1.0>, "reason": "<short reason>"}`;
 
+  const classifierSystemPrompt = `You are an intent classifier for ${tenantContext.tenantName}.`;
+
+  // ── Structured path (preferred): forced tool-use guarantees a typed
+  //    object. No JSON parsing, no fence-stripping, no last-resort regex
+  //    extraction. A single malformed character can no longer dump a clear
+  //    intent into FALLBACK.
+  if (chatStructuredFn) {
+    const intentEnum = ['UNCLEAR', ...enabledFlowTypes] as const;
+    type StructuredResult = {
+      intent?: string;
+      confidence?: number;
+      reason?: string;
+    };
+    const structured = await chatStructuredFn<StructuredResult>({
+      systemPrompt: classifierSystemPrompt,
+      userMessage: prompt,
+      toolName: 'classify_intent',
+      toolDescription:
+        "Record the customer's intent. Call this exactly once with the chosen intent, a confidence between 0 and 1, and a short reason.",
+      schema: {
+        type: 'object',
+        properties: {
+          intent: {
+            type: 'string',
+            enum: intentEnum as unknown as string[],
+            description: 'The classified intent. Use UNCLEAR when unsure.',
+          },
+          confidence: {
+            type: 'number',
+            minimum: 0,
+            maximum: 1,
+            description: 'Confidence in the chosen intent, 0–1.',
+          },
+          reason: {
+            type: 'string',
+            description: 'Short justification (<160 chars).',
+          },
+        },
+        required: ['intent', 'confidence'],
+      },
+      maxTokens: 200,
+    });
+    if (structured) {
+      const intent = normalizeIntent(structured.intent, enabledFlowTypes);
+      return {
+        intent,
+        confidence:
+          intent === 'UNCLEAR' ? 0 : clampConfidence(structured.confidence ?? 0.5),
+        reason:
+          typeof structured.reason === 'string'
+            ? structured.reason.slice(0, 160)
+            : undefined,
+      };
+    }
+    // structured returned null (provider failure / no tool call) — fall
+    // through to the string-parser path so the existing safety net runs.
+  }
+
+  // ── String path (compat / safety net): tolerant JSON parser with the
+  //    multi-stage fence-strip + regex fallbacks already in place.
   try {
     const raw = await chatFn({
-      systemPrompt: `You are an intent classifier for ${tenantContext.tenantName}.`,
+      systemPrompt: classifierSystemPrompt,
       userMessage: prompt,
       maxTokens: 100,
       temperature: 0.1,
+      purpose: 'intent_classifier',
     });
 
     return parseIntentResponse(raw, enabledFlowTypes);

@@ -119,6 +119,51 @@ describe('findUngroundedGuard', () => {
     });
   });
 
+  describe('pii_change_request', () => {
+    test.each([
+      'change my address',
+      'Change my address.',
+      'Update my address',
+      'update my mailing address',
+      'I need to change my phone number',
+      "I'd like to update my phone",
+      'change my email',
+      'update my email address',
+      'change my payment method',
+      'update my card',
+      'change my credit card',
+      'please update my address to 123 Main St',
+      'can you update my phone number to 555-0100',
+    ])('"%s" → always deflects (bot has no path to update PII)', (msg) => {
+      const g = findUngroundedGuard(msg, withActiveOrder);
+      expect(g?.name).toBe('pii_change_request');
+    });
+
+    test.each([
+      // Asking to change the ORDER (not PII) should NOT match — that's
+      // the order agent's job.
+      'can I change my order',
+      'change my pickup time',
+      // Pure conversational reference to address shouldn't trip the
+      // guard.
+      "what's your address",
+      'address?',
+    ])('"%s" → does NOT deflect (not a PII change)', (msg) => {
+      const g = findUngroundedGuard(msg, withActiveOrder);
+      expect(g?.name).not.toBe('pii_change_request');
+    });
+
+    test('pii_change reply mentions tenant name + phone', () => {
+      const rule = UNGROUNDED_GUARDS.find((r) => r.name === 'pii_change_request');
+      expect(rule).toBeDefined();
+      const reply = typeof rule!.reply === 'function'
+        ? rule!.reply({ tenantName: 'Lumpia House', tenantPhone: '+12175550100' })
+        : rule!.reply;
+      expect(reply).toContain('Lumpia House');
+      expect(reply).toContain('+12175550100');
+    });
+  });
+
   describe('guard reply generation', () => {
     test('refund reply with phone interpolates both name + phone', () => {
       const rule = UNGROUNDED_GUARDS.find((r) => r.name === 'refund_request');

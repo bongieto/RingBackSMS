@@ -1,5 +1,5 @@
-import { runFlowEngine, TenantContext, matchEscalationPolicy, matchSafetyPolicy, type CallerMemory, type ChatFn, type ChatWithToolsFn, type StructuredIntake } from '@ringback/flow-engine';
-import { chatCompletion, chatWithTools } from './aiClient';
+import { runFlowEngine, TenantContext, matchEscalationPolicy, matchSafetyPolicy, type CallerMemory, type ChatFn, type ChatStructuredFn, type ChatWithToolsFn, type StructuredIntake } from '@ringback/flow-engine';
+import { chatCompletion, chatClassify, chatClassifyStructured, chatWithTools } from './aiClient';
 import { getCallerContext } from './callerContextService';
 import { FlowType, SideEffect } from '@ringback/shared-types';
 import { getCallerState, setCallerState, isDuplicate } from './stateService';
@@ -1175,18 +1175,33 @@ async function processInboundSmsInner(
   // Thread tenantId so AI usage is attributed per tenant. Purpose lets us
   // break down cost by feature (intent classifier vs. order agent etc.)
   // in later reports.
-  const chatFn: ChatFn = (params) =>
-    chatCompletion({
+  const chatFn: ChatFn = ({ purpose: callPurpose, ...params }) => {
+    // Short classification calls run on the cheap/fast model (chatClassify);
+    // reply-generation (fallback chat) stays on the strong model. The
+    // `purpose` also tags AiUsageLog so cost can be split per feature.
+    const isClassifier = callPurpose === 'intent_classifier';
+    const common = {
       ...params,
       tenantId,
-      purpose: 'flow_engine_chat',
+      purpose: callPurpose ?? 'flow_engine_chat',
       metadata: { botBehavior },
-    });
+    };
+    return isClassifier ? chatClassify(common) : chatCompletion(common);
+  };
   const chatWithToolsFn: ChatWithToolsFn = (params) =>
     chatWithTools({
       ...params,
       tenantId,
       purpose: 'order_agent',
+      metadata: { botBehavior },
+    });
+  // Structured intent classifier: forced tool-use against the cheap model.
+  // Returns null on provider failure so the engine falls back to the
+  // string-parser path automatically.
+  const chatStructuredFn: ChatStructuredFn = (params) =>
+    chatClassifyStructured({
+      ...params,
+      tenantId,
       metadata: { botBehavior },
     });
 
@@ -1225,6 +1240,7 @@ async function processInboundSmsInner(
     currentState,
     chatFn,
     chatWithToolsFn,
+    chatStructuredFn,
     recentMessages,
     callerMemory,
     getActiveOrderCount,
