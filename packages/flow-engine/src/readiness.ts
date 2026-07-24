@@ -78,6 +78,17 @@ function defaultChatFn(): ChatFn {
       /intent classifier/i.test(systemPrompt) ||
       /Classify the customer's intent|Available flows/i.test(userMessage);
     if (isClassifier) return localReadinessChat(userMessage);
+    if (/strict JSON only with exactly these keys/i.test(systemPrompt)) {
+      const fact = systemPrompt.match(/^\[([^\]]+)\]\s+[^:]+:\s+(.+)$/m);
+      if (fact) {
+        return JSON.stringify({
+          answer: fact[2].slice(0, 320),
+          supportedFactIds: [fact[1]],
+          confidence: 1,
+          needsHuman: false,
+        });
+      }
+    }
     return "Thanks for reaching out. I'll help with that and can connect you with a team member if needed.";
   };
 }

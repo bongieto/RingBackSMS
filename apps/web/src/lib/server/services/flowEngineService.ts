@@ -24,6 +24,12 @@ import { withTurn } from '../turn/withTurn';
 import type { DecisionDraft, TurnOutcome } from '@ringback/shared-types';
 import { logTiming, startTimer as startPerfTimer } from '../perf';
 import { getBotBehaviorStamp } from '../botBehaviorVersion';
+import { waitUntil } from '@vercel/functions';
+import {
+  buildVerifiedKnowledge,
+  markRecentCustomerCorrection,
+  recordResponseAccuracy,
+} from './knowledgeService';
 
 export interface ProcessInboundSmsInput {
   tenantId: string;
@@ -641,6 +647,15 @@ async function processInboundSmsInner(
             },
           },
         },
+        knowledgeFacts: {
+          where: {
+            isActive: true,
+            isVerified: true,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          },
+          orderBy: { updatedAt: 'desc' },
+          take: 250,
+        },
       },
     }),
     getCallerContext(tenantId, callerPhone).catch((err) => {
@@ -659,6 +674,18 @@ async function processInboundSmsInner(
     logger.error('Tenant or config not found', { tenantId });
     return;
   }
+  waitUntil(
+    markRecentCustomerCorrection({
+      tenantId,
+      callerPhone,
+      message: inboundMessage,
+    }).catch((err) => {
+      logger.warn('Failed to record customer correction signal', {
+        tenantId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }),
+  );
 
   // Populate the Turn's snapshot fields now that we have the tenant in
   // hand. Passing `currentState` on the contact snapshot ensures replays
@@ -761,6 +788,20 @@ async function processInboundSmsInner(
     closingSoon:
       minutesUntilClose != null && minutesUntilClose > 0 && minutesUntilClose <= lastOrdersGrace,
   };
+  tenantContext.verifiedKnowledge = buildVerifiedKnowledge({
+    tenant: {
+      id: tenant.id,
+      name: tenant.name,
+      twilioPhoneNumber: tenant.twilioPhoneNumber,
+      slug: tenant.slug,
+      menuItems: tenant.menuItems,
+      knowledgeFacts: tenant.knowledgeFacts,
+    },
+    todayHoursDisplay: tenantContext.hoursInfo.todayHoursDisplay,
+    weeklyHoursDisplay: tenantContext.hoursInfo.weeklyHoursDisplay,
+    address: tenant.config.businessAddress,
+    websiteUrl: tenant.config.websiteUrl,
+  });
 
   // If we're closed AND the tenant has opted out of accepting closed-hour
   // orders, disable the ORDER flow for this turn so the engine routes
@@ -1240,6 +1281,22 @@ async function processInboundSmsInner(
     testMode,
   });
   mergeDecisions(flowDecisions);
+  if (result.accuracy) {
+    waitUntil(
+      recordResponseAccuracy({
+        tenantId,
+        callerPhone,
+        question: inboundMessage,
+        answer: result.smsReply,
+        accuracy: result.accuracy,
+      }).catch((err) => {
+        logger.warn('Failed to persist AI response accuracy audit', {
+          tenantId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }),
+    );
+  }
 
   // cal.com async side effects that mutate the outgoing SMS before it
   // ships. Handled here (not in processSideEffect) because they need to

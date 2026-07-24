@@ -17,6 +17,8 @@ export interface TenantContext {
   config: TenantConfig;
   flows: Flow[];
   menuItems: MenuItem[];
+  /** Active, verified facts that are safe to quote to customers. */
+  verifiedKnowledge?: VerifiedKnowledgeFact[];
   /** Optional business-hours context passed in by the host app. When set,
    *  the ORDER agent uses it to politely schedule future pickups when we're
    *  closed rather than dead-ending the conversation. */
@@ -34,6 +36,34 @@ export interface TenantContext {
      *  want the grace to be 15 minutes. */
     closingSoon?: boolean;
   };
+}
+
+export interface VerifiedKnowledgeFact {
+  id: string;
+  key: string;
+  category: string;
+  question: string;
+  answer: string;
+  aliases: string[];
+  source: 'SYSTEM' | 'OWNER' | 'IMPORT' | string;
+  verifiedAt: string | null;
+}
+
+export interface ResponseAccuracy {
+  purpose: 'factual_answer' | 'general_conversation';
+  riskLevel: 'high' | 'low';
+  retrievedFactIds: string[];
+  supportedFactIds: string[];
+  confidence: number | null;
+  validationStatus:
+    | 'grounded'
+    | 'not_applicable'
+    | 'deflected_no_facts'
+    | 'deflected_invalid_output'
+    | 'deflected_unsupported_claim'
+    | 'provider_error';
+  validationReason?: string;
+  needsHuman: boolean;
 }
 
 /**
@@ -77,6 +107,8 @@ export type ChatFn = (params: {
   userMessage: string;
   maxTokens?: number;
   temperature?: number;
+  /** High-risk calls must not silently fall back to an unevaluated model. */
+  riskLevel?: 'low' | 'high';
 }) => Promise<string>;
 
 /** Tool-use chat function for the AI ORDER agent. Returns text + any tool
@@ -144,6 +176,7 @@ export interface FlowOutput {
   sideEffects: SideEffect[];
   flowType: FlowType;
   intake?: StructuredIntake;
+  accuracy?: ResponseAccuracy;
 }
 
 export type FlowStep =

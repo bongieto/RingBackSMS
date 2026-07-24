@@ -87,6 +87,11 @@ export interface ChatCompletionParams {
   purpose?: string;
   /** Extra structured metadata for AiUsageLog. */
   metadata?: Record<string, unknown>;
+  /** High-risk calls do not use MiniMax unless it has been explicitly
+   * enabled after passing the production factual evaluation pack. */
+  riskLevel?: 'low' | 'high';
+  /** Internal evaluation hook; customer paths should leave this as auto. */
+  providerMode?: 'auto' | 'claude' | 'minimax';
 }
 
 /**
@@ -102,11 +107,22 @@ export interface ChatCompletionParams {
 export async function chatCompletion(
   params: ChatCompletionParams,
 ): Promise<string> {
-  const { systemPrompt, userMessage, maxTokens = 500, temperature = 0.7, tenantId, purpose, metadata } =
+  const {
+    systemPrompt,
+    userMessage,
+    maxTokens = 500,
+    temperature = 0.7,
+    tenantId,
+    purpose,
+    metadata,
+    riskLevel = 'low',
+    providerMode = 'auto',
+  } =
     params;
+  let primaryFailed = false;
 
   // Try Claude first
-  const claude = getAnthropicClient();
+  const claude = providerMode === 'minimax' ? null : getAnthropicClient();
   if (claude) {
     try {
       const start = Date.now();
@@ -125,7 +141,7 @@ export async function chatCompletion(
           ? response.content[0].text
           : '';
       const latencyMs = Date.now() - start;
-      markLlmCall(latencyMs);
+      markLlmCall(latencyMs, 'claude', CLAUDE_MODEL, false);
       logger.info('[ai] claude completion', {
         model: CLAUDE_MODEL,
         latencyMs,
@@ -140,6 +156,7 @@ export async function chatCompletion(
       });
       return text;
     } catch (err: any) {
+      primaryFailed = true;
       logger.warn('[ai] claude failed, falling back to minimax', {
         error: err?.message,
         status: err?.status,
@@ -153,12 +170,22 @@ export async function chatCompletion(
   }
 
   // Fallback: MiniMax
-  const minimax = getMinimaxClient();
+  const minimax = providerMode === 'claude' ? null : getMinimaxClient();
+  const highRiskFallbackEnabled =
+    process.env.MINIMAX_HIGH_RISK_ENABLED === '1';
+  if (minimax && riskLevel === 'high' && !highRiskFallbackEnabled) {
+    throw new Error(
+      primaryFailed
+        ? 'Primary AI failed; high-risk provider fallback is disabled'
+        : 'High-risk AI requires the primary provider',
+    );
+  }
   if (minimax) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const start = Date.now();
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
       const response = await minimax.chat.completions.create(
         {
           model: MINIMAX_MODEL,
@@ -171,10 +198,9 @@ export async function chatCompletion(
         },
         { signal: controller.signal },
       );
-      clearTimeout(timer);
       const text = response.choices[0]?.message?.content ?? '';
       const latencyMs = Date.now() - start;
-      markLlmCall(latencyMs);
+      markLlmCall(latencyMs, 'minimax', MINIMAX_MODEL, primaryFailed || Boolean(claude));
       logger.info('[ai] minimax completion', { model: MINIMAX_MODEL, latencyMs });
       logAiUsage({
         tenantId, provider: 'minimax', model: MINIMAX_MODEL, purpose,
@@ -193,6 +219,8 @@ export async function chatCompletion(
       throw new Error(
         `AI unavailable: Claude failed, MiniMax failed (${err?.message})`,
       );
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
@@ -252,6 +280,7 @@ export interface ChatWithToolsParams {
   purpose?: string;
   /** Extra structured metadata for AiUsageLog. */
   metadata?: Record<string, unknown>;
+  riskLevel?: 'low' | 'high';
 }
 
 export interface ChatWithToolsResult {
@@ -280,6 +309,7 @@ export async function chatWithTools(
     tenantId,
     purpose,
     metadata,
+    riskLevel = 'high',
   } = params;
 
   // ── Claude ──
@@ -321,7 +351,7 @@ export async function chatWithTools(
       }
 
       const latencyMs = Date.now() - start;
-      markLlmCall(latencyMs);
+      markLlmCall(latencyMs, 'claude', CLAUDE_MODEL, false);
       logger.info('[ai] claude tool-use', {
         model: CLAUDE_MODEL,
         latencyMs,
@@ -357,6 +387,13 @@ export async function chatWithTools(
 
   // ── MiniMax fallback (OpenAI-compatible function calling) ──
   const minimax = getMinimaxClient();
+  if (
+    minimax &&
+    riskLevel === 'high' &&
+    process.env.MINIMAX_HIGH_RISK_ENABLED !== '1'
+  ) {
+    throw new Error('Primary tool-use AI failed; high-risk provider fallback is disabled');
+  }
   if (minimax) {
     try {
       const start = Date.now();
@@ -410,7 +447,7 @@ export async function chatWithTools(
         });
 
       const latencyMs = Date.now() - start;
-      markLlmCall(latencyMs);
+      markLlmCall(latencyMs, 'minimax', MINIMAX_MODEL, Boolean(claude));
       logger.info('[ai] minimax tool-use', {
         model: MINIMAX_MODEL,
         latencyMs,

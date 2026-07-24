@@ -14,6 +14,7 @@ import {
   isWithinBusinessHours,
 } from '@/lib/server/businessHours';
 import { logTiming, startTimer } from '@/lib/server/perf';
+import { buildVerifiedKnowledge } from '@/lib/server/services/knowledgeService';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,6 +30,13 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       config: true,
       flows: { where: { isEnabled: true } },
       menuItems: { where: { isAvailable: true } },
+      knowledgeFacts: {
+        where: {
+          isActive: true,
+          isVerified: true,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        },
+      },
     },
   });
 
@@ -91,6 +99,20 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
       closingSoon: minutesUntilClose != null && minutesUntilClose > 0 && minutesUntilClose <= 15,
     },
   };
+  tenantContext.verifiedKnowledge = buildVerifiedKnowledge({
+    tenant: {
+      id: tenant.id,
+      name: tenant.name,
+      twilioPhoneNumber: tenant.twilioPhoneNumber,
+      slug: tenant.slug,
+      menuItems: tenant.menuItems,
+      knowledgeFacts: tenant.knowledgeFacts,
+    },
+    todayHoursDisplay: tenantContext.hoursInfo!.todayHoursDisplay,
+    weeklyHoursDisplay: tenantContext.hoursInfo!.weeklyHoursDisplay,
+    address: tenant.config.businessAddress,
+    websiteUrl: tenant.config.websiteUrl,
+  });
 
   try {
     const result = await runVerticalReadinessSuite({ tenantContext });

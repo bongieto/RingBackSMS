@@ -26,6 +26,9 @@ export interface TurnContextData {
   decisions: DecisionDraft[];
   llmCalled: boolean;
   llmLatencyMs: number;
+  lastLlmProvider?: string;
+  lastLlmModel?: string;
+  providerFallbackUsed: boolean;
   /** Filled in lazily by the host once fetchTenantContext returns, so we
    *  don't force a duplicate tenant query at Turn start. */
   tenantConfigSnapshot?: unknown;
@@ -70,11 +73,19 @@ export function recordDecision(d: DecisionDraft): void {
  * apps/web AI client wrappers; flow-engine handlers push their own
  * "llm_called" Decision entries with model + token evidence.
  */
-export function markLlmCall(latencyMs: number): void {
+export function markLlmCall(
+  latencyMs: number,
+  provider?: string,
+  model?: string,
+  providerFallbackUsed = false,
+): void {
   const ctx = currentTurn();
   if (!ctx) return;
   ctx.llmCalled = true;
   ctx.llmLatencyMs += latencyMs;
+  if (provider) ctx.lastLlmProvider = provider;
+  if (model) ctx.lastLlmModel = model;
+  if (providerFallbackUsed) ctx.providerFallbackUsed = true;
 }
 
 /**

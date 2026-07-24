@@ -5,6 +5,13 @@ import { pushDecision } from '../decisions';
 import type { CallerMemory } from '../types';
 import { buildCatalogPromptContext, buildVerticalPromptGuidance, getVerticalProfile } from '../verticals';
 import { formatBusinessLimits, getBusinessLimits } from '../businessLimits';
+import {
+  formatFactsForPrompt,
+  isLikelyFactualQuestion,
+  parseGroundedResponse,
+  retrieveKnowledgeFacts,
+  validateGroundedResponse,
+} from '../knowledge';
 
 /**
  * Ungrounded-action guards. Each rule pairs a whole-message inbound
@@ -467,6 +474,15 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
     : '';
   const recentConversationBlock = formatRecentConversationForPrompt(input.recentMessages);
   const businessLimitsBlock = formatBusinessLimits(tenantContext.config);
+  // `undefined` means the host has not adopted the grounded-knowledge
+  // contract yet. An explicit empty array means it has adopted it but has
+  // no verified facts, which must fail closed for factual questions.
+  const groundingEnabled = Array.isArray(tenantContext.verifiedKnowledge);
+  const isFactualQuestion =
+    groundingEnabled && isLikelyFactualQuestion(inboundMessage);
+  const retrievedFacts = isFactualQuestion
+    ? retrieveKnowledgeFacts(inboundMessage, tenantContext.verifiedKnowledge ?? [])
+    : [];
 
   // Tenant owner's custom instructions apply across ALL AI-generated
   // replies, not just the order agent. Appended last so they can
@@ -516,13 +532,179 @@ ${capabilities}${businessAddress}${websiteContext}${verticalGuidance}${catalogCo
     ? `Sorry, I'm not sure what you're asking — text ${tenantPhone} or give us a call.`
     : `Sorry, I'm not sure what you're asking — please give us a call.`;
 
-  try {
-    const raw = await chatFn({
-      systemPrompt,
-      userMessage: inboundMessage,
-      maxTokens: 80,
-      temperature: 0.6,
+  if (isFactualQuestion && retrievedFacts.length === 0) {
+    pushDecision(input, {
+      handler: 'fallbackFlow.grounding',
+      phase: 'FLOW',
+      outcome: 'deflected_no_facts',
+      reason: 'No verified fact matched a factual customer question',
+      durationMs: Date.now() - t0,
     });
+    return {
+      nextState,
+      smsReply: deflection,
+      sideEffects: [],
+      flowType: FlowType.FALLBACK,
+      accuracy: {
+        purpose: 'factual_answer',
+        riskLevel: 'high',
+        retrievedFactIds: [],
+        supportedFactIds: [],
+        confidence: null,
+        validationStatus: 'deflected_no_facts',
+        validationReason: 'no_verified_fact_match',
+        needsHuman: true,
+      },
+    };
+  }
+
+  // The safest and fastest path is an exact owner-approved answer. Avoid an
+  // LLM entirely when one verified fact fully matches the question.
+  if (
+    isFactualQuestion &&
+    retrievedFacts.length === 1 &&
+    retrievedFacts[0].answer.length <= 320
+  ) {
+    const fact = retrievedFacts[0];
+    pushDecision(input, {
+      handler: 'fallbackFlow.grounding',
+      phase: 'FLOW',
+      outcome: 'grounded_exact',
+      evidence: { supportedFactIds: [fact.id], source: fact.source },
+      durationMs: Date.now() - t0,
+    });
+    return {
+      nextState,
+      smsReply: fact.answer,
+      sideEffects: [],
+      flowType: FlowType.FALLBACK,
+      accuracy: {
+        purpose: 'factual_answer',
+        riskLevel: 'high',
+        retrievedFactIds: [fact.id],
+        supportedFactIds: [fact.id],
+        confidence: 1,
+        validationStatus: 'grounded',
+        needsHuman: false,
+      },
+    };
+  }
+
+  try {
+    const factualSystemPrompt = `You write one concise SMS answer using ONLY the verified facts below.
+
+Rules:
+- Return strict JSON only with exactly these keys:
+  {"answer":"...","supportedFactIds":["..."],"confidence":0.0,"needsHuman":false}
+- Every factual claim in answer must be supported by the cited fact IDs.
+- Never use general knowledge, assumptions, website memory, or conversation text as business facts.
+- Preserve exact prices, dates, times, addresses, URLs, and policy wording.
+- If the facts only partly answer the question, answer the supported part and set needsHuman=true.
+- Keep answer under 320 characters.
+
+Verified facts:
+${formatFactsForPrompt(retrievedFacts)}`;
+    const raw = await chatFn({
+      systemPrompt: isFactualQuestion ? factualSystemPrompt : systemPrompt,
+      userMessage: inboundMessage,
+      maxTokens: isFactualQuestion ? 180 : 80,
+      temperature: isFactualQuestion ? 0.1 : 0.2,
+      riskLevel: isFactualQuestion ? 'high' : 'low',
+    });
+
+    if (isFactualQuestion) {
+      const grounded = parseGroundedResponse(raw);
+      if (!grounded) {
+        pushDecision(input, {
+          handler: 'fallbackFlow.grounding',
+          phase: 'FLOW',
+          outcome: 'deflected_invalid_output',
+          reason: 'Provider did not return the grounded response contract',
+          evidence: { retrievedFactIds: retrievedFacts.map((fact) => fact.id) },
+          durationMs: Date.now() - t0,
+        });
+        return {
+          nextState,
+          smsReply: deflection,
+          sideEffects: [],
+          flowType: FlowType.FALLBACK,
+          accuracy: {
+            purpose: 'factual_answer',
+            riskLevel: 'high',
+            retrievedFactIds: retrievedFacts.map((fact) => fact.id),
+            supportedFactIds: [],
+            confidence: null,
+            validationStatus: 'deflected_invalid_output',
+            validationReason: 'invalid_grounded_response_contract',
+            needsHuman: true,
+          },
+        };
+      }
+
+      const validation = validateGroundedResponse({
+        response: grounded,
+        retrievedFacts,
+        userMessage: inboundMessage,
+      });
+      if (!validation.valid) {
+        pushDecision(input, {
+          handler: 'fallbackFlow.grounding',
+          phase: 'FLOW',
+          outcome: 'deflected_unsupported_claim',
+          reason: validation.reason,
+          evidence: {
+            retrievedFactIds: retrievedFacts.map((fact) => fact.id),
+            supportedFactIds: grounded.supportedFactIds,
+          },
+          durationMs: Date.now() - t0,
+        });
+        return {
+          nextState,
+          smsReply: deflection,
+          sideEffects: [],
+          flowType: FlowType.FALLBACK,
+          accuracy: {
+            purpose: 'factual_answer',
+            riskLevel: 'high',
+            retrievedFactIds: retrievedFacts.map((fact) => fact.id),
+            supportedFactIds: grounded.supportedFactIds,
+            confidence: grounded.confidence,
+            validationStatus: 'deflected_unsupported_claim',
+            validationReason: validation.reason,
+            needsHuman: true,
+          },
+        };
+      }
+
+      pushDecision(input, {
+        handler: 'fallbackFlow.grounding',
+        phase: 'FLOW',
+        outcome: 'grounded',
+        evidence: {
+          retrievedFactIds: retrievedFacts.map((fact) => fact.id),
+          supportedFactIds: grounded.supportedFactIds,
+          confidence: grounded.confidence,
+          needsHuman: grounded.needsHuman,
+        },
+        durationMs: Date.now() - t0,
+      });
+      return {
+        nextState,
+        smsReply: grounded.answer,
+        sideEffects: [],
+        flowType: FlowType.FALLBACK,
+        accuracy: {
+          purpose: 'factual_answer',
+          riskLevel: 'high',
+          retrievedFactIds: retrievedFacts.map((fact) => fact.id),
+          supportedFactIds: grounded.supportedFactIds,
+          confidence: grounded.confidence,
+          validationStatus: 'grounded',
+          needsHuman: grounded.needsHuman,
+        },
+      };
+    }
+
     let replyText = stripThinkTags(raw).replace(/^["']|["']$/g, '').trim();
 
     // Strip template-placeholder leaks like "[Stripe payment link would be
@@ -593,7 +775,21 @@ ${capabilities}${businessAddress}${websiteContext}${verticalGuidance}${catalogCo
       evidence: { replyLen: replyText.length },
       durationMs: Date.now() - t0,
     });
-    return { nextState, smsReply: replyText, sideEffects: [], flowType: FlowType.FALLBACK };
+    return {
+      nextState,
+      smsReply: replyText,
+      sideEffects: [],
+      flowType: FlowType.FALLBACK,
+      accuracy: {
+        purpose: 'general_conversation',
+        riskLevel: 'low',
+        retrievedFactIds: [],
+        supportedFactIds: [],
+        confidence: null,
+        validationStatus: 'not_applicable',
+        needsHuman: false,
+      },
+    };
   } catch (err) {
     // AI provider failure: deflect instead of silent drop so the caller
     // gets a response on the same turn.
@@ -604,6 +800,21 @@ ${capabilities}${businessAddress}${websiteContext}${verticalGuidance}${catalogCo
       reason: err instanceof Error ? err.message : String(err),
       durationMs: Date.now() - t0,
     });
-    return { nextState, smsReply: deflection, sideEffects: [], flowType: FlowType.FALLBACK };
+    return {
+      nextState,
+      smsReply: deflection,
+      sideEffects: [],
+      flowType: FlowType.FALLBACK,
+      accuracy: {
+        purpose: isFactualQuestion ? 'factual_answer' : 'general_conversation',
+        riskLevel: isFactualQuestion ? 'high' : 'low',
+        retrievedFactIds: retrievedFacts.map((fact) => fact.id),
+        supportedFactIds: [],
+        confidence: null,
+        validationStatus: 'provider_error',
+        validationReason: err instanceof Error ? err.message : String(err),
+        needsHuman: true,
+      },
+    };
   }
 }

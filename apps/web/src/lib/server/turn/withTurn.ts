@@ -82,6 +82,7 @@ export async function withTurn<T extends TurnResult>(
     decisions: [],
     llmCalled: false,
     llmLatencyMs: 0,
+    providerFallbackUsed: false,
     tenantConfigSnapshot: input.tenantConfigSnapshot,
     contactStateSnapshot: input.contactStateSnapshot,
   };

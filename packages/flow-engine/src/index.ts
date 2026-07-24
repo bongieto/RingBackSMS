@@ -33,6 +33,14 @@ export { runVerticalReadinessSuite } from './readiness';
 export type { ReadinessScenarioResult, ReadinessSuiteResult } from './readiness';
 export { extractVerticalIntake } from './intake';
 export type { StructuredIntake, StructuredIntakeField, StructuredIntakeMissingField } from './intake';
+export {
+  isLikelyFactualQuestion,
+  retrieveKnowledgeFacts,
+  parseGroundedResponse,
+  validateGroundedResponse,
+  formatFactsForPrompt,
+} from './knowledge';
+export type { GroundedResponse } from './knowledge';
 export type {
   VerticalKey,
   VerticalProfile,
@@ -71,4 +79,6 @@ export type {
   ChatWithToolsFn,
   AgentToolCall,
   AgentToolSchema,
+  VerifiedKnowledgeFact,
+  ResponseAccuracy,
 } from './types';

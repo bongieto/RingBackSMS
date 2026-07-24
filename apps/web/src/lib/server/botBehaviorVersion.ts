@@ -8,7 +8,7 @@ export interface BotBehaviorStamp {
 }
 
 export const BOT_BEHAVIOR_VERSION =
-  process.env.BOT_BEHAVIOR_VERSION?.trim() || 'accuracy-v1';
+  process.env.BOT_BEHAVIOR_VERSION?.trim() || 'grounded-accuracy-v2';
 export const BOT_PROMPT_VERSION =
   process.env.BOT_PROMPT_VERSION?.trim() || BOT_BEHAVIOR_VERSION;
 export const BOT_RULE_VERSION =

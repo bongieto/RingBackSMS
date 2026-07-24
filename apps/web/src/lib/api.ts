@@ -76,6 +76,18 @@ export const tenantApi = {
     }),
   sendInvite: (id: string, email: string, role: string = 'org:admin') =>
     webApi.post(`/tenants/${id}/invite`, { email, role }).then((r) => r.data.data),
+  getKnowledge: (id: string) =>
+    webApi.get(`/tenants/${id}/knowledge`).then((r) => r.data.data),
+  createKnowledgeFact: (id: string, data: Record<string, unknown>) =>
+    webApi.post(`/tenants/${id}/knowledge`, data).then((r) => r.data.data),
+  updateKnowledgeFact: (id: string, factId: string, data: Record<string, unknown>) =>
+    webApi.patch(`/tenants/${id}/knowledge/${factId}`, data).then((r) => r.data.data),
+  deleteKnowledgeFact: (id: string, factId: string) =>
+    webApi.delete(`/tenants/${id}/knowledge/${factId}`).then((r) => r.data.data),
+  getAccuracy: (id: string, days = 30) =>
+    webApi.get(`/tenants/${id}/knowledge/accuracy`, { params: { days } }).then((r) => r.data.data),
+  evaluateKnowledge: (id: string, provider: 'claude' | 'minimax') =>
+    webApi.post(`/tenants/${id}/knowledge/evaluate`, { provider }).then((r) => r.data.data),
 };
 
 export const orderApi = {

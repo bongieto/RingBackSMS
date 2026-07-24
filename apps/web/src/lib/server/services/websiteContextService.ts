@@ -247,6 +247,32 @@ export async function extractAndStoreWebsiteContext(
       where: { tenantId },
       data: { websiteContext: context },
     });
+    // Website text is useful as a draft, but it is not authoritative. Stage
+    // it as an unverified knowledge row so an owner can review/edit/approve
+    // it in AI Readiness before the bot is allowed to quote it.
+    await prisma.knowledgeFact.upsert({
+      where: {
+        tenantId_key: { tenantId, key: 'website.summary' },
+      },
+      create: {
+        tenantId,
+        key: 'website.summary',
+        category: 'SERVICES',
+        question: 'What does this business offer?',
+        answer: context.slice(0, 2000),
+        aliases: ['services', 'what do you do', 'what do you offer', 'about'],
+        source: 'WEBSITE',
+        sourceUrl: url,
+        isVerified: false,
+      },
+      update: {
+        answer: context.slice(0, 2000),
+        sourceUrl: url,
+        isVerified: false,
+        verifiedAt: null,
+        isActive: true,
+      },
+    });
     logger.info('Website context extracted', {
       tenantId,
       url,

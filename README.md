@@ -134,10 +134,13 @@ All variables are required unless marked optional.
 | `TWILIO_MASTER_AUTH_TOKEN` | Master account auth token |
 | `TWILIO_MESSAGING_SERVICE_SID` | A2P 10DLC Messaging Service SID — new tenant numbers are attached here |
 
-### MiniMax AI
+### AI providers
 | Variable | Description |
 |----------|-------------|
-| `MINIMAX_API_KEY` | API key for MiniMax (intent detection + AI replies) |
+| `ANTHROPIC_API_KEY` | Primary Claude API key; required for high-risk factual and transactional replies |
+| `AI_PRIMARY_MODEL` | Optional Claude model override |
+| `MINIMAX_API_KEY` | MiniMax API key for low-risk fallback and provider evaluation |
+| `MINIMAX_HIGH_RISK_ENABLED` | Optional; set to `1` only after MiniMax scores at least 90% in AI Knowledge live evaluation |
 
 ### Clerk
 | Variable | Description |
