@@ -7,7 +7,7 @@ import { markLlmCall } from '../turn/TurnContext';
 import { mergeBotBehaviorMetadata } from '../botBehaviorVersion';
 
 const CLAUDE_MODEL =
-  process.env.AI_PRIMARY_MODEL?.trim() || 'claude-sonnet-4-20250514';
+  process.env.AI_PRIMARY_MODEL?.trim() || 'claude-sonnet-4-6';
 const MINIMAX_MODEL = 'MiniMax-M2.7';
 const TIMEOUT_MS = 8000;
 
@@ -173,7 +173,17 @@ export async function chatCompletion(
   const minimax = providerMode === 'claude' ? null : getMinimaxClient();
   const highRiskFallbackEnabled =
     process.env.MINIMAX_HIGH_RISK_ENABLED === '1';
-  if (minimax && riskLevel === 'high' && !highRiskFallbackEnabled) {
+  // The authenticated accuracy evaluator must be able to test MiniMax before
+  // the production high-risk flag is enabled. Customer-facing calls still
+  // fail closed until the provider passes that evaluation and the flag flips.
+  const isExplicitAccuracyEvaluation =
+    providerMode === 'minimax' && purpose === 'accuracy_evaluation';
+  if (
+    minimax &&
+    riskLevel === 'high' &&
+    !highRiskFallbackEnabled &&
+    !isExplicitAccuracyEvaluation
+  ) {
     throw new Error(
       primaryFailed
         ? 'Primary AI failed; high-risk provider fallback is disabled'
