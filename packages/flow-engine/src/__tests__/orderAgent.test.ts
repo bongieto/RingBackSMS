@@ -264,6 +264,159 @@ describe('runOrderAgent', () => {
     expect(result.nextState.flowStep).toBe('ORDER_COMPLETE');
   });
 
+  test('current-session name and pickup are authoritative in the model prompt', async () => {
+    const state = {
+      tenantId: TENANT_ID,
+      callerPhone: '+12175550199',
+      conversationId: null,
+      currentFlow: FlowType.ORDER,
+      flowStep: 'ORDER_CONFIRM',
+      orderDraft: {
+        items: [{ menuItemId: LUMPIA_ID, name: 'Lumpia Shanghai', quantity: 2, price: 8.99 }],
+        pickupTime: '11 am',
+      },
+      customerName: 'Juan',
+      lastMessageAt: Date.now(),
+      messageCount: 3,
+      dedupKey: null,
+    } as any;
+    const input = mkInput('anything else?', [], 'Ready to confirm?', state);
+
+    await runOrderAgent(input);
+
+    const modelCall = (input.chatWithToolsFn as jest.Mock).mock.calls[0][0];
+    expect(modelCall.systemPrompt).toContain('# Current order session (AUTHORITATIVE)');
+    expect(modelCall.systemPrompt).toContain('Customer name: SET — Juan');
+    expect(modelCall.systemPrompt).toContain('Pickup/arrival time: SET — 11 am');
+    expect(modelCall.systemPrompt).toContain('Never ask for them again');
+  });
+
+  test('rewrites a redundant pickup-time question when pickup is already set', async () => {
+    const state = {
+      tenantId: TENANT_ID,
+      callerPhone: '+12175550199',
+      conversationId: null,
+      currentFlow: FlowType.ORDER,
+      flowStep: 'ORDER_CONFIRM',
+      orderDraft: {
+        items: [{ menuItemId: LUMPIA_ID, name: 'Lumpia Shanghai', quantity: 1, price: 8.99 }],
+        pickupTime: '11 am',
+      },
+      customerName: 'Juan',
+      lastMessageAt: Date.now(),
+      messageCount: 3,
+      dedupKey: null,
+    } as any;
+    const input = mkInput(
+      'anything else?',
+      [],
+      'What time would you like to pick up?',
+      state,
+    );
+    const decisions: any[] = [];
+    input.decisions = decisions;
+
+    const result = await runOrderAgent(input);
+
+    expect(result.nextState.flowStep).toBe('ORDER_CONFIRM');
+    expect(result.nextState.customerName).toBe('Juan');
+    expect(result.nextState.orderDraft?.pickupTime).toBe('11 am');
+    expect(result.smsReply).not.toMatch(/what time/i);
+    expect(result.smsReply).toMatch(/confirm/i);
+    expect(decisions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          outcome: 'redundant_slot_question_rewritten',
+          evidence: expect.objectContaining({ slot: 'pickup' }),
+        }),
+      ]),
+    );
+  });
+
+  test('name → pickup → confirmation keeps Juan and rewrites a redundant name question', async () => {
+    const initialState = {
+      tenantId: TENANT_ID,
+      callerPhone: '+12175550199',
+      conversationId: null,
+      currentFlow: FlowType.ORDER,
+      flowStep: 'ORDER_NAME',
+      orderDraft: {
+        items: [{ menuItemId: LUMPIA_ID, name: 'Lumpia Shanghai', quantity: 1, price: 8.99 }],
+      },
+      customerName: null,
+      lastMessageAt: Date.now(),
+      messageCount: 1,
+      dedupKey: null,
+    } as any;
+
+    const nameResult = await runOrderAgent(
+      mkInput(
+        'Juan',
+        [{ name: 'set_customer_name', input: { name: 'Juan' } }],
+        'Thanks, Juan. What time would you like to pick up?',
+        initialState,
+      ),
+    );
+    expect(nameResult.nextState.customerName).toBe('Juan');
+    expect(nameResult.nextState.flowStep).toBe('PICKUP_TIME');
+
+    const pickupResult = await runOrderAgent(
+      mkInput(
+        '11 am',
+        [{ name: 'set_pickup_time', input: { when: '11 am' } }],
+        'Got it — pickup 11 am. Ready to confirm?',
+        nameResult.nextState,
+      ),
+    );
+    expect(pickupResult.nextState.customerName).toBe('Juan');
+    expect(pickupResult.nextState.orderDraft?.pickupTime).toBe('11 am');
+    expect(pickupResult.nextState.flowStep).toBe('ORDER_CONFIRM');
+
+    const confirmInput = mkInput(
+      'yes',
+      [],
+      'Your cart already has items and pickup is set to 11 am. What name should I put this order under?',
+      pickupResult.nextState,
+    );
+    confirmInput.tenantContext = {
+      ...confirmInput.tenantContext,
+      config: {
+        ...confirmInput.tenantContext.config,
+        requirePayment: true,
+      } as any,
+    };
+    const decisions: any[] = [];
+    confirmInput.decisions = decisions;
+
+    const confirmResult = await runOrderAgent(confirmInput);
+
+    expect(confirmResult.nextState.customerName).toBe('Juan');
+    expect(confirmResult.nextState.flowStep).toBe('AWAITING_PAYMENT');
+    expect(confirmResult.smsReply).not.toMatch(/what name/i);
+    expect(confirmResult.smsReply).toMatch(/payment link/i);
+    expect(confirmResult.sideEffects.map((effect) => effect.type).sort()).toEqual([
+      'CREATE_PAYMENT_LINK',
+      'NOTIFY_OWNER',
+      'SAVE_ORDER',
+    ]);
+    expect(
+      confirmResult.sideEffects.find((effect) => effect.type === 'SAVE_ORDER'),
+    ).toEqual(
+      expect.objectContaining({
+        payload: expect.objectContaining({ customerName: 'Juan' }),
+      }),
+    );
+    expect(decisions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          handler: 'orderAgent',
+          outcome: 'redundant_slot_question_rewritten',
+          evidence: expect.objectContaining({ slot: 'name' }),
+        }),
+      ]),
+    );
+  });
+
   test('ask_clarification sets pendingClarification in state', async () => {
     // missing_field gets normalized against a whitelist so the stored
     // state never holds junk like "potato" that the next turn's prompt

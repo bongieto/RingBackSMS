@@ -294,6 +294,45 @@ function canonicalPrompt(
   }
 }
 
+type CompletedOrderSlot = 'name' | 'pickup';
+
+/**
+ * Detect when model prose asks for an order slot that deterministic state
+ * already contains. Tool calls and flow state remain authoritative; model
+ * prose is never allowed to contradict them.
+ */
+function findRedundantCompletedSlotQuestion(
+  reply: string,
+  state: { customerName: string | null; pickupTime: string | null | undefined },
+): CompletedOrderSlot | null {
+  if (!reply) return null;
+
+  if (
+    state.customerName &&
+    (
+      /\b(?:what|which)\s+name\b/i.test(reply) ||
+      /\bname\s+(?:should|shall|can|may|could)\s+i\b/i.test(reply) ||
+      /\b(?:can|may|could)\s+i\s+(?:have|get|take)\s+(?:your|the)\s+name\b/i.test(reply) ||
+      /\bwho(?:m)?\s+is\s+(?:this|the)\s+order\s+for\b/i.test(reply)
+    )
+  ) {
+    return 'name';
+  }
+
+  if (
+    state.pickupTime &&
+    (
+      /\b(?:what\s+time|when)\b[^?]{0,100}\b(?:pick[\s-]?up|collect|arriv)/i.test(reply) ||
+      /\b(?:what(?:'s| is)?|which)\s+(?:is\s+)?(?:the\s+)?(?:pickup|pick-up|arrival)\s+time\b/i.test(reply) ||
+      /\b(?:can|may|could)\s+i\s+(?:have|get)\s+(?:your|the)\s+(?:pickup|pick-up|arrival)\s+time\b/i.test(reply)
+    )
+  ) {
+    return 'pickup';
+  }
+
+  return null;
+}
+
 function buildOwnerOrderSummary(items: OrderDraft['items']): string {
   return items
     .map((i) => {
@@ -442,12 +481,20 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
     const soldOutItems = tenantContext.menuItems
       .filter((m) => m.isAvailable === false)
       .slice(0, 25);
+    const knownCustomerName =
+      (currentState?.customerName as string | null | undefined) ??
+      callerMemory?.contactName ??
+      null;
     const systemPrompt = buildOrderAgentSystemPrompt({
       tenantContext,
       filteredMenu,
       soldOutItems,
       draft,
       memory: callerMemory,
+      currentOrderState: {
+        customerName: knownCustomerName,
+        flowStep: currentState?.flowStep ?? null,
+      },
       pendingClarification: currentState?.pendingClarification ?? null,
       inboundMessage,
     });
@@ -480,10 +527,7 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
     //      read from Contact.name) — so returning customers don't need
     //      to re-state their name, and the Order row still gets stamped
     //   3. null — the prompt will prompt for it
-    let capturedName: string | null =
-      (currentState?.customerName as string | null | undefined) ??
-      callerMemory?.contactName ??
-      null;
+    let capturedName: string | null = knownCustomerName;
     const toolErrors: string[] = [];
     // Messages from mutation results that should surface to the customer
     // — e.g. "skipped: Calamansi Sizzler: 'Sour Lemon' isn't a valid
@@ -882,6 +926,31 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
           flowType: FlowType.ORDER,
         };
       }
+    }
+
+    // ── REDUNDANT COMPLETED-SLOT QUESTION GUARD ──
+    // The model can emit prose that contradicts the tool/state result. A
+    // production example asked "What name should I put this order under?"
+    // even though currentState.customerName was "Juan". In payment mode,
+    // confirm handling trusted that prose while still advancing the order,
+    // making the customer believe their name was lost. Discard contradictory
+    // prose before confirm/payment reply selection or the normal fallback.
+    const redundantSlot = findRedundantCompletedSlotQuestion(aiResponse.text, {
+      customerName: capturedName,
+      pickupTime: draft.pickupTime,
+    });
+    if (redundantSlot) {
+      pushDecision(input, {
+        handler: 'orderAgent',
+        phase: 'POST_HANDLER',
+        outcome: 'redundant_slot_question_rewritten',
+        evidence: {
+          slot: redundantSlot,
+          flowStep: currentState?.flowStep ?? null,
+        },
+        durationMs: 0,
+      });
+      (aiResponse as { text: string }).text = '';
     }
 
     // ── CANCEL ──

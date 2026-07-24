@@ -697,6 +697,15 @@ async function processInboundSmsInner(
       flowStep: currentState?.flowStep ?? null,
       currentFlow: currentState?.currentFlow ?? null,
       conversationId: currentState?.conversationId ?? null,
+      orderSlots: {
+        itemCount: currentState?.orderDraft?.items?.reduce(
+          (sum, item) => sum + item.quantity,
+          0,
+        ) ?? 0,
+        hasCustomerName: Boolean(currentState?.customerName),
+        hasPickupTime: Boolean(currentState?.orderDraft?.pickupTime),
+        dineIn: currentState?.orderDraft?.dineIn === true,
+      },
       botBehavior,
     },
   });

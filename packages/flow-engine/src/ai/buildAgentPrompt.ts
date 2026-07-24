@@ -52,6 +52,13 @@ export interface BuildAgentPromptArgs {
   soldOutItems?: MenuItem[];
   draft: OrderDraft | null;
   memory?: CallerMemory;
+  /** Authoritative fields captured during the current order session.
+   *  These are separate from CallerMemory because a newly supplied name
+   *  is not written to Contact until the order is saved. */
+  currentOrderState?: {
+    customerName?: string | null;
+    flowStep?: string | null;
+  };
   pendingClarification?: { field: string; question: string } | null;
   /** Raw inbound customer message, used for deterministic item-name
    *  hinting. When the customer's text contains a menu-item name as a
@@ -359,7 +366,16 @@ function formatSoldOut(items: MenuItem[] | undefined): string {
 }
 
 export function buildOrderAgentSystemPrompt(args: BuildAgentPromptArgs): string {
-  const { tenantContext, filteredMenu, soldOutItems, draft, memory, pendingClarification, inboundMessage } = args;
+  const {
+    tenantContext,
+    filteredMenu,
+    soldOutItems,
+    draft,
+    memory,
+    currentOrderState,
+    pendingClarification,
+    inboundMessage,
+  } = args;
   const itemHints = formatItemHints(inboundMessage, filteredMenu);
   const menuUrl =
     tenantContext.tenantSlug != null
@@ -419,6 +435,12 @@ ${businessLimitsBlock}
 
 # Customer memory
 ${formatMemory(memory)}
+
+# Current order session (AUTHORITATIVE)
+Flow step: ${currentOrderState?.flowStep ?? '(not started)'}
+Customer name: ${currentOrderState?.customerName ? `SET — ${currentOrderState.customerName}` : 'MISSING'}
+Pickup/arrival time: ${draft?.pickupTime ? `SET — ${draft.pickupTime}` : 'MISSING'}
+Fields marked SET were already captured for this order. Never ask for them again unless the customer explicitly changes or corrects them. Current order session values override prior Customer memory.
 
 # Current cart
 ${draft ? formatCart(draft) : '(cart empty)'}
