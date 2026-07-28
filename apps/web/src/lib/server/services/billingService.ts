@@ -11,6 +11,24 @@ const PLAN_PRICE_IDS: Record<Plan, string | undefined> = {
   [Plan.SCALE]: process.env.STRIPE_SCALE_PRICE_ID?.trim(),
 };
 
+// The env at one point carried price IDs under an older plan catalog's
+// names (STARTER/GROWTH/ENTERPRISE) that nothing in this codebase reads —
+// checkout would then fail with "No Stripe price configured" for every
+// paid plan. Detect that drift once at module load and shout, so the fix
+// (rename the vars in Vercel to STRIPE_PRO/BUSINESS/SCALE_PRICE_ID) is
+// obvious from the logs instead of needing a code archaeology session.
+{
+  const legacyNames = ['STRIPE_STARTER_PRICE_ID', 'STRIPE_GROWTH_PRICE_ID', 'STRIPE_ENTERPRISE_PRICE_ID'];
+  const legacySet = legacyNames.filter((n) => process.env[n]?.trim());
+  const expectedMissing = !PLAN_PRICE_IDS[Plan.PRO] && !PLAN_PRICE_IDS[Plan.BUSINESS];
+  if (legacySet.length > 0 && expectedMissing) {
+    logger.error(
+      'Stripe price IDs are set under legacy env names the code does not read — paid checkout will fail. Rename them to STRIPE_PRO_PRICE_ID / STRIPE_BUSINESS_PRICE_ID / STRIPE_SCALE_PRICE_ID.',
+      { legacyVarsFound: legacySet },
+    );
+  }
+}
+
 const ANNUAL_PLAN_PRICE_IDS: Record<Plan, string | undefined> = {
   [Plan.FREE]: undefined,
   [Plan.PRO]: process.env.STRIPE_PRO_ANNUAL_PRICE_ID?.trim(),
@@ -177,10 +195,29 @@ export async function handleSubscriptionUpdated(
     return;
   }
 
-  let plan: Plan = Plan.FREE;
+  // Resolve the plan from the subscription's price IDs. Note the metered
+  // SMS price is also an item here and intentionally matches nothing.
+  let plan: Plan | undefined;
   for (const item of subscription.items.data) {
     const matched = planFromPriceId(item.price.id);
     if (matched) { plan = matched; break; }
+  }
+
+  // If NOTHING matched, the price IDs in Stripe don't line up with the
+  // STRIPE_*_PRICE_ID env vars. This used to default to Plan.FREE and
+  // write it — silently downgrading a customer who is actively being
+  // billed. Never do that: record the subscription link and status, but
+  // leave `plan` untouched and shout, so the misconfiguration surfaces
+  // instead of quietly stripping someone's paid features.
+  if (!plan) {
+    logger.error(
+      'Stripe subscription price ID matched no configured plan — leaving tenant plan unchanged. Check STRIPE_*_PRICE_ID env vars.',
+      {
+        tenantId,
+        subscriptionId: subscription.id,
+        priceIds: subscription.items.data.map((i) => i.price.id),
+      },
+    );
   }
 
   const previousTenant = await prisma.tenant.findUnique({
@@ -193,14 +230,18 @@ export async function handleSubscriptionUpdated(
     where: { id: tenantId },
     data: {
       stripeSubscriptionId: subscription.id,
-      plan,
+      ...(plan ? { plan } : {}),
       isActive: subscription.status === 'active' || subscription.status === 'trialing',
     },
   });
 
-  logger.info('Subscription updated', { tenantId, plan, status: subscription.status });
+  logger.info('Subscription updated', {
+    tenantId,
+    plan: plan ?? '(unchanged — no price match)',
+    status: subscription.status,
+  });
 
-  if (isNewSubscription && (subscription.status === 'active' || subscription.status === 'trialing')) {
+  if (isNewSubscription && plan && (subscription.status === 'active' || subscription.status === 'trialing')) {
     sendWelcomeEmail(tenantId, plan).catch((err) =>
       logger.error('Failed to send welcome email', { err, tenantId })
     );

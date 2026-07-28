@@ -419,12 +419,45 @@ export async function POST(request: NextRequest) {
         const callerPhone = session.metadata?.callerPhone;
 
         if (orderId) {
-          // Pay-after-order: mark existing order as expired
-          await prisma.order.update({
-            where: { id: orderId },
+          // Pay-after-order: mark existing order as expired.
+          //
+          // MUST NOT clobber an order that's already PAID. The /pay
+          // interstitial mints a NEW checkout session every time the
+          // customer changes their tip, and the older sessions stay
+          // open until their 30-minute expires_at. So the normal
+          // sequence for a customer who adjusts a tip is:
+          //
+          //   session A created → session B created → customer pays B
+          //   → order PAID + pushed to POS → 30 min later A expires
+          //
+          // That trailing expiry event carries the same metadata.orderId
+          // and used to blindly overwrite paymentStatus back to EXPIRED —
+          // silently un-paying an order we'd already charged and sent to
+          // the kitchen. updateMany (not update) because a filtered
+          // `update` throws P2025 when nothing matches, which would fail
+          // the whole webhook.
+          // paymentStatus is a nullable String, so `notIn` alone would
+          // skip NULL rows (SQL NOT IN is UNKNOWN against NULL) and
+          // quietly narrow the old unconditional behaviour. Match NULL
+          // explicitly — only PAID/REFUNDED are protected.
+          const expired = await prisma.order.updateMany({
+            where: {
+              id: orderId,
+              OR: [
+                { paymentStatus: null },
+                { paymentStatus: { notIn: ['PAID', 'REFUNDED'] } },
+              ],
+            },
             data: { paymentStatus: 'EXPIRED' },
           });
-          logger.info('Checkout session expired', { orderId });
+          if (expired.count === 0) {
+            logger.info('Checkout session expired for already-settled order, ignoring', {
+              orderId,
+              sessionId: session.id,
+            });
+          } else {
+            logger.info('Checkout session expired', { orderId });
+          }
         } else if (tenantId && callerPhone) {
           // Payment-first: clear pending state, notify customer
           const callerState = await getCallerState(tenantId, callerPhone);

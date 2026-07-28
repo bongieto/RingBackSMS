@@ -128,21 +128,31 @@ export async function handleSubscriptionUpdated(
   }
 
   const planEntry = Object.entries(PLAN_PRICE_IDS).find(([, priceId]) =>
-    subscription.items.data.some((item) => item.price.id === priceId)
+    priceId && subscription.items.data.some((item) => item.price.id === priceId)
   );
 
-  const plan = planEntry ? (planEntry[0] as Plan) : Plan.FREE;
+  // No match means the STRIPE_*_PRICE_ID env vars don't line up with the
+  // subscription's actual price IDs. Defaulting to FREE here would
+  // silently downgrade a paying customer — keep their current plan and
+  // log loudly instead. (Mirrors the same guard in apps/web.)
+  const plan = planEntry ? (planEntry[0] as Plan) : undefined;
+  if (!plan) {
+    logger.error(
+      'Stripe subscription price ID matched no configured plan — leaving tenant plan unchanged. Check STRIPE_*_PRICE_ID env vars.',
+      { tenantId, subscriptionId: subscription.id, priceIds: subscription.items.data.map((i) => i.price.id) }
+    );
+  }
 
   await prisma.tenant.update({
     where: { id: tenantId },
     data: {
       stripeSubscriptionId: subscription.id,
-      plan,
+      ...(plan ? { plan } : {}),
       isActive: subscription.status === 'active' || subscription.status === 'trialing',
     },
   });
 
-  logger.info('Subscription updated', { tenantId, plan, status: subscription.status });
+  logger.info('Subscription updated', { tenantId, plan: plan ?? '(unchanged — no price match)', status: subscription.status });
 }
 
 export async function handleSubscriptionDeleted(
