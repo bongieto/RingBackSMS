@@ -129,6 +129,38 @@ router.post('/stripe', async (req: Request, res: Response) => {
     return;
   }
 
+  // Idempotency: Stripe delivers at-least-once and the Dashboard has a
+  // manual "Resend" button. Mirrors the dedup in apps/web's Stripe
+  // webhook (findUnique first, then create; P2002 = concurrent
+  // duplicate; any other DB error = 500 so Stripe retries with a fresh
+  // dedup check rather than silently bypassing it).
+  try {
+    const existing = await prisma.webhookEventLog.findUnique({
+      where: { id: event.id },
+      select: { id: true },
+    });
+    if (existing) {
+      logger.info('Duplicate Stripe webhook event, skipping', { eventId: event.id, type: event.type });
+      res.status(200).json({ received: true, duplicate: true });
+      return;
+    }
+    await prisma.webhookEventLog.create({
+      data: { id: event.id, provider: 'stripe', eventType: event.type },
+    });
+  } catch (err: unknown) {
+    if ((err as { code?: string })?.code === 'P2002') {
+      logger.info('Duplicate Stripe webhook event (race), skipping', { eventId: event.id });
+      res.status(200).json({ received: true, duplicate: true });
+      return;
+    }
+    logger.error('WebhookEventLog dedup failed — returning 500 to force Stripe retry', {
+      eventId: event.id,
+      err: (err as Error)?.message,
+    });
+    res.status(500).json({ error: 'Dedup check failed' });
+    return;
+  }
+
   try {
     switch (event.type) {
       case 'customer.subscription.updated':

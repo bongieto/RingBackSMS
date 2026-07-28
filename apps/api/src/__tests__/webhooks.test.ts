@@ -7,13 +7,22 @@ jest.mock('@prisma/client', () => {
   const mockCreate = jest.fn().mockResolvedValue({ id: 'mc-1', smsSent: false });
   const mockUpdate = jest.fn().mockResolvedValue({});
   const mockFindUnique = jest.fn();
+  const mockEventLogFindUnique = jest.fn().mockResolvedValue(null);
+  const mockEventLogCreate = jest.fn().mockResolvedValue({});
 
   return {
     PrismaClient: jest.fn().mockImplementation(() => ({
       missedCall: { create: mockCreate, update: mockUpdate },
       tenant: { findUnique: mockFindUnique },
+      webhookEventLog: { findUnique: mockEventLogFindUnique, create: mockEventLogCreate },
     })),
-    __mocks: { create: mockCreate, update: mockUpdate, findUnique: mockFindUnique },
+    __mocks: {
+      create: mockCreate,
+      update: mockUpdate,
+      findUnique: mockFindUnique,
+      eventLogFindUnique: mockEventLogFindUnique,
+      eventLogCreate: mockEventLogCreate,
+    },
   };
 });
 
@@ -151,6 +160,70 @@ describe('Webhook routes', () => {
         .send({ type: 'catalog.version.updated', merchant_id: 'MERCHANT1' });
 
       expect(res.status).toBe(200);
+    });
+  });
+
+  describe('POST /stripe — idempotency dedup', () => {
+    const { __mocks } = jest.requireMock('@prisma/client') as {
+      __mocks: { eventLogFindUnique: jest.Mock; eventLogCreate: jest.Mock };
+    };
+    const billing = jest.requireMock('../services/billingService') as {
+      constructStripeEvent: jest.Mock;
+      handleSubscriptionUpdated: jest.Mock;
+    };
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      billing.constructStripeEvent.mockReturnValue({
+        id: 'evt_test_123',
+        type: 'customer.subscription.updated',
+        data: { object: { id: 'sub_1' } },
+      });
+    });
+
+    it('processes a first-time event and logs it', async () => {
+      __mocks.eventLogFindUnique.mockResolvedValue(null);
+      __mocks.eventLogCreate.mockResolvedValue({});
+
+      const res = await request(app).post('/stripe').send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ received: true });
+      expect(__mocks.eventLogCreate).toHaveBeenCalledWith({
+        data: { id: 'evt_test_123', provider: 'stripe', eventType: 'customer.subscription.updated' },
+      });
+      expect(billing.handleSubscriptionUpdated).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips a duplicate event without re-invoking the handler', async () => {
+      __mocks.eventLogFindUnique.mockResolvedValue({ id: 'evt_test_123' });
+
+      const res = await request(app).post('/stripe').send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ received: true, duplicate: true });
+      expect(__mocks.eventLogCreate).not.toHaveBeenCalled();
+      expect(billing.handleSubscriptionUpdated).not.toHaveBeenCalled();
+    });
+
+    it('treats a P2002 race on insert as a duplicate', async () => {
+      __mocks.eventLogFindUnique.mockResolvedValue(null);
+      __mocks.eventLogCreate.mockRejectedValue(Object.assign(new Error('unique'), { code: 'P2002' }));
+
+      const res = await request(app).post('/stripe').send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ received: true, duplicate: true });
+      expect(billing.handleSubscriptionUpdated).not.toHaveBeenCalled();
+    });
+
+    it('returns 500 on a non-P2002 dedup failure so Stripe retries', async () => {
+      __mocks.eventLogFindUnique.mockRejectedValue(new Error('db down'));
+
+      const res = await request(app).post('/stripe').send({});
+
+      expect(res.status).toBe(500);
+      expect(billing.handleSubscriptionUpdated).not.toHaveBeenCalled();
     });
   });
 });
