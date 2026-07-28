@@ -35,13 +35,24 @@ export async function GET(req: NextRequest) {
   }
 
   const cutoff = new Date(Date.now() - TWO_HOURS_MS + JITTER_MS);
-  // Eligible orders: COMPLETED status, updatedAt at least 2h old-ish,
-  // no existing OrderReview for this orderId. We LEFT JOIN via Prisma's
-  // `reviews: { none: {} }` filter on the 1-1 relation.
+  // NARROW WINDOW lower bound. Without it, every tick re-selected ALL
+  // unreviewed completed orders forever (updatedAt never changes after
+  // COMPLETED and there's no promptedAt marker), re-texting the same
+  // customers every 15 minutes. This bug was latent for months because
+  // the cron never actually ran (CRON_SECRET missing) — the moment
+  // crons came alive it flushed a months-old backlog in one tick.
+  // Window is [2h, 2h20m] old: 20m span covers the 15m tick interval
+  // plus scheduling slop, so each order is seen by exactly one tick
+  // (worst case two — the OrderReview upsert on send would be the real
+  // fix; see promptedAt TODO below).
+  const windowFloor = new Date(Date.now() - TWO_HOURS_MS - 20 * 60 * 1000);
+  // Eligible orders: COMPLETED status, updatedAt inside the narrow
+  // window, no existing OrderReview for this orderId. We LEFT JOIN via
+  // Prisma's `reviews: { none: {} }` filter on the 1-1 relation.
   const eligible = await prisma.order.findMany({
     where: {
       status: 'COMPLETED',
-      updatedAt: { lte: cutoff },
+      updatedAt: { lte: cutoff, gte: windowFloor },
     },
     select: {
       id: true,
@@ -71,13 +82,10 @@ export async function GET(req: NextRequest) {
   // prompted. NOT IDEAL — better to add a `promptedAt` column in a
   // future migration. For now: rely on the review-reply handler to
   // create the real review, and the 2h+ window to naturally prevent
-  // double-prompts (cron fires every 15 min; we filter by updatedAt
-  // which doesn't change after COMPLETED; if we sent once and didn't
-  // get a reply, we'd re-send — TODO: add promptedAt).
-  // Workaround: cap at one attempt per order by matching updatedAt age
-  // to a NARROW window (2h to 2h15min). If operator marks COMPLETED
-  // and customer replies within 2h15min, we don't re-prompt.
-  const narrowCutoff = new Date(Date.now() - TWO_HOURS_MS);
+  // double-prompts within the window (cron fires every 15 min; the
+  // narrow updatedAt window above caps each order to ~one tick).
+  // TODO: a promptedAt column on Order would make this exact instead
+  // of window-based.
   const narrowEligible = eligible.filter(
     (o) => !reviewedSet.has(o.id) && o.callerPhone,
   );
@@ -104,9 +112,6 @@ export async function GET(req: NextRequest) {
       });
     }
   }
-
-  // narrowCutoff was only used to document the TODO; suppress unused.
-  void narrowCutoff;
 
   logger.info('Review-prompt cron tick', { eligible: eligible.length, reviewed: reviewedSet.size, sent });
   return Response.json({ checked: eligible.length, sent });
