@@ -240,6 +240,27 @@ export async function POST(request: NextRequest) {
           });
           logger.info('Order payment completed', { orderId, tenantId });
 
+          // Advance the caller's flow state out of AWAITING_PAYMENT.
+          // Without this, the customer's next text after paying still hit
+          // the "your payment link is already out" branch. Best-effort —
+          // Redis state may have expired already.
+          if (callerPhone) {
+            try {
+              const cs = await getCallerState(tenantId, callerPhone);
+              if (cs?.flowStep === 'AWAITING_PAYMENT') {
+                await setCallerState({
+                  ...cs,
+                  flowStep: 'ORDER_COMPLETE',
+                  orderDraft: null,
+                  paymentPending: null,
+                  lastMessageAt: Date.now(),
+                });
+              }
+            } catch (err) {
+              logger.warn('Failed to advance caller state after payment', { err, tenantId });
+            }
+          }
+
           // Push to POS now that payment is confirmed. Skipped at
           // createOrder time for PENDING orders. If the order was
           // previously pushed (e.g. resubmitted), the adapter's

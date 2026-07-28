@@ -527,7 +527,10 @@ describe('runOrderAgent', () => {
     const input = mkInput('nevermind', [{ name: 'cancel_order', input: {} }], 'No problem!', state);
     const result = await runOrderAgent(input);
     expect(result.nextState.orderDraft).toBeNull();
-    expect(result.nextState.flowStep).toBe('ORDER_COMPLETE');
+    // Bare cancel-intent now short-circuits before the LLM and lands in
+    // MENU_DISPLAY (ready for a fresh order) — the same post-cancel state
+    // the AWAITING_PAYMENT and regex-flow cancel paths use.
+    expect(result.nextState.flowStep).toBe('MENU_DISPLAY');
     expect(result.sideEffects).toHaveLength(0);
   });
 
@@ -874,6 +877,162 @@ describe('runOrderAgent', () => {
     expect(result.nextState.flowStep).toBe('MENU_DISPLAY');
     expect(result.nextState.orderDraft).toBeNull();
     expect(result.smsReply.toLowerCase()).toMatch(/cancelled/);
+  });
+
+  // Production incident 2026-07-24/28: customers replied "Yes"/"Confirmed"
+  // to the payment-pending message and got the same "already out" dead-end
+  // back, twice, then abandoned. "Yes" while a link is pending should
+  // RESEND the link with the amount the link actually charges.
+  test('AWAITING_PAYMENT + "Yes" with stored link → resends link with pending total', async () => {
+    const state = {
+      tenantId: TENANT_ID,
+      callerPhone: '+12175550199',
+      conversationId: null,
+      currentFlow: FlowType.ORDER,
+      flowStep: 'AWAITING_PAYMENT',
+      orderDraft: null,
+      customerName: 'Yanna',
+      paymentPending: {
+        pickupTime: '6pm',
+        notes: null,
+        stripeSessionId: 'cs_test_123',
+        createdAt: Date.now(),
+        paymentUrl: 'https://ringbacksms.com/pay/abc-123',
+        total: 43.18,
+      },
+      lastMessageAt: Date.now(),
+      messageCount: 5,
+      dedupKey: null,
+    } as any;
+    const result = await runOrderAgent({
+      tenantContext,
+      callerPhone: '+12175550199',
+      inboundMessage: 'Yes',
+      currentState: state,
+      chatFn,
+      chatWithToolsFn: jest.fn() as any,
+      callerMemory: {
+        // Deliberately DIFFERENT total — the bug was quoting this one.
+        activeOrder: { orderNumber: 'ORD-1', status: 'PENDING', total: 40.91 },
+      } as any,
+    });
+    expect(result.smsReply).toContain('https://ringbacksms.com/pay/abc-123');
+    expect(result.smsReply).toContain('43.18');
+    expect(result.smsReply).not.toContain('40.91');
+    // Not a cancel, not a restart
+    expect(result.nextState.flowStep).toBe('AWAITING_PAYMENT');
+  });
+
+  // Production case 2026-07-24: "Pls cancel this." got "What can I get
+  // started for you?" — cart intact. Bare cancel-intent must cancel
+  // deterministically, before the LLM can reinterpret it.
+  test.each(['Pls cancel this.', 'cancel', 'Please cancel my order', 'CANCEL IT', 'cancel everything'])(
+    '"%s" cancels the draft without invoking the LLM',
+    async (msg) => {
+      const llmSpy: ChatWithToolsFn = jest.fn().mockResolvedValue({
+        text: 'should not be called',
+        toolCalls: [],
+        stopReason: 'end_turn',
+        provider: 'claude' as const,
+      });
+      const state = {
+        tenantId: TENANT_ID,
+        callerPhone: '+12175550199',
+        conversationId: null,
+        currentFlow: FlowType.ORDER,
+        flowStep: 'ORDER_CONFIRM',
+        orderDraft: {
+          items: [{ menuItemId: 'mi-1', name: '#LB13 Pancit (Noodles)', quantity: 1, price: 12.99 }],
+          pickupTime: 'tomorrow 1pm',
+        },
+        customerName: 'Lea Jamora',
+        lastMessageAt: Date.now(),
+        messageCount: 4,
+        dedupKey: null,
+      } as any;
+      const result = await runOrderAgent({
+        tenantContext,
+        callerPhone: '+12175550199',
+        inboundMessage: msg,
+        currentState: state,
+        chatFn,
+        chatWithToolsFn: llmSpy,
+      });
+      expect(llmSpy).not.toHaveBeenCalled();
+      expect(result.nextState.orderDraft).toBeNull();
+      expect(result.nextState.flowStep).toBe('MENU_DISPLAY');
+      expect(result.smsReply.toLowerCase()).toContain('cancelled');
+    },
+  );
+
+  test('"cancel the lumpia and add sisig" is a cart edit, NOT a full cancel', async () => {
+    const llmSpy: ChatWithToolsFn = jest.fn().mockResolvedValue({
+      text: 'Updated your order.',
+      toolCalls: [],
+      stopReason: 'end_turn',
+      provider: 'claude' as const,
+    });
+    const state = {
+      tenantId: TENANT_ID,
+      callerPhone: '+12175550199',
+      conversationId: null,
+      currentFlow: FlowType.ORDER,
+      flowStep: 'ORDER_CONFIRM',
+      orderDraft: {
+        items: [{ menuItemId: 'mi-1', name: '#A1 Lumpia Regular', quantity: 1, price: 10.99 }],
+        pickupTime: '6pm',
+      },
+      customerName: 'Yanna',
+      lastMessageAt: Date.now(),
+      messageCount: 4,
+      dedupKey: null,
+    } as any;
+    await runOrderAgent({
+      tenantContext,
+      callerPhone: '+12175550199',
+      inboundMessage: 'cancel the lumpia and add sisig',
+      currentState: state,
+      chatFn,
+      chatWithToolsFn: llmSpy,
+    });
+    expect(llmSpy).toHaveBeenCalled();
+  });
+
+  test('AWAITING_PAYMENT quotes paymentPending.total over activeOrder.total in the fallback reply', async () => {
+    const state = {
+      tenantId: TENANT_ID,
+      callerPhone: '+12175550199',
+      conversationId: null,
+      currentFlow: FlowType.ORDER,
+      flowStep: 'AWAITING_PAYMENT',
+      orderDraft: null,
+      customerName: 'Yanna',
+      paymentPending: {
+        pickupTime: '6pm',
+        notes: null,
+        stripeSessionId: 'cs_test_123',
+        createdAt: Date.now(),
+        paymentUrl: 'https://ringbacksms.com/pay/abc-123',
+        total: 43.18,
+      },
+      lastMessageAt: Date.now(),
+      messageCount: 5,
+      dedupKey: null,
+      lastAwaitingPaymentReplyAt: null,
+    } as any;
+    const result = await runOrderAgent({
+      tenantContext,
+      callerPhone: '+12175550199',
+      inboundMessage: 'add laing too',
+      currentState: state,
+      chatFn,
+      chatWithToolsFn: jest.fn() as any,
+      callerMemory: {
+        activeOrder: { orderNumber: 'ORD-1', status: 'PENDING', total: 40.91 },
+      } as any,
+    });
+    expect(result.smsReply).toMatch(/already out for \$43\.18/);
+    expect(result.smsReply).toContain('https://ringbacksms.com/pay/abc-123');
   });
 });
 

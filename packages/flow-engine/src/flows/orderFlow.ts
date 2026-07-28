@@ -733,7 +733,7 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
 
   // ── AWAITING_PAYMENT (customer texted while waiting for payment) ──────────
   if (step === 'AWAITING_PAYMENT') {
-    if (upperMsg === 'NEVERMIND' || upperMsg === 'NO') {
+    if (upperMsg === 'NEVERMIND' || upperMsg === 'NO' || upperMsg === 'CANCEL' || upperMsg === 'CANCEL ORDER') {
       const nextState: CallerState = {
         ...buildInitialState(input),
         flowStep: 'MENU_DISPLAY',
@@ -747,6 +747,38 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       };
     }
 
+    // The total we quote MUST be the pending checkout session's total —
+    // the number Stripe will actually charge. We used to quote
+    // callerMemory.activeOrder.total, which could be a DIFFERENT order's
+    // total (or the same order pre-tax): a real customer confirmed a
+    // $35.96 cart, then was told "your link is already out for $40.91" —
+    // a number they'd never seen — said "Yes" twice, got the same
+    // message twice, and abandoned the order. Only fall back to
+    // activeOrder for legacy states written before paymentPending.total
+    // existed.
+    const pendingTotal = currentState?.paymentPending?.total;
+    const activeTotal = input.callerMemory?.activeOrder?.total;
+    const quotedTotal = typeof pendingTotal === 'number' ? pendingTotal : activeTotal;
+    const totalStr = typeof quotedTotal === 'number' ? quotedTotal.toFixed(2) : null;
+    const paymentUrl = currentState?.paymentPending?.paymentUrl ?? null;
+
+    // "Yes" / "Confirm" here means the customer is agreeing AGAIN —
+    // usually because they never saw or lost the payment link. Treating
+    // it as an unrecognized message (the old behavior) produced a dead
+    // loop: "Ready to confirm?" → "Yes" → "your link is already out,
+    // reply NO to start over". Resend the link instead.
+    const AFFIRMATIONS = ['YES', 'CONFIRM', 'CONFIRMED', 'OK', 'OKAY', 'YEP', 'YEAH', 'SURE', 'Y'];
+    if (AFFIRMATIONS.includes(upperMsg.replace(/[.!]+$/, '').trim()) && paymentUrl) {
+      return {
+        nextState: { ...currentState, lastMessageAt: Date.now() },
+        smsReply: totalStr
+          ? `You're all set — just complete payment here${totalStr ? ` ($${totalStr})` : ''}: ${paymentUrl}\nYour order is confirmed once paid.`
+          : `You're all set — just complete payment here: ${paymentUrl}\nYour order is confirmed once paid.`,
+        sideEffects: [],
+        flowType: FlowType.ORDER,
+      };
+    }
+
     // Customer texted something other than NO — likely trying to add items
     // or change something after the payment link is already out. We can't
     // safely mutate the pending order (the Stripe link is locked to the
@@ -754,11 +786,10 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
     // they need to restart, and (2) ping the owner so a human can step in.
     // Rate-limit owner notifications to once per 60s per caller — protects
     // the owner from a spammy customer firing 10 messages in 30s.
-    const activeTotal = input.callerMemory?.activeOrder?.total;
-    const totalStr = typeof activeTotal === 'number' ? activeTotal.toFixed(2) : null;
+    const linkSuffix = paymentUrl ? ` Pay here: ${paymentUrl}` : '';
     const reply = totalStr
-      ? `Your payment link is already out for $${totalStr}. Reply NO to start over with the new items, or wait — we'll text you once payment confirms.`
-      : `Your payment link is already out. Reply NO to start over with the new items, or wait — we'll text you once payment confirms.`;
+      ? `Your payment link is already out for $${totalStr}.${linkSuffix} Reply NO to start over with the new items, or wait — we'll text you once payment confirms.`
+      : `Your payment link is already out.${linkSuffix} Reply NO to start over with the new items, or wait — we'll text you once payment confirms.`;
 
     const NOTIFY_RATE_LIMIT_MS = 60_000;
     const lastNotifiedAt = currentState?.lastAwaitingPaymentReplyAt ?? null;

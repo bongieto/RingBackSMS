@@ -2162,6 +2162,32 @@ async function processSideEffect(
               paymentStatus: 'PENDING',
             },
           });
+          // Also stash the link + total in Redis state so AWAITING_PAYMENT
+          // can resend it when the customer texts "yes/confirm" (they often
+          // lose the link) and quote the exact amount the link charges.
+          // For pay-after-order the customer-facing link is the /pay
+          // interstitial (tip selection), not the raw Stripe URL. The
+          // webhook's payment-first branches key on orderDraft + metadata
+          // orderId, so setting paymentPending here doesn't affect them.
+          try {
+            const appBaseForState = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://ringbacksms.com').replace(/\/+$/, '');
+            const currentState = await getCallerState(tenantId, callerPhone);
+            if (currentState) {
+              await setCallerState({
+                ...currentState,
+                paymentPending: {
+                  pickupTime: effect.payload.pickupTime ?? '',
+                  notes: effect.payload.notes ?? null,
+                  stripeSessionId: sessionId,
+                  createdAt: Date.now(),
+                  paymentUrl: `${appBaseForState}/pay/${context.orderId}`,
+                  total: effect.payload.total,
+                },
+              });
+            }
+          } catch (err) {
+            logger.warn('Failed to stash paymentPending for pay-after-order', { err, tenantId });
+          }
         } else {
           // Payment-first flow — store pending payment in Redis
           const currentState = await getCallerState(tenantId, callerPhone);
@@ -2173,6 +2199,8 @@ async function processSideEffect(
                 notes: effect.payload.notes ?? null,
                 stripeSessionId: sessionId,
                 createdAt: Date.now(),
+                paymentUrl: url,
+                total: effect.payload.total,
               },
             });
           }

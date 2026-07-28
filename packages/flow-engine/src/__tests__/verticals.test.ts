@@ -35,6 +35,82 @@ describe('vertical profiles', () => {
     expect(match?.taskPriority).toBe('URGENT');
   });
 
+  // Production case 2026-07-28: this exact question (no "allerg*" token)
+  // fell through to the LLM, which sent a dead-end "contact our staff
+  // directly" with no handoff. Ingredient questions must escalate.
+  test('ingredient question without the word allergy → ingredient_question handoff', () => {
+    const match = matchSafetyPolicy({
+      businessType: 'RESTAURANT',
+      tenantName: 'The Lumpia House & Truck',
+      message: 'Hello, does your chicken ginataan have any milk ingredients in it, including butter?',
+      callerPhone: '+15551234567',
+    });
+
+    expect(match?.policy.id).toBe('ingredient_question');
+    // Calm reply — no 911 script for a planning question.
+    expect(match?.customerReply).not.toContain('911');
+    expect(match?.customerReply.toLowerCase()).toContain('connect');
+  });
+
+  test('calm allergy mention → gentle ingredient_question, not the 911 script', () => {
+    const match = matchSafetyPolicy({
+      businessType: 'RESTAURANT',
+      tenantName: 'The Lumpia House & Truck',
+      message: 'Hi, I have a milk allergy. Is the ginataan safe for me?',
+    });
+
+    expect(match?.policy.id).toBe('ingredient_question');
+    expect(match?.customerReply).not.toContain('911');
+  });
+
+  test('reaction in progress still gets the emergency reply', () => {
+    const match = matchSafetyPolicy({
+      businessType: 'RESTAURANT',
+      tenantName: 'The Lumpia House & Truck',
+      message: 'I think I am having an allergic reaction to the lumpia',
+    });
+
+    expect(match?.policy.id).toBe('food_allergy');
+    expect(match?.customerReply).toContain('911');
+  });
+
+  test('ordinary orders containing allergen nouns do not trip the ingredient policy', () => {
+    const match = matchSafetyPolicy({
+      businessType: 'RESTAURANT',
+      tenantName: 'The Lumpia House & Truck',
+      message: 'Can I get the pork sisig bowl and a milk tea for pickup at 6pm',
+    });
+
+    expect(match).toBeNull();
+  });
+
+  // Production case 2026-07-24: a full catering list (trays + 75pc
+  // lumpia + lechon) was mangled into a single $12.99 item. Tray/bulk
+  // language must stop automation and reach a human.
+  test('catering-scale order language triggers the catering escalation', () => {
+    const match = matchEscalationPolicy({
+      businessType: 'RESTAURANT',
+      tenantName: 'The Lumpia House & Truck',
+      message:
+        'Small tray of the ff: for pick up tomorrow at 1PM: -Caldereta -Pancit Bihon -75 pieces Lumpia Shianghai -1 Pork Belly lechon. Lea Jamora',
+      callerPhone: '+18473091959',
+    });
+
+    expect(match?.policy.id).toBe('catering');
+    expect(match?.stopAutomation).toBe(true);
+    expect(match?.customerReply.toLowerCase()).toContain('catering');
+  });
+
+  test('ordinary single orders do not trip the catering escalation', () => {
+    const match = matchEscalationPolicy({
+      businessType: 'RESTAURANT',
+      tenantName: 'The Lumpia House & Truck',
+      message: 'Can I get 2 lumpia regular and a chicken bbq bowl for 6pm',
+    });
+
+    expect(match?.policy.id).not.toBe('catering');
+  });
+
   test('matches medical emergency policy for home care tenants', () => {
     const match = matchSafetyPolicy({
       businessType: 'MEDICAL',

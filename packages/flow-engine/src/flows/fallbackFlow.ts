@@ -734,6 +734,20 @@ ${formatFactsForPrompt(retrievedFacts)}`;
       return { nextState, smsReply: deflection, sideEffects: [], flowType: FlowType.FALLBACK };
     }
 
+    // A reply that is NOTHING but a phone number is a degenerate LLM
+    // output, not an answer — a customer literally received the bare
+    // string "+12178820904" in production. Wrap it in a sentence.
+    if (/^\s*\+?[\d\s().-]{7,}\s*$/.test(replyText)) {
+      pushDecision(input, {
+        handler: 'fallbackFlow',
+        phase: 'FLOW',
+        outcome: 'rewrote_bare_phone_reply',
+        evidence: { originalReply: replyText },
+        durationMs: Date.now() - t0,
+      });
+      replyText = `You can reach us at ${replyText.trim()} — or just reply here and we'll help!`;
+    }
+
     const unsupportedClaim = findUnsupportedFactualClaim(replyText, callerMemory);
     if (unsupportedClaim) {
       pushDecision(input, {

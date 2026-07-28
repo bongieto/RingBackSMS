@@ -102,7 +102,18 @@ export function getActionablePreConsentMessage(body: string | null | undefined):
   return ACTIONABLE_PRE_CONSENT_RE.test(trimmed) ? trimmed.slice(0, 500) : null;
 }
 
+// Pure gratitude/compliment with no question — "We had a great meal,
+// thank you!!!!" — deserves warmth, not a consent-flow nag. (A customer
+// sent exactly that and got "Just reply YES to get help by text".)
+const GRATITUDE_RE =
+  /\b(?:thank(?:s| you| u)|great (?:meal|food|service)|delicious|amazing|loved? (?:it|the food)|so good|masarap)\b/i;
+const QUESTION_HINT_RE = /\?|(?:\b(?:can|could|do|does|when|where|what|how|why|is|are)\b.{0,80}$)/i;
+
 export function buildConsentReprompt(body: string): string {
+  const trimmedBody = body?.trim() ?? '';
+  if (GRATITUDE_RE.test(trimmedBody) && !QUESTION_HINT_RE.test(trimmedBody)) {
+    return "Thank you so much — that made our day! We're glad you enjoyed it. (Reply STOP anytime to opt out.)";
+  }
   const actionable = getActionablePreConsentMessage(body);
   if (actionable && /\bmenu\b/i.test(actionable)) {
     return 'Reply YES to get the menu by text, or STOP to opt out.';

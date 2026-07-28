@@ -181,8 +181,14 @@ const HOME_SERVICE_HAZARD_RE =
 const MEDICAL_EMERGENCY_RE =
   /\b(?:medical\s+emergency|call\s+911|911|urgent|right\s+now|immediately|asap|fell|fallen|fall|hurt|injured|injury|severe\s+pain|chest\s+pain|can't\s+(?:get\s+)?up|cannot\s+(?:get\s+)?up|trouble\s+breathing|shortness\s+of\s+breath|stroke|unconscious|bleeding|suicidal|self[-\s]?harm|need\s+help\s+now)\b/i;
 
+// REACTION-IN-PROGRESS signals only. A bare "allergy" mention used to
+// live here too, which meant a calm planning question ("I have a milk
+// allergy — does the ginataan have butter?") got the full 911 script.
+// Those now route to the gentler ingredient_question policy below; this
+// EMERGENCY tier is reserved for messages that suggest someone is
+// actually reacting right now.
 const FOOD_ALLERGY_RE =
-  /\b(?:allerg(?:y|ic|ies)|anaphylaxis|epi\s*pen|trouble\s+breathing|throat\s+(?:closing|swelling)|severe\s+reaction)\b/i;
+  /\b(?:allergic\s+reaction|reaction\s+to|anaphylaxis|epi\s*pen|trouble\s+breathing|throat\s+(?:closing|swelling)|severe\s+reaction|swelling\s+up|hives)\b/i;
 
 const AUTO_SAFETY_RE =
   /\b(?:accident|crash|stranded|tow|towing|on\s+the\s+highway|fuel\s+leak|gasoline\s+leak|car\s+fire|smoke\s+from\s+(?:car|engine)|brakes?\s+(?:failed|not\s+working)|unsafe\s+location)\b/i;
@@ -380,6 +386,32 @@ const foodSafety = safetyPolicy(
   'Customer reported an allergy or reaction concern',
 );
 
+// Ingredient-safety questions that DON'T say "allergy". Production case:
+// a customer with a milk allergy asked "does your chicken ginataan have
+// any milk ingredients in it, including butter?" — no "allerg*" token, so
+// foodSafety didn't fire and the LLM sent a dead-end "contact our staff
+// directly" (the customer IS contacting the staff) with no handoff. The
+// businessLimits rule is right that the bot must never confirm allergen
+// safety itself — so these must escalate to a human, with a calmer reply
+// than the 911 script (asking about butter is not an emergency).
+// Pattern is deliberately narrow — ingredient-CONTEXT phrasings only.
+// Bare allergen nouns are NOT enough: "do you have pork sisig" is an
+// order, not an allergen question.
+const INGREDIENT_QUESTION_RE =
+  /\b(?:allerg(?:y|ies|ic)|ingredients?|contains?|made\s+with|cooked\s+in|fried\s+in|dairy[-\s]free|gluten[-\s]free|nut[-\s]free|egg[-\s]free|soy[-\s]free|lactose|celiac|coeliac|intoleran\w*)\b|\bis\s+there\s+(?:any\s+)?\w+\s+in\b/i;
+
+const INGREDIENT_QUESTION_REPLY =
+  `Great question — I can't confirm ingredient or allergen details myself, so I'm connecting you with our team to answer directly. Someone will follow up with you shortly!`;
+
+const ingredientSafety = safetyPolicy(
+  'ingredient_question',
+  'Ingredient or allergen question',
+  'HIGH',
+  INGREDIENT_QUESTION_RE,
+  INGREDIENT_QUESTION_REPLY,
+  'Customer asked an ingredient/allergen question — needs a human answer',
+);
+
 const autoSafety = safetyPolicy(
   'auto_safety',
   'Auto safety or roadside hazard',
@@ -567,9 +599,15 @@ export const VERTICAL_PROFILES: Record<VerticalKey, VerticalProfile> = {
     businessType: BusinessType.RESTAURANT,
     catalogNoun: 'menu',
     defaultFlows: [FlowType.ORDER, FlowType.FALLBACK],
-    safetyPolicies: [foodSafety],
+    safetyPolicies: [foodSafety, ingredientSafety],
     escalationPolicies: [
       { id: 'refund', label: 'Refund request', severity: 'HIGH', keywords: ['refund', 'wrong order', 'complaint'], customerReply: "I'll connect you with a team member who can help with that.", ownerSubject: 'Customer needs order help', stopAutomation: true },
+      // Catering-scale orders are beyond the SMS cart. Production case:
+      // a customer texted a full catering list (trays + 75pc lumpia +
+      // lechon belly); the agent matched ONE item, silently dropped the
+      // rest, and quoted $12.99 — the customer walked. Tray/bulk
+      // language must reach a human, who can actually close the sale.
+      { id: 'catering', label: 'Catering or bulk order request', severity: 'HIGH', keywords: ['catering', 'cater', 'tray', 'trays', 'kamayan', 'party pack', 'bulk order', 'large order', 'big order', 'feeds'], customerReply: "That sounds like a catering-size order — great! I'm connecting you with our team so we get every detail right. Someone will follow up with you shortly.", ownerSubject: 'Catering/bulk order lead — potential large sale', stopAutomation: true },
     ],
     intakeFields: restaurantIntake,
     recommendedIntegrations: ['Square', 'Toast', 'Clover', 'Stripe', 'Star CloudPRNT'],
@@ -583,8 +621,12 @@ export const VERTICAL_PROFILES: Record<VerticalKey, VerticalProfile> = {
     businessType: BusinessType.FOOD_TRUCK,
     catalogNoun: 'menu',
     defaultFlows: [FlowType.ORDER, FlowType.FALLBACK],
-    safetyPolicies: [foodSafety],
-    escalationPolicies: [],
+    safetyPolicies: [foodSafety, ingredientSafety],
+    escalationPolicies: [
+      // Same catering guard as the restaurant profile — food trucks get
+      // event/booking requests constantly and the SMS cart can't quote them.
+      { id: 'catering', label: 'Catering or bulk order request', severity: 'HIGH', keywords: ['catering', 'cater', 'tray', 'trays', 'kamayan', 'party pack', 'bulk order', 'large order', 'big order', 'feeds', 'book the truck', 'booking'], customerReply: "That sounds like a catering-size order — great! I'm connecting you with our team so we get every detail right. Someone will follow up with you shortly.", ownerSubject: 'Catering/bulk order lead — potential large sale', stopAutomation: true },
+    ],
     intakeFields: [],
     recommendedIntegrations: ['Square', 'location schedule', 'Stripe', 'Star CloudPRNT'],
     valueMetrics: ['where-are-you answers', 'orders recovered', 'sold-out deflections'],

@@ -482,6 +482,7 @@ ${(() => {
    c. Ask the next question (another item? confirm?)
    Example: "Added 1× Kanto Fries (Chili BBQ) and 2× Cornedsilog (Extra Fried Rice). Total $44.95. Anything else, or ready to confirm?"
 7. Never reply with just "Got it." or "Ok." — always include cart contents + total + next step.
+   d. **NEVER silently drop an item the customer asked for.** If the customer lists multiple items and you can only match some of them, your reply MUST name what you could NOT add (e.g. "I've got the Pancit down, but I couldn't find Caldereta or Lumpia Shanghai on our menu — a team member can help with those"). A customer who lists 4 items and sees 1 come back with no explanation assumes the order is wrong and leaves. When MOST of a multi-item request is unmatched, do not add the partial cart at all — call ask_clarification instead.
 6. If you called ask_clarification, the reply IS the question.
 7. If the customer says something unrelated to ordering, redirect gently back to the order.
 8. After a confirm_order, state the total, pickup time, **and the name on the order** (when known), and reassure them. Example: "You're all set, Bruno! Order placed for pickup at 7pm. Total $41.19. We'll text you when it's ready." Naming the customer explicitly at commit time is important — it's how they know the kitchen ticket is tagged with their name.

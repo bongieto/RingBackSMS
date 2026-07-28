@@ -96,8 +96,12 @@ const CONFIRM_RE = new RegExp(
 // my fries" or "clear the extras" don't wipe the whole cart — we
 // require either a standalone cancel-type word, OR a clear "cart/order
 // scope" marker (cancel my/the order, start over, stop order).
+// Allows courtesy prefixes ("please/pls/plz") and object suffixes
+// ("this/that/it/everything/my order") — production case: "Pls cancel
+// this." failed the old pattern on both counts and the cart survived a
+// customer who explicitly asked to kill it.
 const CANCEL_RE =
-  /^\s*(cancel|nvm|nevermind|never\s+mind|forget it|scratch that|start over|stop|stop order|stop the order)\s*[.!?]*\s*$|\b(cancel (my|the) (order|cart)|clear (my|the) (order|cart)|restart (my|the) order)\b/i;
+  /^\s*(?:please\s+|pls\s+|plz\s+)?(cancel|nvm|nevermind|never\s+mind|forget it|scratch that|start over|stop|stop order|stop the order)(?:\s+(?:this|that|it|everything|all|my\s+order|the\s+order|order))?\s*[.!?]*\s*$|\b(cancel (my|the) (order|cart)|clear (my|the) (order|cart)|restart (my|the) order)\b/i;
 
 /** Strip extended-thinking / reasoning tags that occasionally leak through
  *  from the model. Belt-and-suspenders: the SDK usually hides them, but
@@ -412,6 +416,45 @@ export async function runOrderAgent(input: FlowInput): Promise<FlowOutput> {
       durationMs: Date.now() - agentT0,
     });
     return processOrderFlow(input);
+  }
+
+  // ── CANCEL SHORT-CIRCUIT ──
+  // "Cancel"/"please cancel this" must always cancel, deterministically.
+  // Production case: a customer whose order was mangled texted "Pls
+  // cancel this." and the LLM answered "What can I get started for
+  // you?" — cart intact, customer furious. Never leave cancellation to
+  // the LLM's judgment. Reuses the module-level CANCEL_RE (same gate the
+  // cancel_order tool uses) — whole-message cancel intent only; a
+  // message like "cancel the lumpia and add sisig" is a cart edit and
+  // still goes to the agent.
+  if (CANCEL_RE.test(input.inboundMessage.trim())) {
+    pushDecision(input, {
+      handler: 'runOrderAgent',
+      phase: 'PRE_HANDLER',
+      outcome: 'cancel_short_circuit',
+      durationMs: Date.now() - agentT0,
+    });
+    return {
+      nextState: {
+        tenantId: input.tenantContext.tenantId,
+        callerPhone: input.callerPhone,
+        conversationId: input.currentState?.conversationId ?? null,
+        currentFlow: FlowType.ORDER,
+        flowStep: 'MENU_DISPLAY',
+        orderDraft: null,
+        meetingDraft: null,
+        paymentPending: null,
+        pendingCustomization: null,
+        pendingClarification: null,
+        customerName: input.currentState?.customerName ?? null,
+        lastMessageAt: Date.now(),
+        messageCount: (input.currentState?.messageCount ?? 0) + 1,
+        dedupKey: null,
+      },
+      smsReply: `No problem — your order's cancelled. Text me whenever you'd like to start a new one!`,
+      sideEffects: [],
+      flowType: FlowType.ORDER,
+    };
   }
 
   pushDecision(input, {

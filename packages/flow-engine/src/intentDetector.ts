@@ -6,12 +6,21 @@ function stripThinkTags(text: string): string {
 }
 
 const ESCALATION_KEYWORDS = [
+  // Both "to" and "with" forms — production case: "Can I speak with
+  // someone" missed the list (only "speak to someone" was present) and
+  // the customer got a generic deflection instead of a handoff.
   'talk to a human',
   'talk to a person',
   'talk to someone',
+  'talk with a human',
+  'talk with a person',
+  'talk with someone',
   'speak to a human',
   'speak to a person',
   'speak to someone',
+  'speak with a human',
+  'speak with a person',
+  'speak with someone',
   'real person',
   'real human',
   'live agent',

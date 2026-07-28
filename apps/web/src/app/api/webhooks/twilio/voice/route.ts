@@ -21,7 +21,7 @@ import {
 } from '@/lib/server/businessHours';
 import { getCallerContext, type CallerTier } from '@/lib/server/services/callerContextService';
 import { sendHighPriorityAlert } from '@/lib/server/services/notificationService';
-import { acquireAlertLock } from '@/lib/server/services/stateService';
+import { acquireAlertLock, getCallerState } from '@/lib/server/services/stateService';
 import { createTask } from '@/lib/server/services/taskService';
 import { maskPhone } from '@/lib/server/phoneUtils';
 import { waitUntil } from '@/lib/server/waitUntil';
@@ -380,6 +380,71 @@ export async function POST(request: NextRequest) {
       }
 
       if (await hasActiveConsent(tenant.id, from)) {
+        // Suppress the opener when the caller is already mid-conversation.
+        // Production transcripts showed customers receiving 5-9 copies of
+        // the opener during a single ordering session — every re-dial of a
+        // busy restaurant re-fired this branch, interleaving "Thanks! I
+        // can help with…" between the bot's actual order prompts. Two
+        // guards, both best-effort (fail open — a missed opener is worse
+        // than a duplicate for a caller with no active thread):
+        //   1. Redis caller state exists with an in-flight flow → they're
+        //      actively texting with the bot right now; say nothing.
+        //   2. The conversation was touched in the last 10 minutes →
+        //      they just saw a bot message; a re-greeting adds nothing.
+        try {
+          const state = await getCallerState(tenant.id, from);
+          const inFlight = !!state?.flowStep && state.flowStep !== 'ORDER_COMPLETE';
+          let recentlyActive = false;
+          if (!inFlight) {
+            const convo = await prisma.conversation.findFirst({
+              where: { tenantId: tenant.id, callerPhone: from },
+              orderBy: { updatedAt: 'desc' },
+              select: { updatedAt: true },
+            });
+            recentlyActive =
+              !!convo && Date.now() - convo.updatedAt.getTime() < 10 * 60 * 1000;
+          }
+          if (inFlight || recentlyActive) {
+            logger.info('Opener suppressed — caller already in active conversation', {
+              tenantId: tenant.id,
+              callSid,
+              inFlight,
+              recentlyActive,
+            });
+            await prisma.missedCall.update({
+              where: { twilioCallSid: callSid },
+              data: { smsSent: true },
+            }).catch(() => {});
+            logTiming('Voice webhook consent background completed', consentTimer, {
+              tenantId: tenant.id,
+              callSid,
+              path: 'opener_suppressed',
+            });
+            return;
+          }
+        } catch (err) {
+          logger.warn('Opener suppression check failed — sending opener anyway', {
+            err,
+            tenantId: tenant.id,
+          });
+        }
+
+        // Concurrency guard: transcripts show pairs of openers stamped the
+        // same second — two webhook deliveries for one call racing past the
+        // read-then-send check above. A short NX lock makes only one win.
+        // acquireAlertLock fails OPEN on Redis errors, matching the
+        // fail-open posture of the checks above.
+        const openerLock = await acquireAlertLock(`opener:${tenant.id}:${from}`, 10 * 60);
+        if (!openerLock) {
+          logger.info('Opener suppressed — concurrent duplicate', { tenantId: tenant.id, callSid });
+          logTiming('Voice webhook consent background completed', consentTimer, {
+            tenantId: tenant.id,
+            callSid,
+            path: 'opener_suppressed_race',
+          });
+          return;
+        }
+
         const opener =
           tenant.config?.followupOpener ??
           `Thanks! How can ${businessName} help you today?`;

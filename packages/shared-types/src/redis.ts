@@ -41,6 +41,14 @@ export const PaymentPendingSchema = z.object({
   notes: z.string().nullable(),
   stripeSessionId: z.string(),
   createdAt: z.number(),
+  // Checkout URL + charged total for THIS pending session. Lets the
+  // AWAITING_PAYMENT state resend the link on "yes/confirm" and quote
+  // the amount the link actually charges — previously the reply quoted
+  // callerMemory.activeOrder.total, which could be a different number
+  // than the customer's confirmed cart, a trust-killer at payment time.
+  // Optional: states written before this field existed lack it.
+  paymentUrl: z.string().optional(),
+  total: z.number().optional(),
 });
 
 export type PaymentPending = z.infer<typeof PaymentPendingSchema>;

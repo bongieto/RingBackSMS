@@ -56,11 +56,30 @@ const TL_MARKERS = [
   'yung',
 ];
 
+// Match markers on WORD BOUNDARIES, not substrings. `includes()` caused
+// the worst false positive this detector has shipped: 'esta' is a
+// substring of "r-ESTA-urant", so plain-English questions like "Is it a
+// dine in restaurant?" were detected as Spanish and got the
+// "no hablamos español" reply — repeatedly, to the same customer.
+// JS `\b` is ASCII-only and misbehaves next to accented letters
+// (está/cuánto), so boundaries are expressed as "not adjacent to a
+// Unicode letter/number" via lookarounds.
+const MARKER_REGEX_CACHE = new Map<string, RegExp>();
+
+function markerRegex(marker: string): RegExp {
+  let re = MARKER_REGEX_CACHE.get(marker);
+  if (!re) {
+    const escaped = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    re = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu');
+    MARKER_REGEX_CACHE.set(marker, re);
+  }
+  return re;
+}
+
 function scoreMarkers(text: string, markers: string[]): number {
   let score = 0;
-  const lower = text.toLowerCase();
   for (const m of markers) {
-    if (lower.includes(m)) score += 1;
+    if (markerRegex(m).test(text)) score += 1;
   }
   return score;
 }

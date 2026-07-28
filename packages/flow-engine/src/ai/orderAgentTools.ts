@@ -536,12 +536,30 @@ export function handleReorderLast(
   return { ok: true, kind: 'reorder', added, skipped };
 }
 
+// Flow keywords the LLM has been observed capturing as the customer's
+// name. Production example: customer texted "Order" (following the
+// opener's instructions!) and the paid Order row shipped with
+// customerName="Order" on the kitchen ticket. These are commands, not
+// names — reject them so the agent re-asks.
+const NAME_BLOCKLIST = new Set([
+  'order', 'menu', 'yes', 'no', 'ok', 'okay', 'confirm', 'confirmed',
+  'cancel', 'stop', 'help', 'where', 'hours', 'pickup', 'delivery',
+  'pay', 'paid', 'done', 'nevermind', 'asap', 'now',
+]);
+
 export function handleSetCustomerName(raw: unknown):
   | { ok: true; kind: 'customer_name'; name: string }
   | { ok: false; error: string } {
   const parsed = SetCustomerNameInput.safeParse(raw);
   if (!parsed.success) return { ok: false, error: 'invalid set_customer_name input' };
-  return { ok: true, kind: 'customer_name', name: parsed.data.name };
+  const name = parsed.data.name.trim();
+  if (NAME_BLOCKLIST.has(name.toLowerCase())) {
+    return {
+      ok: false,
+      error: `"${name}" is a flow keyword, not a customer name — ask the customer for their name`,
+    };
+  }
+  return { ok: true, kind: 'customer_name', name };
 }
 
 /** Compute order subtotal including modifier price adjustments. */
