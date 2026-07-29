@@ -440,6 +440,24 @@ export async function POST(request: NextRequest) {
         const callerPhone = session.metadata?.callerPhone;
 
         if (orderId) {
+          // Stale-session guard: /pay/[id] mints a NEW session every time
+          // the customer changes their tip and overwrites
+          // Order.stripePaymentId with the latest. When an OLDER
+          // abandoned session expires, its event still carries this
+          // orderId — but it's not the session the customer is paying
+          // on. Only act when the expiring session IS the order's
+          // current one.
+          const current = await prisma.order.findUnique({
+            where: { id: orderId },
+            select: { stripePaymentId: true },
+          });
+          if (current && current.stripePaymentId && current.stripePaymentId !== session.id) {
+            logger.info('checkout.session.expired for superseded session, ignoring', {
+              orderId,
+              expiredSession: session.id,
+            });
+            break;
+          }
           // Pay-after-order: mark existing order as expired.
           //
           // MUST NOT clobber an order that's already PAID. The /pay
@@ -478,6 +496,39 @@ export async function POST(request: NextRequest) {
             });
           } else {
             logger.info('Checkout session expired', { orderId });
+            // Release the caller from AWAITING_PAYMENT — previously only
+            // the payment-first branch below cleared state, so a
+            // pay-after-order customer whose link expired stayed stuck
+            // for the state's full 24h TTL: every message they sent
+            // (including a review rating) got "your payment link is
+            // already out" back. Also tell them the link expired so
+            // they know to reorder.
+            if (tenantId && callerPhone) {
+              try {
+                const cs = await getCallerState(tenantId, callerPhone);
+                if (cs?.flowStep === 'AWAITING_PAYMENT') {
+                  await setCallerState({
+                    ...cs,
+                    flowStep: 'ORDER_COMPLETE',
+                    orderDraft: null,
+                    paymentPending: null,
+                    lastMessageAt: Date.now(),
+                  });
+                }
+              } catch (err) {
+                logger.warn('Failed to clear caller state after session expiry', { err, tenantId });
+              }
+              const expLang = await prisma.contact
+                .findFirst({
+                  where: { tenantId, phone: callerPhone },
+                  select: { preferredLanguage: true },
+                })
+                .then((c) => c?.preferredLanguage ?? null)
+                .catch(() => null);
+              sendSms(tenantId, callerPhone, i18nSms('paymentExpired', expLang, {})).catch((err) =>
+                logger.error('Failed to send expiry SMS', { err, tenantId })
+              );
+            }
           }
         } else if (tenantId && callerPhone) {
           // Payment-first: clear pending state, notify customer

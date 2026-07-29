@@ -25,15 +25,21 @@ export async function tryConsumeReviewReply(
   const rating = parseInt(match[1], 10);
   const comment = match[2]?.trim() || null;
 
-  // Find the most recent COMPLETED order from this caller in the last 24h
-  // that doesn't already have a review.
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  // Find the most recent COMPLETED order from this caller that doesn't
+  // already have a review. Window is on updatedAt (completion time),
+  // not createdAt — the review prompt fires ~2h after COMPLETED, so
+  // what matters is when it was completed, not when it was placed.
+  // 48h gives the customer a realistic reply window. (Production
+  // failure: prompt went out for an old order, the caller's "5" only
+  // matched orders CREATED in 24h, found nothing, and fell through
+  // into the order flow's payment-pending reply.)
+  const since = new Date(Date.now() - 48 * 60 * 60 * 1000);
   const order = await prisma.order.findFirst({
     where: {
       tenantId,
       callerPhone,
       status: 'COMPLETED',
-      createdAt: { gte: since },
+      updatedAt: { gte: since },
       // No existing review for this order
       // (Prisma can't easily express "left join is null" here, so do a
       //  cheap separate check below.)

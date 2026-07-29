@@ -53,6 +53,12 @@ export async function GET(req: NextRequest) {
     where: {
       status: 'COMPLETED',
       updatedAt: { lte: cutoff, gte: windowFloor },
+      // Never ask "how was your order?" about an order the customer
+      // didn't pay for. paymentStatus null = no payment required
+      // (pay-at-pickup tenants); EXPIRED/UNPAID/PENDING are excluded —
+      // a customer whose checkout expired got prompted for a rating in
+      // production, which reads as either a bug or a guilt trip.
+      OR: [{ paymentStatus: null }, { paymentStatus: 'PAID' }],
     },
     select: {
       id: true,
