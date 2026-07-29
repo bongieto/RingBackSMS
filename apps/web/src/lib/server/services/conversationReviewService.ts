@@ -163,19 +163,38 @@ export async function runConversationReview(periodHours = 24): Promise<ReviewRun
       id: true,
       tenantId: true,
       messages: true,
+      updatedAt: true,
+      reviewedAt: true,
       tenant: { select: { name: true } },
     },
     orderBy: { updatedAt: 'desc' },
     take: MAX_CONVERSATIONS,
   });
 
-  if (conversations.length === 0) {
-    logger.info('Conversation review: no conversations in window, skipping', { periodHours });
-    return { reportId: null, conversationCount: 0, findingCount: 0, skipped: 'no conversations in window' };
+  // Only review conversations with NEW activity since their last review.
+  // Without this, a conversation sat inside the trailing window and got
+  // re-flagged with the same findings on every cron tick and every
+  // manual "Run now" — three near-identical reports in the first day.
+  // (Prisma can't compare two columns in a where clause, so filter here.)
+  const unreviewed = conversations.filter(
+    (c) => !c.reviewedAt || c.updatedAt > c.reviewedAt,
+  );
+
+  if (unreviewed.length === 0) {
+    logger.info('Conversation review: no new conversation activity since last review, skipping', {
+      periodHours,
+      inWindow: conversations.length,
+    });
+    return {
+      reportId: null,
+      conversationCount: 0,
+      findingCount: 0,
+      skipped: 'no new conversation activity since last review',
+    };
   }
 
   const transcripts: TranscriptForReview[] = [];
-  for (const convo of conversations) {
+  for (const convo of unreviewed) {
     try {
       const messages = decryptMessages(convo.messages);
       if (Array.isArray(messages) && messages.length >= 2) {
@@ -190,10 +209,13 @@ export async function runConversationReview(periodHours = 24): Promise<ReviewRun
   }
 
   const tenantNameById = new Map(transcripts.map((t) => [t.conversationId, t.tenantName]));
-  const tenantIdByConvo = new Map(conversations.map((c) => [c.id, c.tenantId]));
+  const tenantIdByConvo = new Map(unreviewed.map((c) => [c.id, c.tenantId]));
   const allFindings: ReviewFinding[] = [];
   let batchCount = 0;
   let batchFailures = 0;
+  // Conversations covered by a SUCCESSFUL batch get their reviewedAt
+  // stamped; failed-batch conversations stay eligible for the next run.
+  const reviewedConvoIds: string[] = [];
 
   for (let i = 0; i < transcripts.length; i += BATCH_SIZE) {
     const batch = transcripts.slice(i, i + BATCH_SIZE);
@@ -225,6 +247,7 @@ export async function runConversationReview(periodHours = 24): Promise<ReviewRun
       for (const f of parsed) {
         allFindings.push({ ...f, tenantName: tenantNameById.get(f.conversationId) ?? 'Unknown' });
       }
+      reviewedConvoIds.push(...batch.map((t) => t.conversationId));
     } catch (err) {
       // One failed batch shouldn't kill the run — record and continue.
       batchFailures += 1;
@@ -274,6 +297,16 @@ export async function runConversationReview(periodHours = 24): Promise<ReviewRun
       stats: { bySeverity, byCategory, batchCount, batchFailures },
     },
   });
+
+  // Stamp coverage so the next run (cron or manual) skips these unless
+  // they get new messages. Failed-batch conversations are deliberately
+  // not stamped — they stay eligible for retry.
+  if (reviewedConvoIds.length > 0) {
+    await prisma.conversation.updateMany({
+      where: { id: { in: reviewedConvoIds } },
+      data: { reviewedAt: periodEnd },
+    });
+  }
 
   // Close the loop: high-severity findings become Tasks in the tenant's
   // Action Items queue, so the operator sees them without checking the

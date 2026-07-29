@@ -421,6 +421,11 @@ model Conversation {
   lastMessagePreview String?   @db.Text
   messageCount       Int       @default(0)
   messageSummarySyncedAt DateTime?
+  /// When the daily conversation-quality review last covered this
+  /// conversation. Reviews skip conversations with no new messages since
+  /// this stamp — without it, the same conversations were re-flagged on
+  /// every run for as long as they stayed inside the 24h window.
+  reviewedAt             DateTime?
   intake        Json?
   flowType      FlowType?
   handoffStatus HandoffStatus @default(AI)
