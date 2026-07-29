@@ -92,6 +92,13 @@ export interface ChatCompletionParams {
   riskLevel?: 'low' | 'high';
   /** Internal evaluation hook; customer paths should leave this as auto. */
   providerMode?: 'auto' | 'claude' | 'minimax';
+  /**
+   * Per-call timeout override in ms. The 8s default is tuned for
+   * customer-facing SMS turns; batch/offline callers (e.g. the daily
+   * conversation-quality review) need far longer — an 8s cap silently
+   * aborted a 12-transcript review batch in production.
+   */
+  timeoutMs?: number;
 }
 
 /**
@@ -117,6 +124,7 @@ export async function chatCompletion(
     metadata,
     riskLevel = 'low',
     providerMode = 'auto',
+    timeoutMs = TIMEOUT_MS,
   } =
     params;
   let primaryFailed = false;
@@ -134,7 +142,7 @@ export async function chatCompletion(
           messages: [{ role: 'user', content: userMessage }],
           temperature,
         },
-        { signal: AbortSignal.timeout(TIMEOUT_MS) },
+        { signal: AbortSignal.timeout(timeoutMs) },
       );
       const text =
         response.content[0]?.type === 'text'
@@ -195,7 +203,7 @@ export async function chatCompletion(
     try {
       const start = Date.now();
       const controller = new AbortController();
-      timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      timer = setTimeout(() => controller.abort(), timeoutMs);
       const response = await minimax.chat.completions.create(
         {
           model: MINIMAX_MODEL,

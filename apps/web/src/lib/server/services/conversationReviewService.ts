@@ -152,9 +152,12 @@ export async function runConversationReview(periodHours = 24): Promise<ReviewRun
 
   const tenantNameById = new Map(transcripts.map((t) => [t.conversationId, t.tenantName]));
   const allFindings: ReviewFinding[] = [];
+  let batchCount = 0;
+  let batchFailures = 0;
 
   for (let i = 0; i < transcripts.length; i += BATCH_SIZE) {
     const batch = transcripts.slice(i, i + BATCH_SIZE);
+    batchCount += 1;
     const userMessage = batch
       .map((t) => `=== CONVERSATION ${t.conversationId} (business: ${t.tenantName}) ===\n${t.text}`)
       .join('\n\n');
@@ -166,6 +169,10 @@ export async function runConversationReview(periodHours = 24): Promise<ReviewRun
         temperature: 0.1,
         purpose: 'conversation_review',
         riskLevel: 'low',
+        // Offline batch job — a 12-transcript review takes far longer
+        // than the customer-facing 8s default. First production run
+        // aborted at 8s and stored a false "no issues" report.
+        timeoutMs: 120_000,
       });
       const parsed = parseFindings(raw);
       for (const f of parsed) {
@@ -173,11 +180,20 @@ export async function runConversationReview(periodHours = 24): Promise<ReviewRun
       }
     } catch (err) {
       // One failed batch shouldn't kill the run — record and continue.
+      batchFailures += 1;
       logger.error('Conversation review: LLM batch failed', {
         batchStart: i,
         err: (err as Error)?.message,
       });
     }
+  }
+
+  // If EVERY batch failed, we reviewed nothing — storing a report here
+  // would masquerade as "N conversations reviewed, no issues found",
+  // which is exactly what the first production run did during an
+  // Anthropic 529 surge. Fail loudly instead; the operator can re-run.
+  if (batchCount > 0 && batchFailures === batchCount) {
+    throw new Error(`Conversation review failed: all ${batchCount} LLM batches errored`);
   }
 
   // Aggregate stats
@@ -193,10 +209,12 @@ export async function runConversationReview(periodHours = 24): Promise<ReviewRun
     .slice(0, 3)
     .map(([cat, n]) => `${cat} (${n})`)
     .join(', ');
+  const partialNote =
+    batchFailures > 0 ? ` (${batchFailures}/${batchCount} review batches failed — partial coverage)` : '';
   const summary =
     allFindings.length === 0
-      ? `Reviewed ${transcripts.length} conversations — no issues found.`
-      : `Reviewed ${transcripts.length} conversations, found ${allFindings.length} issue${allFindings.length === 1 ? '' : 's'} (${bySeverity.high ?? 0} high, ${bySeverity.medium ?? 0} medium, ${bySeverity.low ?? 0} low). Top categories: ${topCategories}.`;
+      ? `Reviewed ${transcripts.length} conversations — no issues found.${partialNote}`
+      : `Reviewed ${transcripts.length} conversations, found ${allFindings.length} issue${allFindings.length === 1 ? '' : 's'} (${bySeverity.high ?? 0} high, ${bySeverity.medium ?? 0} medium, ${bySeverity.low ?? 0} low). Top categories: ${topCategories}.${partialNote}`;
 
   const report = await prisma.conversationReviewReport.create({
     data: {
@@ -206,7 +224,7 @@ export async function runConversationReview(periodHours = 24): Promise<ReviewRun
       findingCount: allFindings.length,
       summary,
       findings: allFindings as unknown as object,
-      stats: { bySeverity, byCategory },
+      stats: { bySeverity, byCategory, batchCount, batchFailures },
     },
   });
 
