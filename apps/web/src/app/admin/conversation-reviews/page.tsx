@@ -15,6 +15,8 @@ interface ReviewFinding {
   issue: string;
   evidence: string;
   suggestedFix: string;
+  /** Set once the operator decides: approve files a fix task, dismiss records the call. */
+  status?: 'approved' | 'dismissed';
 }
 
 interface ReviewReport {
@@ -42,15 +44,43 @@ function SeverityBadge({ severity }: { severity: ReviewFinding['severity'] }) {
   );
 }
 
-function FindingRow({ finding }: { finding: ReviewFinding }) {
+function FindingRow({
+  finding,
+  reportId,
+  findingIndex,
+}: {
+  finding: ReviewFinding;
+  reportId: string;
+  findingIndex: number;
+}) {
+  const queryClient = useQueryClient();
+  const decide = useMutation({
+    mutationFn: (status: 'approved' | 'dismissed') =>
+      api.patch('/admin/conversation-reviews', { reportId, findingIndex, status }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-conversation-reviews'] }),
+  });
+
+  const decided = finding.status;
+
   return (
-    <div className="border border-slate-800 rounded-lg p-4 space-y-2">
+    <div className={`border border-slate-800 rounded-lg p-4 space-y-2 ${decided === 'dismissed' ? 'opacity-50' : ''}`}>
       <div className="flex items-center gap-2 flex-wrap">
         <SeverityBadge severity={finding.severity} />
         <span className="text-xs px-2 py-0.5 rounded border border-slate-700 text-slate-300">
           {finding.category}
         </span>
         <span className="text-xs text-slate-500">{finding.tenantName}</span>
+        {decided && (
+          <span
+            className={`text-xs px-2 py-0.5 rounded border font-medium ${
+              decided === 'approved'
+                ? 'bg-emerald-900/30 text-emerald-400 border-emerald-800'
+                : 'bg-slate-800 text-slate-400 border-slate-700'
+            }`}
+          >
+            {decided === 'approved' ? 'Approved → task created' : 'Dismissed'}
+          </span>
+        )}
         <a
           href={`/admin/tenants?conversation=${finding.conversationId}`}
           className="text-xs text-slate-500 hover:text-slate-300 underline ml-auto"
@@ -68,6 +98,30 @@ function FindingRow({ finding }: { finding: ReviewFinding }) {
         <span className="text-slate-500">Fix: </span>
         {finding.suggestedFix}
       </p>
+      {!decided && (
+        <div className="flex gap-2 pt-1">
+          <Button
+            size="sm"
+            className="bg-emerald-700 hover:bg-emerald-600 text-white"
+            onClick={() => decide.mutate('approved')}
+            disabled={decide.isPending}
+          >
+            Approve fix
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-slate-700 text-slate-400 hover:text-white"
+            onClick={() => decide.mutate('dismissed')}
+            disabled={decide.isPending}
+          >
+            Dismiss
+          </Button>
+        </div>
+      )}
+      {decide.isError && (
+        <p className="text-xs text-red-400">Failed to save decision — try again.</p>
+      )}
     </div>
   );
 }
@@ -116,7 +170,12 @@ function ReportCard({ report }: { report: ReviewReport }) {
         {open && findings.length > 0 && (
           <div className="mt-4 space-y-3">
             {findings.map((f, i) => (
-              <FindingRow key={`${f.conversationId}-${i}`} finding={f} />
+              <FindingRow
+                key={`${f.conversationId}-${i}`}
+                finding={f}
+                reportId={report.id}
+                findingIndex={i}
+              />
             ))}
           </div>
         )}
