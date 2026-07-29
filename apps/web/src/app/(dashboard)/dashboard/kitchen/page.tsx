@@ -40,6 +40,9 @@ export default function KitchenPage() {
     return localStorage.getItem('kds-sound') !== 'off';
   });
   const [eightySixOpen, setEightySixOpen] = useState(false);
+  // Board shows only in-flight work; completed orders live in their own
+  // tab so the working surface stays clear.
+  const [view, setView] = useState<'board' | 'done'>('board');
   const prevOrderIdsRef = useRef<Set<string>>(new Set());
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -187,8 +190,48 @@ export default function KitchenPage() {
         />
       )}
 
+      {/* Board / Done tabs */}
+      <div className="flex gap-2 mb-4">
+        <button
+          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+            view === 'board'
+              ? 'bg-slate-900 text-white'
+              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+          }`}
+          onClick={() => setView('board')}
+        >
+          Active Board
+        </button>
+        <button
+          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+            view === 'done'
+              ? 'bg-slate-900 text-white'
+              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+          }`}
+          onClick={() => setView('done')}
+        >
+          Done <span className={view === 'done' ? 'text-slate-300' : 'text-slate-400'}>({doneOrders.length})</span>
+        </button>
+      </div>
+
       {isLoading ? (
         <div className="text-center py-20 text-muted-foreground">Loading orders...</div>
+      ) : view === 'done' ? (
+        doneOrders.length === 0 ? (
+          <div className="text-center py-20">
+            <ChefHat className="h-16 w-16 mx-auto text-muted-foreground opacity-20 mb-4" />
+            <p className="text-lg font-medium text-muted-foreground">No completed orders today</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Orders you complete will show up here for the rest of the day
+            </p>
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {doneOrders.map(order => (
+              <OrderCard key={order.id} order={order} tenantId={tenantId} />
+            ))}
+          </div>
+        )
       ) : orders.length === 0 ? (
         <div className="text-center py-20">
           <ChefHat className="h-16 w-16 mx-auto text-muted-foreground opacity-20 mb-4" />
@@ -198,7 +241,7 @@ export default function KitchenPage() {
           </p>
         </div>
       ) : (
-        <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-4 -mx-4 px-4 lg:mx-0 lg:px-0 lg:grid lg:grid-cols-4 lg:overflow-visible">
+        <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-4 -mx-4 px-4 lg:mx-0 lg:px-0 lg:grid lg:grid-cols-3 lg:overflow-visible">
           {/* New Orders */}
           <div className="min-w-[85vw] sm:min-w-[60vw] lg:min-w-0 snap-center">
             <div className="flex items-center gap-2 mb-3 px-1">
@@ -259,25 +302,6 @@ export default function KitchenPage() {
             </div>
           </div>
 
-          {/* Done */}
-          <div className="min-w-[85vw] sm:min-w-[60vw] lg:min-w-0 snap-center">
-            <div className="flex items-center gap-2 mb-3 px-1">
-              <div className="h-3 w-3 rounded-full bg-slate-400" />
-              <h2 className="font-bold text-sm uppercase tracking-wide text-slate-700">
-                Done <span className="text-slate-500">({doneOrders.length})</span>
-              </h2>
-            </div>
-            <div className="space-y-3">
-              {doneOrders.map(order => (
-                <OrderCard key={order.id} order={order} tenantId={tenantId} />
-              ))}
-              {doneOrders.length === 0 && (
-                <div className="text-center py-8 text-sm text-muted-foreground border-2 border-dashed rounded-xl">
-                  No completed orders
-                </div>
-              )}
-            </div>
-          </div>
         </div>
       )}
     </>
