@@ -78,7 +78,9 @@ export default function OrdersPage() {
   const { tenantId } = useTenantId();
   const queryClient = useQueryClient();
 
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  // Default to PENDING — the operator's working queue. ALL front-loads
+  // months of settled/cancelled history before the orders needing action.
+  const [statusFilter, setStatusFilter] = useState<string>('PENDING');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
