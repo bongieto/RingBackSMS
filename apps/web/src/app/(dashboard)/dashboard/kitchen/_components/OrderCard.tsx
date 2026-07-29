@@ -103,7 +103,14 @@ export function OrderCard({ order, tenantId }: { order: Order; tenantId: string 
   const action = STATUS_ACTIONS[order.status];
   const items = Array.isArray(order.items) ? order.items as OrderItem[] : [];
   const total = typeof order.total === 'string' ? parseFloat(order.total) : order.total;
-  const isOverdue = timeRemaining?.overdue ?? false;
+  // A settled card can't be "overdue" — DONE-column cards were showing
+  // red "136960 min over" alarms for months-old completed orders.
+  const isSettled = order.status === 'COMPLETED' || order.status === 'CANCELLED';
+  const isOverdue = !isSettled && (timeRemaining?.overdue ?? false);
+  // Complete-from-anywhere shortcut: the primary button walks the
+  // pipeline one step, but food handed across the counter early should
+  // be closeable in one tap. READY's primary IS complete, so skip there.
+  const showCompleteShortcut = !isSettled && order.status !== 'READY';
 
   return (
     <div className={cn(
@@ -150,8 +157,8 @@ export function OrderCard({ order, tenantId }: { order: Order; tenantId: string 
         <span className="font-semibold text-slate-900 text-sm">${total.toFixed(2)}</span>
       </div>
 
-      {/* Time remaining / Pickup time */}
-      {(timeRemaining || order.pickupTime) && (
+      {/* Time remaining / Pickup time (active orders only) */}
+      {!isSettled && (timeRemaining || order.pickupTime) && (
         <div className={cn(
           'flex items-center gap-1 text-xs font-medium mb-3 px-2 py-1 rounded-lg',
           isOverdue ? 'text-red-700 bg-red-50' : 'text-blue-700 bg-blue-50'
@@ -173,7 +180,17 @@ export function OrderCard({ order, tenantId }: { order: Order; tenantId: string 
             {action.label}
           </Button>
         )}
-        {order.status !== 'COMPLETED' && order.status !== 'CANCELLED' && (
+        {showCompleteShortcut && (
+          <Button
+            variant="outline"
+            className="min-h-[48px] shrink-0 font-semibold active:scale-95 transition-transform"
+            onClick={() => statusMutation.mutate('COMPLETED')}
+            disabled={statusMutation.isPending}
+          >
+            Complete
+          </Button>
+        )}
+        {!isSettled && (
           <Button
             variant="outline"
             size="icon"

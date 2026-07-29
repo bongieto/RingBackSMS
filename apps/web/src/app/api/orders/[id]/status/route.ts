@@ -13,10 +13,13 @@ import { apiSuccess, apiError } from '@/lib/server/response';
 import { AppError } from '@/lib/server/errors';
 import { waitUntil } from '@/lib/server/waitUntil';
 
+// COMPLETED is reachable from every active status, not just READY — a
+// busy operator handing food across the counter shouldn't have to walk
+// PENDING→CONFIRMED→PREPARING→READY just to close out an order.
 const STATUS_TRANSITIONS: Record<string, OrderStatus[]> = {
-  PENDING: [OrderStatus.CONFIRMED, OrderStatus.CANCELLED],
-  CONFIRMED: [OrderStatus.PREPARING, OrderStatus.CANCELLED],
-  PREPARING: [OrderStatus.READY, OrderStatus.CANCELLED],
+  PENDING: [OrderStatus.CONFIRMED, OrderStatus.COMPLETED, OrderStatus.CANCELLED],
+  CONFIRMED: [OrderStatus.PREPARING, OrderStatus.COMPLETED, OrderStatus.CANCELLED],
+  PREPARING: [OrderStatus.READY, OrderStatus.COMPLETED, OrderStatus.CANCELLED],
   READY: [OrderStatus.COMPLETED, OrderStatus.CANCELLED],
   COMPLETED: [],
   CANCELLED: [],

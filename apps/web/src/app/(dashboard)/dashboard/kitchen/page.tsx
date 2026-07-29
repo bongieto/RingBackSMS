@@ -142,7 +142,12 @@ export default function KitchenPage() {
   const newOrders = orders.filter(o => o.status === 'PENDING' || o.status === 'CONFIRMED');
   const cookingOrders = orders.filter(o => o.status === 'PREPARING');
   const readyOrders = orders.filter(o => o.status === 'READY');
-  const doneOrders = orders.filter(o => o.status === 'COMPLETED');
+  // DONE is a same-day recap, not an archive — without the cutoff,
+  // months-old completed orders piled up here forever.
+  const doneCutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const doneOrders = orders.filter(
+    o => o.status === 'COMPLETED' && new Date(o.createdAt).getTime() >= doneCutoff,
+  );
 
   // Stats
   const overdueCount = orders.filter(o =>
@@ -150,7 +155,9 @@ export default function KitchenPage() {
   ).length;
 
   const stats = {
-    totalToday: orders.length,
+    // Count active work + today's completions — not the full history the
+    // COMPLETED status fetch drags in.
+    totalToday: newOrders.length + cookingOrders.length + readyOrders.length + doneOrders.length,
     cooking: cookingOrders.length,
     overdue: overdueCount,
     avgPrepMins: null as number | null,

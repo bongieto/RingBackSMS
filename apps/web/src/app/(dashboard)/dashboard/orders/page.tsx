@@ -53,17 +53,23 @@ interface StatusAction {
   variant: 'default' | 'outline' | 'destructive' | 'secondary';
 }
 
+// Every active status gets a "Complete" shortcut — handing food across
+// the counter shouldn't require stepping the card through the whole
+// pipeline first. The API allows →COMPLETED from any active status.
 const STATUS_ACTIONS: Record<string, StatusAction[]> = {
   PENDING: [
     { label: 'Confirm', target: 'CONFIRMED', variant: 'default' },
+    { label: 'Complete', target: 'COMPLETED', variant: 'outline' },
     { label: 'Cancel', target: 'CANCELLED', variant: 'destructive' },
   ],
   CONFIRMED: [
     { label: 'Start Preparing', target: 'PREPARING', variant: 'default' },
+    { label: 'Complete', target: 'COMPLETED', variant: 'outline' },
     { label: 'Cancel', target: 'CANCELLED', variant: 'destructive' },
   ],
   PREPARING: [
     { label: 'Mark Ready', target: 'READY', variant: 'default' },
+    { label: 'Complete', target: 'COMPLETED', variant: 'outline' },
     { label: 'Cancel', target: 'CANCELLED', variant: 'destructive' },
   ],
   READY: [
