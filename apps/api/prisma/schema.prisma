@@ -1191,6 +1191,28 @@ model Turn {
   @@index([createdAt])
 }
 
+/// Daily AI quality review of recent conversations. One row per run:
+/// the cron (or an admin "run now") pulls the window's transcripts,
+/// grades the bot's replies, and stores structured findings for the
+/// /admin/conversation-reviews dashboard.
+model ConversationReviewReport {
+  id                String   @id @default(uuid())
+  periodStart       DateTime
+  periodEnd         DateTime
+  conversationCount Int
+  findingCount      Int      @default(0)
+  /// Short prose summary of the day's conversation quality.
+  summary           String
+  /// Array of findings: { conversationId, tenantName, severity,
+  /// category, issue, evidence, suggestedFix }
+  findings          Json
+  /// Aggregates: counts by severity/category.
+  stats             Json?
+  createdAt         DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 model Decision {
   id         String        @id @default(cuid())
   turnId     String

@@ -42,6 +42,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <AdminNavLink href="/admin/activity" label="Activity" />
             <AdminNavLink href="/admin/bot-tester" label="Bot Tester" />
             <AdminNavLink href="/admin/replay-evaluator" label="Replay Evaluator" />
+            <AdminNavLink href="/admin/conversation-reviews" label="Convo Reviews" />
           </nav>
         </aside>
         <AuthTokenProvider />

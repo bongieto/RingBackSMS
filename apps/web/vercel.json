@@ -43,6 +43,10 @@
     {
       "path": "/api/cron/expire-consent-requests",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/conversation-review",
+      "schedule": "0 9 * * *"
     }
   ]
 }
