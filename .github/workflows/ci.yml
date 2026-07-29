@@ -40,11 +40,5 @@ jobs:
       - name: Typecheck web
         run: pnpm --filter=@ringbacksms/web exec tsc --noEmit
 
-      - name: Typecheck api
-        run: pnpm --filter=@ringbacksms/api exec tsc --noEmit
-
       - name: Test flow-engine
         run: pnpm --filter=@ringback/flow-engine exec jest --ci
-
-      - name: Test api
-        run: pnpm --filter=@ringbacksms/api exec jest --ci

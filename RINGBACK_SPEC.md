@@ -16,7 +16,7 @@ The first tenant pre-configured is The Lumpia House & Truck (a Filipino restaura
 - POS: Square API (catalog sync, order creation, payment processing)
 - Email: Resend
 - File storage: Supabase Storage
-- Deployment: Railway (API) + Vercel (Next.js)
+- Deployment: Vercel (Next.js — single production stack)
 - Monorepo: Turborepo, pnpm
 - Validation: zod, ORM: Prisma
 - Testing: Jest + supertest, Playwright

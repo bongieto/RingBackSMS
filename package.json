@@ -10,7 +10,7 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "lint": "eslint apps/web/src apps/api/src packages/flow-engine/src packages/shared-types/src --ext .ts,.tsx",
+    "lint": "eslint apps/web/src packages/flow-engine/src packages/shared-types/src --ext .ts,.tsx",
     "test": "turbo run test",
     "smoke:platform": "node scripts/smoke-platform.mjs",
     "clean": "turbo run clean && rimraf node_modules",

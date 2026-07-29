@@ -21,7 +21,6 @@ function loadEnvFile(filePath) {
   }
 }
 
-loadEnvFile(path.join(repoRoot, 'apps/api/.env'));
 loadEnvFile(path.join(repoRoot, 'apps/web/.env.local'));
 process.env.DATABASE_URL = process.env.DIRECT_URL || process.env.DATABASE_URL;
 

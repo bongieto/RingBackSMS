@@ -73,10 +73,12 @@ pnpm install
 ### 2. Configure environment variables
 
 ```bash
-cp apps/api/.env.example apps/api/.env
+cp apps/web/.env.example apps/web/.env.local
 ```
 
-Edit `apps/api/.env` with your credentials. See the [Environment Variables](#environment-variables) section below.
+Edit `apps/web/.env.local` with your credentials (or pull the real values
+with `vercel env pull apps/web/.env.local`). See the
+[Environment Variables](#environment-variables) section below.
 
 ### 3. Set up the database
 
@@ -249,15 +251,9 @@ Overage SMS (above plan limit) are billed at $0.03 each.
 
 ## Deployment
 
-### Railway (API)
-
-The `railway.toml` in `apps/api` configures Nixpacks deployment:
-
-```bash
-railway up
-```
-
-### Vercel (Web — Phase 2)
+Everything runs on Vercel (project root directory: `apps/web`). Pushes to
+`main` deploy automatically; `apps/api` holds only the Prisma schema,
+migrations, and seed scripts.
 
 ```bash
 vercel --prod
