@@ -36,9 +36,13 @@ export interface ReviewRunResult {
   skipped?: string;
 }
 
-/** Max conversations per run and per LLM batch. */
+/** Max conversations per run and per LLM batch. Batch size is tuned so
+ * the findings JSON stays well inside REVIEW_MAX_TOKENS — the first
+ * production run used 12 convos + 2000 tokens and Claude's response
+ * was truncated mid-array, silently parsing to zero findings. */
 const MAX_CONVERSATIONS = 60;
-const BATCH_SIZE = 12;
+const BATCH_SIZE = 6;
+const REVIEW_MAX_TOKENS = 8000;
 /** Per-conversation transcript caps to keep prompts bounded. */
 const MAX_MESSAGES_PER_CONVO = 30;
 const MAX_CHARS_PER_MESSAGE = 300;
@@ -86,15 +90,15 @@ function renderTranscript(convoId: string, tenantName: string, messages: unknown
   };
 }
 
-/** Tolerant JSON extraction — the model occasionally wraps JSON in prose. */
-function parseFindings(raw: string): Array<Omit<ReviewFinding, 'tenantName'>> {
-  try {
-    const start = raw.indexOf('{');
-    const end = raw.lastIndexOf('}');
-    if (start === -1 || end <= start) return [];
-    const parsed = JSON.parse(raw.slice(start, end + 1)) as { findings?: unknown };
-    if (!Array.isArray(parsed.findings)) return [];
-    return parsed.findings
+/**
+ * Tolerant JSON extraction — the model occasionally wraps JSON in prose
+ * or (when max_tokens truncates) cuts off mid-array. Returns null on a
+ * HARD failure (nothing salvageable) so the caller can count it as a
+ * failed batch instead of silently recording zero findings.
+ */
+function parseFindings(raw: string): Array<Omit<ReviewFinding, 'tenantName'>> | null {
+  const normalize = (items: unknown[]): Array<Omit<ReviewFinding, 'tenantName'>> =>
+    items
       .filter((f): f is Record<string, string> => !!f && typeof f === 'object')
       .map((f) => ({
         conversationId: String(f.conversationId ?? ''),
@@ -105,10 +109,42 @@ function parseFindings(raw: string): Array<Omit<ReviewFinding, 'tenantName'>> {
         suggestedFix: String(f.suggestedFix ?? '').slice(0, 500),
       }))
       .filter((f) => f.conversationId && f.issue);
-  } catch (err) {
-    logger.warn('Conversation review: failed to parse LLM findings JSON', { err: (err as Error)?.message });
-    return [];
+
+  const start = raw.indexOf('{');
+  if (start === -1) return null;
+
+  try {
+    const end = raw.lastIndexOf('}');
+    if (end > start) {
+      const parsed = JSON.parse(raw.slice(start, end + 1)) as { findings?: unknown };
+      if (Array.isArray(parsed.findings)) return normalize(parsed.findings);
+    }
+  } catch {
+    // fall through to truncation salvage
   }
+
+  // Truncation salvage: response was cut mid-array. Trim back to the
+  // last complete finding object and close the array + envelope.
+  const lastComplete = raw.lastIndexOf('},');
+  if (lastComplete > start) {
+    try {
+      const repaired = raw.slice(start, lastComplete + 1) + ']}';
+      const parsed = JSON.parse(repaired) as { findings?: unknown };
+      if (Array.isArray(parsed.findings)) {
+        logger.warn('Conversation review: salvaged truncated findings JSON', {
+          salvaged: parsed.findings.length,
+        });
+        return normalize(parsed.findings);
+      }
+    } catch {
+      // unsalvageable
+    }
+  }
+
+  logger.warn('Conversation review: failed to parse LLM findings JSON', {
+    tail: raw.slice(-120),
+  });
+  return null;
 }
 
 export async function runConversationReview(periodHours = 24): Promise<ReviewRunResult> {
@@ -165,16 +201,23 @@ export async function runConversationReview(periodHours = 24): Promise<ReviewRun
       const raw = await chatCompletion({
         systemPrompt: REVIEW_SYSTEM_PROMPT,
         userMessage,
-        maxTokens: 2000,
+        maxTokens: REVIEW_MAX_TOKENS,
         temperature: 0.1,
         purpose: 'conversation_review',
         riskLevel: 'low',
-        // Offline batch job — a 12-transcript review takes far longer
+        // Offline batch job — a multi-transcript review takes far longer
         // than the customer-facing 8s default. First production run
         // aborted at 8s and stored a false "no issues" report.
         timeoutMs: 120_000,
       });
       const parsed = parseFindings(raw);
+      if (parsed === null) {
+        // Unparseable response = this batch reviewed nothing. Count it
+        // as failed so an all-failures run throws instead of storing a
+        // clean-looking report.
+        batchFailures += 1;
+        continue;
+      }
       for (const f of parsed) {
         allFindings.push({ ...f, tenantName: tenantNameById.get(f.conversationId) ?? 'Unknown' });
       }
