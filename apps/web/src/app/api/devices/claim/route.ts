@@ -4,6 +4,8 @@ import { prisma } from '@/lib/server/db';
 import { apiCreated, apiError } from '@/lib/server/response';
 import { resolveTenantRole } from '@/lib/server/roles';
 import { generateDeviceToken, hashDeviceToken } from '@/lib/server/device';
+import { checkRateLimit, getClientIp, rateLimitResponse } from '@/lib/server/rateLimit';
+import { logger } from '@/lib/server/logger';
 
 const BodySchema = z.object({
   code: z.string().regex(/^\d{6}$/),
@@ -17,6 +19,19 @@ const BodySchema = z.object({
  * code row is marked consumed atomically to prevent double-claim races.
  */
 export async function POST(req: NextRequest) {
+  // Brute-force guard. This endpoint is unauthenticated by design (the
+  // phone doing the pairing has no session yet), codes are 6 digits
+  // (1M space) with a 10-minute TTL, and a hit mints a tenant-scoped
+  // bearer token — without a limiter, ~60k guesses fit inside one TTL
+  // window. 10 attempts/min per IP makes sweeping the space infeasible
+  // while leaving room for genuine typos.
+  const ip = getClientIp(req.headers);
+  const rl = await checkRateLimit(`device-claim:${ip}`, 10, 60);
+  if (!rl.allowed) {
+    logger.warn('Device claim rate limited', { ip });
+    return rateLimitResponse(rl);
+  }
+
   const parsed = BodySchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return apiError('Invalid request body', 400);
   const { code, deviceLabel, platform } = parsed.data;
@@ -64,7 +79,7 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     if (err instanceof PairingError) return apiError(err.message, err.status);
-    console.error('[POST /api/devices/claim] failed', err);
+    logger.error('[POST /api/devices/claim] failed', { err });
     return apiError('Pairing failed', 500);
   }
 }

@@ -47,8 +47,10 @@ export async function GET(request: NextRequest) {
   if (!isSuperAdmin(userId)) return apiError('Forbidden', 403);
 
   const { searchParams } = new URL(request.url);
-  const page = parseInt(searchParams.get('page') ?? '1', 10);
-  const pageSize = parseInt(searchParams.get('pageSize') ?? '20', 10);
+  const page = Math.max(parseInt(searchParams.get('page') ?? '1', 10) || 1, 1);
+  // Clamp: an unclamped ?pageSize=100000 would dump an entire tenant's
+  // table in one query.
+  const pageSize = Math.min(Math.max(parseInt(searchParams.get('pageSize') ?? '20', 10) || 20, 1), 100);
   const search = searchParams.get('search') ?? undefined;
   const planParam = searchParams.get('plan') ?? undefined;
   const plan = planParam as Plan | undefined;

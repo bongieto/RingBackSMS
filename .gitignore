@@ -48,3 +48,4 @@ prisma/migrations/
 .vercel
 .env.production
 .env.prod.tmp
+.claude/worktrees/

@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Build, typecheck, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared packages
+        run: |
+          pnpm --filter=@ringback/shared-types build
+          pnpm --filter=@ringback/flow-engine build
+
+      - name: Generate Prisma client
+        run: pnpm --filter=@ringbacksms/web exec prisma generate --schema=../api/prisma/schema.prisma
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck web
+        run: pnpm --filter=@ringbacksms/web exec tsc --noEmit
+
+      - name: Typecheck api
+        run: pnpm --filter=@ringbacksms/api exec tsc --noEmit
+
+      - name: Test flow-engine
+        run: pnpm --filter=@ringback/flow-engine exec jest --ci
+
+      - name: Test api
+        run: pnpm --filter=@ringbacksms/api exec jest --ci

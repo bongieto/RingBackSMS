@@ -30,10 +30,10 @@ const tenantContext: TenantContext = {
   menuItems: [
     {
       id: LUMPIA_ID,
-	      tenantId: TENANT_ID,
-	      name: 'Lumpia Shanghai',
-	      aliases: ['pork rolls', 'egg rolls'],
-	      description: 'Crispy Filipino spring rolls',
+        tenantId: TENANT_ID,
+        name: 'Lumpia Shanghai',
+        aliases: ['pork rolls', 'egg rolls'],
+        description: 'Crispy Filipino spring rolls',
       price: 8.99,
       category: 'Appetizers',
       isAvailable: true,
