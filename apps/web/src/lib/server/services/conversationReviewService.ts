@@ -1,7 +1,9 @@
+import { TaskSource, TaskPriority } from '@prisma/client';
 import { prisma } from '../db';
 import { logger } from '../logger';
 import { decryptMessages } from '../encryption';
 import { chatCompletion } from './aiClient';
+import { createTask } from './taskService';
 
 /**
  * Daily conversation QA reviewer.
@@ -159,6 +161,7 @@ export async function runConversationReview(periodHours = 24): Promise<ReviewRun
     },
     select: {
       id: true,
+      tenantId: true,
       messages: true,
       tenant: { select: { name: true } },
     },
@@ -187,6 +190,7 @@ export async function runConversationReview(periodHours = 24): Promise<ReviewRun
   }
 
   const tenantNameById = new Map(transcripts.map((t) => [t.conversationId, t.tenantName]));
+  const tenantIdByConvo = new Map(conversations.map((c) => [c.id, c.tenantId]));
   const allFindings: ReviewFinding[] = [];
   let batchCount = 0;
   let batchFailures = 0;
@@ -271,10 +275,44 @@ export async function runConversationReview(periodHours = 24): Promise<ReviewRun
     },
   });
 
+  // Close the loop: high-severity findings become Tasks in the tenant's
+  // Action Items queue, so the operator sees them without checking the
+  // review dashboard. createTask dedupes on (tenantId, CONVERSATION,
+  // conversationId, OPEN/SNOOZED) — a conversation reviewed on
+  // consecutive days won't spawn duplicate open tasks. Best-effort: a
+  // task failure never fails the review run.
+  let tasksCreated = 0;
+  for (const f of allFindings) {
+    if (f.severity !== 'high') continue;
+    const tenantId = tenantIdByConvo.get(f.conversationId);
+    if (!tenantId) continue;
+    try {
+      await createTask({
+        tenantId,
+        source: TaskSource.CONVERSATION,
+        conversationId: f.conversationId,
+        priority: TaskPriority.HIGH,
+        title: `Bot issue: ${f.category}`.slice(0, 120),
+        description:
+          `Daily conversation review flagged this exchange.\n\n` +
+          `Issue: ${f.issue}\n` +
+          (f.evidence ? `Evidence: "${f.evidence}"\n` : '') +
+          `Suggested fix: ${f.suggestedFix}`,
+      });
+      tasksCreated += 1;
+    } catch (err) {
+      logger.warn('Conversation review: failed to create task for finding', {
+        conversationId: f.conversationId,
+        err: (err as Error)?.message,
+      });
+    }
+  }
+
   logger.info('Conversation review complete', {
     reportId: report.id,
     conversations: transcripts.length,
     findings: allFindings.length,
+    tasksCreated,
   });
 
   return { reportId: report.id, conversationCount: transcripts.length, findingCount: allFindings.length };
