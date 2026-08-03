@@ -30,10 +30,20 @@ export function ImportTab({ tenantId }: { tenantId: string }) {
   const [filterCategoryId, setFilterCategoryId] = useState<string>('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const { data: allItems = [] } = useQuery<MenuItem[]>({
+  const {
+    data: allItems = [],
+    isPending: isMenuPending,
+    isError: isMenuError,
+    isFetching: isMenuFetching,
+    refetch: refetchMenu,
+  } = useQuery<MenuItem[]>({
     queryKey: ['menu', tenantId],
     queryFn: () => tenantApi.getMenu(tenantId),
     enabled: !!tenantId,
+    // The Import panel unmounts when another menu tab is active. Always
+    // revalidate when operators return so a previously failed or stale menu
+    // request cannot masquerade as an empty POS catalog.
+    refetchOnMount: 'always',
   });
   const { data: categories = [] } = useQuery<MenuCategory[]>({
     queryKey: ['menu-categories', tenantId],
@@ -98,6 +108,39 @@ export function ImportTab({ tenantId }: { tenantId: string }) {
     });
   };
   const selectAll = () => setSelected(new Set(staged.map((i) => i.id)));
+
+  if (isMenuPending) {
+    return (
+      <Card>
+        <CardContent className="p-8 text-center text-sm text-muted-foreground">
+          Loading imported POS items…
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isMenuError) {
+    return (
+      <Card className="border-red-200 bg-red-50/60 dark:bg-red-950/20">
+        <CardContent className="p-8 text-center">
+          <div className="font-medium text-red-900 dark:text-red-100">
+            Couldn&apos;t load imported POS items
+          </div>
+          <p className="mt-1 text-sm text-red-700 dark:text-red-300">
+            Your imported items are still stored. Retry the menu request to display them.
+          </p>
+          <Button
+            className="mt-4"
+            variant="outline"
+            onClick={() => void refetchMenu()}
+            disabled={isMenuFetching}
+          >
+            {isMenuFetching ? 'Retrying…' : 'Retry'}
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <div>
