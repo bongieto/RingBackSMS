@@ -6,6 +6,7 @@ import { prisma } from '../db';
 import { autoCompleteTasksForEntity } from './taskService';
 import { currentTurnId } from '../turn/TurnContext';
 import { enqueueIntegrationEvent } from '../commerce/outbox';
+import { delegateFulfillmentToMcInasal } from '../commerce/mcinasalClient';
 
 function generateOrderNumber(): string {
   const timestamp = Date.now().toString(36).toUpperCase();
@@ -506,6 +507,15 @@ export async function updateOrderStatus(
   squareOrderId?: string,
   squarePaymentId?: string
 ) {
+  const delegated = await delegateFulfillmentToMcInasal({ orderId, tenantId, status });
+  if (delegated) {
+    if (status !== OrderStatus.PENDING) {
+      await autoCompleteTasksForEntity('ORDER', 'orderId', orderId).catch((err) =>
+        logger.warn('Failed to auto-complete delegated order task', { err, orderId })
+      );
+    }
+    return delegated;
+  }
   const updated = await prisma.order.update({
     where: { id: orderId },
     data: {

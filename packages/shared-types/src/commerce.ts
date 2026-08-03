@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const COMMERCE_API_VERSION = '2026-08-01';
+export const COMMERCE_API_VERSION = '2026-08-03';
 
 export const CommerceScopes = {
   MENU_READ: 'menu:read',
@@ -9,6 +9,7 @@ export const CommerceScopes = {
   AVAILABILITY_WRITE: 'availability:write',
   ORDERS_READ: 'orders:read',
   ORDERS_WRITE: 'orders:write',
+  FINANCIALS_WRITE: 'financials:write',
   FULFILLMENT_WRITE: 'fulfillment:write',
   WEBHOOKS_MANAGE: 'webhooks:manage',
 } as const;
@@ -20,6 +21,7 @@ export const CommerceScopeSchema = z.enum([
   CommerceScopes.AVAILABILITY_WRITE,
   CommerceScopes.ORDERS_READ,
   CommerceScopes.ORDERS_WRITE,
+  CommerceScopes.FINANCIALS_WRITE,
   CommerceScopes.FULFILLMENT_WRITE,
   CommerceScopes.WEBHOOKS_MANAGE,
 ]);
@@ -120,6 +122,16 @@ const ExternalModifierGroupSchema = z
     minSelections: z.number().int().nonnegative().default(0),
     maxSelections: z.number().int().positive().default(1),
     sortOrder: z.number().int().default(0),
+    conditions: z
+      .array(
+        z.object({
+          parentGroupExternalId: z.string().min(1).max(255),
+          parentModifierExternalId: z.string().min(1).max(255),
+          operator: z.enum(['equals', 'not_equals']).default('equals'),
+        })
+      )
+      .max(50)
+      .default([]),
     options: z.array(ExternalModifierSchema).max(250).default([]),
   })
   .refine((group) => group.maxSelections >= group.minSelections, {
@@ -128,6 +140,8 @@ const ExternalModifierGroupSchema = z
 
 export const MenuSnapshotSchema = z.object({
   revision: z.string().min(1).max(255),
+  sequence: z.number().int().positive(),
+  checksum: z.string().regex(/^[a-f0-9]{64}$/i),
   categories: z
     .array(
       z.object({
@@ -154,12 +168,65 @@ export const MenuSnapshotSchema = z.object({
     .max(250),
 });
 
+const CanonicalSaleItemSchema = z.object({
+  externalItemId: z.string().min(1).max(255).nullable().optional(),
+  name: z.string().trim().min(1).max(250),
+  quantity: z.number().int().min(1).max(100),
+  grossCents: z.number().int().nonnegative(),
+  discountCents: z.number().int().nonnegative().default(0),
+  netCents: z.number().int().nonnegative(),
+});
+
+export const CanonicalSaleProjectionSchema = z
+  .object({
+    externalId: z.string().min(1).max(255),
+    locationId: z.string().uuid(),
+    version: z.number().int().positive(),
+    orderNumber: z.string().min(1).max(100),
+    status: z.enum(['PENDING', 'PAID', 'CANCELLED', 'PARTIALLY_REFUNDED', 'REFUNDED']),
+    fulfillmentStatus: FulfillmentStatusSchema.or(z.literal('PENDING')),
+    currency: z
+      .string()
+      .length(3)
+      .transform((value) => value.toUpperCase()),
+    occurredAt: z.string().datetime(),
+    paidAt: z.string().datetime().nullable().optional(),
+    grossCents: z.number().int().nonnegative(),
+    discountCents: z.number().int().nonnegative().default(0),
+    taxCents: z.number().int().nonnegative().default(0),
+    feeCents: z.number().int().nonnegative().default(0),
+    tipCents: z.number().int().nonnegative().default(0),
+    refundCents: z.number().int().nonnegative().default(0),
+    netCents: z.number().int(),
+    tenderTypes: z.array(z.string().min(1).max(50)).max(10).default([]),
+    items: z.array(CanonicalSaleItemSchema).max(250).default([]),
+  })
+  .superRefine((sale, ctx) => {
+    const expectedNet = sale.grossCents - sale.refundCents;
+    if (sale.netCents !== expectedNet) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['netCents'],
+        message: 'netCents must equal grossCents minus refundCents',
+      });
+    }
+    if (sale.refundCents > sale.grossCents) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['refundCents'],
+        message: 'refundCents cannot exceed grossCents',
+      });
+    }
+  });
+
 export const WebhookEventTypeSchema = z.enum([
   'order.ready_for_fulfillment',
   'order.updated',
   'order.cancelled',
   'menu.updated',
   'menu.availability.updated',
+  'order.payment.updated',
+  'order.refund.updated',
 ]);
 
 export const WebhookEndpointCreateSchema = z.object({

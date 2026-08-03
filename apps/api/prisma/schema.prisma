@@ -173,6 +173,8 @@ model Tenant {
   integrationEvents        IntegrationEvent[]
   idempotencyRecords       ApiIdempotencyRecord[]
   itemAvailability         MenuItemAvailability[]
+  menuSyncCursors          MenuSyncCursor[]
+  externalSales            ExternalSale[]
   recoveryCases            RecoveryCase[]
   recoveryCaseActions      RecoveryCaseAction[]
 
@@ -595,6 +597,8 @@ model TenantLocation {
   updatedAt        DateTime @updatedAt
 
   itemAvailability MenuItemAvailability[]
+  menuSyncCursors  MenuSyncCursor[]
+  externalSales    ExternalSale[]
 
   @@index([tenantId, isActive])
 }
@@ -794,20 +798,23 @@ model ApiCredential {
 /// A configured external commerce or fulfillment system. Connections are
 /// independent of the legacy single-POS credential fields on Tenant.
 model IntegrationConnection {
-  id        String   @id @default(uuid())
-  tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  provider  String
-  name      String
-  status    String   @default("active")
-  config    Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                   String   @id @default(uuid())
+  tenantId             String
+  tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provider             String
+  name                 String
+  status               String   @default("active")
+  config               Json?
+  accessTokenEncrypted String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   mappings         ExternalResourceMapping[]
   apiCredentials   ApiCredential[]
   webhookEndpoints WebhookEndpoint[]
   sourcedEvents    IntegrationEvent[]
+  menuSyncCursors  MenuSyncCursor[]
+  externalSales    ExternalSale[]
 
   @@unique([tenantId, provider, name])
   @@index([tenantId, status])
@@ -854,6 +861,65 @@ model MenuItemAvailability {
 
   @@unique([locationId, menuItemId])
   @@index([tenantId, locationId, isAvailable])
+}
+
+/// Last accepted full menu snapshot for one provider/location pair. A strictly
+/// increasing sequence plus a content checksum prevents stale or conflicting
+/// snapshots from silently rolling a menu backward.
+model MenuSyncCursor {
+  id           String                @id @default(uuid())
+  tenantId     String
+  tenant       Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connectionId String
+  connection   IntegrationConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  locationId   String
+  location     TenantLocation        @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  sequence     Int
+  revision     String
+  checksum     String
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  @@unique([connectionId, locationId])
+  @@index([tenantId, locationId])
+}
+
+/// Canonical financial projection owned by an external commerce system. It is
+/// deliberately separate from conversational Order so reporting never needs a
+/// fabricated Conversation and externally-owned sales cannot enter RingBack's
+/// payment or fulfillment workflows.
+model ExternalSale {
+  id                String                @id @default(uuid())
+  tenantId          String
+  tenant            Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connectionId      String
+  connection        IntegrationConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  locationId        String
+  location          TenantLocation        @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  externalId        String
+  version           Int
+  orderNumber       String
+  status            String
+  fulfillmentStatus String
+  currency          String                @default("USD")
+  occurredAt        DateTime
+  paidAt            DateTime?
+  grossCents        Int
+  discountCents     Int                   @default(0)
+  taxCents          Int                   @default(0)
+  feeCents          Int                   @default(0)
+  tipCents          Int                   @default(0)
+  refundCents       Int                   @default(0)
+  netCents          Int
+  tenderTypes       String[]              @default([])
+  items             Json                  @default("[]")
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([connectionId, externalId])
+  @@index([tenantId, occurredAt])
+  @@index([tenantId, status, occurredAt])
+  @@index([locationId, occurredAt])
 }
 
 /// Registered destination for signed outbound integration events.
@@ -975,6 +1041,7 @@ model MenuItemModifierGroup {
   maxSelections Int      @default(1)
   posGroupId    String?
   sortOrder     Int      @default(0)
+  conditions    Json     @default("[]")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

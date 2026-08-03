@@ -43,6 +43,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       tenantId: true,
       callerPhone: true,
       paymentStatus: true,
+      financialOwner: true,
       items: true,
       subtotal: true,
       taxAmount: true,
@@ -59,9 +60,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (order.paymentStatus === 'PAID') {
     return Response.json({ error: 'Order already paid' }, { status: 400 });
   }
+  if (order.financialOwner !== 'ringbacksms') {
+    return Response.json(
+      { error: 'Payment is managed by the connected commerce system' },
+      { status: 409 }
+    );
+  }
 
-  const items = Array.isArray(order.items) ? (order.items as unknown as Array<{ name: string; quantity: number; price: number }>) : [];
-  const subtotal = order.subtotal != null ? Number(order.subtotal) : items.reduce((s, i) => s + i.price * i.quantity, 0);
+  const items = Array.isArray(order.items)
+    ? (order.items as unknown as Array<{ name: string; quantity: number; price: number }>)
+    : [];
+  const subtotal =
+    order.subtotal != null
+      ? Number(order.subtotal)
+      : items.reduce((s, i) => s + i.price * i.quantity, 0);
   const tax = order.taxAmount != null ? Number(order.taxAmount) : 0;
   const fee = order.feeAmount != null ? Number(order.feeAmount) : 0;
   const tip = body.tipAmount ?? 0;

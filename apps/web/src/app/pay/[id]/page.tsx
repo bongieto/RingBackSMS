@@ -22,6 +22,8 @@ async function loadOrder(orderId: string) {
       orderNumber: true,
       customerName: true,
       paymentStatus: true,
+      financialOwner: true,
+      stripePaymentUrl: true,
       items: true,
       subtotal: true,
       taxAmount: true,
@@ -44,9 +46,7 @@ async function loadOrder(orderId: string) {
  * emitted when the tenant has set brandLogoUrl — otherwise text-only is
  * better than leaking the RingBackSMS logo into their customer's chat.
  */
-export async function generateMetadata(
-  { params }: { params: { id: string } },
-): Promise<Metadata> {
+export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
   const order = await loadOrder(params.id);
   if (!order) {
     return { title: 'Complete payment', robots: { index: false, follow: false } };
@@ -78,9 +78,26 @@ export default async function PayPage({ params }: { params: { id: string } }) {
   if (order.paymentStatus === 'PAID') {
     redirect(`/r/${order.id}`);
   }
+  if (order.financialOwner !== 'ringbacksms') {
+    let canonicalCheckoutUrl: string | null = null;
+    try {
+      const canonicalCheckout = new URL(order.stripePaymentUrl || '');
+      if (canonicalCheckout.protocol === 'https:')
+        canonicalCheckoutUrl = canonicalCheckout.toString();
+    } catch {
+      // Fail closed when the external owner has not provided a safe checkout URL.
+    }
+    if (canonicalCheckoutUrl) redirect(canonicalCheckoutUrl);
+    notFound();
+  }
 
-  const items = Array.isArray(order.items) ? (order.items as unknown as Array<{ name: string; quantity: number; price: number }>) : [];
-  const subtotal = order.subtotal != null ? Number(order.subtotal) : items.reduce((s, i) => s + i.price * i.quantity, 0);
+  const items = Array.isArray(order.items)
+    ? (order.items as unknown as Array<{ name: string; quantity: number; price: number }>)
+    : [];
+  const subtotal =
+    order.subtotal != null
+      ? Number(order.subtotal)
+      : items.reduce((s, i) => s + i.price * i.quantity, 0);
   const tax = order.taxAmount != null ? Number(order.taxAmount) : 0;
   const fee = order.feeAmount != null ? Number(order.feeAmount) : 0;
 

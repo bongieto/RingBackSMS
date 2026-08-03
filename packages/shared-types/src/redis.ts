@@ -4,6 +4,8 @@ import { FlowType } from './enums';
 // ── Caller State (stored in Redis) ────────────────────────────────────────────
 
 export const SelectedModifierSchema = z.object({
+  groupId: z.string().uuid().optional(),
+  modifierId: z.string().uuid().optional(),
   groupName: z.string(),
   modifierName: z.string(),
   priceAdjust: z.number(),
@@ -61,26 +63,22 @@ export const PendingCustomizationSchema = z.object({
 export type PendingCustomization = z.infer<typeof PendingCustomizationSchema>;
 
 export const MeetingDraftSchema = z.object({
-  slots: z
-    .array(z.object({ start: z.string(), end: z.string() }))
-    .optional(), // offered slots, customer picks by number
+  slots: z.array(z.object({ start: z.string(), end: z.string() })).optional(), // offered slots, customer picks by number
   pickedSlotStart: z.string().optional(),
   name: z.string().optional(),
   email: z.string().optional(),
   notes: z.string().optional(),
   intakeNotes: z.string().optional(),
-  pendingIntakeFields: z
-    .array(z.object({ key: z.string(), label: z.string() }))
-    .optional(),
+  pendingIntakeFields: z.array(z.object({ key: z.string(), label: z.string() })).optional(),
 });
 
 export type MeetingDraft = z.infer<typeof MeetingDraftSchema>;
 
 /** What the AI agent is waiting on the customer to answer next. */
 export const PendingClarificationSchema = z.object({
-  field: z.string(),            // e.g. "pickup_time", "side_for_combo_1"
-  question: z.string(),         // the exact wording Claude asked
-  askedAt: z.number(),          // unix ms
+  field: z.string(), // e.g. "pickup_time", "side_for_combo_1"
+  question: z.string(), // the exact wording Claude asked
+  askedAt: z.number(), // unix ms
 });
 
 export type PendingClarification = z.infer<typeof PendingClarificationSchema>;

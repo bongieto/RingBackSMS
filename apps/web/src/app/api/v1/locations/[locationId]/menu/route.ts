@@ -7,6 +7,7 @@ import { prisma } from '@/lib/server/db';
 import { logger } from '@/lib/server/logger';
 import { enqueueIntegrationEvent } from '@/lib/server/commerce/outbox';
 import { conflict } from '@/lib/server/commerce/http';
+import { decideSnapshot, hasDuplicateMenuExternalIds } from '@/lib/server/commerce/syncVersion';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,6 +67,7 @@ export async function GET(request: NextRequest, { params }: { params: { location
               price_adjustment: Number(modifier.priceAdjust),
               is_default: modifier.isDefault,
             })),
+            conditions: Array.isArray(group.conditions) ? group.conditions : [],
           })),
         };
       }),
@@ -93,10 +95,7 @@ export async function PUT(request: NextRequest, { params }: { params: { location
     const input = MenuSnapshotSchema.parse(await request.json());
     const categoryExternalIds = input.categories.map((category) => category.externalId);
     const itemExternalIds = input.items.map((item) => item.externalId);
-    if (
-      new Set(categoryExternalIds).size !== categoryExternalIds.length ||
-      new Set(itemExternalIds).size !== itemExternalIds.length
-    ) {
+    if (hasDuplicateMenuExternalIds(input)) {
       return Response.json(
         { error: { code: 'invalid_request', message: 'Duplicate external IDs are not allowed' } },
         { status: 400 }
@@ -132,6 +131,35 @@ export async function PUT(request: NextRequest, { params }: { params: { location
     const result = await prisma
       .$transaction(
         async (tx) => {
+          const cursor = await tx.menuSyncCursor.findUnique({
+            where: {
+              connectionId_locationId: {
+                connectionId: auth.connectionId!,
+                locationId: location.id,
+              },
+            },
+          });
+          const snapshotDecision = decideSnapshot(cursor, input);
+          if (snapshotDecision === 'stale') {
+            return {
+              conflict: `Stale menu sequence ${input.sequence}; current sequence is ${cursor!.sequence}`,
+            };
+          }
+          if (snapshotDecision === 'conflict') {
+            return { conflict: 'Menu sequence was reused with different content' };
+          }
+          if (snapshotDecision === 'idempotent') {
+            return {
+              revision: cursor!.revision,
+              sequence: cursor!.sequence,
+              checksum: cursor!.checksum,
+              created: 0,
+              updated: 0,
+              unavailable: 0,
+              total: input.items.length,
+              idempotent: true,
+            };
+          }
           const existingMappings = await tx.externalResourceMapping.findMany({
             where: {
               connectionId: auth.connectionId!,
@@ -252,29 +280,69 @@ export async function PUT(request: NextRequest, { params }: { params: { location
                 });
             existing ? (updated += 1) : (created += 1);
             activeItemIds.push(row.id);
-            await tx.menuItemModifierGroup.deleteMany({ where: { menuItemId: row.id } });
+            const existingGroups = await tx.menuItemModifierGroup.findMany({
+              where: { menuItemId: row.id },
+              include: { modifiers: true },
+            });
+            const retainedGroupIds: string[] = [];
             for (const group of item.modifierGroups) {
-              await tx.menuItemModifierGroup.create({
-                data: {
-                  menuItemId: row.id,
-                  name: group.name,
-                  required: group.required,
-                  minSelections: group.minSelections,
-                  maxSelections: group.maxSelections,
-                  selectionType: group.maxSelections === 1 ? 'SINGLE' : 'MULTIPLE',
-                  sortOrder: group.sortOrder,
-                  modifiers: {
-                    create: group.options.map((option) => ({
-                      name: option.name,
-                      priceAdjust: option.priceAdjustment,
-                      isDefault: option.isDefault,
-                      sortOrder: option.sortOrder,
-                      posModifierId: option.externalId,
-                    })),
-                  },
+              const existingGroup = existingGroups.find(
+                (candidate) => candidate.posGroupId === group.externalId
+              );
+              const groupData = {
+                menuItemId: row.id,
+                name: group.name,
+                required: group.required,
+                minSelections: group.minSelections,
+                maxSelections: group.maxSelections,
+                selectionType: group.maxSelections === 1 ? 'SINGLE' : 'MULTIPLE',
+                sortOrder: group.sortOrder,
+                posGroupId: group.externalId,
+                conditions: group.conditions as Prisma.InputJsonValue,
+              };
+              const groupRow = existingGroup
+                ? await tx.menuItemModifierGroup.update({
+                    where: { id: existingGroup.id },
+                    data: groupData,
+                  })
+                : await tx.menuItemModifierGroup.create({ data: groupData });
+              retainedGroupIds.push(groupRow.id);
+              const existingOptions = existingGroup?.modifiers ?? [];
+              const retainedOptionIds: string[] = [];
+              for (const option of group.options) {
+                const existingOption = existingOptions.find(
+                  (candidate) => candidate.posModifierId === option.externalId
+                );
+                const optionData = {
+                  name: option.name,
+                  priceAdjust: option.priceAdjustment,
+                  isDefault: option.isDefault,
+                  sortOrder: option.sortOrder,
+                  posModifierId: option.externalId,
+                };
+                const optionRow = existingOption
+                  ? await tx.menuItemModifier.update({
+                      where: { id: existingOption.id },
+                      data: optionData,
+                    })
+                  : await tx.menuItemModifier.create({
+                      data: { ...optionData, groupId: groupRow.id },
+                    });
+                retainedOptionIds.push(optionRow.id);
+              }
+              await tx.menuItemModifier.deleteMany({
+                where: {
+                  groupId: groupRow.id,
+                  ...(retainedOptionIds.length > 0 ? { id: { notIn: retainedOptionIds } } : {}),
                 },
               });
             }
+            await tx.menuItemModifierGroup.deleteMany({
+              where: {
+                menuItemId: row.id,
+                ...(retainedGroupIds.length > 0 ? { id: { notIn: retainedGroupIds } } : {}),
+              },
+            });
             await tx.menuItemAvailability.upsert({
               where: { locationId_menuItemId: { locationId: location.id, menuItemId: row.id } },
               create: {
@@ -343,14 +411,39 @@ export async function PUT(request: NextRequest, { params }: { params: { location
             resourceId: location.id,
             data: {
               revision: input.revision,
+              sequence: input.sequence,
+              checksum: input.checksum,
               created,
               updated,
               unavailable: removedMappings.length,
               item_ids: activeItemIds,
             },
           });
+          await tx.menuSyncCursor.upsert({
+            where: {
+              connectionId_locationId: {
+                connectionId: auth.connectionId!,
+                locationId: location.id,
+              },
+            },
+            create: {
+              tenantId: auth.tenantId,
+              connectionId: auth.connectionId!,
+              locationId: location.id,
+              revision: input.revision,
+              sequence: input.sequence,
+              checksum: input.checksum,
+            },
+            update: {
+              revision: input.revision,
+              sequence: input.sequence,
+              checksum: input.checksum,
+            },
+          });
           return {
             revision: input.revision,
+            sequence: input.sequence,
+            checksum: input.checksum,
             created,
             updated,
             unavailable: removedMappings.length,
@@ -372,6 +465,7 @@ export async function PUT(request: NextRequest, { params }: { params: { location
       return conflict(
         'Menu was updated concurrently or contains a conflicting name; fetch and retry'
       );
+    if ('conflict' in result) return conflict(result.conflict!);
     return commerceResponse(result);
   } catch (error) {
     logger.warn('Commerce menu snapshot update failed', { error });

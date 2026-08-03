@@ -10,6 +10,7 @@ import { autoCompleteTasksForCaller, createTask } from './taskService';
 import { sendSms } from './twilioService';
 import { matchesLocationKeyword, buildLocationReply } from './foodTruckLocationService';
 import { createOrderPaymentSession } from './paymentService';
+import { delegateCheckoutToMcInasal, hasActiveMcInasalConnection } from '../commerce/mcinasalClient';
 import { incrementSmsUsage } from './usageMeterService';
 import { logger } from '../logger';
 import { isWithinBusinessHours, getBusinessHoursDisplay, getNextOpenDisplay, getTodayHoursDisplay, getMinutesUntilClose, getClosesAtDisplay } from '../businessHours';
@@ -2146,6 +2147,64 @@ async function processSideEffect(
 
     case 'CREATE_PAYMENT_LINK': {
       try {
+        if (!context.orderId && await hasActiveMcInasalConnection(tenantId)) {
+          const draftOrder = await createOrder({
+            tenantId,
+            conversationId,
+            callerPhone,
+            items: effect.payload.items,
+            total: effect.payload.total,
+            subtotal: effect.payload.subtotal,
+            taxAmount: effect.payload.taxAmount,
+            feeAmount: effect.payload.feeAmount,
+            pickupTime: effect.payload.pickupTime,
+            notes: effect.payload.notes,
+            customerName: effect.payload.customerName,
+            dineIn: effect.payload.dineIn,
+            paymentStatus: 'PENDING',
+          });
+          context.orderId = draftOrder.id;
+          context.orderNumber = draftOrder.orderNumber;
+        }
+        if (context.orderId) {
+          const delegated = await delegateCheckoutToMcInasal({
+            tenantId,
+            orderId: context.orderId,
+            callerPhone,
+            customerName: effect.payload.customerName,
+            items: effect.payload.items.map((item: any) => ({
+              menuItemId: item.menuItemId,
+              quantity: item.quantity,
+              notes: item.notes || null,
+              selectedModifiers: item.selectedModifiers,
+            })),
+            pickupTime: effect.payload.pickupTime,
+            notes: effect.payload.notes,
+          });
+          if (delegated) {
+            const currentState = await getCallerState(tenantId, callerPhone);
+            if (currentState) {
+              await setCallerState({
+                ...currentState,
+                paymentPending: {
+                  pickupTime: effect.payload.pickupTime ?? '',
+                  notes: effect.payload.notes ?? null,
+                  stripeSessionId: delegated.checkout_session_id || delegated.id,
+                  createdAt: Date.now(),
+                  paymentUrl: delegated.checkout_url,
+                  total: delegated.total,
+                },
+              });
+            }
+            context.paymentLink = delegated.checkout_url;
+            logger.info('McInasal delegated payment link prepared', {
+              tenantId,
+              orderId: context.orderId,
+              mcinasalOrderId: delegated.id,
+            });
+            break;
+          }
+        }
         const { sessionId, url } = await createOrderPaymentSession({
           tenantId,
           orderId: context.orderId,

@@ -405,7 +405,7 @@ function DeveloperApiCard({ tenantId }: { tenantId: string }) {
       commerceAdminApi.createCredential(tenantId, {
         name,
         provider: 'mcinasal',
-        connectionName: 'McInasal KDS',
+        connectionName: 'McInasal',
         scopes: [
           'menu:read',
           'menu:write',
@@ -413,6 +413,7 @@ function DeveloperApiCard({ tenantId }: { tenantId: string }) {
           'availability:write',
           'orders:read',
           'orders:write',
+          'financials:write',
           'fulfillment:write',
           'webhooks:manage',
         ],

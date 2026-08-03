@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { prisma } from '@/lib/server/db';
+import { isRecognizedRevenue } from '@/lib/server/commerce/financialProjection';
 
 /**
  * Revenue dashboard data: PAID-or-completed orders across a windowed
@@ -20,41 +21,63 @@ export async function GET(req: NextRequest) {
   const days = Math.min(365, Math.max(1, parseInt(searchParams.get('days') ?? '30', 10) || 30));
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-  // We count every non-cancelled order, but only sum revenue on ones that
-  // actually finalized (PAID or COMPLETED). Unpaid pending orders don't
-  // count toward revenue — they'd double-count if the operator later
-  // marks them paid.
-  const orders = await prisma.order.findMany({
-    where: {
-      tenantId,
-      createdAt: { gte: since },
-      status: { not: 'CANCELLED' },
-    },
-    select: {
-      id: true,
-      total: true,
-      tipAmount: true,
-      items: true,
-      createdAt: true,
-      status: true,
-      paymentStatus: true,
-    },
-  });
+  const [orders, externalSales] = await Promise.all([
+    prisma.order.findMany({
+      where: {
+        tenantId,
+        createdAt: { gte: since },
+        financialOwner: 'ringbacksms',
+        paymentStatus: { in: ['PAID', 'REFUNDED'] },
+      },
+      select: { total: true, tipAmount: true, items: true, createdAt: true, paymentStatus: true },
+    }),
+    prisma.externalSale.findMany({
+      where: {
+        tenantId,
+        occurredAt: { gte: since },
+        status: { in: ['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED'] },
+      },
+      select: {
+        grossCents: true,
+        refundCents: true,
+        netCents: true,
+        tipCents: true,
+        items: true,
+        occurredAt: true,
+        status: true,
+      },
+    }),
+  ]);
 
-  const revenueOrders = orders.filter(
-    (o) => o.status === 'COMPLETED' || o.paymentStatus === 'PAID',
-  );
-  const totalRevenueCents = revenueOrders.reduce(
-    (s, o) => s + Math.round(Number(o.total) * 100),
-    0,
-  );
-  const totalTipCents = revenueOrders.reduce(
-    (s, o) => s + Math.round(Number(o.tipAmount ?? 0) * 100),
-    0,
-  );
-  const avgTicketCents = revenueOrders.length
-    ? Math.round(totalRevenueCents / revenueOrders.length)
-    : 0;
+  const revenueOrders = orders.map((order) => {
+    const grossCents = Math.round(Number(order.total) * 100);
+    const refundCents = order.paymentStatus === 'REFUNDED' ? grossCents : 0;
+    return {
+      grossCents,
+      refundCents,
+      netCents: grossCents - refundCents,
+      tipCents: Math.round(Number(order.tipAmount ?? 0) * 100),
+      items: order.items,
+      occurredAt: order.createdAt,
+    };
+  });
+  const projectedSales = externalSales.filter((sale) => isRecognizedRevenue(sale.status));
+  const allSales = [
+    ...revenueOrders,
+    ...projectedSales.map((sale) => ({
+      grossCents: sale.grossCents,
+      refundCents: sale.refundCents,
+      netCents: sale.netCents,
+      tipCents: sale.tipCents,
+      items: sale.items,
+      occurredAt: sale.occurredAt,
+    })),
+  ];
+  const totalGrossCents = allSales.reduce((sum, sale) => sum + sale.grossCents, 0);
+  const totalRefundCents = allSales.reduce((sum, sale) => sum + sale.refundCents, 0);
+  const totalRevenueCents = allSales.reduce((sum, sale) => sum + sale.netCents, 0);
+  const totalTipCents = allSales.reduce((sum, sale) => sum + sale.tipCents, 0);
+  const avgTicketCents = allSales.length ? Math.round(totalRevenueCents / allSales.length) : 0;
 
   // Daily series — iterate the windowed range so zero-days still render.
   const dayBuckets = new Map<string, { revenue: number; orders: number }>();
@@ -63,11 +86,11 @@ export async function GET(req: NextRequest) {
     const key = d.toISOString().slice(0, 10);
     dayBuckets.set(key, { revenue: 0, orders: 0 });
   }
-  for (const o of revenueOrders) {
-    const key = o.createdAt.toISOString().slice(0, 10);
+  for (const sale of allSales) {
+    const key = sale.occurredAt.toISOString().slice(0, 10);
     const bucket = dayBuckets.get(key);
     if (bucket) {
-      bucket.revenue += Number(o.total);
+      bucket.revenue += sale.netCents / 100;
       bucket.orders += 1;
     }
   }
@@ -80,15 +103,22 @@ export async function GET(req: NextRequest) {
   // Top items by count across revenue orders. items JSON is an array of
   // { name, quantity, price } — sum by name.
   const itemCounts = new Map<string, { count: number; revenue: number }>();
-  for (const o of revenueOrders) {
-    const items = Array.isArray(o.items)
-      ? (o.items as Array<{ name: string; quantity: number; price: number }>)
+  for (const sale of allSales) {
+    if (sale.netCents <= 0) continue;
+    const items = Array.isArray(sale.items)
+      ? (sale.items as Array<{
+          name: string;
+          quantity: number;
+          price?: number;
+          netCents?: number;
+        }>)
       : [];
     for (const it of items) {
       if (!it?.name) continue;
       const bucket = itemCounts.get(it.name) ?? { count: 0, revenue: 0 };
       bucket.count += it.quantity;
-      bucket.revenue += it.price * it.quantity;
+      bucket.revenue +=
+        typeof it.netCents === 'number' ? it.netCents / 100 : Number(it.price ?? 0) * it.quantity;
       itemCounts.set(it.name, bucket);
     }
   }
@@ -99,13 +129,16 @@ export async function GET(req: NextRequest) {
 
   // Hour-of-day histogram — helps operators see peak demand.
   const hourBuckets: number[] = new Array(24).fill(0);
-  for (const o of revenueOrders) {
-    hourBuckets[o.createdAt.getHours()] += 1;
+  for (const sale of allSales) {
+    hourBuckets[sale.occurredAt.getHours()] += 1;
   }
 
   return apiSuccess({
     totals: {
-      orders: revenueOrders.length,
+      orders: allSales.length,
+      grossCents: totalGrossCents,
+      refundCents: totalRefundCents,
+      netCents: totalRevenueCents,
       revenueCents: totalRevenueCents,
       tipCents: totalTipCents,
       avgTicketCents,

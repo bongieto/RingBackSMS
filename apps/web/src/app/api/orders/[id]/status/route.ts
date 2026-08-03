@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { AppError } from '@/lib/server/errors';
 import { waitUntil } from '@/lib/server/waitUntil';
+import { McInasalIntegrationError } from '@/lib/server/commerce/mcinasalClient';
 
 // COMPLETED is reachable from every active status, not just READY — a
 // busy operator handing food across the counter shouldn't have to walk
@@ -36,14 +37,13 @@ function buildStatusSms(
   businessName: string,
   prepMins: number | null,
   customerName: string | null,
-  lang: string | null | undefined,
+  lang: string | null | undefined
 ): string | null {
   // Pull just the first name so "Rolando Cabral" becomes "Rolando" — keeps
   // SMS copy conversational and under the 160-char GSM limit.
   // Defensive: if the stored value happens to look like an AES blob (from
   // a prior bug), skip the greeting rather than text it to the customer.
-  const safeName =
-    customerName && !looksEncrypted(customerName) ? customerName : null;
+  const safeName = customerName && !looksEncrypted(customerName) ? customerName : null;
   const firstName = safeName?.trim().split(/\s+/)[0];
   const trackerUrl = `${appUrl()}/o/${orderId}`;
   const receiptUrl = `${appUrl()}/r/${orderId}`;
@@ -75,7 +75,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const order = await getOrderById(params.id, tenantId);
     if (!order) return apiError('Order not found', 404);
     const allowed = STATUS_TRANSITIONS[order.status] ?? [];
-    if (!allowed.includes(status)) return apiError(`Cannot transition from ${order.status} to ${status}`, 400);
+    if (!allowed.includes(status))
+      return apiError(`Cannot transition from ${order.status} to ${status}`, 400);
     const updated = await updateOrderStatus(params.id, tenantId, status);
 
     // If the operator cancelled a paid order, auto-issue a Stripe refund.
@@ -113,7 +114,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
             tenant.name,
             tenant.config?.defaultPrepTimeMinutes ?? null,
             order.customerName ?? null,
-            contact?.preferredLanguage ?? null,
+            contact?.preferredLanguage ?? null
           );
           if (sms) {
             // Status transitions are time-sensitive (READY = "come pick
@@ -157,7 +158,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
               tenantId,
               order.callerPhone,
               i18nSms('refundIssued', contactLang, { orderNumber: order.orderNumber }),
-              2,
+              2
             );
             logger.info('Order refund issued', { tenantId, orderId: order.id, refundId });
           } catch (err: any) {
@@ -175,6 +176,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return apiSuccess(updated);
   } catch (err) {
     if (err instanceof AppError) return apiError(err.message, err.statusCode);
+    if (err instanceof McInasalIntegrationError) return apiError(err.message, err.status);
     return apiError('Internal server error', 500);
   }
 }

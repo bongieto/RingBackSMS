@@ -1,0 +1,97 @@
+import { CanonicalSaleProjectionSchema, MenuSnapshotSchema } from '@ringback/shared-types';
+import { assertMonotonicProjection, isRecognizedRevenue } from './financialProjection';
+import { decideSnapshot, hasDuplicateMenuExternalIds } from './syncVersion';
+import { toMcInasalFulfillmentStatus, toRingBackOrderStatus } from './fulfillmentMapping';
+import { OrderStatus } from '@prisma/client';
+import { readFileSync } from 'node:fs';
+
+describe('commerce integration safety', () => {
+  it('rejects stale or conflicting snapshots and accepts exact retries', () => {
+    const cursor = { sequence: 8, checksum: 'a'.repeat(64) };
+    expect(decideSnapshot(cursor, { sequence: 7, checksum: 'b'.repeat(64) })).toBe('stale');
+    expect(decideSnapshot(cursor, { sequence: 8, checksum: 'b'.repeat(64) })).toBe('conflict');
+    expect(decideSnapshot(cursor, { sequence: 8, checksum: 'a'.repeat(64) })).toBe('idempotent');
+    expect(decideSnapshot(cursor, { sequence: 9, checksum: 'b'.repeat(64) })).toBe('apply');
+  });
+
+  it('requires a monotonic menu sequence and a sha256 checksum', () => {
+    const result = MenuSnapshotSchema.safeParse({ revision: 'v1', categories: [], items: [] });
+    expect(result.success).toBe(false);
+  });
+
+  it('allows shared source modifiers across items but rejects ambiguous IDs within a parent', () => {
+    const sharedGroup = {
+      externalId: 'group-1',
+      options: [{ externalId: 'option-1' }],
+    };
+    const valid = {
+      categories: [{ externalId: 'category-1' }],
+      items: [
+        { externalId: 'item-1', modifierGroups: [sharedGroup] },
+        { externalId: 'item-2', modifierGroups: [sharedGroup] },
+      ],
+    };
+    expect(hasDuplicateMenuExternalIds(valid)).toBe(false);
+    expect(
+      hasDuplicateMenuExternalIds({
+        ...valid,
+        items: [{ externalId: 'item-1', modifierGroups: [sharedGroup, sharedGroup] }],
+      })
+    ).toBe(true);
+    expect(
+      hasDuplicateMenuExternalIds({
+        ...valid,
+        items: [
+          {
+            externalId: 'item-1',
+            modifierGroups: [
+              {
+                externalId: 'group-1',
+                options: [{ externalId: 'option-1' }, { externalId: 'option-1' }],
+              },
+            ],
+          },
+        ],
+      })
+    ).toBe(true);
+  });
+
+  it('rejects financial projections whose net does not reconcile', () => {
+    const result = CanonicalSaleProjectionSchema.safeParse({
+      externalId: 'order-1',
+      locationId: '8113ef17-0a7d-4f4c-b4a2-4b15ace25b2f',
+      version: 1,
+      orderNumber: 'MC-100001',
+      status: 'PAID',
+      fulfillmentStatus: 'CONFIRMED',
+      currency: 'usd',
+      occurredAt: '2026-08-03T20:00:00.000Z',
+      grossCents: 1000,
+      refundCents: 100,
+      netCents: 1000,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('counts paid and refunded canonical facts but never pending sales', () => {
+    expect(isRecognizedRevenue('PAID')).toBe(true);
+    expect(isRecognizedRevenue('PARTIALLY_REFUNDED')).toBe(true);
+    expect(isRecognizedRevenue('REFUNDED')).toBe(true);
+    expect(isRecognizedRevenue('PENDING')).toBe(false);
+    expect(assertMonotonicProjection({ version: 3 }, 2)).toBe('stale');
+  });
+
+  it('keeps payment state separate from delegated fulfillment state', () => {
+    expect(toRingBackOrderStatus('pending_payment')).toBe(OrderStatus.PENDING);
+    expect(toRingBackOrderStatus('new')).toBe(OrderStatus.CONFIRMED);
+    expect(toMcInasalFulfillmentStatus(OrderStatus.PREPARING)).toBe('preparing');
+    expect(toMcInasalFulfillmentStatus(OrderStatus.PENDING)).toBeNull();
+  });
+
+  it('fails closed on RingBack payment and status paths owned by McInasal', () => {
+    const checkoutRoute = readFileSync('src/app/api/public/orders/[id]/checkout/route.ts', 'utf8');
+    const orderService = readFileSync('src/lib/server/services/orderService.ts', 'utf8');
+    expect(checkoutRoute).toContain("order.financialOwner !== 'ringbacksms'");
+    expect(orderService).toContain('delegateFulfillmentToMcInasal');
+  });
+});

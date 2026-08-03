@@ -875,7 +875,13 @@ interface DraftItem {
   name: string;
   quantity: number;
   price: number;
-  selectedModifiers?: Array<{ groupName: string; modifierName: string; priceAdjust: number }>;
+  selectedModifiers?: Array<{
+    groupId?: string;
+    modifierId?: string;
+    groupName: string;
+    modifierName: string;
+    priceAdjust: number;
+  }>;
 }
 
 // ── Customization helpers ────────────────────────────────────────────────────
@@ -924,7 +930,13 @@ function buildCustomizationPrompt(itemName: string, group: MenuItemModifierGroup
 function parseModifierSelection(
   message: string,
   group: MenuItemModifierGroup,
-): Array<{ groupName: string; modifierName: string; priceAdjust: number }> | null {
+): Array<{
+  groupId?: string;
+  modifierId?: string;
+  groupName: string;
+  modifierName: string;
+  priceAdjust: number;
+}> | null {
   const trimmed = message.trim().toUpperCase();
 
   // Allow SKIP for optional groups
@@ -960,6 +972,8 @@ function parseModifierSelection(
   const finalIndices = group.selectionType === 'SINGLE' ? [indices[0]] : indices.slice(0, group.maxSelections);
 
   return finalIndices.map((idx) => ({
+    groupId: group.id,
+    modifierId: group.modifiers[idx].id,
     groupName: group.name,
     modifierName: group.modifiers[idx].name,
     priceAdjust: group.modifiers[idx].priceAdjust,

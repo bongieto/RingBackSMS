@@ -325,6 +325,8 @@ function resolveModifiers(
       };
     }
     mods.push({
+      groupId: group.id,
+      modifierId: mod.id,
       groupName: group.name,
       modifierName: mod.name,
       priceAdjust: mod.priceAdjust,

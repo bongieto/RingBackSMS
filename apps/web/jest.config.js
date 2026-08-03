@@ -6,5 +6,6 @@ module.exports = {
   testMatch: ['**/*.test.ts'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    '^@ringback/shared-types$': '<rootDir>/../../packages/shared-types/src/index.ts',
   },
 };
