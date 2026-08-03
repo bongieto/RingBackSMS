@@ -12,16 +12,21 @@ import { buildRedisOptions } from './redisConfig';
  */
 
 let redisClient: Redis | null = null;
+let redisErrorLogged = false;
+const localWindows = new Map<string, { count: number; resetAt: number }>();
 
 function getRedis(): Redis {
   if (!redisClient) {
     redisClient = new Redis({
       ...buildRedisOptions(),
       enableOfflineQueue: false,
+      retryStrategy: () => null,
     });
     redisClient.on('error', (err) => {
-      // Avoid noisy logs — single-shot log on connection errors
-      logger.warn('Rate limiter Redis error', { error: (err as Error).message });
+      if (!redisErrorLogged) {
+        redisErrorLogged = true;
+        logger.warn('Rate limiter Redis error', { error: (err as Error).message });
+      }
     });
   }
   return redisClient;
@@ -41,9 +46,24 @@ export interface RateLimitResult {
 export async function checkRateLimit(
   key: string,
   limit: number,
-  windowSec: number,
+  windowSec: number
 ): Promise<RateLimitResult> {
   const fullKey = `ratelimit:${key}`;
+  if (!process.env.REDIS_URL) {
+    const now = Math.floor(Date.now() / 1000);
+    const current = localWindows.get(fullKey);
+    const window =
+      !current || current.resetAt <= now
+        ? { count: 1, resetAt: now + windowSec }
+        : { count: current.count + 1, resetAt: current.resetAt };
+    localWindows.set(fullKey, window);
+    return {
+      allowed: window.count <= limit,
+      remaining: Math.max(0, limit - window.count),
+      resetAt: window.resetAt,
+      limit,
+    };
+  }
   try {
     const redis = getRedis();
     const count = await redis.incr(fullKey);
@@ -60,7 +80,12 @@ export async function checkRateLimit(
     };
   } catch (err) {
     logger.warn('Rate limiter failed open', { key, error: (err as Error).message });
-    return { allowed: true, remaining: limit, resetAt: Math.floor(Date.now() / 1000) + windowSec, limit };
+    return {
+      allowed: true,
+      remaining: limit,
+      resetAt: Math.floor(Date.now() / 1000) + windowSec,
+      limit,
+    };
   }
 }
 
@@ -79,7 +104,7 @@ export function rateLimitResponse(result: RateLimitResult): NextResponse {
         'X-RateLimit-Remaining': '0',
         'X-RateLimit-Reset': String(result.resetAt),
       },
-    },
+    }
   );
 }
 

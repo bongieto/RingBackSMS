@@ -1,10 +1,11 @@
 import { OrderStatus } from '@prisma/client';
-import { getKitchenPaymentStatusFilter } from '@ringback/shared-types';
+import { getKitchenPaymentStatusFilter, isKitchenPaymentEligible } from '@ringback/shared-types';
 import { waitUntil } from '@vercel/functions';
 import { logger } from '../logger';
 import { prisma } from '../db';
 import { autoCompleteTasksForEntity } from './taskService';
 import { currentTurnId } from '../turn/TurnContext';
+import { enqueueIntegrationEvent } from '../commerce/outbox';
 
 function generateOrderNumber(): string {
   const timestamp = Date.now().toString(36).toUpperCase();
@@ -17,7 +18,7 @@ function generateOrderNumber(): string {
 export interface PrepTimeOverride {
   dayOfWeek: number;
   start: string; // "HH:mm"
-  end: string;   // "HH:mm"
+  end: string; // "HH:mm"
   extraMinutes: number;
   label?: string;
 }
@@ -31,11 +32,7 @@ export interface PrepTimeConfig {
   minutesPerQueuedOrder?: number | null;
 }
 
-function activeOverrideExtra(
-  overrides: PrepTimeOverride[],
-  timezone: string,
-  now: Date,
-): number {
+function activeOverrideExtra(overrides: PrepTimeOverride[], timezone: string, now: Date): number {
   try {
     const fmt = new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
@@ -48,7 +45,15 @@ function activeOverrideExtra(
     const wd = parts.find((p) => p.type === 'weekday')?.value ?? '';
     const hh = parts.find((p) => p.type === 'hour')?.value ?? '00';
     const mm = parts.find((p) => p.type === 'minute')?.value ?? '00';
-    const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const dayMap: Record<string, number> = {
+      Sun: 0,
+      Mon: 1,
+      Tue: 2,
+      Wed: 3,
+      Thu: 4,
+      Fri: 5,
+      Sat: 6,
+    };
     const currentDay = dayMap[wd] ?? 0;
     const currentMin = parseInt(hh, 10) * 60 + parseInt(mm, 10);
     let total = 0;
@@ -78,10 +83,16 @@ export function calculatePrepTime(
   config: PrepTimeConfig,
   itemCount: number,
   queueCount: number = 0,
-  now: Date = new Date(),
+  now: Date = new Date()
 ): {
   totalMinutes: number;
-  breakdown: { base: number; overrideExtra: number; largeOrderExtra: number; queueExtra: number; queueCount: number };
+  breakdown: {
+    base: number;
+    overrideExtra: number;
+    largeOrderExtra: number;
+    queueExtra: number;
+    queueCount: number;
+  };
 } | null {
   if (config.defaultPrepTimeMinutes == null) return null;
   const base = config.defaultPrepTimeMinutes;
@@ -90,9 +101,8 @@ export function calculatePrepTime(
     : [];
   const overrideExtra = activeOverrideExtra(overrides, config.timezone ?? 'America/Chicago', now);
   const largeOrderExtra =
-    config.largeOrderThresholdItems != null &&
-    itemCount >= config.largeOrderThresholdItems
-      ? config.largeOrderExtraMinutes ?? 0
+    config.largeOrderThresholdItems != null && itemCount >= config.largeOrderThresholdItems
+      ? (config.largeOrderExtraMinutes ?? 0)
       : 0;
   const perQueue = config.minutesPerQueuedOrder ?? 0;
   const queueExtra = Math.max(0, queueCount) * perQueue;
@@ -130,6 +140,7 @@ export interface CreateOrderInput {
   stripePaymentId?: string;
   stripePaymentUrl?: string;
   paymentStatus?: string;
+  locationId?: string | null;
 }
 
 export async function createOrder(input: CreateOrderInput) {
@@ -172,12 +183,10 @@ export async function createOrder(input: CreateOrderInput) {
           minutesPerQueuedOrder: cfg.minutesPerQueuedOrder,
         },
         itemCount,
-        queueCount,
+        queueCount
       )
     : null;
-  const estimatedReadyTime = prep
-    ? new Date(Date.now() + prep.totalMinutes * 60_000)
-    : null;
+  const estimatedReadyTime = prep ? new Date(Date.now() + prep.totalMinutes * 60_000) : null;
 
   // Fallback: if the caller didn't restate their name this session, use
   // whatever's already on their Contact row (decrypting). Keeps returning
@@ -203,28 +212,61 @@ export async function createOrder(input: CreateOrderInput) {
     }
   }
 
-  const order = await prisma.order.create({
-    data: {
-      tenantId: input.tenantId,
-      conversationId: input.conversationId,
-      callerPhone: input.callerPhone,
-      orderNumber: generateOrderNumber(),
-      status: OrderStatus.CONFIRMED,
-      items: input.items,
-      total: input.total,
-      subtotal: input.subtotal ?? input.total,
-      taxAmount: input.taxAmount ?? 0,
-      feeAmount: input.feeAmount ?? 0,
-      customerName: effectiveName,
-      pickupTime: input.pickupTime,
-      dineIn: input.dineIn ?? false,
-      estimatedReadyTime,
-      notes: input.notes,
-      ...(input.stripePaymentId && { stripePaymentId: input.stripePaymentId }),
-      ...(input.stripePaymentUrl && { stripePaymentUrl: input.stripePaymentUrl }),
-      ...(input.paymentStatus && { paymentStatus: input.paymentStatus }),
-      causingTurnId: currentTurnId() ?? null,
-    },
+  const locationId =
+    input.locationId ??
+    (
+      await prisma.tenantLocation.findFirst({
+        where: { tenantId: input.tenantId, isActive: true },
+        orderBy: { sortOrder: 'asc' },
+        select: { id: true },
+      })
+    )?.id ??
+    null;
+  const kitchenEligible = isKitchenPaymentEligible(
+    cfg?.requirePayment ?? true,
+    input.paymentStatus
+  );
+  const order = await prisma.$transaction(async (tx) => {
+    const created = await tx.order.create({
+      data: {
+        tenantId: input.tenantId,
+        conversationId: input.conversationId,
+        callerPhone: input.callerPhone,
+        orderNumber: generateOrderNumber(),
+        status: OrderStatus.CONFIRMED,
+        items: input.items,
+        total: input.total,
+        subtotal: input.subtotal ?? input.total,
+        taxAmount: input.taxAmount ?? 0,
+        feeAmount: input.feeAmount ?? 0,
+        customerName: effectiveName,
+        pickupTime: input.pickupTime,
+        dineIn: input.dineIn ?? false,
+        estimatedReadyTime,
+        notes: input.notes,
+        ...(input.stripePaymentId && { stripePaymentId: input.stripePaymentId }),
+        ...(input.stripePaymentUrl && { stripePaymentUrl: input.stripePaymentUrl }),
+        ...(input.paymentStatus && { paymentStatus: input.paymentStatus }),
+        locationId,
+        causingTurnId: currentTurnId() ?? null,
+      },
+    });
+    if (kitchenEligible) {
+      await enqueueIntegrationEvent(tx, {
+        tenantId: input.tenantId,
+        type: 'order.ready_for_fulfillment',
+        locationId,
+        resourceType: 'order',
+        resourceId: created.id,
+        data: {
+          order_id: created.id,
+          order_number: created.orderNumber,
+          resource_url: `/api/v1/orders/${created.id}`,
+          version: created.integrationVersion,
+        },
+      });
+    }
+    return created;
   });
 
   logger.info('Order created', {
@@ -307,9 +349,7 @@ export async function createOrder(input: CreateOrderInput) {
         customerName: input.customerName ?? null,
         pickupTime: input.pickupTime ?? null,
         tenantTimezone: cfg?.timezone ?? null,
-      }).catch((err) =>
-        logger.error('POS push failed (non-fatal)', { err, orderId: order.id }),
-      ),
+      }).catch((err) => logger.error('POS push failed (non-fatal)', { err, orderId: order.id }))
     );
   }
 
@@ -337,7 +377,7 @@ export async function pushOrderToPos(
     customerName?: string | null;
     pickupTime?: string | null;
     tenantTimezone?: string | null;
-  },
+  }
 ): Promise<void> {
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },

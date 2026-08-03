@@ -138,34 +138,41 @@ model Tenant {
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
 
-  agency             Agency?             @relation(fields: [agencyId], references: [id])
-  config             TenantConfig?
-  flows              Flow[]
-  missedCalls        MissedCall[]
-  conversations      Conversation[]
-  orders             Order[]
-  meetings           Meeting[]
-  menuItems          MenuItem[]
-  menuCategories     MenuCategory[]
-  usageLogs          UsageLog[]
-  contacts           Contact[]
-  syncLogs           PosSyncLog[]
-  replyTemplates     ReplyTemplate[]
-  tasks              Task[]
-  foodTruckStops     FoodTruckStop[]
-  smsConsentRequests SmsConsentRequest[]
-  smsSuppressions    SmsSuppression[]
-  escalationEvents   EscalationEvent[]
-  commissions        CommissionLedger[]
-  members            TenantMember[]
-  smsCampaigns       SmsCampaign[]
-  locations          TenantLocation[]
-  devices            Device[]
-  devicePairingCodes DevicePairingCode[]
-  turns              Turn[]
-  calendarBlackouts  CalendarBlackout[]
-  knowledgeFacts     KnowledgeFact[]
-  aiResponseAudits   AiResponseAudit[]
+  agency                   Agency?                   @relation(fields: [agencyId], references: [id])
+  config                   TenantConfig?
+  flows                    Flow[]
+  missedCalls              MissedCall[]
+  conversations            Conversation[]
+  orders                   Order[]
+  meetings                 Meeting[]
+  menuItems                MenuItem[]
+  menuCategories           MenuCategory[]
+  usageLogs                UsageLog[]
+  contacts                 Contact[]
+  syncLogs                 PosSyncLog[]
+  replyTemplates           ReplyTemplate[]
+  tasks                    Task[]
+  foodTruckStops           FoodTruckStop[]
+  smsConsentRequests       SmsConsentRequest[]
+  smsSuppressions          SmsSuppression[]
+  escalationEvents         EscalationEvent[]
+  commissions              CommissionLedger[]
+  members                  TenantMember[]
+  smsCampaigns             SmsCampaign[]
+  locations                TenantLocation[]
+  devices                  Device[]
+  devicePairingCodes       DevicePairingCode[]
+  turns                    Turn[]
+  calendarBlackouts        CalendarBlackout[]
+  knowledgeFacts           KnowledgeFact[]
+  aiResponseAudits         AiResponseAudit[]
+  apiCredentials           ApiCredential[]
+  integrationConnections   IntegrationConnection[]
+  externalResourceMappings ExternalResourceMapping[]
+  webhookEndpoints         WebhookEndpoint[]
+  integrationEvents        IntegrationEvent[]
+  idempotencyRecords       ApiIdempotencyRecord[]
+  itemAvailability         MenuItemAvailability[]
 
   @@index([twilioPhoneNumber])
   @@index([clerkOrgId])
@@ -275,10 +282,10 @@ model TenantConfig {
   voiceGreetingAfterHours        String?   @db.Text
   voiceGreetingRapidRedial       String?   @db.Text
   voiceGreetingReturning         String?   @db.Text
-  voiceAudioUrl                  String?   // public URL for default greeting audio
-  voiceAudioUrlAfterHours        String?   // public URL for after-hours greeting audio
-  voiceAudioUrlRapidRedial       String?   // public URL for rapid-redial greeting audio
-  voiceAudioUrlReturning         String?   // public URL for returning greeting audio
+  voiceAudioUrl                  String? // public URL for default greeting audio
+  voiceAudioUrlAfterHours        String? // public URL for after-hours greeting audio
+  voiceAudioUrlRapidRedial       String? // public URL for rapid-redial greeting audio
+  voiceAudioUrlReturning         String? // public URL for returning greeting audio
   voiceType                      String    @default("nova")
   timezone                       String    @default("America/Chicago")
   businessHoursStart             String    @default("11:00")
@@ -317,8 +324,8 @@ model TenantConfig {
   prepTimeOverrides              Json? // Array<{ dayOfWeek, start, end, extraMinutes, label? }>
   ordersAcceptingEnabled         Boolean   @default(true)
   aiOrderAgentEnabled            Boolean   @default(false) // per-tenant rollout of the AI-native ORDER flow (items 1-7)
-  acceptClosedHourOrders         Boolean   @default(true)  // when true, bot schedules orders for next open slot even when currently closed
-  minutesPerQueuedOrder          Int       @default(4)     // added to ETA for every order currently CONFIRMED or PREPARING
+  acceptClosedHourOrders         Boolean   @default(true) // when true, bot schedules orders for next open slot even when currently closed
+  minutesPerQueuedOrder          Int       @default(4) // added to ETA for every order currently CONFIRMED or PREPARING
   salesTaxRate                   Decimal?  @db.Decimal(5, 4) // e.g. 0.0825 for 8.25%. Null = no tax applied.
   passStripeFeesToCustomer       Boolean   @default(false) // when true, add 2.9% + $0.30 processing fee as a line item on the checkout
   // Google Business Profile review nudge. When set, customers who reply
@@ -330,8 +337,8 @@ model TenantConfig {
   meetingEnabled                 Boolean   @default(true) // master on/off for built-in calendar
   meetingDurationMinutes         Int       @default(30)
   meetingBufferMinutes           Int       @default(15)
-  meetingLeadTimeMinutes         Int       @default(60)  // earliest a slot can be from now()
-  meetingMaxDaysOut              Int       @default(30)  // furthest day-out a caller can request
+  meetingLeadTimeMinutes         Int       @default(60) // earliest a slot can be from now()
+  meetingMaxDaysOut              Int       @default(30) // furthest day-out a caller can request
   // cal.com integration (OAuth 2.0 authorization code)
   calcomAccessToken              String? // AES-256-GCM encrypted
   calcomRefreshToken             String? // AES-256-GCM encrypted
@@ -351,9 +358,9 @@ model TenantConfig {
   intakeFieldOverrides           Json?
   verticalOnboarding             Json?
   lastOrdersGraceMinutes         Int       @default(15) // minutes before close after which we refuse new pickups
-  cloudPrntToken                 String?   // tenant-unique token a Star CloudPRNT printer polls our endpoint with
+  cloudPrntToken                 String? // tenant-unique token a Star CloudPRNT printer polls our endpoint with
   // White-label — applied on /m /o /r /pay public pages
-  brandColor                     String?   // hex like "#E03A2F"; null = default blue
+  brandColor                     String? // hex like "#E03A2F"; null = default blue
   brandLogoUrl                   String?
   hidePoweredBy                  Boolean   @default(false) // premium tier removes the RingbackSMS attribution
   createdAt                      DateTime  @default(now())
@@ -411,31 +418,31 @@ model MissedCall {
 }
 
 model Conversation {
-  id            String        @id @default(uuid())
-  tenantId      String
-  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  callerPhone   String
-  missedCallId  String?
-  missedCall    MissedCall?   @relation(fields: [missedCallId], references: [id])
-  messages      Json          @default("[]")
-  lastMessagePreview String?   @db.Text
-  messageCount       Int       @default(0)
+  id                     String        @id @default(uuid())
+  tenantId               String
+  tenant                 Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  callerPhone            String
+  missedCallId           String?
+  missedCall             MissedCall?   @relation(fields: [missedCallId], references: [id])
+  messages               Json          @default("[]")
+  lastMessagePreview     String?       @db.Text
+  messageCount           Int           @default(0)
   messageSummarySyncedAt DateTime?
   /// When the daily conversation-quality review last covered this
   /// conversation. Reviews skip conversations with no new messages since
   /// this stamp — without it, the same conversations were re-flagged on
   /// every run for as long as they stayed inside the 24h window.
   reviewedAt             DateTime?
-  intake        Json?
-  flowType      FlowType?
-  handoffStatus HandoffStatus @default(AI)
-  handoffAt     DateTime?
-  isActive      Boolean       @default(true)
+  intake                 Json?
+  flowType               FlowType?
+  handoffStatus          HandoffStatus @default(AI)
+  handoffAt              DateTime?
+  isActive               Boolean       @default(true)
   /// Turn that most recently touched this Conversation's state. Nullable,
   /// no FK (business data must outlive Turn retention).
-  causingTurnId String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  causingTurnId          String?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
 
   orders   Order[]
   meetings Meeting[]
@@ -479,8 +486,12 @@ model Order {
   stripeRefundId     String?
   stripePaymentUrl   String?
   paymentStatus      String?      @default("UNPAID")
-  printedAt          DateTime?    // set by the CloudPRNT POST callback after a successful print
-  locationId         String?      // TenantLocation.id — nullable until multi-location is fully wired
+  printedAt          DateTime? // set by the CloudPRNT POST callback after a successful print
+  locationId         String? // TenantLocation.id — nullable until multi-location is fully wired
+  originSystem       String       @default("ringbacksms")
+  financialOwner     String       @default("ringbacksms")
+  fulfillmentOwner   String       @default("ringbacksms")
+  integrationVersion Int          @default(1)
   /// Inbound Turn that caused this order to be created. Nullable, no FK —
   /// orders must not cascade-delete when Turn rows are aged out.
   causingTurnId      String?
@@ -488,6 +499,7 @@ model Order {
   updatedAt          DateTime     @updatedAt
 
   @@index([tenantId, status])
+  @@index([tenantId, locationId, status])
   @@index([tenantId, createdAt])
   @@index([tenantId, callerPhone])
   @@index([tenantId, callerPhone, createdAt])
@@ -570,7 +582,7 @@ model TenantLocation {
   id               String   @id @default(uuid())
   tenantId         String
   tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  name             String   // "Food truck A", "Uptown", etc.
+  name             String // "Food truck A", "Uptown", etc.
   address          String?
   phone            String?
   squareLocationId String?
@@ -580,27 +592,29 @@ model TenantLocation {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  itemAvailability MenuItemAvailability[]
+
   @@index([tenantId, isActive])
 }
 
 /// Outbound SMS marketing campaign. We queue recipients in a separate
 /// table so opt-outs that arrive after queue-time are honored at send.
 model SmsCampaign {
-  id            String                 @id @default(uuid())
-  tenantId      String
-  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  name          String
-  body          String                 @db.Text
-  status        SmsCampaignStatus      @default(DRAFT)
-  scheduledFor  DateTime?
-  sentAt        DateTime?
-  sentCount     Int                    @default(0)
-  suppressedCount Int                  @default(0)
-  failedCount   Int                    @default(0)
-  createdBy     String?
-  createdAt     DateTime               @default(now())
-  updatedAt     DateTime               @updatedAt
-  recipients    SmsCampaignRecipient[]
+  id              String                 @id @default(uuid())
+  tenantId        String
+  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name            String
+  body            String                 @db.Text
+  status          SmsCampaignStatus      @default(DRAFT)
+  scheduledFor    DateTime?
+  sentAt          DateTime?
+  sentCount       Int                    @default(0)
+  suppressedCount Int                    @default(0)
+  failedCount     Int                    @default(0)
+  createdBy       String?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  recipients      SmsCampaignRecipient[]
 
   @@index([tenantId, status])
 }
@@ -615,15 +629,15 @@ enum SmsCampaignStatus {
 }
 
 model SmsCampaignRecipient {
-  id           String      @id @default(uuid())
-  campaignId   String
-  campaign     SmsCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  contactId    String?
-  phone        String
-  status       String      @default("PENDING") // PENDING | SENT | SUPPRESSED | FAILED
-  error        String?
-  sentAt       DateTime?
-  createdAt    DateTime    @default(now())
+  id         String      @id @default(uuid())
+  campaignId String
+  campaign   SmsCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contactId  String?
+  phone      String
+  status     String      @default("PENDING") // PENDING | SENT | SUPPRESSED | FAILED
+  error      String?
+  sentAt     DateTime?
+  createdAt  DateTime    @default(now())
 
   @@unique([campaignId, phone])
   @@index([campaignId, status])
@@ -635,18 +649,18 @@ model SmsCampaignRecipient {
 /// 1 hour before the scheduled pickup. Customer can reply STOP to set
 /// active=false (handled by the suppression + an operator UI later).
 model RecurringOrder {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   tenantId    String
   callerPhone String
-  label       String?  // "Friday lunch usual"
-  cadence     String   // cron-style: "0 12 * * 5" or a friendly like "every Friday 12:00"
+  label       String? // "Friday lunch usual"
+  cadence     String // cron-style: "0 12 * * 5" or a friendly like "every Friday 12:00"
   itemsJson   Json
-  pickupTime  String?  // "12:00 PM"
+  pickupTime  String? // "12:00 PM"
   nextRunAt   DateTime
   lastRunAt   DateTime?
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([tenantId, active, nextRunAt])
   @@index([callerPhone])
@@ -658,7 +672,7 @@ model OrderReview {
   id        String   @id @default(uuid())
   orderId   String   @unique
   tenantId  String
-  rating    Int      // 1..5
+  rating    Int // 1..5
   comment   String?  @db.Text
   createdAt DateTime @default(now())
 
@@ -666,20 +680,20 @@ model OrderReview {
 }
 
 model Meeting {
-  id               String        @id @default(uuid())
-  tenantId         String
-  tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  conversationId   String
-  conversation     Conversation  @relation(fields: [conversationId], references: [id])
-  callerPhone      String
-  calcomBookingId  String?
-  calcomBookingUid String?
-  scheduledAt      DateTime?
-  durationMinutes  Int?          // populated for built-in bookings; null for legacy/cal.com rows
-  guestName        String?
-  guestEmail       String?
-  status           MeetingStatus @default(PENDING)
-  notes            String?       @db.Text
+  id                 String        @id @default(uuid())
+  tenantId           String
+  tenant             Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversationId     String
+  conversation       Conversation  @relation(fields: [conversationId], references: [id])
+  callerPhone        String
+  calcomBookingId    String?
+  calcomBookingUid   String?
+  scheduledAt        DateTime?
+  durationMinutes    Int? // populated for built-in bookings; null for legacy/cal.com rows
+  guestName          String?
+  guestEmail         String?
+  status             MeetingStatus @default(PENDING)
+  notes              String?       @db.Text
   /// Timestamp when the day-before confirmation SMS was sent. NULL until
   /// the cron picks the meeting up. Once set, the cron skips it on
   /// future ticks so we never double-send a confirmation.
@@ -688,8 +702,8 @@ model Meeting {
   /// SMS. Operators see "confirmed" status in the dashboard so they
   /// know which appointments are truly locked in.
   confirmedAt        DateTime?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
   @@index([tenantId, status])
   @@index([tenantId, callerPhone])
@@ -712,33 +726,33 @@ model CalendarBlackout {
 }
 
 model MenuItem {
-  id                String    @id @default(uuid())
+  id                String        @id @default(uuid())
   tenantId          String
-  tenant            Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant            Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name              String
-  aliases           String[]  @default([]) // customer-facing alternate names, e.g. "egg rolls", "pork rolls"
-  description       String?   @db.Text
-  price             Decimal   @db.Decimal(10, 2)
-  category          String?               // kept for back-compat with POS sync (Square pushes strings)
-  categoryId        String?               // preferred: FK to MenuCategory
+  aliases           String[]      @default([]) // customer-facing alternate names, e.g. "egg rolls", "pork rolls"
+  description       String?       @db.Text
+  price             Decimal       @db.Decimal(10, 2)
+  category          String? // kept for back-compat with POS sync (Square pushes strings)
+  categoryId        String? // preferred: FK to MenuCategory
   categoryRef       MenuCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   imageUrl          String?
-  isAvailable       Boolean   @default(true)
+  isAvailable       Boolean       @default(true)
   duration          Int?
-  requiresBooking   Boolean   @default(false)
-  priceMin          Decimal?  @db.Decimal(10, 2)
-  priceMax          Decimal?  @db.Decimal(10, 2)
-  quoteRequired     Boolean   @default(false)
-  emergencyEligible Boolean   @default(false)
-  serviceArea       String?   @db.Text
+  requiresBooking   Boolean       @default(false)
+  priceMin          Decimal?      @db.Decimal(10, 2)
+  priceMax          Decimal?      @db.Decimal(10, 2)
+  quoteRequired     Boolean       @default(false)
+  emergencyEligible Boolean       @default(false)
+  serviceArea       String?       @db.Text
   intakeQuestions   Json?
   squareCatalogId   String?
   squareVariationId String?
   lastSyncedAt      DateTime?
   posCatalogId      String?
   posVariationId    String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
   /// Set when a sync detects the item is no longer in the POS catalog.
   /// Operator-visible tombstone — item hidden from the dashboard by
@@ -746,11 +760,186 @@ model MenuItem {
   /// stay intact. Cleared if the item later reappears in a sync.
   posDeletedAt DateTime?
 
-  modifierGroups MenuItemModifierGroup[]
+  modifierGroups       MenuItemModifierGroup[]
+  locationAvailability MenuItemAvailability[]
 
   @@index([tenantId, isAvailable])
   @@index([tenantId, category])
   @@index([categoryId])
+}
+
+/// A revocable, tenant-scoped machine credential. Only the SHA-256 hash is
+/// stored; the plaintext token is shown once when it is created.
+model ApiCredential {
+  id           String                 @id @default(uuid())
+  tenantId     String
+  tenant       Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connectionId String?
+  connection   IntegrationConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  name         String
+  keyPrefix    String
+  keyHash      String                 @unique
+  scopes       String[]
+  lastUsedAt   DateTime?
+  expiresAt    DateTime?
+  revokedAt    DateTime?
+  createdAt    DateTime               @default(now())
+
+  @@index([tenantId, revokedAt])
+  @@index([connectionId])
+}
+
+/// A configured external commerce or fulfillment system. Connections are
+/// independent of the legacy single-POS credential fields on Tenant.
+model IntegrationConnection {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provider  String
+  name      String
+  status    String   @default("active")
+  config    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  mappings         ExternalResourceMapping[]
+  apiCredentials   ApiCredential[]
+  webhookEndpoints WebhookEndpoint[]
+  sourcedEvents    IntegrationEvent[]
+
+  @@unique([tenantId, provider, name])
+  @@index([tenantId, status])
+}
+
+/// Maps one RingBack resource to one provider resource without constraining a
+/// tenant or order to a single integration.
+model ExternalResourceMapping {
+  id              String                @id @default(uuid())
+  tenantId        String
+  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connectionId    String
+  connection      IntegrationConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  resourceType    String
+  internalId      String
+  externalId      String
+  externalVersion String?
+  metadata        Json?
+  lastSyncedAt    DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@unique([connectionId, resourceType, internalId])
+  @@unique([connectionId, resourceType, externalId])
+  @@index([tenantId, resourceType, internalId])
+}
+
+/// Location-specific 86/availability state. MenuItem.isAvailable remains the
+/// tenant-wide master switch; both must be true for an item to be orderable.
+model MenuItemAvailability {
+  id          String         @id @default(uuid())
+  tenantId    String
+  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  locationId  String
+  location    TenantLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  menuItemId  String
+  menuItem    MenuItem       @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  isAvailable Boolean        @default(true)
+  reason      String?
+  revision    Int            @default(1)
+  updatedBy   String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@unique([locationId, menuItemId])
+  @@index([tenantId, locationId, isAvailable])
+}
+
+/// Registered destination for signed outbound integration events.
+model WebhookEndpoint {
+  id              String                 @id @default(uuid())
+  tenantId        String
+  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  connectionId    String?
+  connection      IntegrationConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  url             String
+  description     String?
+  secretEncrypted String
+  events          String[]
+  status          String                 @default("active")
+  failureCount    Int                    @default(0)
+  disabledAt      DateTime?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  deliveries WebhookDelivery[]
+
+  @@unique([tenantId, url])
+  @@index([tenantId, status])
+  @@index([connectionId])
+}
+
+/// Transactional outbox event. Producers insert this row in the same database
+/// transaction as the business mutation; a cron delivers it asynchronously.
+model IntegrationEvent {
+  id                 String                 @id @default(uuid())
+  tenantId           String
+  tenant             Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sourceConnectionId String?
+  sourceConnection   IntegrationConnection? @relation(fields: [sourceConnectionId], references: [id], onDelete: SetNull)
+  type               String
+  apiVersion         String
+  locationId         String?
+  resourceType       String?
+  resourceId         String?
+  payload            Json
+  status             String                 @default("pending")
+  availableAt        DateTime               @default(now())
+  completedAt        DateTime?
+  createdAt          DateTime               @default(now())
+
+  deliveries WebhookDelivery[]
+
+  @@index([status, availableAt])
+  @@index([tenantId, createdAt])
+  @@index([sourceConnectionId])
+}
+
+model WebhookDelivery {
+  id             String           @id @default(uuid())
+  eventId        String
+  event          IntegrationEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  endpointId     String
+  endpoint       WebhookEndpoint  @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  status         String           @default("pending")
+  attemptCount   Int              @default(0)
+  nextAttemptAt  DateTime         @default(now())
+  lastAttemptAt  DateTime?
+  responseStatus Int?
+  responseBody   String?          @db.Text
+  lastError      String?          @db.Text
+  deliveredAt    DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([eventId, endpointId])
+  @@index([status, nextAttemptAt])
+}
+
+/// Exactly-once response replay for mutating partner API calls.
+model ApiIdempotencyRecord {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  operation   String
+  key         String
+  requestHash String
+  statusCode  Int
+  response    Json
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+
+  @@unique([tenantId, operation, key])
+  @@index([expiresAt])
 }
 
 /// First-class grouping for MenuItems. A tenant may have one or more categories;
@@ -822,28 +1011,28 @@ model UsageLog {
 }
 
 model Contact {
-  id               String        @id @default(cuid())
-  tenantId         String
-  tenant           Tenant        @relation(fields: [tenantId], references: [id])
-  phone            String
-  name             String?
-  email            String?
-  nameSearchHash   String? // HMAC of lowercased name for SQL-level search on encrypted field
-  emailSearchHash  String? // HMAC of lowercased email for SQL-level search on encrypted field
-  notes            String? // kept for backward compat; use contactNotes for new entries
-  status           ContactStatus @default(LEAD)
-  tags             String[]      @default([])
-  totalOrders      Int           @default(0)
-  totalSpent       Int           @default(0) // in cents
-  lastContactAt    DateTime?
-  stripeCustomerId String?
-  lastOrderId      String?
-  lastOrderAt      DateTime?
-  suppressed       Boolean       @default(false)
-  loyaltyPoints    Int           @default(0)
-  preferredLanguage String?      // BCP-47 tag like "en", "es", "tl"; null = auto-detect
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  id                String        @id @default(cuid())
+  tenantId          String
+  tenant            Tenant        @relation(fields: [tenantId], references: [id])
+  phone             String
+  name              String?
+  email             String?
+  nameSearchHash    String? // HMAC of lowercased name for SQL-level search on encrypted field
+  emailSearchHash   String? // HMAC of lowercased email for SQL-level search on encrypted field
+  notes             String? // kept for backward compat; use contactNotes for new entries
+  status            ContactStatus @default(LEAD)
+  tags              String[]      @default([])
+  totalOrders       Int           @default(0)
+  totalSpent        Int           @default(0) // in cents
+  lastContactAt     DateTime?
+  stripeCustomerId  String?
+  lastOrderId       String?
+  lastOrderAt       DateTime?
+  suppressed        Boolean       @default(false)
+  loyaltyPoints     Int           @default(0)
+  preferredLanguage String? // BCP-47 tag like "en", "es", "tl"; null = auto-detect
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
   contactNotes ContactNote[]
   missedCalls  MissedCall[]
@@ -998,12 +1187,12 @@ model SmsConsentRequest {
 }
 
 model SmsSuppression {
-  id           String   @id @default(uuid())
-  tenantId     String
-  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  callerPhone  String
-  reason       String   @default("opt_out")
-  suppressedAt DateTime @default(now())
+  id            String   @id @default(uuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  callerPhone   String
+  reason        String   @default("opt_out")
+  suppressedAt  DateTime @default(now())
   /// Inbound Turn whose handler decided to suppress this caller. Nullable,
   /// no FK — suppression rows must survive Turn retention.
   causingTurnId String?
@@ -1042,12 +1231,33 @@ model EscalationEvent {
 /// re-running side effects. Used to protect against Stripe replay + manual
 /// "Resend" from the Dashboard.
 model WebhookEventLog {
-  id          String   @id                      // provider event id (e.g. "evt_1Abc...")
-  provider    String                             // 'stripe' | 'calcom' | ...
+  id          String   @id // provider event id (e.g. "evt_1Abc...")
+  provider    String // 'stripe' | 'calcom' | ...
   eventType   String
   processedAt DateTime @default(now())
 
   @@index([processedAt])
+}
+
+/// Durable queue for verified provider webhooks. The public webhook handler
+/// acknowledges after this insert; catalog/order work runs asynchronously.
+model InboundPosEvent {
+  id            String    @id @default(uuid())
+  provider      String
+  eventId       String
+  eventType     String
+  payload       Json
+  status        String    @default("pending")
+  attemptCount  Int       @default(0)
+  nextAttemptAt DateTime  @default(now())
+  lastAttemptAt DateTime?
+  lastError     String?   @db.Text
+  processedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([provider, eventId])
+  @@index([status, nextAttemptAt])
 }
 
 /// Per-call AI token usage. One row per Claude / MiniMax / OpenAI request
@@ -1055,9 +1265,9 @@ model WebhookEventLog {
 model AiUsageLog {
   id           String   @id @default(uuid())
   tenantId     String
-  provider     String   // 'claude' | 'minimax' | 'openai'
+  provider     String // 'claude' | 'minimax' | 'openai'
   model        String
-  purpose      String   // 'order_agent' | 'intent_classifier' | 'fallback_chat' | 'tts' | ...
+  purpose      String // 'order_agent' | 'intent_classifier' | 'fallback_chat' | 'tts' | ...
   inputTokens  Int      @default(0)
   outputTokens Int      @default(0)
   latencyMs    Int?
@@ -1073,22 +1283,22 @@ model AiUsageLog {
 /// The model may phrase these facts, but may not introduce facts that are not
 /// represented by an active verified row (or a runtime system fact).
 model KnowledgeFact {
-  id          String    @id @default(uuid())
-  tenantId    String
-  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  key         String
-  category    String
-  question    String
-  answer      String    @db.Text
-  aliases     String[]  @default([])
-  source      String    @default("OWNER")
-  sourceUrl   String?
-  isVerified  Boolean   @default(false)
-  verifiedAt  DateTime?
-  expiresAt   DateTime?
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id         String    @id @default(uuid())
+  tenantId   String
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key        String
+  category   String
+  question   String
+  answer     String    @db.Text
+  aliases    String[]  @default([])
+  source     String    @default("OWNER")
+  sourceUrl  String?
+  isVerified Boolean   @default(false)
+  verifiedAt DateTime?
+  expiresAt  DateTime?
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   @@unique([tenantId, key])
   @@index([tenantId, isActive, isVerified])
@@ -1099,27 +1309,27 @@ model KnowledgeFact {
 /// same AES-GCM helper as conversation messages; the indexed columns support
 /// accuracy dashboards without exposing customer text.
 model AiResponseAudit {
-  id                     String    @id @default(uuid())
-  tenantId               String
-  tenant                 Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  turnId                  String?
-  callerPhoneHash         String?
-  purpose                 String
-  riskLevel               String
-  provider                String?
-  model                   String?
-  questionEncrypted       String?   @db.Text
-  answerEncrypted         String?   @db.Text
-  supportedFactIds        String[]   @default([])
-  retrievedFactIds        String[]   @default([])
-  confidence              Float?
-  validationStatus        String
-  validationReason        String?
-  needsHuman              Boolean    @default(false)
-  providerFallbackUsed    Boolean    @default(false)
-  customerCorrection      Boolean    @default(false)
-  correctionEncrypted     String?    @db.Text
-  createdAt               DateTime   @default(now())
+  id                   String   @id @default(uuid())
+  tenantId             String
+  tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  turnId               String?
+  callerPhoneHash      String?
+  purpose              String
+  riskLevel            String
+  provider             String?
+  model                String?
+  questionEncrypted    String?  @db.Text
+  answerEncrypted      String?  @db.Text
+  supportedFactIds     String[] @default([])
+  retrievedFactIds     String[] @default([])
+  confidence           Float?
+  validationStatus     String
+  validationReason     String?
+  needsHuman           Boolean  @default(false)
+  providerFallbackUsed Boolean  @default(false)
+  customerCorrection   Boolean  @default(false)
+  correctionEncrypted  String?  @db.Text
+  createdAt            DateTime @default(now())
 
   @@index([tenantId, createdAt])
   @@index([tenantId, validationStatus, createdAt])
@@ -1159,37 +1369,37 @@ enum TurnOutcome {
 }
 
 model Turn {
-  id                   String        @id @default(cuid())
-  tenantId             String
-  tenant               Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  callerPhone          String
-  direction            TurnDirection @default(INBOUND)
+  id          String        @id @default(cuid())
+  tenantId    String
+  tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  callerPhone String
+  direction   TurnDirection @default(INBOUND)
 
   // Input snapshot
   inboundMessageSid    String?
   /// AES-256-GCM encrypted; same scheme as Conversation.messages.
-  inboundBodyEncrypted String?       @db.Text
+  inboundBodyEncrypted String?  @db.Text
   inboundReceivedAt    DateTime
   /// Tenant.config snapshot at turn-time so replays survive config drift.
   tenantConfigSnapshot Json
   /// { suppressed, preferredLanguage, callerStateFlowStep, ... }
   contactStateSnapshot Json?
 
-  decisions            Decision[]
+  decisions Decision[]
 
   // Outcome
-  outcome              TurnOutcome
-  outcomeReason        String?
+  outcome            TurnOutcome
+  outcomeReason      String?
   /// Null for any SUPPRESSED_* or ERROR_* outcome.
-  replyBodyEncrypted   String?       @db.Text
-  replyMessageSid      String?
+  replyBodyEncrypted String?     @db.Text
+  replyMessageSid    String?
 
   // Performance
-  durationMs           Int
-  llmCalled            Boolean       @default(false)
-  llmLatencyMs         Int?
+  durationMs   Int
+  llmCalled    Boolean @default(false)
+  llmLatencyMs Int?
 
-  createdAt            DateTime      @default(now())
+  createdAt DateTime @default(now())
 
   @@index([tenantId, callerPhone, createdAt])
   @@index([tenantId, outcome, createdAt])
@@ -1219,9 +1429,9 @@ model ConversationReviewReport {
 }
 
 model Decision {
-  id         String        @id @default(cuid())
-  turnId     String
-  turn       Turn          @relation(fields: [turnId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  turnId String
+  turn   Turn   @relation(fields: [turnId], references: [id], onDelete: Cascade)
 
   /// 0-based position in the handler chain.
   sequence   Int

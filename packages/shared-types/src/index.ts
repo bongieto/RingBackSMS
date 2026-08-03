@@ -7,4 +7,5 @@ export * from './plans';
 export * from './pos';
 export * from './turn';
 export * from './kitchenPayment';
+export * from './commerce';
 export * from './recoveryInbox';

@@ -1,6 +1,9 @@
 import { posRegistry } from './registry';
 import { logger } from '../logger';
 import { prisma } from '../db';
+import { OrderStatus } from '@prisma/client';
+import { enqueueIntegrationEvent } from '../commerce/outbox';
+import { notifyCustomerOfOrderStatus } from '../services/orderStatusNotification';
 
 interface WebhookEvent {
   type?: string;
@@ -15,10 +18,7 @@ interface WebhookEvent {
  * Handles common event types like catalog updates (trigger re-sync)
  * and order updates (logging).
  */
-export async function handlePosWebhookEvent(
-  provider: string,
-  body: unknown,
-): Promise<void> {
+export async function handlePosWebhookEvent(provider: string, body: unknown): Promise<void> {
   const event = body as WebhookEvent;
   const eventType = event.type ?? event.event_type ?? 'unknown';
 
@@ -27,64 +27,117 @@ export async function handlePosWebhookEvent(
     eventType,
   });
 
-  try {
-    const adapter = posRegistry.get(provider);
+  const adapter = posRegistry.get(provider);
 
-    // Determine tenant from event payload (provider-specific).
-    // Square/Clover send their own merchant_id; we have to look up our
-    // Tenant row that's linked to that external id. Other providers
-    // might carry our tenant id directly — delegate to the resolver.
-    const tenantId = await resolveTenantId(provider, event);
+  // Determine tenant from event payload (provider-specific).
+  // Square/Clover send their own merchant_id; we have to look up our
+  // Tenant row that's linked to that external id. Other providers
+  // might carry our tenant id directly — delegate to the resolver.
+  const tenantId = await resolveTenantId(provider, event);
 
-    if (!tenantId) {
-      logger.warn('Could not determine tenant from webhook event', {
-        provider,
-        eventType,
-      });
-      return;
-    }
-
-    // Handle common event categories
-    if (isCatalogUpdateEvent(provider, eventType)) {
-      logger.info('Catalog update webhook received, triggering re-sync', {
-        provider,
-        tenantId,
-        eventType,
-      });
-      try {
-        const result = await adapter.syncCatalogFromPOS(tenantId);
-        logger.info('Webhook-triggered catalog sync completed', {
-          provider,
-          tenantId,
-          syncResult: result,
-        });
-      } catch (err) {
-        logger.error('Webhook-triggered catalog sync failed', {
-          provider,
-          tenantId,
-          error: (err as Error).message,
-        });
-      }
-    } else if (isOrderUpdateEvent(provider, eventType)) {
-      logger.info('Order update webhook received', {
-        provider,
-        tenantId,
-        eventType,
-        orderId: extractOrderId(provider, event),
-      });
-    } else {
-      logger.debug('Unhandled POS webhook event type', {
-        provider,
-        tenantId,
-        eventType,
-      });
-    }
-  } catch (err) {
-    logger.error('Error processing POS webhook event', {
+  if (!tenantId) {
+    logger.warn('Could not determine tenant from webhook event', {
       provider,
       eventType,
-      error: (err as Error).message,
     });
+    return;
+  }
+
+  // Handle common event categories
+  if (isCatalogUpdateEvent(provider, eventType)) {
+    logger.info('Catalog update webhook received, triggering re-sync', {
+      provider,
+      tenantId,
+      eventType,
+    });
+    const result = await adapter.syncCatalogFromPOS(tenantId);
+    logger.info('Webhook-triggered catalog sync completed', {
+      provider,
+      tenantId,
+      syncResult: result,
+    });
+  } else if (isOrderUpdateEvent(provider, eventType)) {
+    logger.info('Order update webhook received', {
+      provider,
+      tenantId,
+      eventType,
+      orderId: extractOrderId(provider, event),
+    });
+    await reconcileFulfillmentUpdate(provider, tenantId, eventType, event);
+  } else {
+    logger.debug('Unhandled POS webhook event type', {
+      provider,
+      tenantId,
+      eventType,
+    });
+  }
+}
+
+async function reconcileFulfillmentUpdate(
+  provider: string,
+  tenantId: string,
+  eventType: string,
+  event: WebhookEvent
+): Promise<void> {
+  if (provider !== 'square' || eventType !== 'order.fulfillment.updated') return;
+  const data = event.data as Record<string, unknown> | undefined;
+  const object = data?.object as Record<string, unknown> | undefined;
+  const updateObject = object?.order_fulfillment_updated as Record<string, unknown> | undefined;
+  const updates = updateObject?.fulfillment_update as Array<Record<string, unknown>> | undefined;
+  const latestState = updates?.at(-1)?.new_state as string | undefined;
+  const externalOrderId =
+    (updateObject?.order_id as string | undefined) ?? extractOrderId(provider, event);
+  if (!externalOrderId || !latestState) return;
+  const statusBySquareState: Record<string, OrderStatus> = {
+    RESERVED: OrderStatus.CONFIRMED,
+    PREPARED: OrderStatus.READY,
+    COMPLETED: OrderStatus.COMPLETED,
+    CANCELED: OrderStatus.CANCELLED,
+  };
+  const nextStatus = statusBySquareState[latestState];
+  if (!nextStatus) return;
+  const order = await prisma.order.findFirst({
+    where: {
+      tenantId,
+      OR: [{ posOrderId: externalOrderId }, { squareOrderId: externalOrderId }],
+    },
+    select: { id: true, status: true, locationId: true, integrationVersion: true },
+  });
+  if (!order || order.status === nextStatus || ['COMPLETED', 'CANCELLED'].includes(order.status))
+    return;
+  const updated = await prisma.$transaction(async (tx) => {
+    const changed = await tx.order.updateMany({
+      where: { id: order.id, status: order.status, integrationVersion: order.integrationVersion },
+      data: {
+        status: nextStatus,
+        fulfillmentOwner: 'square',
+        integrationVersion: { increment: 1 },
+      },
+    });
+    if (changed.count !== 1) return null;
+    const row = await tx.order.findUniqueOrThrow({ where: { id: order.id } });
+    await enqueueIntegrationEvent(tx, {
+      tenantId,
+      type: nextStatus === OrderStatus.CANCELLED ? 'order.cancelled' : 'order.updated',
+      locationId: row.locationId,
+      resourceType: 'order',
+      resourceId: row.id,
+      data: {
+        order_id: row.id,
+        status: row.status,
+        version: row.integrationVersion,
+        source: 'square',
+      },
+    });
+    return row;
+  });
+  if (updated) {
+    await notifyCustomerOfOrderStatus(tenantId, updated.id, updated.status).catch((error) =>
+      logger.error('Square fulfillment customer notification failed', {
+        error,
+        orderId: updated.id,
+      })
+    );
   }
 }
 
@@ -98,10 +151,7 @@ export async function handlePosWebhookEvent(
  * account we don't know about — should not happen in practice but
  * we log and skip rather than crash).
  */
-async function resolveTenantId(
-  provider: string,
-  event: WebhookEvent,
-): Promise<string | null> {
+async function resolveTenantId(provider: string, event: WebhookEvent): Promise<string | null> {
   switch (provider) {
     case 'square': {
       const merchantId = event.merchant_id as string | undefined;
@@ -151,24 +201,10 @@ async function resolveTenantId(
  */
 function isCatalogUpdateEvent(provider: string, eventType: string): boolean {
   const catalogEvents: Record<string, string[]> = {
-    square: [
-      'catalog.version.updated',
-      'inventory.count.updated',
-    ],
-    clover: [
-      'ITEM_CREATED',
-      'ITEM_UPDATED',
-      'ITEM_DELETED',
-    ],
-    toast: [
-      'menus.published',
-      'menus.updated',
-    ],
-    shopify: [
-      'products/create',
-      'products/update',
-      'products/delete',
-    ],
+    square: ['catalog.version.updated', 'inventory.count.updated'],
+    clover: ['ITEM_CREATED', 'ITEM_UPDATED', 'ITEM_DELETED'],
+    toast: ['menus.published', 'menus.updated'],
+    shopify: ['products/create', 'products/update', 'products/delete'],
   };
 
   return (catalogEvents[provider] ?? []).includes(eventType);
@@ -179,24 +215,10 @@ function isCatalogUpdateEvent(provider: string, eventType: string): boolean {
  */
 function isOrderUpdateEvent(provider: string, eventType: string): boolean {
   const orderEvents: Record<string, string[]> = {
-    square: [
-      'order.created',
-      'order.updated',
-      'order.fulfillment.updated',
-    ],
-    clover: [
-      'ORDER_CREATED',
-      'ORDER_UPDATED',
-    ],
-    toast: [
-      'order.created',
-      'order.updated',
-    ],
-    shopify: [
-      'orders/create',
-      'orders/updated',
-      'orders/fulfilled',
-    ],
+    square: ['order.created', 'order.updated', 'order.fulfillment.updated'],
+    clover: ['ORDER_CREATED', 'ORDER_UPDATED'],
+    toast: ['order.created', 'order.updated'],
+    shopify: ['orders/create', 'orders/updated', 'orders/fulfilled'],
   };
 
   return (orderEvents[provider] ?? []).includes(eventType);
@@ -205,10 +227,7 @@ function isOrderUpdateEvent(provider: string, eventType: string): boolean {
 /**
  * Extracts the order ID from a webhook event, if present.
  */
-function extractOrderId(
-  provider: string,
-  event: WebhookEvent,
-): string | null {
+function extractOrderId(provider: string, event: WebhookEvent): string | null {
   switch (provider) {
     case 'square': {
       const data = event.data as Record<string, unknown> | undefined;

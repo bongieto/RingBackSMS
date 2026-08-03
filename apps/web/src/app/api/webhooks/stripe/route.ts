@@ -1,9 +1,14 @@
 import { NextRequest } from 'next/server';
-import { constructStripeEvent, handleSubscriptionUpdated, handleSubscriptionDeleted } from '@/lib/server/services/billingService';
+import {
+  constructStripeEvent,
+  handleSubscriptionUpdated,
+  handleSubscriptionDeleted,
+} from '@/lib/server/services/billingService';
 import { sendPaymentFailedEmail } from '@/lib/server/services/emailService';
 import { sendSms, sendSmsWithRetry } from '@/lib/server/services/twilioService';
 import { sms as i18nSms } from '@/lib/server/i18n';
 import { createOrder, pushOrderToPos } from '@/lib/server/services/orderService';
+import { enqueueIntegrationEvent } from '@/lib/server/commerce/outbox';
 import { getCallerState, setCallerState } from '@/lib/server/services/stateService';
 import { logger } from '@/lib/server/logger';
 import { prisma } from '@/lib/server/db';
@@ -45,7 +50,10 @@ export async function POST(request: NextRequest) {
       select: { id: true },
     });
     if (existing) {
-      logger.info('Duplicate Stripe webhook event, skipping', { eventId: event.id, type: event.type });
+      logger.info('Duplicate Stripe webhook event, skipping', {
+        eventId: event.id,
+        type: event.type,
+      });
       return new Response(JSON.stringify({ received: true, duplicate: true }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -85,7 +93,8 @@ export async function POST(request: NextRequest) {
         break;
       case 'invoice.payment_succeeded': {
         const invoice = event.data.object as Stripe.Invoice;
-        const customerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
+        const customerId =
+          typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
         if (!customerId) break;
         const tenant = await prisma.tenant.findUnique({
           where: { stripeCustomerId: customerId },
@@ -136,9 +145,12 @@ export async function POST(request: NextRequest) {
       }
       case 'invoice.payment_failed': {
         const invoice = event.data.object as Stripe.Invoice;
-        const customerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
+        const customerId =
+          typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
         if (customerId) {
-          const tenant = await prisma.tenant.findUnique({ where: { stripeCustomerId: customerId } });
+          const tenant = await prisma.tenant.findUnique({
+            where: { stripeCustomerId: customerId },
+          });
           if (tenant) {
             sendPaymentFailedEmail(tenant.id).catch((err) =>
               logger.error('Failed to send payment failed email', { err, tenantId: tenant.id })
@@ -152,16 +164,18 @@ export async function POST(request: NextRequest) {
         const orderId = session.metadata?.orderId;
         const tenantId = session.metadata?.tenantId;
         const callerPhone = session.metadata?.callerPhone;
-        const paymentIntentId = typeof session.payment_intent === 'string'
-          ? session.payment_intent
-          : session.payment_intent?.id ?? session.id;
+        const paymentIntentId =
+          typeof session.payment_intent === 'string'
+            ? session.payment_intent
+            : (session.payment_intent?.id ?? session.id);
 
         // Enrich the Contact with whatever Stripe knows about this customer.
         // Only fills blank fields so we never clobber manually-edited data.
         if (tenantId && callerPhone) {
-          const stripeCustomerId = typeof session.customer === 'string'
-            ? session.customer
-            : session.customer?.id ?? null;
+          const stripeCustomerId =
+            typeof session.customer === 'string'
+              ? session.customer
+              : (session.customer?.id ?? null);
           const customerEmail = session.customer_details?.email ?? null;
           const customerName = session.customer_details?.name ?? null;
 
@@ -187,7 +201,8 @@ export async function POST(request: NextRequest) {
                 patch.email = encryptNullable(customerEmail);
                 patch.emailSearchHash = hashForSearch(customerEmail, tenantId);
               }
-              if (!existing.stripeCustomerId && stripeCustomerId) patch.stripeCustomerId = stripeCustomerId;
+              if (!existing.stripeCustomerId && stripeCustomerId)
+                patch.stripeCustomerId = stripeCustomerId;
               if (Object.keys(patch).length > 0) {
                 await prisma.contact.update({ where: { id: existing.id }, data: patch });
                 logger.info('Contact enriched from Stripe checkout', {
@@ -216,27 +231,45 @@ export async function POST(request: NextRequest) {
           // already been marked PAID (would orphan the customer — no
           // confirmation SMS, no retry because our idempotency log
           // dedups on retry).
-          const paidOrder = await prisma.order.update({
-            where: { id: orderId },
-            data: {
-              paymentStatus: 'PAID',
-              stripePaymentId: paymentIntentId,
-              ...(tipFromMeta != null && tipFromMeta > 0 ? { tipAmount: tipFromMeta } : {}),
-            },
-            select: {
-              id: true,
-              orderNumber: true,
-              conversationId: true,
-              items: true,
-              total: true,
-              taxAmount: true,
-              feeAmount: true,
-              tipAmount: true,
-              customerName: true,
-              pickupTime: true,
-              squareOrderId: true,
-              tenant: { select: { config: { select: { timezone: true } } } },
-            },
+          const paidOrder = await prisma.$transaction(async (tx) => {
+            const updated = await tx.order.update({
+              where: { id: orderId },
+              data: {
+                paymentStatus: 'PAID',
+                stripePaymentId: paymentIntentId,
+                ...(tipFromMeta != null && tipFromMeta > 0 ? { tipAmount: tipFromMeta } : {}),
+              },
+              select: {
+                id: true,
+                orderNumber: true,
+                conversationId: true,
+                items: true,
+                total: true,
+                taxAmount: true,
+                feeAmount: true,
+                tipAmount: true,
+                customerName: true,
+                pickupTime: true,
+                squareOrderId: true,
+                tenant: { select: { config: { select: { timezone: true } } } },
+                locationId: true,
+                integrationVersion: true,
+              },
+            });
+            await enqueueIntegrationEvent(tx, {
+              tenantId,
+              type: 'order.ready_for_fulfillment',
+              locationId: updated.locationId,
+              resourceType: 'order',
+              resourceId: updated.id,
+              data: {
+                order_id: updated.id,
+                order_number: updated.orderNumber,
+                resource_url: `/api/v1/orders/${updated.id}`,
+                version: updated.integrationVersion,
+              },
+            });
+            return updated;
           });
           logger.info('Order payment completed', { orderId, tenantId });
 
@@ -282,7 +315,7 @@ export async function POST(request: NextRequest) {
                 }>)
               : [];
             const totalCents = Math.round(
-              (Number(paidOrder.total) + Number(paidOrder.tipAmount ?? 0)) * 100,
+              (Number(paidOrder.total) + Number(paidOrder.tipAmount ?? 0)) * 100
             );
             const taxCents = Math.round(Number(paidOrder.taxAmount ?? 0) * 100);
             const feeCents = Math.round(Number(paidOrder.feeAmount ?? 0) * 100);
@@ -303,8 +336,8 @@ export async function POST(request: NextRequest) {
                   logger.info('POS push after payment completed', { orderId });
                 })
                 .catch((err) =>
-                  logger.error('POS push after payment failed', { err: err?.message, orderId }),
-                ),
+                  logger.error('POS push after payment failed', { err: err?.message, orderId })
+                )
             );
           } else {
             logger.info('POS push skipped — order already has squareOrderId', {
@@ -318,7 +351,9 @@ export async function POST(request: NextRequest) {
           // while the order's already PAID in our DB.
           if (callerPhone) {
             try {
-              const appBase = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://ringbacksms.com').replace(/\/+$/, '');
+              const appBase = (
+                process.env.NEXT_PUBLIC_APP_URL ?? 'https://ringbacksms.com'
+              ).replace(/\/+$/, '');
               const trackerUrl = `${appBase}/o/${paidOrder.id}`;
               // Defensive: never greet with an encrypted blob if one
               // somehow leaked into Order.customerName.
@@ -345,7 +380,7 @@ export async function POST(request: NextRequest) {
                   orderNumber: paidOrder.orderNumber,
                   trackerUrl,
                 }),
-                2,
+                2
               );
             } catch (err) {
               logger.error('Payment confirmation SMS failed', { err, orderId });
@@ -354,8 +389,12 @@ export async function POST(request: NextRequest) {
         } else if (tenantId && callerPhone) {
           // Payment-first flow: create the order now
           const callerState = await getCallerState(tenantId, callerPhone);
-          if (callerState?.paymentPending?.stripeSessionId === session.id && callerState.orderDraft) {
-            const pickupTime = session.metadata?.pickupTime ?? callerState.paymentPending.pickupTime;
+          if (
+            callerState?.paymentPending?.stripeSessionId === session.id &&
+            callerState.orderDraft
+          ) {
+            const pickupTime =
+              session.metadata?.pickupTime ?? callerState.paymentPending.pickupTime;
             const notes = session.metadata?.notes ?? callerState.paymentPending.notes;
             // Prefer the breakdown we stashed in session metadata when the
             // checkout was created. Fall back to recomputing items-only
@@ -367,7 +406,7 @@ export async function POST(request: NextRequest) {
             const totalMeta = parseDollars(session.metadata?.total);
             const itemsSubtotal = callerState.orderDraft.items.reduce(
               (sum, item) => sum + item.price * item.quantity,
-              0,
+              0
             );
             const total = totalMeta ?? itemsSubtotal;
 
@@ -382,8 +421,7 @@ export async function POST(request: NextRequest) {
               feeAmount: feeMeta ?? 0,
               pickupTime,
               notes,
-              customerName:
-                (callerState as { customerName?: string | null }).customerName ?? null,
+              customerName: (callerState as { customerName?: string | null }).customerName ?? null,
               stripePaymentId: paymentIntentId,
               paymentStatus: 'PAID',
             });
@@ -398,13 +436,14 @@ export async function POST(request: NextRequest) {
             });
 
             logger.info('Payment-first order created', { orderId: order.id, tenantId });
-            const appBase = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://ringbacksms.com').replace(/\/+$/, '');
+            const appBase = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://ringbacksms.com').replace(
+              /\/+$/,
+              ''
+            );
             const trackerUrl = `${appBase}/o/${order.id}`;
             const { looksEncrypted } = await import('@/lib/server/encryption');
             const safeName =
-              order.customerName && !looksEncrypted(order.customerName)
-                ? order.customerName
-                : null;
+              order.customerName && !looksEncrypted(order.customerName) ? order.customerName : null;
             const firstName = safeName?.trim().split(/\s+/)[0];
             const contactLang = await prisma.contact
               .findFirst({
@@ -422,12 +461,16 @@ export async function POST(request: NextRequest) {
                 pickupTime: pickupTime ?? '',
                 trackerUrl,
               }),
-              2,
+              2
             ).catch((err) =>
               logger.error('Failed to send payment confirmation SMS', { err, tenantId })
             );
           } else {
-            logger.warn('checkout.session.completed: no matching paymentPending state', { tenantId, callerPhone, sessionId: session.id });
+            logger.warn('checkout.session.completed: no matching paymentPending state', {
+              tenantId,
+              callerPhone,
+              sessionId: session.id,
+            });
           }
         }
         break;
@@ -482,10 +525,7 @@ export async function POST(request: NextRequest) {
           const expired = await prisma.order.updateMany({
             where: {
               id: orderId,
-              OR: [
-                { paymentStatus: null },
-                { paymentStatus: { notIn: ['PAID', 'REFUNDED'] } },
-              ],
+              OR: [{ paymentStatus: null }, { paymentStatus: { notIn: ['PAID', 'REFUNDED'] } }],
             },
             data: { paymentStatus: 'EXPIRED' },
           });

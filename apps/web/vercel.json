@@ -47,6 +47,10 @@
     {
       "path": "/api/cron/conversation-review",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/commerce-webhooks",
+      "schedule": "* * * * *"
     }
   ]
 }

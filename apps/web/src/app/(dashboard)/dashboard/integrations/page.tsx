@@ -12,12 +12,29 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { posApi, tenantApi, calcomApi } from '@/lib/api';
+import { posApi, tenantApi, calcomApi, commerceAdminApi } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/utils';
 import {
-  CheckCircle, RefreshCw, Link2, Unlink,
-  ShoppingBag, Store, UtensilsCrossed, Lock, ArrowRight, Settings2,
-  Download, Upload, Clock, AlertTriangle, ChevronRight, Zap, ArrowLeft,
+  CheckCircle,
+  RefreshCw,
+  Link2,
+  Unlink,
+  ShoppingBag,
+  Store,
+  UtensilsCrossed,
+  Lock,
+  ArrowRight,
+  Settings2,
+  Download,
+  Upload,
+  Clock,
+  AlertTriangle,
+  ChevronRight,
+  Zap,
+  ArrowLeft,
+  KeyRound,
+  Copy,
+  Trash2,
 } from 'lucide-react';
 
 interface ProviderStatus {
@@ -46,10 +63,26 @@ interface SyncLog {
 }
 
 const PROVIDER_ICONS: Record<string, React.ReactNode> = {
-  square: <div className="h-10 w-10 rounded-lg bg-black flex items-center justify-center text-white font-bold text-lg">S</div>,
-  clover: <div className="h-10 w-10 rounded-lg bg-green-600 flex items-center justify-center text-white font-bold text-lg">C</div>,
-  toast: <div className="h-10 w-10 rounded-lg bg-orange-500 flex items-center justify-center text-white font-bold text-lg">T</div>,
-  shopify: <div className="h-10 w-10 rounded-lg bg-[#96bf48] flex items-center justify-center text-white font-bold text-lg">S</div>,
+  square: (
+    <div className="h-10 w-10 rounded-lg bg-black flex items-center justify-center text-white font-bold text-lg">
+      S
+    </div>
+  ),
+  clover: (
+    <div className="h-10 w-10 rounded-lg bg-green-600 flex items-center justify-center text-white font-bold text-lg">
+      C
+    </div>
+  ),
+  toast: (
+    <div className="h-10 w-10 rounded-lg bg-orange-500 flex items-center justify-center text-white font-bold text-lg">
+      T
+    </div>
+  ),
+  shopify: (
+    <div className="h-10 w-10 rounded-lg bg-[#96bf48] flex items-center justify-center text-white font-bold text-lg">
+      S
+    </div>
+  ),
 };
 
 const PROVIDER_DESCRIPTIONS: Record<string, string> = {
@@ -72,7 +105,9 @@ export default function IntegrationsPage() {
   useEffect(() => {
     if (searchParams.get('pos_connected') === 'true') {
       const provider = searchParams.get('provider') || 'POS';
-      toast.success(`${provider.charAt(0).toUpperCase() + provider.slice(1)} connected successfully!`);
+      toast.success(
+        `${provider.charAt(0).toUpperCase() + provider.slice(1)} connected successfully!`
+      );
       const dismissed = sessionStorage.getItem(`pos_postconnect_${provider}`);
       if (!dismissed) {
         setShowPostConnect(true);
@@ -85,7 +120,11 @@ export default function IntegrationsPage() {
     }
   }, [searchParams]);
 
-  const { data: providers, isLoading, error: providersError } = useQuery({
+  const {
+    data: providers,
+    isLoading,
+    error: providersError,
+  } = useQuery({
     queryKey: ['pos-providers', tenantId],
     queryFn: () => posApi.listProviders(tenantId!),
     enabled: !!tenantId,
@@ -105,16 +144,24 @@ export default function IntegrationsPage() {
   const syncLogs: SyncLog[] = syncHistoryData?.logs ?? [];
   const activeProvider = providers?.find((p: ProviderStatus) => p.connected);
   const menuItemCount = tenant?.menuItems?.length ?? 0;
-  const orderFlowEnabled = tenant?.flows?.some((f: { type: string; isEnabled: boolean }) => f.type === 'ORDER' && f.isEnabled) ?? false;
+  const orderFlowEnabled =
+    tenant?.flows?.some(
+      (f: { type: string; isEnabled: boolean }) => f.type === 'ORDER' && f.isEnabled
+    ) ?? false;
 
   if (isLoading || tenantLoading) {
     return (
       <div>
-        <Header title="Integrations" description="Connect your POS system to sync menus and manage orders" />
+        <Header
+          title="Integrations"
+          description="Connect your POS system to sync menus and manage orders"
+        />
         <div className="space-y-4 max-w-3xl">
           {[1, 2, 3].map((i) => (
             <Card key={i} className="animate-pulse">
-              <CardHeader><div className="h-10 w-full bg-muted rounded" /></CardHeader>
+              <CardHeader>
+                <div className="h-10 w-full bg-muted rounded" />
+              </CardHeader>
             </Card>
           ))}
         </div>
@@ -123,19 +170,27 @@ export default function IntegrationsPage() {
   }
 
   // Determine which view to show
-  const viewProvider = activeProvider
-    ?? (selectedProvider ? providers?.find((p: ProviderStatus) => p.provider === selectedProvider) : null);
+  const viewProvider =
+    activeProvider ??
+    (selectedProvider
+      ? providers?.find((p: ProviderStatus) => p.provider === selectedProvider)
+      : null);
 
   return (
     <div>
-      <Header title="Integrations" description="Connect your POS system to sync menus and manage orders" />
+      <Header
+        title="Integrations"
+        description="Connect your POS system to sync menus and manage orders"
+      />
 
       <div className="space-y-6 max-w-3xl">
         {/* Error states */}
         {!tenantId && !tenantLoading && (
           <Card className="border-amber-200 bg-amber-50">
             <CardContent className="pt-4 pb-4">
-              <p className="text-sm text-amber-800">No tenant found for this organization. Please complete onboarding first.</p>
+              <p className="text-sm text-amber-800">
+                No tenant found for this organization. Please complete onboarding first.
+              </p>
             </CardContent>
           </Card>
         )}
@@ -151,6 +206,8 @@ export default function IntegrationsPage() {
 
         {/* Scheduling section */}
         {tenantId && <CalcomCard tenantId={tenantId} />}
+
+        {tenantId && <DeveloperApiCard tenantId={tenantId} />}
 
         {/* Post-connect guided flow */}
         {showPostConnect && connectedProvider && (
@@ -197,9 +254,12 @@ export default function IntegrationsPage() {
                 <div className="flex items-start gap-3">
                   <Store className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
                   <div>
-                    <p className="text-sm font-medium text-blue-900 dark:text-blue-100">Select your POS system</p>
+                    <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                      Select your POS system
+                    </p>
                     <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
-                      Choose your point-of-sale provider to sync your menu catalog and enable order placement through SMS.
+                      Choose your point-of-sale provider to sync your menu catalog and enable order
+                      placement through SMS.
                     </p>
                   </div>
                 </div>
@@ -226,14 +286,20 @@ export default function IntegrationsPage() {
                 <CheckCircle className="h-4 w-4 text-green-500" />
                 Getting Started
               </CardTitle>
-              <CardDescription>Complete these steps to start accepting orders via SMS</CardDescription>
+              <CardDescription>
+                Complete these steps to start accepting orders via SMS
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
                 <ChecklistItem done={true} label="POS Connected" />
                 <ChecklistItem
                   done={menuItemCount > 0}
-                  label={menuItemCount > 0 ? `Menu Synced (${menuItemCount} items)` : 'Sync your menu from POS'}
+                  label={
+                    menuItemCount > 0
+                      ? `Menu Synced (${menuItemCount} items)`
+                      : 'Sync your menu from POS'
+                  }
                   hint="Use the Pull from POS button above"
                 />
                 <ChecklistItem
@@ -257,11 +323,16 @@ export default function IntegrationsPage() {
             </CardHeader>
             <CardContent>
               {syncLogs.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">No sync history yet</p>
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No sync history yet
+                </p>
               ) : (
                 <div className="space-y-2">
                   {syncLogs.map((log) => (
-                    <div key={log.id} className="flex items-center justify-between py-2 px-3 rounded-lg bg-muted/50 text-sm">
+                    <div
+                      key={log.id}
+                      className="flex items-center justify-between py-2 px-3 rounded-lg bg-muted/50 text-sm"
+                    >
                       <div className="flex items-center gap-3">
                         {log.direction === 'pull' ? (
                           <Download className="h-4 w-4 text-blue-500" />
@@ -279,10 +350,21 @@ export default function IntegrationsPage() {
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <Badge variant={log.status === 'completed' ? 'success' : log.status === 'failed' ? 'destructive' : 'secondary'} className="text-xs">
+                        <Badge
+                          variant={
+                            log.status === 'completed'
+                              ? 'success'
+                              : log.status === 'failed'
+                                ? 'destructive'
+                                : 'secondary'
+                          }
+                          className="text-xs"
+                        >
                           {log.status}
                         </Badge>
-                        <span className="text-xs text-muted-foreground">{formatRelativeTime(log.startedAt)}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {formatRelativeTime(log.startedAt)}
+                        </span>
                       </div>
                     </div>
                   ))}
@@ -296,9 +378,182 @@ export default function IntegrationsPage() {
   );
 }
 
+interface CommerceCredential {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  connection: { name: string } | null;
+}
+
+function DeveloperApiCard({ tenantId }: { tenantId: string }) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState('McInasal production');
+  const [newToken, setNewToken] = useState<string | null>(null);
+  const credentialsQuery = useQuery({
+    queryKey: ['commerce-credentials', tenantId],
+    queryFn: () => commerceAdminApi.listCredentials(tenantId),
+  });
+  const createCredential = useMutation({
+    mutationFn: () =>
+      commerceAdminApi.createCredential(tenantId, {
+        name,
+        provider: 'mcinasal',
+        connectionName: 'McInasal KDS',
+        scopes: [
+          'menu:read',
+          'menu:write',
+          'availability:read',
+          'availability:write',
+          'orders:read',
+          'orders:write',
+          'fulfillment:write',
+          'webhooks:manage',
+        ],
+      }),
+    onSuccess: (credential) => {
+      setNewToken(credential.token);
+      queryClient.invalidateQueries({ queryKey: ['commerce-credentials', tenantId] });
+      toast.success('API credential created');
+    },
+    onError: () => toast.error('Only a tenant owner can create API credentials'),
+  });
+  const revokeCredential = useMutation({
+    mutationFn: (credentialId: string) => commerceAdminApi.revokeCredential(tenantId, credentialId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['commerce-credentials', tenantId] });
+      toast.success('API credential revoked');
+    },
+    onError: () => toast.error('Failed to revoke API credential'),
+  });
+  const credentials = (credentialsQuery.data ?? []) as CommerceCredential[];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <KeyRound className="h-4 w-4 text-blue-600" />
+          Commerce API
+        </CardTitle>
+        <CardDescription>
+          Connect McInasal or a custom POS/KDS using scoped credentials and signed webhooks.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {newToken && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
+            <p className="text-sm font-medium text-amber-900">
+              Copy this secret now. It cannot be shown again.
+            </p>
+            <div className="flex gap-2">
+              <Input value={newToken} readOnly className="font-mono text-xs bg-white" />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                aria-label="Copy API credential"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(newToken);
+                    toast.success('Credential copied');
+                  } catch {
+                    toast.error('Copy failed. Select and copy the credential manually.');
+                  }
+                }}
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setNewToken(null);
+                createCredential.reset();
+              }}
+            >
+              I saved it
+            </Button>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          <Label htmlFor="commerce-credential-name">Credential name</Label>
+          <div className="flex gap-2">
+            <Input
+              id="commerce-credential-name"
+              value={name}
+              maxLength={100}
+              onChange={(event) => setName(event.target.value)}
+            />
+            <Button
+              type="button"
+              disabled={!name.trim() || createCredential.isPending}
+              onClick={() => createCredential.mutate()}
+            >
+              {createCredential.isPending ? 'Creating…' : 'Create key'}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Production base path: <code>/api/v1</code>. Credential management is owner-only.
+          </p>
+        </div>
+
+        {credentialsQuery.isError ? (
+          <p className="text-sm text-muted-foreground">
+            API credentials are visible to tenant owners only.
+          </p>
+        ) : credentials.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No API credentials created.</p>
+        ) : (
+          <div className="space-y-2">
+            {credentials.map((credential) => (
+              <div
+                key={credential.id}
+                className="flex items-center justify-between rounded-lg border p-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{credential.name}</p>
+                  <p className="text-xs text-muted-foreground font-mono">
+                    {credential.keyPrefix}… · {credential.connection?.name ?? 'Integration'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {credential.revokedAt
+                      ? 'Revoked'
+                      : credential.lastUsedAt
+                        ? `Last used ${formatRelativeTime(credential.lastUsedAt)}`
+                        : 'Never used'}
+                  </p>
+                </div>
+                {!credential.revokedAt && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Revoke ${credential.name}`}
+                    disabled={revokeCredential.isPending}
+                    onClick={() => revokeCredential.mutate(credential.id)}
+                  >
+                    <Trash2 className="h-4 w-4 text-red-600" />
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── POS Selector Card ─────────────────────────────────────────────────────────
 
-function PosSelectorCard({ provider, onSelect }: {
+function PosSelectorCard({
+  provider,
+  onSelect,
+}: {
   provider: ProviderStatus;
   onSelect: () => void;
 }) {
@@ -310,7 +565,9 @@ function PosSelectorCard({ provider, onSelect }: {
             {PROVIDER_ICONS[provider.provider]}
             <div>
               <h3 className="font-semibold text-sm">{provider.displayName}</h3>
-              <p className="text-xs text-muted-foreground">{PROVIDER_DESCRIPTIONS[provider.provider]}</p>
+              <p className="text-xs text-muted-foreground">
+                {PROVIDER_DESCRIPTIONS[provider.provider]}
+              </p>
             </div>
           </div>
           <Badge variant="outline" className="gap-1 text-xs">
@@ -331,7 +588,9 @@ function PosSelectorCard({ provider, onSelect }: {
           {PROVIDER_ICONS[provider.provider]}
           <div>
             <h3 className="font-semibold text-sm">{provider.displayName}</h3>
-            <p className="text-xs text-muted-foreground">{PROVIDER_DESCRIPTIONS[provider.provider]}</p>
+            <p className="text-xs text-muted-foreground">
+              {PROVIDER_DESCRIPTIONS[provider.provider]}
+            </p>
           </div>
         </div>
         <div className="flex items-center justify-end text-xs text-blue-600 font-medium mt-3">
@@ -344,7 +603,17 @@ function PosSelectorCard({ provider, onSelect }: {
 
 // ── Checklist Item ───────────────────────────────────────────────────────────
 
-function ChecklistItem({ done, label, href, hint }: { done: boolean; label: string; href?: string; hint?: string }) {
+function ChecklistItem({
+  done,
+  label,
+  href,
+  hint,
+}: {
+  done: boolean;
+  label: string;
+  href?: string;
+  hint?: string;
+}) {
   const content = (
     <div className="flex items-center justify-between py-2">
       <div className="flex items-center gap-3">
@@ -353,7 +622,9 @@ function ChecklistItem({ done, label, href, hint }: { done: boolean; label: stri
         ) : (
           <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30" />
         )}
-        <span className={done ? 'text-sm text-muted-foreground line-through' : 'text-sm font-medium'}>
+        <span
+          className={done ? 'text-sm text-muted-foreground line-through' : 'text-sm font-medium'}
+        >
           {label}
         </span>
       </div>
@@ -363,14 +634,25 @@ function ChecklistItem({ done, label, href, hint }: { done: boolean; label: stri
   );
 
   if (!done && href) {
-    return <Link href={href} className="block hover:bg-muted/50 rounded-lg px-2 -mx-2">{content}</Link>;
+    return (
+      <Link href={href} className="block hover:bg-muted/50 rounded-lg px-2 -mx-2">
+        {content}
+      </Link>
+    );
   }
   return <div className="px-2 -mx-2">{content}</div>;
 }
 
 // ── Post-Connect Flow ────────────────────────────────────────────────────────
 
-function PostConnectFlow({ provider, tenantId, step, onStepComplete, onDismiss, queryClient }: {
+function PostConnectFlow({
+  provider,
+  tenantId,
+  step,
+  onStepComplete,
+  onDismiss,
+  queryClient,
+}: {
   provider: string;
   tenantId: string;
   step: number;
@@ -381,9 +663,10 @@ function PostConnectFlow({ provider, tenantId, step, onStepComplete, onDismiss, 
   const syncMutation = useMutation({
     mutationFn: () => posApi.syncCatalog(tenantId, provider),
     onSuccess: (data) => {
-      const msg = data?.newItems != null
-        ? `Pulled ${data.synced} items (${data.newItems} new, ${data.updated} updated)`
-        : `Synced ${data?.synced ?? 0} items`;
+      const msg =
+        data?.newItems != null
+          ? `Pulled ${data.synced} items (${data.newItems} new, ${data.updated} updated)`
+          : `Synced ${data?.synced ?? 0} items`;
       toast.success(msg);
       queryClient.invalidateQueries({ queryKey: ['sync-history', tenantId] });
       queryClient.invalidateQueries({ queryKey: ['pos-providers', tenantId] });
@@ -411,24 +694,38 @@ function PostConnectFlow({ provider, tenantId, step, onStepComplete, onDismiss, 
 
         <div className="space-y-3">
           {/* Step 1: Sync menu */}
-          <div className={`flex items-center gap-3 p-3 rounded-lg ${step === 0 ? 'bg-white dark:bg-green-900/30 shadow-sm' : 'opacity-60'}`}>
-            <div className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${step > 0 ? 'bg-green-500 text-white' : 'bg-green-200 text-green-800'}`}>
+          <div
+            className={`flex items-center gap-3 p-3 rounded-lg ${step === 0 ? 'bg-white dark:bg-green-900/30 shadow-sm' : 'opacity-60'}`}
+          >
+            <div
+              className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${step > 0 ? 'bg-green-500 text-white' : 'bg-green-200 text-green-800'}`}
+            >
               {step > 0 ? <CheckCircle className="h-4 w-4" /> : '1'}
             </div>
             <div className="flex-1">
               <p className="text-sm font-medium">Sync your menu from {provider}</p>
             </div>
             {step === 0 && (
-              <Button size="sm" onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending}>
-                <RefreshCw className={`h-3 w-3 mr-1.5 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+              <Button
+                size="sm"
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+              >
+                <RefreshCw
+                  className={`h-3 w-3 mr-1.5 ${syncMutation.isPending ? 'animate-spin' : ''}`}
+                />
                 {syncMutation.isPending ? 'Syncing...' : 'Sync Now'}
               </Button>
             )}
           </div>
 
           {/* Step 2: Review menu */}
-          <div className={`flex items-center gap-3 p-3 rounded-lg ${step === 1 ? 'bg-white dark:bg-green-900/30 shadow-sm' : 'opacity-60'}`}>
-            <div className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${step > 1 ? 'bg-green-500 text-white' : 'bg-green-200 text-green-800'}`}>
+          <div
+            className={`flex items-center gap-3 p-3 rounded-lg ${step === 1 ? 'bg-white dark:bg-green-900/30 shadow-sm' : 'opacity-60'}`}
+          >
+            <div
+              className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${step > 1 ? 'bg-green-500 text-white' : 'bg-green-200 text-green-800'}`}
+            >
               {step > 1 ? <CheckCircle className="h-4 w-4" /> : '2'}
             </div>
             <div className="flex-1">
@@ -444,8 +741,12 @@ function PostConnectFlow({ provider, tenantId, step, onStepComplete, onDismiss, 
           </div>
 
           {/* Step 3: Enable ORDER flow */}
-          <div className={`flex items-center gap-3 p-3 rounded-lg ${step === 2 ? 'bg-white dark:bg-green-900/30 shadow-sm' : 'opacity-60'}`}>
-            <div className="h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold bg-green-200 text-green-800">3</div>
+          <div
+            className={`flex items-center gap-3 p-3 rounded-lg ${step === 2 ? 'bg-white dark:bg-green-900/30 shadow-sm' : 'opacity-60'}`}
+          >
+            <div className="h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold bg-green-200 text-green-800">
+              3
+            </div>
             <div className="flex-1">
               <p className="text-sm font-medium">Enable SMS ordering</p>
             </div>
@@ -465,7 +766,11 @@ function PostConnectFlow({ provider, tenantId, step, onStepComplete, onDismiss, 
 
 // ── POS Provider Card ────────────────────────────────────────────────────────
 
-function PosProviderCard({ provider, tenantId, queryClient }: {
+function PosProviderCard({
+  provider,
+  tenantId,
+  queryClient,
+}: {
   provider: ProviderStatus;
   tenantId: string;
   queryClient: ReturnType<typeof useQueryClient>;
@@ -487,23 +792,32 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
   });
 
   const configureMutation = useMutation({
-    mutationFn: (creds: Record<string, string>) => posApi.configure(tenantId, provider.provider, creds),
-    onSuccess: () => { invalidate(); toast.success(`${provider.displayName} configured!`); setShowConfig(false); },
+    mutationFn: (creds: Record<string, string>) =>
+      posApi.configure(tenantId, provider.provider, creds),
+    onSuccess: () => {
+      invalidate();
+      toast.success(`${provider.displayName} configured!`);
+      setShowConfig(false);
+    },
     onError: (err: any) => toast.error(err?.response?.data?.error || 'Configuration failed'),
   });
 
   const disconnectMutation = useMutation({
     mutationFn: () => posApi.disconnect(tenantId, provider.provider),
-    onSuccess: () => { invalidate(); toast.success(`${provider.displayName} disconnected`); },
+    onSuccess: () => {
+      invalidate();
+      toast.success(`${provider.displayName} disconnected`);
+    },
     onError: () => toast.error('Failed to disconnect'),
   });
 
   const syncMutation = useMutation({
     mutationFn: () => posApi.syncCatalog(tenantId, provider.provider),
     onSuccess: (data) => {
-      const msg = data?.newItems != null
-        ? `Pulled ${data.synced} items from ${provider.displayName} (${data.newItems} new, ${data.updated} updated, ${data.unchanged} unchanged)`
-        : `Synced ${data?.synced ?? 0} items from ${provider.displayName}`;
+      const msg =
+        data?.newItems != null
+          ? `Pulled ${data.synced} items from ${provider.displayName} (${data.newItems} new, ${data.updated} updated, ${data.unchanged} unchanged)`
+          : `Synced ${data?.synced ?? 0} items from ${provider.displayName}`;
       // New items land with isAvailable=false — operator has to add them
       // to the menu from Menu → Import. Link there from the success toast.
       toast.success(msg, {
@@ -521,15 +835,17 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
 
   const reconnectMutation = useMutation({
     mutationFn: () => posApi.refreshToken(tenantId, provider.provider),
-    onSuccess: () => { invalidate(); toast.success('Token refreshed!'); },
+    onSuccess: () => {
+      invalidate();
+      toast.success('Token refreshed!');
+    },
     onError: () => toast.error('Failed to refresh token — try reconnecting'),
   });
 
   // Multi-location picker — only for adapters that expose listLocations
   // (Square + Shopify). Clover and Toast tie one credential to one
   // location, so switching requires reconnecting and they stay hidden.
-  const supportsLocationPicker =
-    provider.provider === 'square' || provider.provider === 'shopify';
+  const supportsLocationPicker = provider.provider === 'square' || provider.provider === 'shopify';
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const locationsQuery = useQuery({
     queryKey: ['pos-locations', tenantId, provider.provider],
@@ -549,8 +865,7 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
       });
       setShowLocationPicker(false);
     },
-    onError: (err: any) =>
-      toast.error(err?.response?.data?.error ?? 'Failed to change location'),
+    onError: (err: any) => toast.error(err?.response?.data?.error ?? 'Failed to change location'),
   });
 
   // Token health
@@ -588,14 +903,16 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
               <CardDescription>
                 {provider.connected
                   ? `Connected · Merchant: ${provider.merchantId}`
-                  : PROVIDER_DESCRIPTIONS[provider.provider]
-                }
+                  : PROVIDER_DESCRIPTIONS[provider.provider]}
               </CardDescription>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {provider.connected && tokenHealth !== 'healthy' && (
-              <Badge variant={tokenHealth === 'expired' ? 'destructive' : 'warning'} className="gap-1">
+              <Badge
+                variant={tokenHealth === 'expired' ? 'destructive' : 'warning'}
+                className="gap-1"
+              >
                 <AlertTriangle className="h-3 w-3" />
                 {tokenHealth === 'expired' ? 'Token Expired' : 'Expiring Soon'}
               </Badge>
@@ -613,13 +930,21 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
           <>
             {/* Token health warning */}
             {tokenHealth !== 'healthy' && (
-              <Card className={`${tokenHealth === 'expired' ? 'bg-red-50 border-red-200 dark:bg-red-950/20' : 'bg-amber-50 border-amber-200 dark:bg-amber-950/20'}`}>
+              <Card
+                className={`${tokenHealth === 'expired' ? 'bg-red-50 border-red-200 dark:bg-red-950/20' : 'bg-amber-50 border-amber-200 dark:bg-amber-950/20'}`}
+              >
                 <CardContent className="pt-3 pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <AlertTriangle className={`h-4 w-4 ${tokenHealth === 'expired' ? 'text-red-600' : 'text-amber-600'}`} />
-                      <span className={`text-sm font-medium ${tokenHealth === 'expired' ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
-                        {tokenHealth === 'expired' ? 'Your connection token has expired' : 'Your connection token expires soon'}
+                      <AlertTriangle
+                        className={`h-4 w-4 ${tokenHealth === 'expired' ? 'text-red-600' : 'text-amber-600'}`}
+                      />
+                      <span
+                        className={`text-sm font-medium ${tokenHealth === 'expired' ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}
+                      >
+                        {tokenHealth === 'expired'
+                          ? 'Your connection token has expired'
+                          : 'Your connection token expires soon'}
                       </span>
                     </div>
                     <Button
@@ -628,7 +953,9 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
                       onClick={() => reconnectMutation.mutate()}
                       disabled={reconnectMutation.isPending}
                     >
-                      <RefreshCw className={`h-3 w-3 mr-1.5 ${reconnectMutation.isPending ? 'animate-spin' : ''}`} />
+                      <RefreshCw
+                        className={`h-3 w-3 mr-1.5 ${reconnectMutation.isPending ? 'animate-spin' : ''}`}
+                      />
                       {reconnectMutation.isPending ? 'Refreshing...' : 'Refresh Token'}
                     </Button>
                   </div>
@@ -676,18 +1003,13 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
                         </p>
                       )}
                       {locationsQuery.data?.locations?.map((loc) => {
-                        const isCurrent =
-                          loc.id === locationsQuery.data?.currentLocationId;
+                        const isCurrent = loc.id === locationsQuery.data?.currentLocationId;
                         return (
                           <button
                             key={loc.id}
                             type="button"
-                            disabled={
-                              configureLocationMutation.isPending || isCurrent
-                            }
-                            onClick={() =>
-                              configureLocationMutation.mutate(loc.id)
-                            }
+                            disabled={configureLocationMutation.isPending || isCurrent}
+                            onClick={() => configureLocationMutation.mutate(loc.id)}
                             className={`w-full text-left rounded-lg border px-3 py-2 text-sm transition-colors ${
                               isCurrent
                                 ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30'
@@ -697,15 +1019,11 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
                             <div className="font-medium flex items-center gap-2">
                               {loc.name}
                               {isCurrent && (
-                                <span className="text-xs text-blue-600">
-                                  (current)
-                                </span>
+                                <span className="text-xs text-blue-600">(current)</span>
                               )}
                             </div>
                             {loc.address && (
-                              <div className="text-xs text-muted-foreground">
-                                {loc.address}
-                              </div>
+                              <div className="text-xs text-muted-foreground">{loc.address}</div>
                             )}
                           </button>
                         );
@@ -734,12 +1052,13 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
                     onClick={() => syncMutation.mutate()}
                     disabled={syncMutation.isPending}
                   >
-                    <RefreshCw className={`h-4 w-4 mr-2 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+                    <RefreshCw
+                      className={`h-4 w-4 mr-2 ${syncMutation.isPending ? 'animate-spin' : ''}`}
+                    />
                     {syncMutation.isPending ? 'Syncing...' : 'Pull from POS'}
                   </Button>
                 </CardContent>
               </Card>
-
             </div>
 
             {/* Order placement info */}
@@ -752,8 +1071,9 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
                   </span>
                 </div>
                 <p className="text-xs text-green-700 dark:text-green-300 mt-1">
-                  Orders placed via SMS conversations will be automatically sent to {provider.displayName}.
-                  Menu items synced from your POS are available for customers to order.
+                  Orders placed via SMS conversations will be automatically sent to{' '}
+                  {provider.displayName}. Menu items synced from your POS are available for
+                  customers to order.
                 </p>
               </CardContent>
             </Card>
@@ -763,7 +1083,11 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
                 variant="destructive"
                 size="sm"
                 onClick={() => {
-                  if (confirm(`Disconnect ${provider.displayName}? This will stop menu sync and order placement.`)) {
+                  if (
+                    confirm(
+                      `Disconnect ${provider.displayName}? This will stop menu sync and order placement.`
+                    )
+                  ) {
                     disconnectMutation.mutate();
                   }
                 }}
@@ -789,7 +1113,9 @@ function PosProviderCard({ provider, tenantId, queryClient }: {
                     disabled={connectMutation.isPending}
                   >
                     <Link2 className="h-4 w-4 mr-2" />
-                    {connectMutation.isPending ? 'Connecting...' : `Connect ${provider.displayName}`}
+                    {connectMutation.isPending
+                      ? 'Connecting...'
+                      : `Connect ${provider.displayName}`}
                   </Button>
                 )}
               </div>
@@ -824,7 +1150,14 @@ function getTokenHealth(tokenExpiresAt: string | null): 'healthy' | 'expiring' |
 
 // ── API Key Config Form ──────────────────────────────────────────────────────
 
-function ApiKeyConfigForm({ provider, credentials, setCredentials, onSubmit, isPending, onCancel }: {
+function ApiKeyConfigForm({
+  provider,
+  credentials,
+  setCredentials,
+  onSubmit,
+  isPending,
+  onCancel,
+}: {
   provider: ProviderStatus;
   credentials: Record<string, string>;
   setCredentials: (creds: Record<string, string>) => void;
@@ -832,13 +1165,28 @@ function ApiKeyConfigForm({ provider, credentials, setCredentials, onSubmit, isP
   isPending: boolean;
   onCancel: () => void;
 }) {
-  const fields: Record<string, { label: string; fields: Array<{ key: string; label: string; placeholder: string; type?: string }> }> = {
+  const fields: Record<
+    string,
+    {
+      label: string;
+      fields: Array<{ key: string; label: string; placeholder: string; type?: string }>;
+    }
+  > = {
     toast: {
       label: 'Toast API Credentials',
       fields: [
         { key: 'clientId', label: 'Client ID', placeholder: 'Your Toast client ID' },
-        { key: 'clientSecret', label: 'Client Secret', placeholder: 'Your Toast client secret', type: 'password' },
-        { key: 'restaurantGuid', label: 'Restaurant GUID', placeholder: 'Your Toast restaurant GUID' },
+        {
+          key: 'clientSecret',
+          label: 'Client Secret',
+          placeholder: 'Your Toast client secret',
+          type: 'password',
+        },
+        {
+          key: 'restaurantGuid',
+          label: 'Restaurant GUID',
+          placeholder: 'Your Toast restaurant GUID',
+        },
       ],
     },
     shopify: {
@@ -873,7 +1221,9 @@ function ApiKeyConfigForm({ provider, credentials, setCredentials, onSubmit, isP
           <ArrowRight className="h-4 w-4 mr-2" />
           {isPending ? 'Connecting...' : 'Connect'}
         </Button>
-        <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+        <Button variant="ghost" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
       </div>
     </div>
   );
@@ -925,8 +1275,7 @@ function CalcomCard({ tenantId }: { tenantId: string }) {
       toast.success(`Default event type set: ${data.eventTypeSlug}`);
       invalidateAll();
     },
-    onError: (err: any) =>
-      toast.error(err?.response?.data?.error ?? 'Failed to save event type'),
+    onError: (err: any) => toast.error(err?.response?.data?.error ?? 'Failed to save event type'),
   });
 
   const disconnectMutation = useMutation({
@@ -980,9 +1329,9 @@ function CalcomCard({ tenantId }: { tenantId: string }) {
               </Button>
             </a>
             <p className="text-xs text-muted-foreground">
-              You&apos;ll be redirected to cal.com to authorize RingbackSMS to read
-              your event types and create bookings. We only use your access
-              token server-side — never exposed to tenants or browsers.
+              You&apos;ll be redirected to cal.com to authorize RingbackSMS to read your event types
+              and create bookings. We only use your access token server-side — never exposed to
+              tenants or browsers.
             </p>
           </div>
         ) : (
@@ -999,9 +1348,7 @@ function CalcomCard({ tenantId }: { tenantId: string }) {
                   <select
                     value={pendingEventTypeId}
                     onChange={(e) =>
-                      setPendingEventTypeId(
-                        e.target.value === '' ? '' : Number(e.target.value),
-                      )
+                      setPendingEventTypeId(e.target.value === '' ? '' : Number(e.target.value))
                     }
                     className="flex-1 h-9 rounded-md border bg-background px-3 text-sm"
                   >
@@ -1022,7 +1369,7 @@ function CalcomCard({ tenantId }: { tenantId: string }) {
                     onClick={() => {
                       if (pendingEventTypeId === '') return;
                       const found = eventTypesQuery.data?.eventTypes.find(
-                        (et) => et.id === pendingEventTypeId,
+                        (et) => et.id === pendingEventTypeId
                       );
                       if (!found) return;
                       configureMutation.mutate({
@@ -1054,7 +1401,8 @@ function CalcomCard({ tenantId }: { tenantId: string }) {
                 <CardContent className="pt-4 pb-4 text-xs space-y-2">
                   <p className="font-medium">Enable two-way sync</p>
                   <p className="text-muted-foreground">
-                    In your cal.com dashboard, go to <strong>Webhooks</strong> and add a new endpoint:
+                    In your cal.com dashboard, go to <strong>Webhooks</strong> and add a new
+                    endpoint:
                   </p>
                   <div className="font-mono bg-background border rounded p-2 break-all">
                     https://ringbacksms.com/api/webhooks/calcom
@@ -1065,8 +1413,8 @@ function CalcomCard({ tenantId }: { tenantId: string }) {
                     <code>BOOKING_REJECTED</code>.
                   </p>
                   <p className="text-muted-foreground">
-                    Use the webhook secret your platform admin provided. Bookings made
-                    directly in cal.com will then show up on your Meetings page.
+                    Use the webhook secret your platform admin provided. Bookings made directly in
+                    cal.com will then show up on your Meetings page.
                   </p>
                 </CardContent>
               </Card>

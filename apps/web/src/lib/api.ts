@@ -41,20 +41,28 @@ export const tenantApi = {
   createCategory: (tenantId: string, body: Record<string, unknown>) =>
     webApi.post(`/tenants/${tenantId}/menu/categories`, body).then((r) => r.data.data),
   updateCategory: (tenantId: string, categoryId: string, body: Record<string, unknown>) =>
-    webApi.patch(`/tenants/${tenantId}/menu/categories/${categoryId}`, body).then((r) => r.data.data),
+    webApi
+      .patch(`/tenants/${tenantId}/menu/categories/${categoryId}`, body)
+      .then((r) => r.data.data),
   deleteCategory: (tenantId: string, categoryId: string) =>
     webApi.delete(`/tenants/${tenantId}/menu/categories/${categoryId}`).then((r) => r.data.data),
   bulkSetCategoryAvailability: (tenantId: string, ids: string[], isAvailable: boolean) =>
-    webApi.patch(`/tenants/${tenantId}/menu/categories/bulk-availability`, { ids, isAvailable }).then((r) => r.data.data),
+    webApi
+      .patch(`/tenants/${tenantId}/menu/categories/bulk-availability`, { ids, isAvailable })
+      .then((r) => r.data.data),
   bulkSetItemAvailability: (tenantId: string, ids: string[], isAvailable: boolean) =>
-    webApi.patch(`/tenants/${tenantId}/menu/items/bulk-availability`, { ids, isAvailable }).then((r) => r.data.data),
+    webApi
+      .patch(`/tenants/${tenantId}/menu/items/bulk-availability`, { ids, isAvailable })
+      .then((r) => r.data.data),
   // Option groups
   listOptionGroups: (tenantId: string) =>
     webApi.get(`/tenants/${tenantId}/menu/option-groups`).then((r) => r.data.data),
   createOptionGroup: (tenantId: string, body: Record<string, unknown>) =>
     webApi.post(`/tenants/${tenantId}/menu/option-groups`, body).then((r) => r.data.data),
   updateOptionGroup: (tenantId: string, groupId: string, body: Record<string, unknown>) =>
-    webApi.patch(`/tenants/${tenantId}/menu/option-groups/${groupId}`, body).then((r) => r.data.data),
+    webApi
+      .patch(`/tenants/${tenantId}/menu/option-groups/${groupId}`, body)
+      .then((r) => r.data.data),
   deleteOptionGroup: (tenantId: string, groupId: string) =>
     webApi.delete(`/tenants/${tenantId}/menu/option-groups/${groupId}`).then((r) => r.data.data),
   // Options
@@ -70,14 +78,28 @@ export const tenantApi = {
   updateFlow: (tenantId: string, flowId: string, data: Record<string, unknown>) =>
     webApi.patch(`/tenants/${tenantId}/flows/${flowId}`, data).then((r) => r.data.data),
   getTeam: (id: string) =>
-    webApi.get(`/tenants/${id}/invite`).then((r) => r.data.data as {
-      members: Array<{ userId: string | null; email: string | null; name: string | null; role: string; createdAt: string }>;
-      invitations: Array<{ id: string; email: string; role: string; status: string; createdAt: string }>;
-    }),
+    webApi.get(`/tenants/${id}/invite`).then(
+      (r) =>
+        r.data.data as {
+          members: Array<{
+            userId: string | null;
+            email: string | null;
+            name: string | null;
+            role: string;
+            createdAt: string;
+          }>;
+          invitations: Array<{
+            id: string;
+            email: string;
+            role: string;
+            status: string;
+            createdAt: string;
+          }>;
+        }
+    ),
   sendInvite: (id: string, email: string, role: string = 'org:admin') =>
     webApi.post(`/tenants/${id}/invite`, { email, role }).then((r) => r.data.data),
-  getKnowledge: (id: string) =>
-    webApi.get(`/tenants/${id}/knowledge`).then((r) => r.data.data),
+  getKnowledge: (id: string) => webApi.get(`/tenants/${id}/knowledge`).then((r) => r.data.data),
   createKnowledgeFact: (id: string, data: Record<string, unknown>) =>
     webApi.post(`/tenants/${id}/knowledge`, data).then((r) => r.data.data),
   updateKnowledgeFact: (id: string, factId: string, data: Record<string, unknown>) =>
@@ -97,6 +119,22 @@ export const orderApi = {
     webApi.get(`/orders/${id}`, { params: { tenantId } }).then((r) => r.data.data),
   updateStatus: (id: string, status: string, tenantId: string) =>
     webApi.patch(`/orders/${id}/status`, { status, tenantId }).then((r) => r.data.data),
+};
+
+export const commerceAdminApi = {
+  listCredentials: (tenantId: string) =>
+    webApi.get(`/tenants/${tenantId}/commerce/credentials`).then((r) => r.data.data),
+  createCredential: (
+    tenantId: string,
+    data: {
+      name: string;
+      provider: string;
+      connectionName: string;
+      scopes: string[];
+    }
+  ) => webApi.post(`/tenants/${tenantId}/commerce/credentials`, data).then((r) => r.data.data),
+  revokeCredential: (tenantId: string, credentialId: string) =>
+    webApi.delete(`/tenants/${tenantId}/commerce/credentials/${credentialId}`),
 };
 
 export const conversationApi = {
@@ -125,20 +163,30 @@ export const analyticsApi = {
 };
 
 export const billingApi = {
-  createCheckout: (tenantId: string, plan: string, successUrl: string, cancelUrl: string, interval: 'monthly' | 'annual' = 'monthly') =>
-    webApi.post('/billing/checkout', { tenantId, plan, successUrl, cancelUrl, interval }).then((r) => r.data.data),
+  createCheckout: (
+    tenantId: string,
+    plan: string,
+    successUrl: string,
+    cancelUrl: string,
+    interval: 'monthly' | 'annual' = 'monthly'
+  ) =>
+    webApi
+      .post('/billing/checkout', { tenantId, plan, successUrl, cancelUrl, interval })
+      .then((r) => r.data.data),
   createPortal: (tenantId: string, returnUrl: string) =>
     webApi.post('/billing/portal', { tenantId, returnUrl }).then((r) => r.data.data),
 };
 
 export const phoneApi = {
-  search: (tenantId: string, areaCode: string): Promise<{
+  search: (
+    tenantId: string,
+    areaCode: string
+  ): Promise<{
     numbers: Array<{ phoneNumber: string; friendlyName: string }>;
     isAlternative: boolean;
     searchedAreaCode: string;
     message?: string;
-  }> =>
-    webApi.post('/phone/search', { tenantId, areaCode }).then((r) => r.data.data),
+  }> => webApi.post('/phone/search', { tenantId, areaCode }).then((r) => r.data.data),
   provision: (tenantId: string, phoneNumber: string) =>
     webApi.post('/phone/provision', { tenantId, phoneNumber }).then((r) => r.data.data),
   getStatus: (tenantId: string) =>
@@ -151,8 +199,7 @@ export const meetingApi = {
   get: (id: string) => webApi.get(`/meetings/${id}`).then((r) => r.data.data),
   update: (id: string, data: Record<string, unknown>) =>
     webApi.patch(`/meetings/${id}`, data).then((r) => r.data.data),
-  cancel: (id: string) =>
-    webApi.delete(`/meetings/${id}`).then((r) => r.data.data),
+  cancel: (id: string) => webApi.delete(`/meetings/${id}`).then((r) => r.data.data),
   create: (data: Record<string, unknown>) =>
     webApi.post('/meetings', data).then((r) => r.data.data),
 };
@@ -165,12 +212,9 @@ export const contactApi = {
     webApi.post('/contacts', data).then((r) => r.data.data),
   update: (id: string, data: Record<string, unknown>) =>
     webApi.patch(`/contacts/${id}`, data).then((r) => r.data.data),
-  delete: (id: string) =>
-    webApi.delete(`/contacts/${id}`).then((r) => r.data),
-  getActivity: (id: string) =>
-    webApi.get(`/contacts/${id}/activity`).then((r) => r.data.data),
-  getNotes: (id: string) =>
-    webApi.get(`/contacts/${id}/notes`).then((r) => r.data.data),
+  delete: (id: string) => webApi.delete(`/contacts/${id}`).then((r) => r.data),
+  getActivity: (id: string) => webApi.get(`/contacts/${id}/activity`).then((r) => r.data.data),
+  getNotes: (id: string) => webApi.get(`/contacts/${id}/notes`).then((r) => r.data.data),
   addNote: (id: string, body: string) =>
     webApi.post(`/contacts/${id}/notes`, { body }).then((r) => r.data.data),
   deleteNote: (id: string, noteId: string) =>
@@ -178,16 +222,22 @@ export const contactApi = {
   sendSms: (id: string, message: string) =>
     webApi.post(`/contacts/${id}/sms`, { message }).then((r) => r.data.data),
   export: (tenantId: string) =>
-    webApi.get('/contacts/export', { params: { tenantId }, responseType: 'blob' as const }).then((r) => r.data),
-  bulk: (tenantId: string, contactIds: string[], action: 'tag' | 'status' | 'delete', value?: string) =>
+    webApi
+      .get('/contacts/export', { params: { tenantId }, responseType: 'blob' as const })
+      .then((r) => r.data),
+  bulk: (
+    tenantId: string,
+    contactIds: string[],
+    action: 'tag' | 'status' | 'delete',
+    value?: string
+  ) =>
     webApi.post('/contacts/bulk', { tenantId, contactIds, action, value }).then((r) => r.data.data),
 };
 
 export const voicemailApi = {
   list: (tenantId: string, params?: Record<string, unknown>) =>
     webApi.get('/voicemails', { params: { tenantId, ...params } }).then((r) => r.data),
-  audioUrl: (id: string, tenantId: string) =>
-    `/api/voicemails/${id}/audio?tenantId=${tenantId}`,
+  audioUrl: (id: string, tenantId: string) => `/api/voicemails/${id}/audio?tenantId=${tenantId}`,
   delete: (id: string, tenantId: string) =>
     webApi.delete(`/voicemails/${id}`, { params: { tenantId } }).then((r) => r.data),
   bulkDelete: (tenantId: string, ids: string[]) =>
@@ -203,8 +253,7 @@ export const replyTemplateApi = {
     webApi.post('/reply-templates', { tenantId, label, body }).then((r) => r.data.data),
   update: (id: string, data: { label?: string; body?: string; sortOrder?: number }) =>
     webApi.patch(`/reply-templates/${id}`, data).then((r) => r.data.data),
-  delete: (id: string) =>
-    webApi.delete(`/reply-templates/${id}`).then((r) => r.data.data),
+  delete: (id: string) => webApi.delete(`/reply-templates/${id}`).then((r) => r.data.data),
 };
 
 export const searchApi = {
@@ -244,78 +293,95 @@ export const posApi = {
   listProviders: (tenantId: string) =>
     webApi.get('/integrations/providers', { params: { tenantId } }).then((r) => r.data.data),
   getConnectUrl: (tenantId: string, provider: string) =>
-    webApi.get(`/integrations/${provider}/connect`, { params: { tenantId } }).then((r) => r.data.data),
+    webApi
+      .get(`/integrations/${provider}/connect`, { params: { tenantId } })
+      .then((r) => r.data.data),
   configure: (tenantId: string, provider: string, credentials: Record<string, string>) =>
-    webApi.post(`/integrations/${provider}/configure`, { credentials, tenantId }).then((r) => r.data.data),
+    webApi
+      .post(`/integrations/${provider}/configure`, { credentials, tenantId })
+      .then((r) => r.data.data),
   disconnect: (tenantId: string, provider: string) =>
-    webApi.delete(`/integrations/${provider}/disconnect`, { params: { tenantId } }).then((r) => r.data.data),
+    webApi
+      .delete(`/integrations/${provider}/disconnect`, { params: { tenantId } })
+      .then((r) => r.data.data),
   syncCatalog: (tenantId: string, provider: string) =>
-    webApi.post(`/integrations/${provider}/sync-catalog`, null, { params: { tenantId } }).then((r) => r.data.data),
+    webApi
+      .post(`/integrations/${provider}/sync-catalog`, null, { params: { tenantId } })
+      .then((r) => r.data.data),
   refreshToken: (tenantId: string, provider: string) =>
-    webApi.post(`/integrations/${provider}/refresh`, null, { params: { tenantId } }).then((r) => r.data.data),
+    webApi
+      .post(`/integrations/${provider}/refresh`, null, { params: { tenantId } })
+      .then((r) => r.data.data),
   getStatus: (tenantId: string, provider: string) =>
-    webApi.get(`/integrations/${provider}/status`, { params: { tenantId } }).then((r) => r.data.data),
+    webApi
+      .get(`/integrations/${provider}/status`, { params: { tenantId } })
+      .then((r) => r.data.data),
   getSyncHistory: (tenantId: string) =>
     webApi.get('/integrations/sync-history', { params: { tenantId } }).then((r) => r.data.data),
   listLocations: (tenantId: string, provider: string) =>
-    webApi
-      .get(`/integrations/${provider}/locations`, { params: { tenantId } })
-      .then((r) => r.data.data as {
-        locations: Array<{ id: string; name: string; address: string | null }>;
-        currentLocationId: string | null;
-      }),
+    webApi.get(`/integrations/${provider}/locations`, { params: { tenantId } }).then(
+      (r) =>
+        r.data.data as {
+          locations: Array<{ id: string; name: string; address: string | null }>;
+          currentLocationId: string | null;
+        }
+    ),
   configureLocation: (tenantId: string, provider: string, locationId: string) =>
     webApi
       .post(
         `/integrations/${provider}/configure-location`,
         { locationId },
-        { params: { tenantId } },
+        { params: { tenantId } }
       )
       .then((r) => r.data.data as { locationId: string; name: string; address: string | null }),
 };
 
 export const calendarApi = {
   listBlackouts: (tenantId: string) =>
-    webApi
-      .get('/calendar/blackouts', { params: { tenantId } })
-      .then((r) => r.data.data as {
-        blackouts: Array<{ id: string; startAt: string; endAt: string; label: string | null }>;
-      }),
+    webApi.get('/calendar/blackouts', { params: { tenantId } }).then(
+      (r) =>
+        r.data.data as {
+          blackouts: Array<{ id: string; startAt: string; endAt: string; label: string | null }>;
+        }
+    ),
   createBlackout: (tenantId: string, body: { startAt: string; endAt: string; label?: string }) =>
-    webApi
-      .post('/calendar/blackouts', body, { params: { tenantId } })
-      .then((r) => r.data.data as {
-        blackout: { id: string; startAt: string; endAt: string; label: string | null };
-      }),
+    webApi.post('/calendar/blackouts', body, { params: { tenantId } }).then(
+      (r) =>
+        r.data.data as {
+          blackout: { id: string; startAt: string; endAt: string; label: string | null };
+        }
+    ),
   deleteBlackout: (id: string) =>
     webApi.delete(`/calendar/blackouts/${id}`).then((r) => r.data.data),
 };
 
 export const calcomApi = {
   getStatus: (tenantId: string) =>
-    webApi
-      .get('/integrations/calcom/status', { params: { tenantId } })
-      .then((r) => r.data.data as {
-        connected: boolean;
-        userEmail: string | null;
-        eventTypeId: number | null;
-        eventTypeSlug: string | null;
-      }),
+    webApi.get('/integrations/calcom/status', { params: { tenantId } }).then(
+      (r) =>
+        r.data.data as {
+          connected: boolean;
+          userEmail: string | null;
+          eventTypeId: number | null;
+          eventTypeSlug: string | null;
+        }
+    ),
   oauthStartUrl: (tenantId: string) =>
     `/api/integrations/calcom/oauth/start?tenantId=${encodeURIComponent(tenantId)}`,
   listEventTypes: (tenantId: string) =>
-    webApi
-      .get('/integrations/calcom/event-types', { params: { tenantId } })
-      .then((r) => r.data.data as {
-        eventTypes: Array<{ id: number; slug: string; title: string; lengthInMinutes: number }>;
-        currentEventTypeId: number | null;
-      }),
+    webApi.get('/integrations/calcom/event-types', { params: { tenantId } }).then(
+      (r) =>
+        r.data.data as {
+          eventTypes: Array<{ id: number; slug: string; title: string; lengthInMinutes: number }>;
+          currentEventTypeId: number | null;
+        }
+    ),
   configure: (tenantId: string, eventTypeId: number, eventTypeSlug: string) =>
     webApi
       .post(
         '/integrations/calcom/configure',
         { eventTypeId, eventTypeSlug },
-        { params: { tenantId } },
+        { params: { tenantId } }
       )
       .then((r) => r.data.data as { eventTypeId: number; eventTypeSlug: string }),
   disconnect: (tenantId: string) =>
