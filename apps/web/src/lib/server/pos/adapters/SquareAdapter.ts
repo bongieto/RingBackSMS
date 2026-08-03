@@ -1,11 +1,20 @@
 import { Client, Environment, CatalogObject } from 'square';
 import axios from 'axios';
 import { createHash } from 'crypto';
-import { BasePosAdapter, PosOrderItem, PosOrderResult, SyncResult, getAppBaseUrl } from './base';
+import {
+  BasePosAdapter,
+  PosMenuOption,
+  PosMenuSelection,
+  PosOrderItem,
+  PosOrderResult,
+  SyncResult,
+  getAppBaseUrl,
+} from './base';
 import { encrypt } from '../../encryption';
 import { logger } from '../../logger';
 import {
   getSquareItemMenuCategoryId,
+  getSquareRootMenus,
   isSquareObjectPresentAtLocation,
   resolveSquareMenuScope,
   SquareMenuScopeError,
@@ -44,6 +53,25 @@ function getSquareBaseUrl(): string {
   return process.env.SQUARE_ENVIRONMENT === 'sandbox'
     ? 'https://connect.squareupsandbox.com'
     : 'https://connect.squareup.com';
+}
+
+async function listAllSquareCatalogObjects(
+  client: Client,
+  type: 'ITEM' | 'CATEGORY' | 'MODIFIER_LIST',
+): Promise<CatalogObject[]> {
+  const objects: CatalogObject[] = [];
+  let cursor: string | undefined;
+
+  // Safety cap: 50 pages is far beyond a realistic restaurant catalog and
+  // prevents an infinite loop if Square ever repeats a cursor.
+  for (let page = 0; page < 50; page++) {
+    const response = await client.catalogApi.listCatalog(cursor, type);
+    if (response.result.objects) objects.push(...response.result.objects);
+    cursor = response.result.cursor;
+    if (!cursor) break;
+  }
+
+  return objects;
 }
 
 async function getSquareLocationChannelId(
@@ -191,6 +219,7 @@ export class SquareAdapter extends BasePosAdapter {
       expiresAt: new Date(data.expires_at),
       locationId: tokens.locationId,
       merchantId: tokens.merchantId,
+      raw: tokens.raw,
     });
 
     // Backward compatibility
@@ -204,12 +233,84 @@ export class SquareAdapter extends BasePosAdapter {
     });
   }
 
+  async listMenus(tenantId: string): Promise<PosMenuSelection> {
+    const tokens = await this.loadTokens(tenantId);
+    if (!tokens) throw new Error('Tenant not connected to Square');
+    if (!tokens.locationId) {
+      throw new SquareMenuScopeError(
+        'Choose the Square location before selecting a menu to import.',
+      );
+    }
+
+    const client = buildSquareClient(tokens.accessToken);
+    const [categories, locationChannelId] = await Promise.all([
+      listAllSquareCatalogObjects(client, 'CATEGORY'),
+      getSquareLocationChannelId(tokens.accessToken, tokens.locationId),
+    ]);
+    const menus = getSquareRootMenus(categories, locationChannelId)
+      .map((menu) => ({
+        id: menu.id,
+        name: menu.categoryData?.name?.trim() || 'Unnamed Square menu',
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+    const configuredMenuId =
+      typeof tokens.raw?.squareMenuCategoryId === 'string'
+        ? tokens.raw.squareMenuCategoryId
+        : null;
+
+    return {
+      menus,
+      currentMenuId: menus.some((menu) => menu.id === configuredMenuId)
+        ? configuredMenuId
+        : null,
+    };
+  }
+
+  async configureMenu(tenantId: string, menuId: string): Promise<PosMenuOption> {
+    const tokens = await this.loadTokens(tenantId);
+    if (!tokens) throw new Error('Tenant not connected to Square');
+
+    const selection = await this.listMenus(tenantId);
+    const menu = selection.menus.find((candidate) => candidate.id === menuId);
+    if (!menu) {
+      throw new SquareMenuScopeError(
+        'The selected Square menu is not available at this location. Choose another menu.',
+      );
+    }
+
+    await this.saveTokens(tenantId, {
+      ...tokens,
+      raw: {
+        ...(tokens.raw ?? {}),
+        squareMenuCategoryId: menu.id,
+        squareMenuName: menu.name,
+      },
+    });
+    logger.info('Square import menu selected', {
+      tenantId,
+      locationId: tokens.locationId,
+      menuId: menu.id,
+      menuName: menu.name,
+    });
+
+    return menu;
+  }
+
   async syncCatalogFromPOS(tenantId: string): Promise<SyncResult> {
     const tokens = await this.loadTokens(tenantId);
     if (!tokens) throw new Error('Tenant not connected to Square');
     if (!tokens.locationId) {
       throw new SquareMenuScopeError(
         'Choose the Square location to sync before pulling its menu.',
+      );
+    }
+    const preferredMenuId =
+      typeof tokens.raw?.squareMenuCategoryId === 'string'
+        ? tokens.raw.squareMenuCategoryId
+        : null;
+    if (!preferredMenuId) {
+      throw new SquareMenuScopeError(
+        'Choose which Square menu to import before pulling from POS.',
       );
     }
 
@@ -222,28 +323,10 @@ export class SquareAdapter extends BasePosAdapter {
 
     const client = buildSquareClient(tokens.accessToken);
 
-    // Square's listCatalog is paginated — the SDK returns up to ~100-1000
-    // objects per page and gives us a cursor for the next page. We
-    // previously only fetched page 1, which silently dropped every item
-    // past the first page. Loop until the cursor is empty.
-    const listAll = async (type: 'ITEM' | 'CATEGORY' | 'MODIFIER_LIST'): Promise<CatalogObject[]> => {
-      const out: CatalogObject[] = [];
-      let cursor: string | undefined = undefined;
-      // Safety cap: 50 pages × ~1000 objects = 50k per type. Way past any
-      // realistic catalog. Prevents an infinite loop if Square glitches.
-      for (let page = 0; page < 50; page++) {
-        const resp = await client.catalogApi.listCatalog(cursor, type);
-        if (resp.result.objects) out.push(...resp.result.objects);
-        cursor = resp.result.cursor;
-        if (!cursor) break;
-      }
-      return out;
-    };
-
     const [catalogItems, categories, modifierLists, locationChannelId] = await Promise.all([
-      listAll('ITEM'),
-      listAll('CATEGORY'),
-      listAll('MODIFIER_LIST'),
+      listAllSquareCatalogObjects(client, 'ITEM'),
+      listAllSquareCatalogObjects(client, 'CATEGORY'),
+      listAllSquareCatalogObjects(client, 'MODIFIER_LIST'),
       getSquareLocationChannelId(tokens.accessToken, tokens.locationId),
     ]);
     logger.info('Square catalog fetched', {
@@ -256,10 +339,7 @@ export class SquareAdapter extends BasePosAdapter {
     const scope = resolveSquareMenuScope(categories, catalogItems, {
       locationId: tokens.locationId,
       locationChannelId,
-      preferredMenuId:
-        typeof tokens.raw?.squareMenuCategoryId === 'string'
-          ? tokens.raw.squareMenuCategoryId
-          : null,
+      preferredMenuId,
     });
     const items = scope.items;
     logger.info('Square restaurant menu resolved', {

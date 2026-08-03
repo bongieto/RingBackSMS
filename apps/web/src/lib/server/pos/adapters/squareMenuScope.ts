@@ -14,6 +14,25 @@ export interface SquareMenuScope {
   items: CatalogObject[];
 }
 
+export function getSquareRootMenus(
+  categories: CatalogObject[],
+  locationChannelId: string | null,
+): CatalogObject[] {
+  const roots = categories.filter((category) => {
+    const data = category.categoryData;
+    if (data?.categoryType !== 'MENU_CATEGORY') return false;
+    return (
+      data.isTopLevel === true ||
+      (!data.parentCategory?.id && (!data.rootCategory || data.rootCategory === category.id))
+    );
+  });
+
+  if (!locationChannelId) return roots;
+  return roots.filter((root) =>
+    root.categoryData?.channels?.includes(locationChannelId),
+  );
+}
+
 function categoryIdsForItem(item: CatalogObject): string[] {
   if (!item.itemData) return [];
 
@@ -61,21 +80,7 @@ export function resolveSquareMenuScope(
     (category) => category.categoryData?.categoryType === 'MENU_CATEGORY',
   );
 
-  const roots = menuCategories.filter((category) => {
-    const data = category.categoryData;
-    if (!data) return false;
-    return (
-      data.isTopLevel === true ||
-      (!data.parentCategory?.id && (!data.rootCategory || data.rootCategory === category.id))
-    );
-  });
-
-  let candidates = roots;
-  if (options.locationChannelId) {
-    candidates = roots.filter((root) =>
-      root.categoryData?.channels?.includes(options.locationChannelId!),
-    );
-  }
+  let candidates = getSquareRootMenus(categories, options.locationChannelId);
 
   if (options.preferredMenuId) {
     const preferred = candidates.find((menu) => menu.id === options.preferredMenuId);

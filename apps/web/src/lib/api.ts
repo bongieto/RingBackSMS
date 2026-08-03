@@ -347,6 +347,18 @@ export const posApi = {
         { params: { tenantId } }
       )
       .then((r) => r.data.data as { locationId: string; name: string; address: string | null }),
+  listMenus: (tenantId: string, provider: string) =>
+    webApi.get(`/integrations/${provider}/menus`, { params: { tenantId } }).then(
+      (r) =>
+        r.data.data as {
+          menus: Array<{ id: string; name: string }>;
+          currentMenuId: string | null;
+        }
+    ),
+  configureMenu: (tenantId: string, provider: string, menuId: string) =>
+    webApi
+      .post(`/integrations/${provider}/configure-menu`, { menuId }, { params: { tenantId } })
+      .then((r) => r.data.data as { menuId: string; name: string }),
 };
 
 export const calendarApi = {

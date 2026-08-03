@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { TenantMemberRole } from '@prisma/client';
+import { Prisma, TenantMemberRole } from '@prisma/client';
 import { requireTenantRole, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { posRegistry } from '@/lib/server/pos/registry';
@@ -44,6 +44,24 @@ export async function POST(request: NextRequest, { params }: { params: { provide
       return apiError('Location id is not available on this merchant account', 400);
     }
 
+    // A Square menu selection is location-specific. Clear it whenever the
+    // location is configured so the operator must choose from the new
+    // location's actual menu list before the next pull.
+    let nextPosRaw: Prisma.InputJsonValue | undefined;
+    if (params.provider === 'square') {
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { posRaw: true },
+      });
+      const raw =
+        tenant?.posRaw && typeof tenant.posRaw === 'object' && !Array.isArray(tenant.posRaw)
+          ? { ...(tenant.posRaw as Prisma.JsonObject) }
+          : {};
+      delete raw.squareMenuCategoryId;
+      delete raw.squareMenuName;
+      nextPosRaw = raw as Prisma.InputJsonValue;
+    }
+
     await prisma.tenant.update({
       where: { id: tenantId },
       data: {
@@ -51,6 +69,7 @@ export async function POST(request: NextRequest, { params }: { params: { provide
         // Keep the legacy field in sync so the flow engine's existing
         // reads of squareLocationId pick up the new value too.
         squareLocationId: params.provider === 'square' ? body.locationId : undefined,
+        posRaw: nextPosRaw,
       },
     });
 

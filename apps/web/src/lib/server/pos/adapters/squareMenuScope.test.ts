@@ -1,6 +1,7 @@
 import type { CatalogObject } from 'square';
 import {
   getSquareItemMenuCategoryId,
+  getSquareRootMenus,
   resolveSquareMenuScope,
   SquareMenuScopeError,
 } from './squareMenuScope';
@@ -50,6 +51,18 @@ const item = (
 });
 
 describe('resolveSquareMenuScope', () => {
+  it('lists the restaurant menus available on the configured location channel', () => {
+    const categories = [
+      menuCategory('menu-a', 'Location A', { root: true, channels: ['channel-a'] }),
+      menuCategory('menu-b', 'Location B', { root: true, channels: ['channel-b'] }),
+      regularCategory('back-kitchen', 'Back Kitchen'),
+    ];
+
+    expect(getSquareRootMenus(categories, 'channel-b').map((menu) => menu.id)).toEqual([
+      'menu-b',
+    ]);
+  });
+
   it('imports only items assigned to the sole Square restaurant menu', () => {
     const categories = [
       menuCategory('menu', 'Main Menu', { root: true, channels: ['channel-a'] }),
@@ -145,5 +158,27 @@ describe('resolveSquareMenuScope', () => {
         { locationId: 'location-a', locationChannelId: null },
       ),
     ).toThrow('Square has multiple restaurant menus');
+  });
+
+  it('imports only the explicitly selected menu when multiple menus are available', () => {
+    const categories = [
+      menuCategory('house', 'The Lumpia House', { root: true }),
+      menuCategory('online', 'The Lumpia House + Truck - Online Menu', { root: true }),
+      menuCategory('house-items', 'House Items', { rootId: 'house', parentId: 'house' }),
+      menuCategory('online-items', 'Online Items', { rootId: 'online', parentId: 'online' }),
+    ];
+
+    const scope = resolveSquareMenuScope(
+      categories,
+      [item('house-only', ['house-items']), item('online-only', ['online-items'])],
+      {
+        locationId: 'location-a',
+        locationChannelId: null,
+        preferredMenuId: 'online',
+      },
+    );
+
+    expect(scope.menu.id).toBe('online');
+    expect(scope.items.map((catalogItem) => catalogItem.id)).toEqual(['online-only']);
   });
 });

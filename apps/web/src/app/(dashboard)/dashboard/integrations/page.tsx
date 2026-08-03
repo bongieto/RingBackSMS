@@ -62,6 +62,11 @@ interface SyncLog {
   completedAt: string | null;
 }
 
+interface PosMenuOption {
+  id: string;
+  name: string;
+}
+
 const PROVIDER_ICONS: Record<string, React.ReactNode> = {
   square: (
     <div className="h-10 w-10 rounded-lg bg-black flex items-center justify-center text-white font-bold text-lg">
@@ -645,6 +650,105 @@ function ChecklistItem({
 
 // ── Post-Connect Flow ────────────────────────────────────────────────────────
 
+function usePosMenuSelection(tenantId: string, provider: string, enabled: boolean) {
+  const queryClient = useQueryClient();
+  const queryKey = ['pos-menus', tenantId, provider] as const;
+  const isSquare = provider === 'square';
+  const menusQuery = useQuery({
+    queryKey,
+    queryFn: () => posApi.listMenus(tenantId, provider),
+    enabled: enabled && isSquare,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const configureMutation = useMutation({
+    mutationFn: (menuId: string) => posApi.configureMenu(tenantId, provider, menuId),
+    onSuccess: (selected) => {
+      queryClient.setQueryData<{
+        menus: PosMenuOption[];
+        currentMenuId: string | null;
+      }>(queryKey, (current) => ({
+        menus: current?.menus ?? [],
+        currentMenuId: selected.menuId,
+      }));
+      toast.success(`Menu “${selected.name}” selected`);
+    },
+    onError: (err: any) =>
+      toast.error(err?.response?.data?.error ?? 'Failed to select menu'),
+  });
+
+  return {
+    isSquare,
+    menus: menusQuery.data?.menus ?? [],
+    currentMenuId: menusQuery.data?.currentMenuId ?? null,
+    isLoading: menusQuery.isLoading,
+    isError: menusQuery.isError,
+    errorMessage:
+      (menusQuery.error as any)?.response?.data?.error ?? 'Failed to load Square menus',
+    isSaving: configureMutation.isPending,
+    selectMenu: (menuId: string) => configureMutation.mutate(menuId),
+    isReady: !isSquare || Boolean(menusQuery.data?.currentMenuId),
+  };
+}
+
+function SquareMenuSelector({
+  id,
+  menus,
+  currentMenuId,
+  isLoading,
+  isError,
+  errorMessage,
+  isSaving,
+  onSelect,
+}: {
+  id: string;
+  menus: PosMenuOption[];
+  currentMenuId: string | null;
+  isLoading: boolean;
+  isError: boolean;
+  errorMessage: string;
+  isSaving: boolean;
+  onSelect: (menuId: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id} className="text-xs font-medium">
+        Menu to import
+      </Label>
+      <select
+        id={id}
+        value={currentMenuId ?? ''}
+        onChange={(event) => {
+          if (event.target.value) onSelect(event.target.value);
+        }}
+        disabled={isLoading || isSaving || isError || menus.length === 0}
+        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <option value="">
+          {isLoading ? 'Loading Square menus…' : 'Choose a Square menu…'}
+        </option>
+        {menus.map((menu) => (
+          <option key={menu.id} value={menu.id}>
+            {menu.name}
+          </option>
+        ))}
+      </select>
+      {isSaving && <p className="text-xs text-muted-foreground">Saving selection…</p>}
+      {isError && <p className="text-xs text-red-600">{errorMessage}</p>}
+      {!isLoading && !isError && menus.length === 0 && (
+        <p className="text-xs text-amber-700">
+          No restaurant menus were found for this Square location.
+        </p>
+      )}
+      {!isLoading && !isError && menus.length > 0 && !currentMenuId && (
+        <p className="text-xs text-amber-700">
+          Choose the exact menu customers should order from before importing.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function PostConnectFlow({
   provider,
   tenantId,
@@ -660,6 +764,7 @@ function PostConnectFlow({
   onDismiss: () => void;
   queryClient: ReturnType<typeof useQueryClient>;
 }) {
+  const menuSelection = usePosMenuSelection(tenantId, provider, step === 0);
   const syncMutation = useMutation({
     mutationFn: () => posApi.syncCatalog(tenantId, provider),
     onSuccess: (data) => {
@@ -706,12 +811,26 @@ function PostConnectFlow({
             </div>
             <div className="flex-1">
               <p className="text-sm font-medium">Sync your menu from {provider}</p>
+              {step === 0 && menuSelection.isSquare && (
+                <div className="mt-2 max-w-sm">
+                  <SquareMenuSelector
+                    id="post-connect-square-menu"
+                    menus={menuSelection.menus}
+                    currentMenuId={menuSelection.currentMenuId}
+                    isLoading={menuSelection.isLoading}
+                    isError={menuSelection.isError}
+                    errorMessage={menuSelection.errorMessage}
+                    isSaving={menuSelection.isSaving}
+                    onSelect={menuSelection.selectMenu}
+                  />
+                </div>
+              )}
             </div>
             {step === 0 && (
               <Button
                 size="sm"
                 onClick={() => syncMutation.mutate()}
-                disabled={syncMutation.isPending}
+                disabled={syncMutation.isPending || !menuSelection.isReady}
               >
                 <RefreshCw
                   className={`h-3 w-3 mr-1.5 ${syncMutation.isPending ? 'animate-spin' : ''}`}
@@ -779,6 +898,11 @@ function PosProviderCard({
 }) {
   const [showConfig, setShowConfig] = useState(false);
   const [apiCredentials, setApiCredentials] = useState<Record<string, string>>({});
+  const menuSelection = usePosMenuSelection(
+    tenantId,
+    provider.provider,
+    provider.connected,
+  );
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['pos-providers', tenantId] });
@@ -868,6 +992,16 @@ function PosProviderCard({
       queryClient.invalidateQueries({
         queryKey: ['pos-locations', tenantId, provider.provider],
       });
+      queryClient.invalidateQueries({
+        queryKey: ['pos-menus', tenantId, provider.provider],
+      });
+      queryClient.setQueryData<{
+        menus: PosMenuOption[];
+        currentMenuId: string | null;
+      }>(['pos-menus', tenantId, provider.provider], (current) => ({
+        menus: current?.menus ?? [],
+        currentMenuId: null,
+      }));
       setShowLocationPicker(false);
     },
     onError: (err: any) => toast.error(err?.response?.data?.error ?? 'Failed to change location'),
@@ -1039,6 +1173,27 @@ function PosProviderCard({
               </Card>
             )}
 
+            {menuSelection.isSquare && (
+              <Card className="bg-muted/50">
+                <CardContent className="pt-4 pb-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <UtensilsCrossed className="h-4 w-4 text-blue-600" />
+                    <span className="text-sm font-medium">Choose what to import</span>
+                  </div>
+                  <SquareMenuSelector
+                    id="square-import-menu"
+                    menus={menuSelection.menus}
+                    currentMenuId={menuSelection.currentMenuId}
+                    isLoading={menuSelection.isLoading}
+                    isError={menuSelection.isError}
+                    errorMessage={menuSelection.errorMessage}
+                    isSaving={menuSelection.isSaving}
+                    onSelect={menuSelection.selectMenu}
+                  />
+                </CardContent>
+              </Card>
+            )}
+
             {/* Sync actions */}
             <div className="grid grid-cols-1 gap-3">
               <Card className="bg-muted/50">
@@ -1057,7 +1212,7 @@ function PosProviderCard({
                     size="sm"
                     className="w-full"
                     onClick={() => syncMutation.mutate()}
-                    disabled={syncMutation.isPending}
+                    disabled={syncMutation.isPending || !menuSelection.isReady}
                   >
                     <RefreshCw
                       className={`h-4 w-4 mr-2 ${syncMutation.isPending ? 'animate-spin' : ''}`}

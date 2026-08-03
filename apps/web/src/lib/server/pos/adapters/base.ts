@@ -46,6 +46,16 @@ export interface SyncResult {
   selectedMenu?: { id: string; name: string; categoryCount: number };
 }
 
+export interface PosMenuOption {
+  id: string;
+  name: string;
+}
+
+export interface PosMenuSelection {
+  menus: PosMenuOption[];
+  currentMenuId: string | null;
+}
+
 export interface PosOrderItem {
   externalVariationId: string;
   quantity: number;
@@ -119,6 +129,16 @@ export abstract class BasePosAdapter {
     _tenantId: string,
   ): Promise<Array<{ id: string; name: string; address: string | null }>> {
     throw new Error(`${this.provider} does not support listLocations`);
+  }
+
+  /** List provider menus available for import at the configured location. */
+  async listMenus(_tenantId: string): Promise<PosMenuSelection> {
+    throw new Error(`${this.provider} does not support listMenus`);
+  }
+
+  /** Persist the provider menu that future catalog pulls must use. */
+  async configureMenu(_tenantId: string, _menuId: string): Promise<PosMenuOption> {
+    throw new Error(`${this.provider} does not support configureMenu`);
   }
 
   protected async loadTokens(tenantId: string): Promise<PosTokenData | null> {
