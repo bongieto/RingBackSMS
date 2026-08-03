@@ -126,13 +126,23 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
         </div>
         <select
           value={filterCategoryId}
-          onChange={(e) => setFilterCategoryId(e.target.value)}
+          onChange={(e) => {
+            const nextCategoryId = e.target.value;
+            setFilterCategoryId(nextCategoryId);
+            // Category counts include both curated and staged POS items. When
+            // an operator intentionally filters to a category, reveal all of
+            // its rows so a category such as "Lumpia Bowls (12)" does not
+            // misleadingly render an empty table just because all 12 are
+            // waiting for review. Returning to All categories restores the
+            // normal curated-only Items view.
+            setShowDisabled(Boolean(nextCategoryId));
+          }}
           className="h-9 rounded-md border bg-background px-3 text-sm"
         >
           <option value="">All categories</option>
           {categories.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.name}
+              {c.name} ({c.itemCount})
             </option>
           ))}
         </select>
