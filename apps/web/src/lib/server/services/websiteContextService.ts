@@ -243,7 +243,7 @@ export async function extractAndStoreWebsiteContext(
   const context = await fetchWebsiteContext(url);
   if (!context) return false;
   try {
-    await prisma.tenantConfig.update({
+    const config = await prisma.tenantConfig.update({
       where: { tenantId },
       data: { websiteContext: context },
     });
@@ -278,6 +278,17 @@ export async function extractAndStoreWebsiteContext(
       url,
       chars: context.length,
     });
+    const autopilotState = config.verticalOnboarding as { enabled?: unknown } | null;
+    if (autopilotState?.enabled === true) {
+      await import('./autopilotService')
+        .then(({ applyTenantAutopilot }) => applyTenantAutopilot(tenantId))
+        .catch((error) => {
+          logger.warn('Autopilot website refresh failed', {
+            tenantId,
+            error: (error as Error).message,
+          });
+        });
+    }
     return true;
   } catch (err) {
     logger.warn('Failed to store website context', {

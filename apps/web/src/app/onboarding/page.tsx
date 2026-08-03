@@ -162,6 +162,16 @@ export default function OnboardingPage() {
           // Silently continue — tenant was created, config can be set in Settings
         }
       }
+      // Autopilot converts the selected business profile into enabled flows,
+      // intake fields, safety rules, and a short list of facts only the owner
+      // can answer. Onboarding remains a two-minute setup; advanced editing is
+      // optional in AI Readiness.
+      try {
+        await webApi.post(`/tenants/${tenant.id}/autopilot`, { enabled: true });
+      } catch {
+        // Tenant creation is already complete. The dashboard can retry this
+        // idempotent step without making the owner repeat onboarding.
+      }
       toast.success('Account created! Welcome to RingBackSMS 🎉');
       setStep(3);
     },

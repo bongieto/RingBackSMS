@@ -57,6 +57,63 @@ describe('grounded knowledge', () => {
     })).toEqual({ valid: false, reason: 'unsupported_number:25' });
   });
 
+  test('does not treat a number in the customer question as verified evidence', () => {
+    const hoursFact: VerifiedKnowledgeFact = {
+      ...cancellationFact,
+      id: 'fact-hours',
+      key: 'business.hours',
+      category: 'HOURS',
+      question: 'When are you open?',
+      answer: 'We are open weekdays only.',
+    };
+    const response = parseGroundedResponse(JSON.stringify({
+      answer: 'Yes, we are open 24/7.',
+      supportedFactIds: ['fact-hours'],
+      confidence: 0.95,
+      needsHuman: false,
+    }));
+    expect(validateGroundedResponse({
+      response: response!,
+      retrievedFacts: [hoursFact],
+      userMessage: 'Are you open 24/7?',
+    })).toEqual({ valid: false, reason: 'unsupported_number:24' });
+  });
+
+  test('rejects unsupported high-risk business claims', () => {
+    const response = parseGroundedResponse(JSON.stringify({
+      answer: 'Our technicians are licensed and insured.',
+      supportedFactIds: ['fact-cancel'],
+      confidence: 0.95,
+      needsHuman: false,
+    }));
+    expect(validateGroundedResponse({
+      response: response!,
+      retrievedFacts: [cancellationFact],
+      userMessage: 'Are your technicians licensed?',
+    })).toEqual({ valid: false, reason: 'unsupported_claim:licensed' });
+  });
+
+  test('allows high-risk claims when the cited owner fact supports them', () => {
+    const licensingFact: VerifiedKnowledgeFact = {
+      ...cancellationFact,
+      id: 'fact-license',
+      key: 'business.credentials',
+      question: 'Are your technicians licensed and insured?',
+      answer: 'Yes. Our technicians are licensed and insured.',
+    };
+    const response = parseGroundedResponse(JSON.stringify({
+      answer: 'Yes, our technicians are licensed and insured.',
+      supportedFactIds: ['fact-license'],
+      confidence: 0.95,
+      needsHuman: false,
+    }));
+    expect(validateGroundedResponse({
+      response: response!,
+      retrievedFacts: [licensingFact],
+      userMessage: 'Are your technicians licensed?',
+    })).toEqual({ valid: true });
+  });
+
   test('returns a grounded factual answer with an audit contract', async () => {
     const context = buildLumpiaContext({
       openNow: true,

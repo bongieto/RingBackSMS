@@ -26,6 +26,7 @@ export interface ReadinessScenarioResult {
 }
 
 export interface ReadinessSuiteResult {
+  evaluationMode: 'deterministic' | 'live';
   verticalKey: string;
   verticalLabel: string;
   score: number;
@@ -190,6 +191,7 @@ export async function runVerticalReadinessSuite(input: {
   scenarios?: ReadinessScenarioSeed[];
   chatFn?: ChatFn;
   callerPhoneBase?: string;
+  evaluationMode?: 'deterministic' | 'live';
 }): Promise<ReadinessSuiteResult> {
   const defaultProfile = getVerticalProfile({
     businessType: input.tenantContext.businessType,
@@ -286,6 +288,7 @@ export async function runVerticalReadinessSuite(input: {
   const passed = results.filter((r) => r.passed).length;
   const total = results.length;
   return {
+    evaluationMode: input.evaluationMode ?? 'deterministic',
     verticalKey: profile.key,
     verticalLabel: profile.label,
     score: total === 0 ? 1 : passed / total,

@@ -81,6 +81,7 @@ describe('vertical readiness suite', () => {
     const result = await runVerticalReadinessSuite({ tenantContext: hvacTenant });
 
     expect(result.verticalKey).toBe('hvac');
+    expect(result.evaluationMode).toBe('deterministic');
     expect(result.total).toBeGreaterThanOrEqual(3);
     expect(result.score).toBe(1);
     const hazard = result.results.find((r) => r.id === 'hvac-gas');

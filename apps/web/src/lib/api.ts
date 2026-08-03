@@ -28,6 +28,14 @@ export const tenantApi = {
   getMe: () => webApi.get('/tenants/me').then((r) => r.data.data),
   updateConfig: (id: string, data: Record<string, unknown>) =>
     webApi.patch(`/tenants/${id}/config`, data).then((r) => r.data.data),
+  getAutopilot: (id: string) =>
+    webApi.get(`/tenants/${id}/autopilot`).then((r) => r.data.data),
+  applyAutopilot: (id: string, enabled = true) =>
+    webApi.post(`/tenants/${id}/autopilot`, { enabled }).then((r) => r.data.data),
+  answerAutopilotQuestion: (id: string, key: string, value: string) =>
+    webApi
+      .post(`/tenants/${id}/autopilot`, { answer: { key, value } })
+      .then((r) => r.data.data),
   generateAllGreetings: (id: string) =>
     webApi.post(`/tenants/${id}/generate-greetings`).then((r) => r.data.data),
   getMenu: (id: string) => webApi.get(`/tenants/${id}/menu`).then((r) => r.data.data),

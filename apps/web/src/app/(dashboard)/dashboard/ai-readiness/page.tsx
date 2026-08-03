@@ -13,6 +13,7 @@ import {
   RotateCcw,
   Save,
   Settings2,
+  Sparkles,
   Trash2,
   ShieldCheck,
   XCircle,
@@ -39,6 +40,7 @@ type ReadinessCategory =
   | 'impossible';
 
 interface ReadinessResult {
+  evaluationMode?: 'deterministic' | 'live';
   verticalKey: string;
   verticalLabel: string;
   score: number;
@@ -79,6 +81,32 @@ interface ReadinessResult {
     flowType: string;
     flowStep: string | null;
   }>;
+}
+
+interface AutopilotResult {
+  plan: {
+    version: string;
+    verticalKey: string;
+    verticalLabel: string;
+    enabledFlows: string[];
+    flowsToEnable: string[];
+    automaticCapabilities: string[];
+    ownerQuestions: Array<{
+      key: string;
+      category: string;
+      question: string;
+      aliases: string[];
+      why: string;
+    }>;
+    setupWarnings: string[];
+    completionRate: number;
+    needsApply: boolean;
+  };
+  state: {
+    enabled: boolean;
+    version: string | null;
+    lastAppliedAt: string | null;
+  };
 }
 
 const INDUSTRY_OPTIONS = [
@@ -270,6 +298,7 @@ export default function AiReadinessPage() {
   const [customAiInstructions, setCustomAiInstructions] = useState('');
   const [intakeFields, setIntakeFields] = useState<IntakeDraftField[]>([]);
   const [escalationRules, setEscalationRules] = useState<EscalationDraftRule[]>([]);
+  const [autopilotAnswers, setAutopilotAnswers] = useState<Record<string, string>>({});
 
   const { data: tenant } = useQuery({
     queryKey: ['tenant-me'],
@@ -282,6 +311,12 @@ export default function AiReadinessPage() {
       webApi
         .get(`/tenants/${tenantId!}/readiness`)
         .then((res) => res.data.data as ReadinessResult),
+    enabled: !!tenantId,
+  });
+
+  const { data: autopilot, isFetching: autopilotLoading } = useQuery<AutopilotResult>({
+    queryKey: ['tenant-autopilot', tenantId],
+    queryFn: () => tenantApi.getAutopilot(tenantId!),
     enabled: !!tenantId,
   });
 
@@ -341,6 +376,51 @@ export default function AiReadinessPage() {
     },
   });
 
+  const refreshAutopilotData = () => {
+    queryClient.invalidateQueries({ queryKey: ['tenant-autopilot', tenantId] });
+    queryClient.invalidateQueries({ queryKey: ['tenant-readiness', tenantId] });
+    queryClient.invalidateQueries({ queryKey: ['tenant-me'] });
+  };
+
+  const autopilotMutation = useMutation({
+    mutationFn: (enabled: boolean) => tenantApi.applyAutopilot(tenantId!, enabled),
+    onSuccess: (_result, enabled) => {
+      refreshAutopilotData();
+      toast.success(enabled ? 'Autopilot configured' : 'Autopilot auto-updates turned off');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.error ?? 'Unable to update Autopilot');
+    },
+  });
+
+  const answerMutation = useMutation({
+    mutationFn: ({ key, value }: { key: string; value: string }) =>
+      tenantApi.answerAutopilotQuestion(tenantId!, key, value),
+    onSuccess: (_result, variables) => {
+      setAutopilotAnswers((answers) => ({ ...answers, [variables.key]: '' }));
+      queryClient.invalidateQueries({ queryKey: ['knowledge', tenantId] });
+      refreshAutopilotData();
+      toast.success('Verified business answer saved');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.error ?? 'Unable to save this answer');
+    },
+  });
+
+  const liveReadinessMutation = useMutation({
+    mutationFn: () =>
+      webApi
+        .get(`/tenants/${tenantId!}/readiness`, { params: { mode: 'live' } })
+        .then((res) => res.data.data as ReadinessResult),
+    onSuccess: (result) => {
+      queryClient.setQueryData(['tenant-readiness', tenantId], result);
+      toast.success('Live AI readiness check complete');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.error ?? 'Live AI readiness check failed');
+    },
+  });
+
   return (
     <div>
       <Header
@@ -348,6 +428,14 @@ export default function AiReadinessPage() {
         description="Choose what the AI should collect, when it should notify staff, and check that common customer conversations work."
         action={
           <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() => liveReadinessMutation.mutate()}
+              disabled={!tenantId || liveReadinessMutation.isPending}
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              {liveReadinessMutation.isPending ? 'Testing live AI...' : 'Test live AI'}
+            </Button>
             <Button
               variant="outline"
               onClick={() => refetchReadiness()}
@@ -363,6 +451,122 @@ export default function AiReadinessPage() {
           </div>
         }
       />
+
+      <Card className="mb-6 border-blue-200 bg-gradient-to-br from-blue-50/70 to-background">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-blue-600" />
+                Autopilot setup
+                {autopilot?.state.enabled && (
+                  <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
+                    On
+                  </Badge>
+                )}
+              </CardTitle>
+              <CardDescription className="mt-2 max-w-3xl">
+                We choose the right customer flows, safety rules, and details to collect for this business. You only answer policies the system cannot safely know on its own.
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {autopilot?.state.enabled && (
+                <Button
+                  variant="ghost"
+                  onClick={() => autopilotMutation.mutate(false)}
+                  disabled={autopilotMutation.isPending}
+                >
+                  Stop auto-updates
+                </Button>
+              )}
+              <Button
+                onClick={() => autopilotMutation.mutate(true)}
+                disabled={!tenantId || autopilotLoading || autopilotMutation.isPending}
+              >
+                <Sparkles className="mr-2 h-4 w-4" />
+                {autopilot?.state.enabled
+                  ? autopilot.plan.needsApply ? 'Refresh Autopilot' : 'Autopilot is current'
+                  : 'Set it up for me'}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {!autopilot ? (
+            <div className="text-sm text-muted-foreground">
+              {autopilotLoading ? 'Preparing your business setup...' : 'Autopilot setup is unavailable.'}
+            </div>
+          ) : (
+            <div className="space-y-5">
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-lg border bg-background p-4">
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Business profile</div>
+                  <div className="mt-1 text-lg font-semibold">{autopilot.plan.verticalLabel}</div>
+                </div>
+                <div className="rounded-lg border bg-background p-4">
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Configured automatically</div>
+                  <div className="mt-1 text-lg font-semibold">{autopilot.plan.automaticCapabilities.length} capabilities</div>
+                </div>
+                <div className="rounded-lg border bg-background p-4">
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Needs your answer</div>
+                  <div className="mt-1 text-lg font-semibold">{autopilot.plan.ownerQuestions.length} polic{autopilot.plan.ownerQuestions.length === 1 ? 'y' : 'ies'}</div>
+                </div>
+              </div>
+
+              {autopilot.plan.ownerQuestions.length > 0 ? (
+                <div className="space-y-3">
+                  <div>
+                    <div className="font-medium">A few answers only you can verify</div>
+                    <div className="text-sm text-muted-foreground">These answers become approved facts. The AI can quote them but cannot invent a different policy.</div>
+                  </div>
+                  {autopilot.plan.ownerQuestions.map((question) => {
+                    const answer = autopilotAnswers[question.key] ?? '';
+                    const saving = answerMutation.isPending && answerMutation.variables?.key === question.key;
+                    return (
+                      <div key={question.key} className="rounded-lg border bg-background p-4">
+                        <Label htmlFor={`autopilot-${question.key}`}>{question.question}</Label>
+                        <p className="mt-1 text-xs text-muted-foreground">{question.why}</p>
+                        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                          <Input
+                            id={`autopilot-${question.key}`}
+                            value={answer}
+                            onChange={(event) => setAutopilotAnswers((answers) => ({
+                              ...answers,
+                              [question.key]: event.target.value,
+                            }))}
+                            placeholder="Type the policy in your own words"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={!answer.trim() || answerMutation.isPending}
+                            onClick={() => answerMutation.mutate({ key: question.key, value: answer.trim() })}
+                          >
+                            {saving ? 'Saving...' : 'Save answer'}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                  All required owner policies are verified. Autopilot can answer from saved business data and these approved facts.
+                </div>
+              )}
+
+              {autopilot.plan.setupWarnings.length > 0 && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                  <div className="font-medium">Recommended next</div>
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    {autopilot.plan.setupWarnings.map((warning) => <li key={warning}>{warning}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-6">
         <Card className="xl:col-span-2">
@@ -389,6 +593,9 @@ export default function AiReadinessPage() {
                       <div className="text-2xl font-bold">{readiness.verticalLabel}</div>
                       <Badge variant="outline" className="text-xs">
                         {hasIndustryOverride ? 'Manual override' : 'Auto-selected'}
+                      </Badge>
+                      <Badge variant="outline" className="text-xs">
+                        {readiness.evaluationMode === 'live' ? 'Live AI' : 'Fast check'}
                       </Badge>
                     </div>
                     <div className="mt-1 text-sm text-muted-foreground">

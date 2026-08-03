@@ -10,7 +10,7 @@ const STOP_WORDS = new Set([
 
 const FACTUAL_PATTERNS = [
   /\b(hours?|open|close|closed|closing)\b/i,
-  /\b(price|pricing|cost|fee|rate|quote|estimate|how much)\b/i,
+  /\b(price|pricing|costs?|fees?|rates?|quotes?|estimates?|how much)\b/i,
   /\b(policy|policies|refund|return|cancel|cancellation|deposit)\b/i,
   /\b(deliver|delivery|pickup|ship|shipping|service area|travel)\b/i,
   /\b(address|located|location|directions|parking)\b/i,
@@ -101,6 +101,35 @@ function extractNumbers(value: string): string[] {
   return normalize(value).match(/\b\d+(?:\.\d+)?\b/g) ?? [];
 }
 
+function extractEmails(value: string): string[] {
+  return (value.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi) ?? [])
+    .map((email) => email.toLowerCase());
+}
+
+function extractUrls(value: string): string[] {
+  return (value.match(/\b(?:https?:\/\/|www\.)[^\s<>]+/gi) ?? [])
+    .map((url) => url.toLowerCase().replace(/[),.;!?]+$/, ''));
+}
+
+const HIGH_RISK_CLAIMS: Array<{ label: string; pattern: RegExp }> = [
+  { label: 'free', pattern: /\bfree\b/i },
+  { label: 'guaranteed', pattern: /\bguarantee(?:d|s)?\b/i },
+  { label: 'licensed', pattern: /\blicen[cs]ed\b/i },
+  { label: 'insured', pattern: /\binsured\b/i },
+  { label: 'certified', pattern: /\bcertified\b/i },
+  { label: 'warranty', pattern: /\bwarrant(?:y|ies)\b/i },
+  { label: '24/7', pattern: /\b24\s*\/\s*7\b/i },
+  { label: 'same-day', pattern: /\bsame[ -]?day\b/i },
+  { label: 'after-hours', pattern: /\bafter[ -]?hours?\b/i },
+  { label: 'emergency service', pattern: /\bemergency\s+services?\b/i },
+  { label: 'financing', pattern: /\bfinanc(?:e|es|ing)\b/i },
+  { label: 'refundable', pattern: /\b(?:non[- ]?)?refundable\b/i },
+  { label: 'walk-ins', pattern: /\bwalk[- ]?ins?\b/i },
+  { label: 'insurance acceptance', pattern: /\baccept(?:s|ed|ing)?\b.{0,24}\binsurance\b/i },
+  { label: 'medicare acceptance', pattern: /\baccept(?:s|ed|ing)?\b.{0,24}\bmedicare\b/i },
+  { label: 'medicaid acceptance', pattern: /\baccept(?:s|ed|ing)?\b.{0,24}\bmedicaid\b/i },
+];
+
 export function validateGroundedResponse(input: {
   response: GroundedResponse;
   retrievedFacts: VerifiedKnowledgeFact[];
@@ -119,11 +148,34 @@ export function validateGroundedResponse(input: {
   const supported = input.retrievedFacts.filter((fact) =>
     input.response.supportedFactIds.includes(fact.id),
   );
-  const evidenceText = `${supported.map((fact) => fact.answer).join(' ')} ${input.userMessage}`;
+  // Only verified fact answers are evidence. Including the customer's message
+  // here would let an unsupported number or claim be repeated back as though
+  // the owner had verified it.
+  const evidenceText = supported.map((fact) => fact.answer).join(' ');
   const evidenceNumbers = new Set(extractNumbers(evidenceText));
   for (const number of extractNumbers(input.response.answer)) {
     if (!evidenceNumbers.has(number)) {
       return { valid: false, reason: `unsupported_number:${number}` };
+    }
+  }
+
+  const evidenceEmails = new Set(extractEmails(evidenceText));
+  for (const email of extractEmails(input.response.answer)) {
+    if (!evidenceEmails.has(email)) {
+      return { valid: false, reason: `unsupported_email:${email}` };
+    }
+  }
+
+  const evidenceUrls = new Set(extractUrls(evidenceText));
+  for (const url of extractUrls(input.response.answer)) {
+    if (!evidenceUrls.has(url)) {
+      return { valid: false, reason: `unsupported_url:${url}` };
+    }
+  }
+
+  for (const claim of HIGH_RISK_CLAIMS) {
+    if (claim.pattern.test(input.response.answer) && !claim.pattern.test(evidenceText)) {
+      return { valid: false, reason: `unsupported_claim:${claim.label}` };
     }
   }
 

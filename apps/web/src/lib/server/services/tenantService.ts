@@ -357,6 +357,32 @@ export async function updateTenantConfig(
     data: updates as any,
   });
 
+  // Keep Autopilot current when an owner changes the handful of settings
+  // that determine vertical behavior. Owner-authored overrides are preserved;
+  // applyTenantAutopilot only repairs required flows and refreshes its plan.
+  const autopilotRelevantChange = [
+    'industryTemplateKey',
+    'websiteUrl',
+    'businessAddress',
+    'meetingEnabled',
+    'calcomLink',
+    'intakeFieldOverrides',
+    'escalationPolicyOverrides',
+  ].some((field) => field in updates);
+  const onboardingState = result.verticalOnboarding as { enabled?: unknown } | null;
+  if (autopilotRelevantChange && onboardingState?.enabled === true) {
+    waitUntil(
+      import('./autopilotService')
+        .then(({ applyTenantAutopilot }) => applyTenantAutopilot(tenantId))
+        .catch((err) =>
+          logger.warn('Autopilot refresh failed', {
+            tenantId,
+            err: (err as Error).message,
+          }),
+        ),
+    );
+  }
+
   // Fire-and-forget website-context extraction when the URL is set,
   // changed, or has never been extracted. The fallback flow's LLM
   // prompt reads `websiteContext` to ground replies in the tenant's

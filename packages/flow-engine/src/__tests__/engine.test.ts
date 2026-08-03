@@ -1,6 +1,6 @@
 import { runFlowEngine } from '../engine';
 import { TenantContext, FlowInput, ChatFn } from '../types';
-import { FlowType, BusinessType, Plan } from '@ringback/shared-types';
+import { FlowType, BusinessType } from '@ringback/shared-types';
 
 // Mock chatFn — simulates Claude/AI responses
 const mockChatFn: ChatFn = jest.fn().mockResolvedValue('{"intent": "ORDER", "confidence": 0.9}');
@@ -411,6 +411,46 @@ describe('Flow Engine', () => {
       expect(slotPick.nextState.flowStep).toBe('MEETING_COLLECT_INTAKE');
       expect(slotPick.smsReply).toMatch(/service address/i);
       expect(slotPick.smsReply).not.toMatch(/what's your name/i);
+    });
+
+    it('answers a verified question and resumes booking without losing state', async () => {
+      const serviceContext: TenantContext = {
+        ...mockTenantContext,
+        tenantName: 'Comfort Pros',
+        businessType: BusinessType.SERVICE,
+        industryTemplateKey: 'hvac',
+        verifiedKnowledge: [
+          {
+            id: 'fact-estimate',
+            key: 'policy.estimates',
+            category: 'PRICING',
+            question: 'Are estimates free?',
+            answer: 'Estimates are free after a short phone consultation.',
+            aliases: ['estimate', 'quote', 'estimate fee'],
+            source: 'OWNER',
+            verifiedAt: new Date().toISOString(),
+          },
+        ],
+      };
+      const start = await runFlowEngine({
+        ...baseInput,
+        tenantContext: serviceContext,
+        inboundMessage: 'MEETING',
+      });
+      expect(start.nextState.flowStep).toBe('MEETING_DATE_PROMPT');
+
+      const interrupted = await runFlowEngine({
+        ...baseInput,
+        tenantContext: serviceContext,
+        inboundMessage: 'Are estimates free?',
+        currentState: start.nextState,
+      });
+
+      expect(interrupted.smsReply).toContain('Estimates are free');
+      expect(interrupted.smsReply).toMatch(/what day works/i);
+      expect(interrupted.nextState.currentFlow).toBe(FlowType.MEETING);
+      expect(interrupted.nextState.flowStep).toBe('MEETING_DATE_PROMPT');
+      expect(interrupted.accuracy?.validationStatus).toBe('grounded');
     });
 
     it('falls back to legacy manual booking when meetingEnabled is false and cal.com is unset', async () => {

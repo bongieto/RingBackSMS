@@ -1,6 +1,10 @@
 import { NextRequest } from 'next/server';
 import { FlowType } from '@ringback/shared-types';
-import { runVerticalReadinessSuite, type TenantContext } from '@ringback/flow-engine';
+import {
+  runVerticalReadinessSuite,
+  type ChatFn,
+  type TenantContext,
+} from '@ringback/flow-engine';
 import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { apiError, apiSuccess } from '@/lib/server/response';
 import { prisma } from '@/lib/server/db';
@@ -15,11 +19,13 @@ import {
 } from '@/lib/server/businessHours';
 import { logTiming, startTimer } from '@/lib/server/perf';
 import { buildVerifiedKnowledge } from '@/lib/server/services/knowledgeService';
+import { chatCompletion } from '@/lib/server/services/aiClient';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
-export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const timer = startTimer();
   const auth = await verifyTenantAccess(params.id);
   if (isNextResponse(auth)) return auth;
@@ -115,10 +121,30 @@ export async function GET(_request: NextRequest, { params }: { params: { id: str
   });
 
   try {
-    const result = await runVerticalReadinessSuite({ tenantContext });
+    const evaluationMode = request.nextUrl.searchParams.get('mode') === 'live'
+      ? 'live'
+      : 'deterministic';
+    const liveChatFn: ChatFn | undefined = evaluationMode === 'live'
+      ? (chatParams) => chatCompletion({
+          ...chatParams,
+          tenantId: tenant.id,
+          purpose: 'vertical_readiness_live',
+          metadata: {
+            vertical: tenantContext.industryTemplateKey ?? tenantContext.businessType,
+            evaluationMode,
+          },
+          timeoutMs: 15_000,
+        })
+      : undefined;
+    const result = await runVerticalReadinessSuite({
+      tenantContext,
+      chatFn: liveChatFn,
+      evaluationMode,
+    });
     logTiming('Tenant readiness API completed', timer, {
       tenantId: params.id,
       vertical: result.verticalKey,
+      evaluationMode,
       score: result.score,
       passed: result.passed,
       total: result.total,

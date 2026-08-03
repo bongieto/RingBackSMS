@@ -8,6 +8,7 @@ import { runOrderAgent } from './ai/orderAgent';
 import { FlowType } from '@ringback/shared-types';
 import { pushDecision } from './decisions';
 import { extractVerticalIntake } from './intake';
+import { isLikelyFactualQuestion } from './knowledge';
 
 function routeOrder(input: FlowInput): Promise<FlowOutput> {
   // AI order agent is the default when a tool-use chat fn is wired.
@@ -84,11 +85,70 @@ function shouldRunFreshUngroundedGuard(input: FlowInput): boolean {
   return !draft || (draft.items.length === 0 && !draft.pickupTime);
 }
 
+function activeFlowResumePrompt(step: string | null | undefined): string | null {
+  switch (step) {
+    case 'MEETING_DATE_PROMPT':
+      return 'What day works for you?';
+    case 'MEETING_SLOT_PICK':
+      return 'Reply with the number of the time you prefer.';
+    case 'MEETING_COLLECT_INTAKE':
+      return 'Send the requested service details when you are ready.';
+    case 'MEETING_COLLECT_NAME':
+      return 'What name should I use for the appointment?';
+    case 'MEETING_COLLECT_EMAIL':
+      return 'What email should receive the calendar invite?';
+    case 'INQUIRY_MATCH':
+      return 'Reply with the product number you want.';
+    case 'INQUIRY_AWAIT_HOLD':
+      return 'Reply YES to reserve it, or CANCEL.';
+    default:
+      return null;
+  }
+}
+
+async function answerActiveFlowQuestion(
+  input: FlowInput,
+  resumePrompt: string,
+): Promise<FlowOutput> {
+  const { currentState } = input;
+  if (!currentState?.currentFlow) return processFallbackFlow(input);
+  const answer = await processFallbackFlow({ ...input, currentState: null });
+  const separator = /[.!?]$/.test(answer.smsReply.trim()) ? ' ' : '. ';
+  return {
+    ...answer,
+    nextState: {
+      ...currentState,
+      lastMessageAt: Date.now(),
+      messageCount: (currentState.messageCount ?? 0) + 1,
+    },
+    smsReply: `${answer.smsReply.trim()}${separator}${resumePrompt}`,
+    flowType: currentState.currentFlow,
+  };
+}
+
 async function runFlowEngineCore(input: FlowInput): Promise<FlowOutput> {
   const { currentState, tenantContext, inboundMessage } = input;
 
   // If in an active flow (not complete), continue it
   if (currentState?.currentFlow && currentState.flowStep !== 'ORDER_COMPLETE' && currentState.flowStep !== 'INQUIRY_COMPLETE') {
+    const resumePrompt = activeFlowResumePrompt(currentState.flowStep);
+    const fallbackEnabled = tenantContext.flows.some(
+      (flow) => flow.isEnabled && flow.type === FlowType.FALLBACK,
+    );
+    if (
+      resumePrompt &&
+      fallbackEnabled &&
+      isLikelyFactualQuestion(inboundMessage)
+    ) {
+      pushDecision(input, {
+        handler: 'engine.answerAndResume',
+        phase: 'PRE_HANDLER',
+        outcome: 'answered_without_losing_state',
+        evidence: { flow: currentState.currentFlow, step: currentState.flowStep },
+        durationMs: 0,
+      });
+      return answerActiveFlowQuestion(input, resumePrompt);
+    }
     if (shouldReclassifyActiveFlow(input)) {
       pushDecision(input, {
         handler: 'engine.topicSwitch',

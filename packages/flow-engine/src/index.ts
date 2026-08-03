@@ -31,6 +31,16 @@ export {
 } from './verticals';
 export { runVerticalReadinessSuite } from './readiness';
 export type { ReadinessScenarioResult, ReadinessSuiteResult } from './readiness';
+export {
+  AUTOPILOT_VERSION,
+  buildAutopilotPlan,
+  getAutopilotKnowledgeRequirements,
+} from './autopilot';
+export type {
+  AutopilotKnowledgeRequirement,
+  AutopilotPlan,
+  AutopilotPlanInput,
+} from './autopilot';
 export { extractVerticalIntake } from './intake';
 export type { StructuredIntake, StructuredIntakeField, StructuredIntakeMissingField } from './intake';
 export {
