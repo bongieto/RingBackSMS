@@ -6,7 +6,7 @@ import { getCallerState, setCallerState, isDuplicate } from './stateService';
 import { createOrder } from './orderService';
 import { createMeeting } from './schedulingService';
 import { sendNotification, sendOwnerNotification } from './notificationService';
-import { createTask } from './taskService';
+import { autoCompleteTasksForCaller, createTask } from './taskService';
 import { sendSms } from './twilioService';
 import { matchesLocationKeyword, buildLocationReply } from './foodTruckLocationService';
 import { createOrderPaymentSession } from './paymentService';
@@ -1772,6 +1772,14 @@ async function processInboundSmsInner(
     }
   } catch (err) {
     logger.error('Failed to set firstReplyAt', { err, tenantId, callerPhone });
+  }
+
+  // A reply proves the caller has been recovered into SMS. Remove the urgent
+  // rapid-redial alert even when the bot continues handling the conversation.
+  if (!testMode) {
+    await autoCompleteTasksForCaller(tenantId, callerPhone).catch((err) =>
+      logger.warn('Failed to close rapid-redial task after caller reply', { error: err }),
+    );
   }
 
   // Notify owner if escalation

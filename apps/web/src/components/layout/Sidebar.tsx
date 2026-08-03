@@ -7,8 +7,6 @@ import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import {
   LayoutDashboard,
-  ListChecks,
-  MessageSquare,
   ShoppingBag,
   Calendar,
   Users,
@@ -20,7 +18,6 @@ import {
   Plug2,
   Briefcase,
   HelpCircle,
-  Voicemail,
   MapPin,
   Menu,
   X,
@@ -32,6 +29,7 @@ import {
   GitBranch,
   ShieldCheck,
   BookOpenCheck,
+  Inbox,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { UserButton, OrganizationSwitcher, useUser } from '@clerk/nextjs';
@@ -51,9 +49,7 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
-  { href: '/dashboard/tasks', label: 'Action Items', icon: ListChecks, badgeKey: 'tasks' },
-  { href: '/dashboard/conversations', label: 'Conversations', icon: MessageSquare },
-  { href: '/dashboard/voicemails', label: 'Voicemails', icon: Voicemail },
+  { href: '/dashboard/inbox', label: 'Recovery Inbox', icon: Inbox, badgeKey: 'tasks' },
   { href: '/dashboard/contacts', label: 'Contacts', icon: Users },
   { href: '/dashboard/orders', label: 'Orders', icon: ShoppingBag, show: (n) => n.showOrders },
   { href: '/dashboard/kitchen', label: 'Kitchen', icon: ChefHat, show: (n) => n.showOrders },
@@ -104,6 +100,7 @@ const ROLE_ROUTE_PREFIXES: Record<string, string[]> = {
   KITCHEN: ['/dashboard', '/dashboard/kitchen', '/dashboard/orders', '/dashboard/tasks'],
   VIEWER: [
     '/dashboard',
+    '/dashboard/inbox',
     '/dashboard/orders',
     '/dashboard/conversations',
     '/dashboard/contacts',

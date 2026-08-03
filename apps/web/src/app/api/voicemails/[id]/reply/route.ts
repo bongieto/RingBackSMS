@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { Prisma } from '@prisma/client';
+import { Prisma, TaskSource } from '@prisma/client';
 import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { prisma } from '@/lib/server/db';
 import { sendSms } from '@/lib/server/services/twilioService';
@@ -8,6 +8,7 @@ import { encryptMessages, decryptMessages } from '@/lib/server/encryption';
 import { summarizeConversationMessages } from '@/lib/server/conversationSummary';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
+import { autoCompleteTasksForCaller } from '@/lib/server/services/taskService';
 
 const ReplySchema = z.object({ message: z.string().min(1).max(1600) });
 
@@ -84,6 +85,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         },
       });
     }
+
+    await autoCompleteTasksForCaller(missedCall.tenantId, missedCall.callerPhone, [TaskSource.RAPID_REDIAL, TaskSource.VOICEMAIL]).catch((err) =>
+      logger.warn('Failed to close voicemail recovery tasks after reply', { err, missedCallId: missedCall.id }),
+    );
 
     logger.info('Voicemail reply sent', { missedCallId: params.id, conversationId: conversation.id });
     return apiSuccess({ conversationId: conversation.id });

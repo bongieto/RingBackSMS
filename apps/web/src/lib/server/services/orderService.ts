@@ -1,4 +1,5 @@
 import { OrderStatus } from '@prisma/client';
+import { getKitchenPaymentStatusFilter } from '@ringback/shared-types';
 import { waitUntil } from '@vercel/functions';
 import { logger } from '../logger';
 import { prisma } from '../db';
@@ -143,14 +144,22 @@ export async function createOrder(input: CreateOrderInput) {
       prepTimeOverrides: true,
       timezone: true,
       minutesPerQueuedOrder: true,
+      requirePayment: true,
     },
   });
   const itemCount = input.items.reduce((s, i) => s + (i.quantity ?? 1), 0);
   // Count orders ahead of this one at write-time so estimatedReadyTime
   // reflects real kitchen load. We query BEFORE insert so the new order
   // doesn't count itself.
+  const requiredKitchenPaymentStatus = getKitchenPaymentStatusFilter(cfg?.requirePayment ?? true);
   const queueCount = await prisma.order.count({
-    where: { tenantId: input.tenantId, status: { in: ['CONFIRMED', 'PREPARING'] } },
+    where: {
+      tenantId: input.tenantId,
+      status: { in: ['CONFIRMED', 'PREPARING'] },
+      ...(requiredKitchenPaymentStatus && {
+        paymentStatus: requiredKitchenPaymentStatus,
+      }),
+    },
   });
   const prep = cfg
     ? calculatePrepTime(
@@ -493,6 +502,40 @@ export async function getTenantOrders(
   ]);
 
   return { orders, total };
+}
+
+const KITCHEN_ACTIVE_STATUSES: OrderStatus[] = [
+  OrderStatus.PENDING,
+  OrderStatus.CONFIRMED,
+  OrderStatus.PREPARING,
+  OrderStatus.READY,
+];
+
+/**
+ * Return only orders eligible for kitchen production. Payment-required
+ * tenants are fail-closed: without a PAID status the order stays in the
+ * Orders dashboard but never reaches the KDS, chime, ETA queue, or printer.
+ */
+export async function getKitchenOrders(tenantId: string, limit = 250) {
+  const config = await prisma.tenantConfig.findUnique({
+    where: { tenantId },
+    select: { requirePayment: true },
+  });
+  const requiredPaymentStatus = getKitchenPaymentStatusFilter(config?.requirePayment ?? true);
+  const completedCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  return prisma.order.findMany({
+    where: {
+      tenantId,
+      OR: [
+        { status: { in: KITCHEN_ACTIVE_STATUSES } },
+        { status: OrderStatus.COMPLETED, createdAt: { gte: completedCutoff } },
+      ],
+      ...(requiredPaymentStatus && { paymentStatus: requiredPaymentStatus }),
+    },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+  });
 }
 
 export async function getOrderById(orderId: string, tenantId: string) {

@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/server/db';
 import { renderOrderTicket } from '@/lib/server/services/escpos';
 import { logger } from '@/lib/server/logger';
+import { getKitchenPaymentStatusFilter } from '@ringback/shared-types';
 
 /**
  * Star Micronics CloudPRNT endpoint.
@@ -27,9 +28,9 @@ async function resolveTenant(token: string | null) {
   if (!token || token.length < 8) return null;
   const config = await prisma.tenantConfig.findFirst({
     where: { cloudPrntToken: token },
-    select: { tenantId: true },
+    select: { tenantId: true, requirePayment: true },
   });
-  return config?.tenantId ?? null;
+  return config ?? null;
 }
 
 export async function GET(req: NextRequest) {
@@ -38,15 +39,21 @@ export async function GET(req: NextRequest) {
   const jobToken = searchParams.get('jobToken');
   const accept = req.headers.get('accept') ?? '';
 
-  const tenantId = await resolveTenant(token);
-  if (!tenantId) {
+  const tenant = await resolveTenant(token);
+  if (!tenant) {
     return Response.json({ error: 'Invalid token' }, { status: 401 });
   }
+  const { tenantId } = tenant;
+  const requiredPaymentStatus = getKitchenPaymentStatusFilter(tenant.requirePayment);
 
   // If printer is requesting the actual job bytes, return ESC/POS directly.
   if (jobToken && accept.includes('application/vnd.star.starprnt')) {
     const order = await prisma.order.findFirst({
-      where: { id: jobToken, tenantId },
+      where: {
+        id: jobToken,
+        tenantId,
+        ...(requiredPaymentStatus && { paymentStatus: requiredPaymentStatus }),
+      },
       select: {
         id: true,
         orderNumber: true,
@@ -95,6 +102,7 @@ export async function GET(req: NextRequest) {
       tenantId,
       printedAt: null,
       status: { in: ['PENDING', 'CONFIRMED'] },
+      ...(requiredPaymentStatus && { paymentStatus: requiredPaymentStatus }),
     },
     orderBy: { createdAt: 'asc' },
     select: { id: true },
@@ -114,8 +122,10 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const token = searchParams.get('token');
-  const tenantId = await resolveTenant(token);
-  if (!tenantId) return Response.json({ error: 'Invalid token' }, { status: 401 });
+  const tenant = await resolveTenant(token);
+  if (!tenant) return Response.json({ error: 'Invalid token' }, { status: 401 });
+  const { tenantId } = tenant;
+  const requiredPaymentStatus = getKitchenPaymentStatusFilter(tenant.requirePayment);
 
   const body = await req.json().catch(() => ({}));
   const jobToken: string | undefined = body.jobToken;
@@ -126,7 +136,12 @@ export async function POST(req: NextRequest) {
   if (codeStr === '200' || codeStr.toLowerCase() === 'success') {
     await prisma.order
       .updateMany({
-        where: { id: jobToken, tenantId, printedAt: null },
+        where: {
+          id: jobToken,
+          tenantId,
+          printedAt: null,
+          ...(requiredPaymentStatus && { paymentStatus: requiredPaymentStatus }),
+        },
         data: { printedAt: new Date() },
       })
       .catch((err) => logger.warn('cloudprnt: mark printedAt failed', { err }));

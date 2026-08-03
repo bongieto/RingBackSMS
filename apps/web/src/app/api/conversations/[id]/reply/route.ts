@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { logger } from '@/lib/server/logger';
 import { logTiming, startTimer } from '@/lib/server/perf';
+import { autoCompleteTasksForCaller } from '@/lib/server/services/taskService';
 
 const ReplySchema = z.object({ message: z.string().min(1) });
 
@@ -59,6 +60,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       },
       include: { orders: true, meetings: true },
     });
+    await autoCompleteTasksForCaller(conversation.tenantId, conversation.callerPhone).catch((err) =>
+      logger.warn('Failed to close caller recovery task after manual reply', { err, conversationId: params.id }),
+    );
     const messageWindow = buildConversationMessageWindow(updated.messages);
     const responseData = { ...updated, ...messageWindow };
     logger.info('Manual reply sent', { conversationId: params.id });

@@ -1,4 +1,5 @@
 import { prisma } from '../db';
+import { getKitchenPaymentStatusFilter } from '@ringback/shared-types';
 
 // Orders placed by the bot-tester sentinel caller must NOT inflate the
 // queue-ahead count — that count surcharges every real customer's ETA.
@@ -17,11 +18,18 @@ const SENTINEL_PHONE = process.env.BOT_TESTER_SENTINEL_PHONE ?? '+19990000001';
  * adds `minutesPerQueuedOrder` to the estimate.
  */
 export async function getActiveOrderCount(tenantId: string): Promise<number> {
+  const config = await prisma.tenantConfig.findUnique({
+    where: { tenantId },
+    select: { requirePayment: true },
+  });
+  const requiredPaymentStatus = getKitchenPaymentStatusFilter(config?.requirePayment ?? true);
+
   return prisma.order.count({
     where: {
       tenantId,
       status: { in: ['CONFIRMED', 'PREPARING'] },
       callerPhone: { not: SENTINEL_PHONE },
+      ...(requiredPaymentStatus && { paymentStatus: requiredPaymentStatus }),
     },
   });
 }

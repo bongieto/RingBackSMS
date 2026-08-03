@@ -21,6 +21,34 @@ export interface CreateTaskInput {
  * of creating a duplicate. Prevents task spam from retried webhooks.
  */
 export async function createTask(input: CreateTaskInput): Promise<Task> {
+  // A rapid-redial alert represents a caller-level recovery case, not an
+  // individual webhook event. Keep one open item per caller and refresh it
+  // with the newest attempt instead of filling the inbox with duplicates.
+  if (input.source === 'RAPID_REDIAL' && input.callerPhone) {
+    const existingCallerTask = await prisma.task.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        source: 'RAPID_REDIAL',
+        callerPhone: input.callerPhone,
+        status: { in: ['OPEN', 'SNOOZED'] },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (existingCallerTask) {
+      return prisma.task.update({
+        where: { id: existingCallerTask.id },
+        data: {
+          title: input.title,
+          description: input.description,
+          priority: input.priority ?? 'URGENT',
+          missedCallId: input.missedCallId ?? existingCallerTask.missedCallId,
+          status: 'OPEN',
+          snoozedUntil: null,
+        },
+      });
+    }
+  }
+
   const refField = sourceRefField(input.source);
   if (refField) {
     const refValue = input[refField];
@@ -215,6 +243,32 @@ export async function autoCompleteTasksForEntity(
   });
   if (result.count > 0) {
     logger.info('Tasks auto-completed', { source, refField, refId, count: result.count });
+  }
+  return result.count;
+}
+
+/** Complete caller-level recovery alerts once the caller has re-engaged. */
+export async function autoCompleteTasksForCaller(
+  tenantId: string,
+  callerPhone: string,
+  sources: TaskSource[] = [TaskSource.RAPID_REDIAL],
+): Promise<number> {
+  const result = await prisma.task.updateMany({
+    where: {
+      tenantId,
+      callerPhone,
+      source: { in: sources },
+      status: { in: ['OPEN', 'SNOOZED'] },
+    },
+    data: { status: 'DONE', completedAt: new Date() },
+  });
+  if (result.count > 0) {
+    logger.info('Caller recovery tasks auto-completed', {
+      tenantId,
+      callerPhone,
+      sources,
+      count: result.count,
+    });
   }
   return result.count;
 }

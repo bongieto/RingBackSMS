@@ -31,8 +31,6 @@ interface Order {
   createdAt: string;
 }
 
-const ACTIVE_STATUSES = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'COMPLETED'];
-
 export default function KitchenPage() {
   const { tenantId } = useTenantId();
   const [soundEnabled, setSoundEnabled] = useState(() => {
@@ -61,19 +59,15 @@ export default function KitchenPage() {
     });
   }, []);
 
-  // Fetch all active orders (10s polling)
+  // Fetch only server-approved kitchen work (10s polling). The server
+  // enforces payment eligibility so unpaid orders never reach this page,
+  // its new-order chime, or browser notifications.
   const { data, isLoading } = useQuery({
     queryKey: ['kitchen-orders', tenantId],
-    queryFn: async () => {
-      const results = await Promise.all(
-        ACTIVE_STATUSES.map(status =>
-          webApi.get('/orders', { params: { tenantId, status, pageSize: 50 } })
-            .then(r => (r.data.data ?? []) as Order[])
-            .catch(() => [] as Order[])
-        )
-      );
-      return results.flat();
-    },
+    queryFn: () =>
+      webApi
+        .get('/orders', { params: { tenantId, kitchen: true } })
+        .then((r) => (r.data.data ?? []) as Order[]),
     enabled: !!tenantId,
     refetchInterval: 10000,
   });

@@ -230,6 +230,11 @@ export const taskApi = {
   dismissAll: () => webApi.delete('/tasks').then((r) => r.data.data),
 };
 
+export const recoveryInboxApi = {
+  list: (tenantId: string) =>
+    webApi.get('/recovery-inbox', { params: { tenantId } }).then((r) => r.data.data),
+};
+
 export const notificationApi = {
   test: (tenantId: string, channel: 'email' | 'sms' | 'slack') =>
     webApi.post('/notifications/test', { tenantId, channel }).then((r) => r.data.data),
