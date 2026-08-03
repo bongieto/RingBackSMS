@@ -32,6 +32,7 @@ import {
   Inbox,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { recoveryInboxApi } from '@/lib/api';
 import { UserButton, OrganizationSwitcher, useUser } from '@clerk/nextjs';
 import { useTenantId } from '@/components/providers/TenantProvider';
 import { getProfile } from '@/lib/businessTypeProfile';
@@ -42,14 +43,14 @@ type NavItem = {
   href: string;
   label: string;
   icon: typeof LayoutDashboard;
-  badgeKey?: 'tasks';
+  badgeKey?: 'recovery';
   show?: (nav: ReturnType<typeof getProfile>['nav']) => boolean;
   labelFrom?: (nav: ReturnType<typeof getProfile>['nav']) => string;
 };
 
 const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
-  { href: '/dashboard/inbox', label: 'Recovery Inbox', icon: Inbox, badgeKey: 'tasks' },
+  { href: '/dashboard/inbox', label: 'Recovery Inbox', icon: Inbox, badgeKey: 'recovery' },
   { href: '/dashboard/contacts', label: 'Contacts', icon: Users },
   { href: '/dashboard/orders', label: 'Orders', icon: ShoppingBag, show: (n) => n.showOrders },
   { href: '/dashboard/kitchen', label: 'Kitchen', icon: ChefHat, show: (n) => n.showOrders },
@@ -78,14 +79,23 @@ const navItems: NavItem[] = [
   { href: '/help', label: 'Help Center', icon: HelpCircle },
 ];
 
-function useTaskBadge() {
-  const { data } = useQuery<{ open: number; urgent: number }>({
-    queryKey: ['tasks-count'],
-    queryFn: () => axios.get('/api/tasks/count').then((r) => r.data.data),
+function useRecoveryInboxBadge() {
+  const { tenantId } = useTenantId();
+  const { data } = useQuery<{
+    counts: { active: number; needsAttention: number };
+  }>({
+    // Share the Recovery Inbox page's cache so the badge and tabs always
+    // represent the same caller-level read model.
+    queryKey: ['recovery-inbox', tenantId],
+    queryFn: () => recoveryInboxApi.list(tenantId!),
+    enabled: Boolean(tenantId),
     refetchInterval: 60_000,
     staleTime: 30_000,
   });
-  return data ?? { open: 0, urgent: 0 };
+  return {
+    open: data?.counts.active ?? 0,
+    urgent: data?.counts.needsAttention ?? 0,
+  };
 }
 
 function useTenantProfile() {
@@ -127,7 +137,7 @@ function useCurrentRole() {
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
-  const taskBadge = useTaskBadge();
+  const recoveryBadge = useRecoveryInboxBadge();
   const profile = useTenantProfile();
   const { data: roleData } = useCurrentRole();
   const role = roleData?.role ?? 'OWNER';
@@ -189,16 +199,16 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             >
               <Icon className="h-4 w-4 shrink-0" />
               <span className="flex-1">{label}</span>
-              {('badgeKey' in item) && item.badgeKey === 'tasks' && taskBadge.open > 0 && (
+              {('badgeKey' in item) && item.badgeKey === 'recovery' && recoveryBadge.open > 0 && (
                 <span
                   className={cn(
                     'ml-auto inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[10px] font-semibold min-w-[20px]',
-                    taskBadge.urgent > 0
+                    recoveryBadge.urgent > 0
                       ? 'bg-red-500 text-white animate-pulse'
                       : 'bg-blue-500 text-white'
                   )}
                 >
-                  {taskBadge.open}
+                  {recoveryBadge.open}
                 </span>
               )}
             </Link>
