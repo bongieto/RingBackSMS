@@ -3,6 +3,7 @@ export type RecoveryState =
   | 'AI_HANDLING'
   | 'WAITING_PAYMENT'
   | 'WAITING_CUSTOMER'
+  | 'SNOOZED'
   | 'RESOLVED';
 
 export type RecoveryPriority = 'URGENT' | 'HIGH' | 'NORMAL';
@@ -33,6 +34,59 @@ export interface RecoveryDecision {
   priority: RecoveryPriority;
   nextAction: string;
   reason: string;
+}
+
+export interface RecoveryDispositionSignal {
+  status: 'ACTIVE' | 'SNOOZED' | 'RESOLVED';
+  resolutionReason: string | null;
+  snoozedUntil: Date | null;
+  lastHandledActivityAt: Date | null;
+}
+
+export function applyRecoveryDisposition(
+  baseDecision: RecoveryDecision,
+  disposition: RecoveryDispositionSignal | null,
+  latestActivityAt: Date,
+  now: Date
+): { decision: RecoveryDecision; shouldAutoReopen: boolean } {
+  if (!disposition || disposition.status === 'ACTIVE') {
+    return { decision: baseDecision, shouldAutoReopen: false };
+  }
+
+  const hasNewActivity = Boolean(
+    disposition.lastHandledActivityAt && latestActivityAt > disposition.lastHandledActivityAt
+  );
+  const snoozeExpired = Boolean(
+    disposition.status === 'SNOOZED' && disposition.snoozedUntil && disposition.snoozedUntil <= now
+  );
+
+  if (hasNewActivity || snoozeExpired) {
+    return { decision: baseDecision, shouldAutoReopen: true };
+  }
+
+  if (disposition.status === 'RESOLVED') {
+    return {
+      decision: {
+        state: 'RESOLVED',
+        priority: 'NORMAL',
+        nextAction: 'Marked done — no current follow-up required',
+        reason: disposition.resolutionReason
+          ? disposition.resolutionReason.toLowerCase().replaceAll('_', ' ')
+          : 'Manually resolved',
+      },
+      shouldAutoReopen: false,
+    };
+  }
+
+  return {
+    decision: {
+      state: 'SNOOZED',
+      priority: 'NORMAL',
+      nextAction: 'Snoozed — returns to Active automatically',
+      reason: 'Temporarily removed from the active queue',
+    },
+    shouldAutoReopen: false,
+  };
 }
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -157,7 +211,8 @@ export const RECOVERY_STATE_ORDER: Record<RecoveryState, number> = {
   AI_HANDLING: 1,
   WAITING_PAYMENT: 2,
   WAITING_CUSTOMER: 3,
-  RESOLVED: 4,
+  SNOOZED: 4,
+  RESOLVED: 5,
 };
 
 export const RECOVERY_PRIORITY_ORDER: Record<RecoveryPriority, number> = {

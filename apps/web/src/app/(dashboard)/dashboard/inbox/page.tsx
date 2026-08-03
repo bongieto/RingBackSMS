@@ -1,7 +1,8 @@
 'use client';
 
 import { useDeferredValue, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import * as Dialog from '@radix-ui/react-dialog';
 import Link from 'next/link';
 import {
   Bot,
@@ -18,8 +19,10 @@ import {
   PhoneCall,
   Search,
   ShoppingBag,
+  TimerReset,
   Voicemail,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Header } from '@/components/layout/Header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -31,6 +34,13 @@ import { cn, formatRelativeTime, maskPhone } from '@/lib/utils';
 import type { RecoveryPriority, RecoveryState } from '@ringback/shared-types';
 
 type InboxFilter = 'ACTIVE' | RecoveryState;
+type ResolutionReason =
+  | 'CUSTOMER_CONTACTED'
+  | 'ORDER_HANDLED'
+  | 'QUESTION_ANSWERED'
+  | 'NO_RESPONSE_NEEDED'
+  | 'SPAM_OR_WRONG_NUMBER'
+  | 'OTHER';
 
 type TimelineEvent = {
   id: string;
@@ -85,6 +95,16 @@ type RecoveryCase = {
     status: string;
     scheduledAt: string | null;
   } | null;
+  disposition: {
+    status: 'ACTIVE' | 'SNOOZED' | 'RESOLVED';
+    resolutionReason: ResolutionReason | null;
+    resolutionNote: string | null;
+    resolvedAt: string | null;
+    resolvedBy: string | null;
+    snoozedUntil: string | null;
+    reopenedAt: string | null;
+    reopenReason: string | null;
+  } | null;
   events: TimelineEvent[];
 };
 
@@ -92,6 +112,7 @@ type RecoveryInboxResponse = {
   cases: RecoveryCase[];
   counts: {
     all: number;
+    active: number;
     needsAttention: number;
     aiHandling: number;
     waiting: number;
@@ -132,6 +153,11 @@ const STATE_STYLES: Record<
     className: 'bg-blue-50 text-blue-700 border-blue-200',
     icon: Clock3,
   },
+  SNOOZED: {
+    label: 'Snoozed',
+    className: 'bg-slate-100 text-slate-700 border-slate-300',
+    icon: TimerReset,
+  },
   RESOLVED: {
     label: 'Resolved',
     className: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -149,11 +175,11 @@ const EVENT_ICONS: Record<TimelineEvent['type'], typeof Phone> = {
 };
 
 function isWaiting(state: RecoveryState): boolean {
-  return state === 'WAITING_CUSTOMER' || state === 'WAITING_PAYMENT';
+  return state === 'WAITING_CUSTOMER' || state === 'WAITING_PAYMENT' || state === 'SNOOZED';
 }
 
 function matchesFilter(item: RecoveryCase, filter: InboxFilter): boolean {
-  if (filter === 'ACTIVE') return item.state !== 'RESOLVED';
+  if (filter === 'ACTIVE') return item.state !== 'RESOLVED' && item.state !== 'SNOOZED';
   if (filter === 'WAITING_CUSTOMER') return isWaiting(item.state);
   return item.state === filter;
 }
@@ -166,9 +192,13 @@ function compactDuration(seconds: number | null): string | null {
 
 export default function RecoveryInboxPage() {
   const { tenantId } = useTenantId();
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState<InboxFilter>('ACTIVE');
   const [search, setSearch] = useState('');
   const [expandedPhone, setExpandedPhone] = useState<string | null>(null);
+  const [resolveCase, setResolveCase] = useState<RecoveryCase | null>(null);
+  const [resolutionReason, setResolutionReason] = useState<ResolutionReason>('CUSTOMER_CONTACTED');
+  const [resolutionNote, setResolutionNote] = useState('');
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
 
   const { data, isLoading, isError } = useQuery<RecoveryInboxResponse>({
@@ -178,6 +208,32 @@ export default function RecoveryInboxPage() {
     refetchInterval: 30_000,
     staleTime: 15_000,
   });
+
+  const updateCase = useMutation({
+    mutationFn: recoveryInboxApi.update,
+    onSuccess: (_result, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['recovery-inbox', tenantId] });
+      toast.success(
+        variables.action === 'resolve'
+          ? 'Case marked done'
+          : variables.action === 'snooze'
+            ? 'Case snoozed'
+            : 'Case reopened'
+      );
+      setResolveCase(null);
+      setResolutionNote('');
+    },
+    onError: () => toast.error('Could not update this recovery case'),
+  });
+
+  function snooze(item: RecoveryCase, hours: number) {
+    updateCase.mutate({
+      tenantId: tenantId!,
+      callerPhone: item.callerPhone,
+      action: 'snooze',
+      snoozedUntil: new Date(Date.now() + hours * 60 * 60 * 1000).toISOString(),
+    });
+  }
 
   const cases = useMemo(() => {
     const rows = data?.cases ?? [];
@@ -234,7 +290,7 @@ export default function RecoveryInboxPage() {
           {FILTERS.map((item) => {
             const count =
               item.key === 'ACTIVE'
-                ? (data?.counts.all ?? 0) - (data?.counts.resolved ?? 0)
+                ? data?.counts.active
                 : item.key === 'NEEDS_ATTENTION'
                   ? data?.counts.needsAttention
                   : item.key === 'AI_HANDLING'
@@ -306,6 +362,20 @@ export default function RecoveryInboxPage() {
                   current === item.callerPhone ? null : item.callerPhone
                 )
               }
+              onResolve={() => {
+                setResolveCase(item);
+                setResolutionReason('CUSTOMER_CONTACTED');
+                setResolutionNote('');
+              }}
+              onSnooze={(hours) => snooze(item, hours)}
+              onReopen={() =>
+                updateCase.mutate({
+                  tenantId: tenantId!,
+                  callerPhone: item.callerPhone,
+                  action: 'reopen',
+                })
+              }
+              isUpdating={updateCase.isPending}
             />
           ))}
         </div>
@@ -323,6 +393,90 @@ export default function RecoveryInboxPage() {
           Voicemail archive
         </Link>
       </div>
+
+      {resolveCase ? (
+        <Dialog.Root
+          open
+          onOpenChange={(open) => {
+            if (!open && !updateCase.isPending) setResolveCase(null);
+          }}
+        >
+          <Dialog.Portal>
+            <Dialog.Overlay className="fixed inset-0 z-[100] bg-slate-950/50" />
+            <Dialog.Content className="fixed left-1/2 top-1/2 z-[101] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-5 shadow-xl">
+              <Dialog.Title className="text-lg font-semibold text-slate-900">
+                Mark this case done?
+              </Dialog.Title>
+              <Dialog.Description className="mt-1 text-sm text-slate-600">
+                This removes {resolveCase.contact?.name ?? maskPhone(resolveCase.callerPhone)} from
+                the active queue. New caller activity will reopen it automatically.
+              </Dialog.Description>
+              {resolveCase.openTaskCount > 0 ? (
+                <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  This caller has {resolveCase.openTaskCount} open task
+                  {resolveCase.openTaskCount === 1 ? '' : 's'}. Marking the case done will not
+                  complete or delete those tasks.
+                </div>
+              ) : null}
+              <label
+                className="mt-4 block text-sm font-medium text-slate-700"
+                htmlFor="resolution-reason"
+              >
+                Resolution reason
+              </label>
+              <select
+                id="resolution-reason"
+                value={resolutionReason}
+                onChange={(event) => setResolutionReason(event.target.value as ResolutionReason)}
+                className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="CUSTOMER_CONTACTED">Customer contacted</option>
+                <option value="ORDER_HANDLED">Order handled</option>
+                <option value="QUESTION_ANSWERED">Question answered</option>
+                <option value="NO_RESPONSE_NEEDED">No response needed</option>
+                <option value="SPAM_OR_WRONG_NUMBER">Spam or wrong number</option>
+                <option value="OTHER">Other</option>
+              </select>
+              <label
+                className="mt-4 block text-sm font-medium text-slate-700"
+                htmlFor="resolution-note"
+              >
+                Internal note <span className="font-normal text-slate-400">(optional)</span>
+              </label>
+              <textarea
+                id="resolution-note"
+                value={resolutionNote}
+                onChange={(event) => setResolutionNote(event.target.value.slice(0, 1000))}
+                rows={3}
+                className="mt-1 w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm"
+                placeholder="What was done?"
+              />
+              <div className="mt-5 flex justify-end gap-2">
+                <Dialog.Close asChild>
+                  <Button variant="outline" disabled={updateCase.isPending}>
+                    Cancel
+                  </Button>
+                </Dialog.Close>
+                <Button
+                  onClick={() =>
+                    updateCase.mutate({
+                      tenantId: tenantId!,
+                      callerPhone: resolveCase.callerPhone,
+                      action: 'resolve',
+                      reason: resolutionReason,
+                      note: resolutionNote,
+                    })
+                  }
+                  disabled={updateCase.isPending}
+                >
+                  <CheckCircle2 className="mr-1.5 h-4 w-4" />
+                  {updateCase.isPending ? 'Saving…' : 'Mark done'}
+                </Button>
+              </div>
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
+      ) : null}
     </div>
   );
 }
@@ -365,11 +519,19 @@ function RecoveryCaseCard({
   tenantId,
   expanded,
   onToggle,
+  onResolve,
+  onSnooze,
+  onReopen,
+  isUpdating,
 }: {
   item: RecoveryCase;
   tenantId: string;
   expanded: boolean;
   onToggle: () => void;
+  onResolve: () => void;
+  onSnooze: (hours: number) => void;
+  onReopen: () => void;
+  isUpdating: boolean;
 }) {
   const style = STATE_STYLES[item.state];
   const StateIcon = style.icon;
@@ -382,10 +544,29 @@ function RecoveryCaseCard({
         item.priority === 'URGENT' && item.state === 'NEEDS_ATTENTION' ? 'border-red-300' : ''
       )}
     >
-      <CardContent className="p-0">
+      <CardContent className="relative p-0">
+        <div className="absolute right-12 top-3 z-10">
+          {item.state === 'RESOLVED' ? (
+            <Button size="sm" variant="outline" onClick={onReopen} disabled={isUpdating}>
+              <span className="hidden sm:inline">Reopen</span>
+              <span className="sm:hidden">Open</span>
+            </Button>
+          ) : item.state === 'SNOOZED' ? (
+            <Button size="sm" variant="outline" onClick={onReopen} disabled={isUpdating}>
+              <span className="hidden sm:inline">Return to active</span>
+              <span className="sm:hidden">Open</span>
+            </Button>
+          ) : (
+            <Button size="sm" onClick={onResolve} disabled={isUpdating}>
+              <CheckCircle2 className="mr-1.5 h-4 w-4" />
+              <span className="hidden sm:inline">Mark done</span>
+              <span className="sm:hidden">Done</span>
+            </Button>
+          )}
+        </div>
         <button
           type="button"
-          className="w-full p-4 text-left"
+          className="w-full p-4 pr-24 text-left sm:pr-40"
           onClick={onToggle}
           aria-expanded={expanded}
         >
@@ -460,7 +641,43 @@ function RecoveryCaseCard({
                   </Link>
                 </Button>
               ) : null}
+              {item.state !== 'RESOLVED' ? (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onSnooze(1)}
+                    disabled={isUpdating}
+                  >
+                    <TimerReset className="mr-1.5 h-4 w-4" />
+                    Snooze 1 hour
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onSnooze(24)}
+                    disabled={isUpdating}
+                  >
+                    Snooze until tomorrow
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onSnooze(168)}
+                    disabled={isUpdating}
+                  >
+                    Snooze one week
+                  </Button>
+                </>
+              ) : null}
             </div>
+
+            {item.disposition?.resolutionNote && item.state === 'RESOLVED' ? (
+              <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                <span className="font-medium">Resolution note:</span>{' '}
+                {item.disposition.resolutionNote}
+              </div>
+            ) : null}
 
             {item.voicemail ? (
               <div className="mb-4 rounded-lg border bg-white p-3">

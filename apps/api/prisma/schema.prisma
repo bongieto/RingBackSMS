@@ -173,6 +173,8 @@ model Tenant {
   integrationEvents        IntegrationEvent[]
   idempotencyRecords       ApiIdempotencyRecord[]
   itemAvailability         MenuItemAvailability[]
+  recoveryCases            RecoveryCase[]
+  recoveryCaseActions      RecoveryCaseAction[]
 
   @@index([twilioPhoneNumber])
   @@index([clerkOrgId])
@@ -1148,6 +1150,73 @@ model Task {
   @@index([orderId])
   @@index([meetingId])
   @@index([conversationId])
+}
+
+enum RecoveryCaseStatus {
+  ACTIVE
+  SNOOZED
+  RESOLVED
+}
+
+enum RecoveryResolutionReason {
+  CUSTOMER_CONTACTED
+  ORDER_HANDLED
+  QUESTION_ANSWERED
+  NO_RESPONSE_NEEDED
+  SPAM_OR_WRONG_NUMBER
+  OTHER
+}
+
+enum RecoveryCaseActionType {
+  RESOLVED
+  SNOOZED
+  REOPENED
+  AUTO_REOPENED
+}
+
+model RecoveryCase {
+  id          String             @id @default(cuid())
+  tenantId    String
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  callerPhone String
+  status      RecoveryCaseStatus @default(ACTIVE)
+
+  resolutionReason RecoveryResolutionReason?
+  resolutionNote   String?                   @db.Text
+  resolvedAt       DateTime?
+  resolvedBy       String?
+  snoozedUntil     DateTime?
+
+  // Activity at or before this timestamp is considered handled. A newer call,
+  // message, task, order, or meeting automatically reopens the case.
+  lastHandledActivityAt DateTime?
+  reopenedAt            DateTime?
+  reopenReason          String?
+
+  actions   RecoveryCaseAction[]
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  @@unique([tenantId, callerPhone])
+  @@index([tenantId, status, updatedAt])
+  @@index([tenantId, snoozedUntil])
+}
+
+model RecoveryCaseAction {
+  id             String                    @id @default(cuid())
+  tenantId       String
+  tenant         Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  recoveryCaseId String
+  recoveryCase   RecoveryCase              @relation(fields: [recoveryCaseId], references: [id], onDelete: Cascade)
+  action         RecoveryCaseActionType
+  reason         RecoveryResolutionReason?
+  note           String?                   @db.Text
+  actorId        String
+  snoozedUntil   DateTime?
+  createdAt      DateTime                  @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([recoveryCaseId, createdAt])
 }
 
 // ── TCPA Consent + Industry Templates ───────────────────────────────────────

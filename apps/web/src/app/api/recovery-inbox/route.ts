@@ -5,13 +5,23 @@ import { decryptMaybePlaintext } from '@/lib/server/encryption';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import {
   deriveRecoveryDecision,
+  applyRecoveryDisposition,
   RECOVERY_PRIORITY_ORDER,
   RECOVERY_STATE_ORDER,
   type RecoveryPriority,
 } from '@ringback/shared-types';
+import type { RecoveryResolutionReason } from '@prisma/client';
 
 const LOOKBACK_DAYS = 90;
 const MAX_ROWS_PER_SOURCE = 750;
+const RESOLUTION_REASONS = new Set<RecoveryResolutionReason>([
+  'CUSTOMER_CONTACTED',
+  'ORDER_HANDLED',
+  'QUESTION_ANSWERED',
+  'NO_RESPONSE_NEEDED',
+  'SPAM_OR_WRONG_NUMBER',
+  'OTHER',
+]);
 
 type TimelineEvent = {
   id: string;
@@ -64,106 +74,123 @@ export async function GET(req: NextRequest) {
   const cutoff = new Date(now.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
 
   try {
-    const [missedCalls, conversations, tasks, orders, meetings, contacts] = await Promise.all([
-      prisma.missedCall.findMany({
-        where: { tenantId, occurredAt: { gte: cutoff } },
-        select: {
-          id: true,
-          callerPhone: true,
-          occurredAt: true,
-          smsSent: true,
-          voicemailUrl: true,
-          voicemailDuration: true,
-          voicemailReceivedAt: true,
-          voicemailTranscript: true,
-          voicemailSummary: true,
-          voicemailIntent: true,
-          voicemailHandledAt: true,
-          transcriptionStatus: true,
-          firstReplyAt: true,
-          ownerRespondedAt: true,
-          callerTier: true,
-        },
-        orderBy: { occurredAt: 'desc' },
-        take: MAX_ROWS_PER_SOURCE,
-      }),
-      prisma.conversation.findMany({
-        where: { tenantId, updatedAt: { gte: cutoff } },
-        select: {
-          id: true,
-          callerPhone: true,
-          flowType: true,
-          handoffStatus: true,
-          isActive: true,
-          lastMessagePreview: true,
-          messageCount: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-        orderBy: { updatedAt: 'desc' },
-        take: MAX_ROWS_PER_SOURCE,
-      }),
-      prisma.task.findMany({
-        where: {
-          tenantId,
-          callerPhone: { not: null },
-          status: { in: ['OPEN', 'SNOOZED'] },
-        },
-        select: {
-          id: true,
-          callerPhone: true,
-          title: true,
-          description: true,
-          source: true,
-          priority: true,
-          status: true,
-          snoozedUntil: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-        orderBy: { updatedAt: 'desc' },
-        take: MAX_ROWS_PER_SOURCE,
-      }),
-      prisma.order.findMany({
-        where: { tenantId, createdAt: { gte: cutoff } },
-        select: {
-          id: true,
-          callerPhone: true,
-          orderNumber: true,
-          status: true,
-          paymentStatus: true,
-          total: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-        orderBy: { updatedAt: 'desc' },
-        take: MAX_ROWS_PER_SOURCE,
-      }),
-      prisma.meeting.findMany({
-        where: { tenantId, updatedAt: { gte: cutoff } },
-        select: {
-          id: true,
-          callerPhone: true,
-          scheduledAt: true,
-          status: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-        orderBy: { updatedAt: 'desc' },
-        take: MAX_ROWS_PER_SOURCE,
-      }),
-      prisma.contact.findMany({
-        where: { tenantId },
-        select: {
-          id: true,
-          phone: true,
-          name: true,
-          status: true,
-          totalOrders: true,
-          totalSpent: true,
-        },
-      }),
-    ]);
+    const [missedCalls, conversations, tasks, orders, meetings, contacts, recoveryCases] =
+      await Promise.all([
+        prisma.missedCall.findMany({
+          where: { tenantId, occurredAt: { gte: cutoff } },
+          select: {
+            id: true,
+            callerPhone: true,
+            occurredAt: true,
+            smsSent: true,
+            voicemailUrl: true,
+            voicemailDuration: true,
+            voicemailReceivedAt: true,
+            voicemailTranscript: true,
+            voicemailSummary: true,
+            voicemailIntent: true,
+            voicemailHandledAt: true,
+            transcriptionStatus: true,
+            firstReplyAt: true,
+            ownerRespondedAt: true,
+            callerTier: true,
+          },
+          orderBy: { occurredAt: 'desc' },
+          take: MAX_ROWS_PER_SOURCE,
+        }),
+        prisma.conversation.findMany({
+          where: { tenantId, updatedAt: { gte: cutoff } },
+          select: {
+            id: true,
+            callerPhone: true,
+            flowType: true,
+            handoffStatus: true,
+            isActive: true,
+            lastMessagePreview: true,
+            messageCount: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          orderBy: { updatedAt: 'desc' },
+          take: MAX_ROWS_PER_SOURCE,
+        }),
+        prisma.task.findMany({
+          where: {
+            tenantId,
+            callerPhone: { not: null },
+            status: { in: ['OPEN', 'SNOOZED'] },
+          },
+          select: {
+            id: true,
+            callerPhone: true,
+            title: true,
+            description: true,
+            source: true,
+            priority: true,
+            status: true,
+            snoozedUntil: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          orderBy: { updatedAt: 'desc' },
+          take: MAX_ROWS_PER_SOURCE,
+        }),
+        prisma.order.findMany({
+          where: { tenantId, createdAt: { gte: cutoff } },
+          select: {
+            id: true,
+            callerPhone: true,
+            orderNumber: true,
+            status: true,
+            paymentStatus: true,
+            total: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          orderBy: { updatedAt: 'desc' },
+          take: MAX_ROWS_PER_SOURCE,
+        }),
+        prisma.meeting.findMany({
+          where: { tenantId, updatedAt: { gte: cutoff } },
+          select: {
+            id: true,
+            callerPhone: true,
+            scheduledAt: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          orderBy: { updatedAt: 'desc' },
+          take: MAX_ROWS_PER_SOURCE,
+        }),
+        prisma.contact.findMany({
+          where: { tenantId },
+          select: {
+            id: true,
+            phone: true,
+            name: true,
+            status: true,
+            totalOrders: true,
+            totalSpent: true,
+          },
+        }),
+        prisma.recoveryCase.findMany({
+          where: { tenantId },
+          select: {
+            id: true,
+            callerPhone: true,
+            status: true,
+            resolutionReason: true,
+            resolutionNote: true,
+            resolvedAt: true,
+            resolvedBy: true,
+            snoozedUntil: true,
+            lastHandledActivityAt: true,
+            reopenedAt: true,
+            reopenReason: true,
+          },
+        }),
+      ]);
 
     const callsByPhone = groupByCallerPhone(missedCalls);
     const conversationsByPhone = groupByCallerPhone(conversations);
@@ -179,6 +206,8 @@ export async function GET(req: NextRequest) {
     ]);
 
     const contactByPhone = new Map(contacts.map((contact) => [contact.phone, contact]));
+    const recoveryCaseByPhone = new Map(recoveryCases.map((item) => [item.callerPhone, item]));
+    const autoReopenCaseIds: string[] = [];
     const cases = Array.from(phones).map((callerPhone) => {
       const callerCalls = callsByPhone.get(callerPhone) ?? [];
       const callerConversations = conversationsByPhone.get(callerPhone) ?? [];
@@ -200,7 +229,7 @@ export async function GET(req: NextRequest) {
           : null,
       ]);
 
-      const decision = deriveRecoveryDecision({
+      let decision = deriveRecoveryDecision({
         now,
         latestCallAt: latestCall?.occurredAt ?? null,
         latestConversationAt: latestConversation?.updatedAt ?? null,
@@ -312,6 +341,25 @@ export async function GET(req: NextRequest) {
           latestMeeting?.updatedAt,
         ]) ?? now;
 
+      const recoveryCase = recoveryCaseByPhone.get(callerPhone) ?? null;
+      const dispositionResult = applyRecoveryDisposition(
+        decision,
+        recoveryCase
+          ? {
+              status: recoveryCase.status,
+              resolutionReason: recoveryCase.resolutionReason,
+              snoozedUntil: recoveryCase.snoozedUntil,
+              lastHandledActivityAt: recoveryCase.lastHandledActivityAt,
+            }
+          : null,
+        lastActivityAt,
+        now
+      );
+      decision = dispositionResult.decision;
+      if (recoveryCase && dispositionResult.shouldAutoReopen) {
+        autoReopenCaseIds.push(recoveryCase.id);
+      }
+
       return {
         callerPhone,
         contact: contact
@@ -368,9 +416,51 @@ export async function GET(req: NextRequest) {
               scheduledAt: latestMeeting.scheduledAt?.toISOString() ?? null,
             }
           : null,
+        disposition: recoveryCase
+          ? {
+              status:
+                recoveryCase.status !== 'ACTIVE' && dispositionResult.shouldAutoReopen
+                  ? 'ACTIVE'
+                  : recoveryCase.status,
+              resolutionReason: recoveryCase.resolutionReason,
+              resolutionNote: recoveryCase.resolutionNote,
+              resolvedAt: recoveryCase.resolvedAt?.toISOString() ?? null,
+              resolvedBy: recoveryCase.resolvedBy,
+              snoozedUntil: recoveryCase.snoozedUntil?.toISOString() ?? null,
+              reopenedAt: recoveryCase.reopenedAt?.toISOString() ?? null,
+              reopenReason: recoveryCase.reopenReason,
+            }
+          : null,
         events: events.slice(0, 12),
       };
     });
+
+    if (autoReopenCaseIds.length > 0) {
+      await prisma.$transaction(async (tx) => {
+        for (const id of autoReopenCaseIds) {
+          const reopened = await tx.recoveryCase.updateMany({
+            where: { id, status: { not: 'ACTIVE' } },
+            data: {
+              status: 'ACTIVE',
+              snoozedUntil: null,
+              reopenedAt: now,
+              reopenReason: 'New caller activity or snooze expiration',
+            },
+          });
+          if (reopened.count > 0) {
+            await tx.recoveryCaseAction.create({
+              data: {
+                tenantId,
+                recoveryCaseId: id,
+                action: 'AUTO_REOPENED',
+                actorId: 'system',
+                note: 'New caller activity or snooze expiration',
+              },
+            });
+          }
+        }
+      });
+    }
 
     cases.sort((a, b) => {
       const stateDelta = RECOVERY_STATE_ORDER[a.state] - RECOVERY_STATE_ORDER[b.state];
@@ -383,10 +473,14 @@ export async function GET(req: NextRequest) {
 
     const counts = {
       all: cases.length,
+      active: cases.filter((item) => item.state !== 'RESOLVED' && item.state !== 'SNOOZED').length,
       needsAttention: cases.filter((item) => item.state === 'NEEDS_ATTENTION').length,
       aiHandling: cases.filter((item) => item.state === 'AI_HANDLING').length,
       waiting: cases.filter(
-        (item) => item.state === 'WAITING_PAYMENT' || item.state === 'WAITING_CUSTOMER'
+        (item) =>
+          item.state === 'WAITING_PAYMENT' ||
+          item.state === 'WAITING_CUSTOMER' ||
+          item.state === 'SNOOZED'
       ).length,
       resolved: cases.filter((item) => item.state === 'RESOLVED').length,
     };
@@ -395,5 +489,154 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     console.error('[GET /api/recovery-inbox] failed', error);
     return apiError('Failed to load recovery inbox', 500);
+  }
+}
+
+async function getLatestCallerActivity(
+  tenantId: string,
+  callerPhone: string
+): Promise<Date | null> {
+  const [call, conversation, task, order, meeting] = await Promise.all([
+    prisma.missedCall.findFirst({
+      where: { tenantId, callerPhone },
+      orderBy: { occurredAt: 'desc' },
+      select: { occurredAt: true },
+    }),
+    prisma.conversation.findFirst({
+      where: { tenantId, callerPhone },
+      orderBy: { updatedAt: 'desc' },
+      select: { updatedAt: true },
+    }),
+    prisma.task.findFirst({
+      where: { tenantId, callerPhone },
+      orderBy: { updatedAt: 'desc' },
+      select: { updatedAt: true },
+    }),
+    prisma.order.findFirst({
+      where: { tenantId, callerPhone },
+      orderBy: { updatedAt: 'desc' },
+      select: { updatedAt: true },
+    }),
+    prisma.meeting.findFirst({
+      where: { tenantId, callerPhone },
+      orderBy: { updatedAt: 'desc' },
+      select: { updatedAt: true },
+    }),
+  ]);
+
+  return latestDate([
+    call?.occurredAt,
+    conversation?.updatedAt,
+    task?.updatedAt,
+    order?.updatedAt,
+    meeting?.updatedAt,
+  ]);
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = (await req.json()) as Record<string, unknown>;
+    const tenantId = typeof body.tenantId === 'string' ? body.tenantId : '';
+    const callerPhone = typeof body.callerPhone === 'string' ? body.callerPhone.trim() : '';
+    const action = typeof body.action === 'string' ? body.action : '';
+
+    if (!tenantId || !callerPhone) return apiError('tenantId and callerPhone required', 400);
+    const authResult = await verifyTenantAccess(tenantId);
+    if (isNextResponse(authResult)) return authResult;
+
+    if (!['resolve', 'snooze', 'reopen'].includes(action)) {
+      return apiError('Invalid recovery action', 400);
+    }
+
+    const latestActivityAt = await getLatestCallerActivity(tenantId, callerPhone);
+    if (!latestActivityAt) return apiError('Recovery case not found', 404);
+    const note = typeof body.note === 'string' ? body.note.trim().slice(0, 1000) || null : null;
+
+    let reason: RecoveryResolutionReason | null = null;
+    let snoozedUntil: Date | null = null;
+    if (action === 'resolve') {
+      if (
+        typeof body.reason !== 'string' ||
+        !RESOLUTION_REASONS.has(body.reason as RecoveryResolutionReason)
+      ) {
+        return apiError('A valid resolution reason is required', 400);
+      }
+      reason = body.reason as RecoveryResolutionReason;
+    }
+    if (action === 'snooze') {
+      snoozedUntil = typeof body.snoozedUntil === 'string' ? new Date(body.snoozedUntil) : null;
+      if (!snoozedUntil || Number.isNaN(snoozedUntil.getTime()) || snoozedUntil <= new Date()) {
+        return apiError('A future snooze time is required', 400);
+      }
+      if (snoozedUntil.getTime() - Date.now() > 30 * 24 * 60 * 60 * 1000) {
+        return apiError('Snooze time cannot exceed 30 days', 400);
+      }
+    }
+
+    const now = new Date();
+    const status = action === 'resolve' ? 'RESOLVED' : action === 'snooze' ? 'SNOOZED' : 'ACTIVE';
+    const actionType =
+      action === 'resolve' ? 'RESOLVED' : action === 'snooze' ? 'SNOOZED' : 'REOPENED';
+
+    const recoveryCase = await prisma.recoveryCase.upsert({
+      where: { tenantId_callerPhone: { tenantId, callerPhone } },
+      create: {
+        tenantId,
+        callerPhone,
+        status,
+        resolutionReason: reason,
+        resolutionNote: note,
+        resolvedAt: action === 'resolve' ? now : null,
+        resolvedBy: action === 'resolve' ? authResult.userId : null,
+        snoozedUntil,
+        lastHandledActivityAt: action === 'reopen' ? null : latestActivityAt,
+        reopenedAt: action === 'reopen' ? now : null,
+        reopenReason: action === 'reopen' ? 'Reopened by a team member' : null,
+        actions: {
+          create: {
+            tenantId,
+            action: actionType,
+            reason,
+            note,
+            actorId: authResult.userId,
+            snoozedUntil,
+          },
+        },
+      },
+      update: {
+        status,
+        resolutionReason: reason,
+        resolutionNote: note,
+        resolvedAt: action === 'resolve' ? now : null,
+        resolvedBy: action === 'resolve' ? authResult.userId : null,
+        snoozedUntil,
+        lastHandledActivityAt: action === 'reopen' ? null : latestActivityAt,
+        reopenedAt: action === 'reopen' ? now : null,
+        reopenReason: action === 'reopen' ? 'Reopened by a team member' : null,
+        actions: {
+          create: {
+            tenantId,
+            action: actionType,
+            reason,
+            note,
+            actorId: authResult.userId,
+            snoozedUntil,
+          },
+        },
+      },
+      select: {
+        id: true,
+        status: true,
+        resolutionReason: true,
+        resolutionNote: true,
+        resolvedAt: true,
+        snoozedUntil: true,
+      },
+    });
+
+    return apiSuccess(recoveryCase);
+  } catch (error) {
+    console.error('[PATCH /api/recovery-inbox] failed', error);
+    return apiError('Failed to update recovery case', 500);
   }
 }

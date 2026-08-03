@@ -18,6 +18,7 @@ import {
   HelpCircle,
   ChevronRight,
   Webhook,
+  Inbox,
 } from 'lucide-react';
 import { Logo } from '@/components/Logo';
 
@@ -173,6 +174,12 @@ export default function HelpPage() {
             title="Voicemails"
             description="Transcripts, AI summaries, one-tap reply"
             href="#voicemails"
+          />
+          <NavCard
+            icon={Inbox}
+            title="Recovery Inbox"
+            description="Complete, snooze, and reopen caller work"
+            href="#recovery-inbox"
           />
           <NavCard
             icon={UtensilsCrossed}
@@ -514,6 +521,58 @@ export default function HelpPage() {
               <li>
                 <strong>Funnel impact:</strong> Replying from this view stamps the &quot;Owner
                 responded&quot; step on the recovery funnel automatically — no extra bookkeeping.
+              </li>
+            </ul>
+          </SubSection>
+        </Section>
+
+        {/* ── Recovery Inbox ─────────────────────────────── */}
+        <Section id="recovery-inbox" title="Recovery Inbox">
+          <p className="text-gray-700 mb-4">
+            The Recovery Inbox brings each caller&apos;s missed calls, voicemail, conversation,
+            tasks, orders, and meetings into one case. Use it as your daily work queue instead of
+            checking each section separately.
+          </p>
+
+          <SubSection title="Finish a caller case">
+            <ol className="list-decimal pl-6 text-gray-700 space-y-2">
+              <li>
+                Open <strong>Recovery Inbox</strong> and review the suggested next action.
+              </li>
+              <li>
+                Call, reply, or open the underlying order, task, or customer record as needed.
+              </li>
+              <li>
+                Select <strong>Mark done</strong> when no further inbox follow-up is required.
+              </li>
+              <li>Choose a resolution reason and optionally add an internal note.</li>
+            </ol>
+            <p className="mt-3 text-sm text-gray-600">
+              Marking a case done does not complete open tasks, change an order or payment, cancel
+              anything, or issue a refund. Those operational records keep their own status.
+            </p>
+          </SubSection>
+
+          <SubSection title="Snooze and automatic reopening">
+            <ul className="list-disc pl-6 text-gray-700 space-y-2">
+              <li>
+                Snooze a case for one hour, until tomorrow, or for one week when follow-up is not
+                due yet.
+              </li>
+              <li>
+                Snoozed cases leave the Active queue and remain available in the Waiting view.
+              </li>
+              <li>
+                Use <strong>Return to active</strong> or <strong>Reopen</strong> whenever work
+                resumes early.
+              </li>
+              <li>
+                A new call, message, task, order update, or meeting activity automatically reopens a
+                handled case.
+              </li>
+              <li>
+                The system records completion, snooze, reopen, and automatic-reopen actions for
+                accountability.
               </li>
             </ul>
           </SubSection>

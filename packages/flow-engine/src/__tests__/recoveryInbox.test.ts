@@ -1,4 +1,8 @@
-import { deriveRecoveryDecision, type RecoverySignal } from '@ringback/shared-types';
+import {
+  applyRecoveryDisposition,
+  deriveRecoveryDecision,
+  type RecoverySignal,
+} from '@ringback/shared-types';
 
 const NOW = new Date('2026-08-03T18:00:00.000Z');
 
@@ -113,5 +117,79 @@ describe('deriveRecoveryDecision', () => {
     const result = deriveRecoveryDecision(signal({ voicemailIntent: 'SPAM' }));
 
     expect(result.state).toBe('RESOLVED');
+  });
+});
+
+describe('applyRecoveryDisposition', () => {
+  const needsAttention = deriveRecoveryDecision(
+    signal({ openTaskCount: 1, highestTaskPriority: 'HIGH' })
+  );
+
+  it('keeps handled activity resolved without completing the underlying task', () => {
+    const result = applyRecoveryDisposition(
+      needsAttention,
+      {
+        status: 'RESOLVED',
+        resolutionReason: 'CUSTOMER_CONTACTED',
+        snoozedUntil: null,
+        lastHandledActivityAt: new Date('2026-08-03T17:30:00.000Z'),
+      },
+      new Date('2026-08-03T17:30:00.000Z'),
+      NOW
+    );
+
+    expect(result.decision.state).toBe('RESOLVED');
+    expect(result.shouldAutoReopen).toBe(false);
+  });
+
+  it('automatically reopens a resolved case after newer activity', () => {
+    const result = applyRecoveryDisposition(
+      needsAttention,
+      {
+        status: 'RESOLVED',
+        resolutionReason: 'QUESTION_ANSWERED',
+        snoozedUntil: null,
+        lastHandledActivityAt: new Date('2026-08-03T17:30:00.000Z'),
+      },
+      new Date('2026-08-03T17:31:00.000Z'),
+      NOW
+    );
+
+    expect(result.decision.state).toBe('NEEDS_ATTENTION');
+    expect(result.shouldAutoReopen).toBe(true);
+  });
+
+  it('keeps an unexpired snooze out of the active queue', () => {
+    const result = applyRecoveryDisposition(
+      needsAttention,
+      {
+        status: 'SNOOZED',
+        resolutionReason: null,
+        snoozedUntil: new Date('2026-08-03T19:00:00.000Z'),
+        lastHandledActivityAt: new Date('2026-08-03T17:30:00.000Z'),
+      },
+      new Date('2026-08-03T17:30:00.000Z'),
+      NOW
+    );
+
+    expect(result.decision.state).toBe('SNOOZED');
+    expect(result.shouldAutoReopen).toBe(false);
+  });
+
+  it('returns an expired snooze to the derived queue state', () => {
+    const result = applyRecoveryDisposition(
+      needsAttention,
+      {
+        status: 'SNOOZED',
+        resolutionReason: null,
+        snoozedUntil: new Date('2026-08-03T17:59:00.000Z'),
+        lastHandledActivityAt: new Date('2026-08-03T17:30:00.000Z'),
+      },
+      new Date('2026-08-03T17:30:00.000Z'),
+      NOW
+    );
+
+    expect(result.decision.state).toBe('NEEDS_ATTENTION');
+    expect(result.shouldAutoReopen).toBe(true);
   });
 });
