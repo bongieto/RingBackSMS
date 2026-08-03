@@ -663,16 +663,18 @@ function PostConnectFlow({
   const syncMutation = useMutation({
     mutationFn: () => posApi.syncCatalog(tenantId, provider),
     onSuccess: (data) => {
+      const menuLabel = data?.selectedMenu?.name ? ` from ${data.selectedMenu.name}` : '';
       const msg =
         data?.newItems != null
-          ? `Pulled ${data.synced} items (${data.newItems} new, ${data.updated} updated)`
+          ? `Pulled ${data.synced} items${menuLabel} (${data.newItems} new, ${data.updated} updated)`
           : `Synced ${data?.synced ?? 0} items`;
       toast.success(msg);
       queryClient.invalidateQueries({ queryKey: ['sync-history', tenantId] });
       queryClient.invalidateQueries({ queryKey: ['pos-providers', tenantId] });
       onStepComplete();
     },
-    onError: () => toast.error('Sync failed — please try again'),
+    onError: (err: any) =>
+      toast.error(err?.response?.data?.error ?? 'Sync failed — please try again'),
   });
 
   return (
@@ -814,9 +816,12 @@ function PosProviderCard({
   const syncMutation = useMutation({
     mutationFn: () => posApi.syncCatalog(tenantId, provider.provider),
     onSuccess: (data) => {
+      const sourceLabel = data?.selectedMenu?.name
+        ? `${provider.displayName} menu “${data.selectedMenu.name}”`
+        : provider.displayName;
       const msg =
         data?.newItems != null
-          ? `Pulled ${data.synced} items from ${provider.displayName} (${data.newItems} new, ${data.updated} updated, ${data.unchanged} unchanged)`
+          ? `Pulled ${data.synced} items from ${sourceLabel} (${data.newItems} new, ${data.updated} updated, ${data.unchanged} unchanged)`
           : `Synced ${data?.synced ?? 0} items from ${provider.displayName}`;
       // New items land with isAvailable=false — operator has to add them
       // to the menu from Menu → Import. Link there from the success toast.
@@ -830,7 +835,7 @@ function PosProviderCard({
       });
       invalidate();
     },
-    onError: () => toast.error('Sync failed'),
+    onError: (err: any) => toast.error(err?.response?.data?.error ?? 'Sync failed'),
   });
 
   const reconnectMutation = useMutation({
@@ -1043,7 +1048,9 @@ function PosProviderCard({
                     <span className="text-sm font-medium">Pull Menu from POS</span>
                   </div>
                   <p className="text-xs text-muted-foreground mb-3">
-                    Import your menu items from {provider.displayName} into RingBackSMS
+                    {provider.provider === 'square'
+                      ? 'Import only the items assigned to the Square restaurant menu for this location'
+                      : `Import your menu items from ${provider.displayName} into RingBackSMS`}
                   </p>
                   <Button
                     variant="outline"

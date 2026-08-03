@@ -41,6 +41,9 @@ export interface SyncResult {
    *  (usually created by renaming in the POS without deleting the
    *  old entry, then our sync pulled both). */
   duplicates?: Array<{ name: string; count: number }>;
+  /** The provider menu that bounded this import. Catalog-capable providers
+   *  should set this when they distinguish a menu from the full item library. */
+  selectedMenu?: { id: string; name: string; categoryCount: number };
 }
 
 export interface PosOrderItem {

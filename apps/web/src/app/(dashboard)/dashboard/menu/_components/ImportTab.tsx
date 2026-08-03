@@ -107,7 +107,7 @@ export function ImportTab({ tenantId }: { tenantId: string }) {
           <div className="text-sm">
             <div className="font-medium">Items pulled from your POS waiting for review</div>
             <p className="text-muted-foreground text-xs mt-1">
-              These come from your Square catalog but aren&apos;t on your RingbackSMS menu yet. Select the ones you want customers to see and click <b>Add to menu</b>. Leave the rest alone — they won&apos;t show up anywhere.
+              These come from your selected Square restaurant menu, not the full item catalog. Select the ones you want customers to see and click <b>Add to menu</b>. Leave the rest alone — they won&apos;t show up anywhere.
             </p>
           </div>
         </CardContent>
@@ -211,9 +211,9 @@ export function ImportTab({ tenantId }: { tenantId: string }) {
           {staged.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">
               {allItems.some((i) => !!(i.squareCatalogId ?? i.posCatalogId)) ? (
-                <>All POS items added. Pull from POS again to see any newly-added Square items here.</>
+                <>All selected-menu items added. Pull from POS again to see newly-added Square menu items here.</>
               ) : (
-                <>No POS items yet. Connect Square from Integrations and click &quot;Pull from POS&quot; to bring in your catalog.</>
+                <>No POS items yet. Connect Square from Integrations and click &quot;Pull from POS&quot; to bring in its restaurant menu.</>
               )}
             </div>
           ) : (

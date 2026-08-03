@@ -4,6 +4,14 @@ import { createHash } from 'crypto';
 import { BasePosAdapter, PosOrderItem, PosOrderResult, SyncResult, getAppBaseUrl } from './base';
 import { encrypt } from '../../encryption';
 import { logger } from '../../logger';
+import {
+  getSquareItemMenuCategoryId,
+  isSquareObjectPresentAtLocation,
+  resolveSquareMenuScope,
+  SquareMenuScopeError,
+} from './squareMenuScope';
+
+const SQUARE_API_VERSION = process.env.SQUARE_API_VERSION || '2026-07-15';
 
 function getSquareEnvironment(): Environment {
   // Default to Production — our prod deploy pushes real orders to real
@@ -24,6 +32,9 @@ function buildSquareClient(accessToken: string): Client {
   return new Client({
     accessToken,
     environment: getSquareEnvironment(),
+    // MENU_CATEGORY, category hierarchy, and channel visibility are newer
+    // than the SDK's bundled 2023 default API version.
+    squareVersion: SQUARE_API_VERSION,
   });
 }
 
@@ -33,6 +44,50 @@ function getSquareBaseUrl(): string {
   return process.env.SQUARE_ENVIRONMENT === 'sandbox'
     ? 'https://connect.squareupsandbox.com'
     : 'https://connect.squareup.com';
+}
+
+async function getSquareLocationChannelId(
+  accessToken: string,
+  locationId: string,
+): Promise<string | null> {
+  // The installed Square SDK predates Channels API support, so call the
+  // official endpoint directly. reference_id makes this a location-specific
+  // lookup instead of guessing from channel names.
+  try {
+    const response = await axios.get(`${getSquareBaseUrl()}/v2/channels`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Square-Version': SQUARE_API_VERSION,
+        'Content-Type': 'application/json',
+      },
+      params: {
+        reference_type: 'LOCATION',
+        reference_id: locationId,
+        status: 'ACTIVE',
+      },
+    });
+    const channels = (response.data as {
+      channels?: Array<{ id?: string; reference?: { type?: string; id?: string } }>;
+    }).channels ?? [];
+    return (
+      channels.find(
+        (channel) =>
+          channel.reference?.type === 'LOCATION' && channel.reference.id === locationId,
+      )?.id ?? null
+    );
+  } catch (error) {
+    if (axios.isAxiosError(error) && [403, 404].includes(error.response?.status ?? 0)) {
+      // Existing OAuth grants do not automatically gain CHANNELS_READ.
+      // A single unambiguous menu can still be safely scoped without it;
+      // multiple menus will fail closed in resolveSquareMenuScope.
+      logger.warn('Square location channel unavailable; using unambiguous-menu fallback', {
+        locationId,
+        status: error.response?.status,
+      });
+      return null;
+    }
+    throw error;
+  }
 }
 
 export class SquareAdapter extends BasePosAdapter {
@@ -46,7 +101,7 @@ export class SquareAdapter extends BasePosAdapter {
     const params = new URLSearchParams({
       client_id: (process.env.SQUARE_APPLICATION_ID || process.env.SQUARE_APP_ID) ?? '',
       scope:
-        'MERCHANT_PROFILE_READ ITEMS_READ ITEMS_WRITE ORDERS_WRITE PAYMENTS_WRITE',
+        'MERCHANT_PROFILE_READ ITEMS_READ ITEMS_WRITE ORDERS_WRITE PAYMENTS_WRITE CHANNELS_READ',
       state,
       redirect_uri: `${getAppBaseUrl()}/api/integrations/square/callback`,
     });
@@ -152,6 +207,11 @@ export class SquareAdapter extends BasePosAdapter {
   async syncCatalogFromPOS(tenantId: string): Promise<SyncResult> {
     const tokens = await this.loadTokens(tenantId);
     if (!tokens) throw new Error('Tenant not connected to Square');
+    if (!tokens.locationId) {
+      throw new SquareMenuScopeError(
+        'Choose the Square location to sync before pulling its menu.',
+      );
+    }
 
     // Snapshot sync start-time so that after we've processed every
     // item Square returned, we can identify rows whose lastSyncedAt is
@@ -180,23 +240,47 @@ export class SquareAdapter extends BasePosAdapter {
       return out;
     };
 
-    const [items, categories, modifierLists] = await Promise.all([
+    const [catalogItems, categories, modifierLists, locationChannelId] = await Promise.all([
       listAll('ITEM'),
       listAll('CATEGORY'),
       listAll('MODIFIER_LIST'),
+      getSquareLocationChannelId(tokens.accessToken, tokens.locationId),
     ]);
     logger.info('Square catalog fetched', {
       tenantId,
-      items: items.length,
+      items: catalogItems.length,
       categories: categories.length,
       modifierLists: modifierLists.length,
     });
 
-    // Build a lookup map: category ID → category name
+    const scope = resolveSquareMenuScope(categories, catalogItems, {
+      locationId: tokens.locationId,
+      locationChannelId,
+      preferredMenuId:
+        typeof tokens.raw?.squareMenuCategoryId === 'string'
+          ? tokens.raw.squareMenuCategoryId
+          : null,
+    });
+    const items = scope.items;
+    logger.info('Square restaurant menu resolved', {
+      tenantId,
+      locationId: tokens.locationId,
+      locationChannelId,
+      menuId: scope.menu.id,
+      menuName: scope.menu.categoryData?.name,
+      categoryCount: scope.menuCategoryIds.size,
+      scopedItems: items.length,
+      catalogItems: catalogItems.length,
+    });
+
+    // Build a lookup map for categories inside the resolved Square menu only.
+    // REGULAR_CATEGORY and KITCHEN_CATEGORY objects remain available in Square
+    // for reporting/routing but must never widen this customer-menu import.
     const categoryNameById = new Map<string, string>();
     for (const cat of categories) {
-      const name = (cat as { categoryData?: { name?: string } }).categoryData?.name;
-      if (cat.id && name) categoryNameById.set(cat.id, name);
+      if (cat.id === scope.menu.id || !scope.menuCategoryIds.has(cat.id)) continue;
+      const name = cat.categoryData?.name;
+      if (name) categoryNameById.set(cat.id, name);
     }
 
     // Pre-populate our MenuCategory rows for each Square category so
@@ -204,15 +288,15 @@ export class SquareAdapter extends BasePosAdapter {
     // this, dashboard category filters (which match by categoryId UUID)
     // miss Square-synced items even when their `category` string is
     // correct. Upsert is safe — unique on (tenantId, name).
-    const menuCategoryIdByName = new Map<string, string>();
-    for (const name of new Set(categoryNameById.values())) {
+    const menuCategoryRowIdByPosId = new Map<string, string>();
+    for (const [posCategoryId, name] of categoryNameById) {
       const row = await this.prisma.menuCategory.upsert({
         where: { tenantId_name: { tenantId, name } },
-        create: { tenantId, name, sortOrder: 0, isAvailable: true },
-        update: {}, // leave isAvailable + sortOrder as operator set them
+        create: { tenantId, name, sortOrder: 0, isAvailable: true, posCategoryId },
+        update: { posCategoryId }, // leave availability + sort order operator-controlled
         select: { id: true },
       });
-      menuCategoryIdByName.set(name, row.id);
+      menuCategoryRowIdByPosId.set(posCategoryId, row.id);
     }
 
     // Build a lookup map: modifier list ID → modifier list data
@@ -240,6 +324,11 @@ export class SquareAdapter extends BasePosAdapter {
       tombstoned: 0,
       restored: 0,
       duplicates: [],
+      selectedMenu: {
+        id: scope.menu.id,
+        name: scope.menu.categoryData?.name ?? 'Square menu',
+        categoryCount: scope.menuCategoryIds.size,
+      },
     };
 
     // Preload all orphans (POS-unlinked MenuItems) for this tenant so
@@ -278,26 +367,32 @@ export class SquareAdapter extends BasePosAdapter {
       if (!item.itemData) continue;
 
       try {
-        const variation = item.itemData.variations?.[0];
+        const variation = item.itemData.variations?.find((candidate) =>
+          isSquareObjectPresentAtLocation(candidate, tokens.locationId),
+        );
+        if (!variation) {
+          logger.warn('Skipping Square menu item with no variation at configured location', {
+            tenantId,
+            itemId: item.id,
+            locationId: tokens.locationId,
+          });
+          continue;
+        }
         const priceMoney = variation?.itemVariationData?.priceMoney;
         const price = priceMoney ? Number(priceMoney.amount ?? 0) / 100 : 0;
 
-        // Resolve the item's category name from Square. Square's older
-        // API stores a single categoryId on itemData; newer responses
-        // may use a `categories` array. Try both.
-        const rawItemData = item.itemData as {
-          categoryId?: string | null;
-          categories?: Array<{ id?: string }> | null;
-        };
-        const categoryId =
-          rawItemData.categoryId ?? rawItemData.categories?.[0]?.id ?? null;
+        // Flatten Square's menu tree into RingbackSMS's current one-level
+        // category UI by selecting the deepest attached menu category.
+        const categoryId = getSquareItemMenuCategoryId(item, scope);
         const category = categoryId
           ? categoryNameById.get(categoryId) ?? null
           : null;
         // FK to our MenuCategory row (so dashboard category filters
-        // match Square-synced items). Upsert happened earlier in
-        // menuCategoryIdByName preload.
-        const categoryFkId = category ? menuCategoryIdByName.get(category) ?? null : null;
+        // match Square-synced items). Upsert happened earlier in the
+        // provider-category ID preload.
+        const categoryFkId = categoryId
+          ? menuCategoryRowIdByPosId.get(categoryId) ?? null
+          : null;
 
         // Match strategy, most-to-least specific:
         //   1. posCatalogId match — the normal case. Square item was
@@ -471,7 +566,7 @@ export class SquareAdapter extends BasePosAdapter {
       });
     }
 
-    logger.info('Catalog synced from Square', { tenantId, result });
+    logger.info('Menu synced from Square', { tenantId, result });
     return result;
   }
 
