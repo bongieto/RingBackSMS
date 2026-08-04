@@ -66,11 +66,18 @@ export async function checkRateLimit(
   }
   try {
     const redis = getRedis();
-    const count = await redis.incr(fullKey);
-    if (count === 1) {
-      await redis.expire(fullKey, windowSec);
-    }
-    const ttl = await redis.ttl(fullKey);
+    // Single atomic round trip. This used to be incr → expire → ttl as
+    // three sequential calls — three network RTTs per rate-limited
+    // request, which dominates the request time when Redis isn't
+    // co-located with the function region.
+    const [count, ttl] = (await redis.eval(
+      `local c = redis.call('INCR', KEYS[1])
+       if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+       return {c, redis.call('TTL', KEYS[1])}`,
+      1,
+      fullKey,
+      windowSec
+    )) as [number, number];
     const resetAt = Math.floor(Date.now() / 1000) + (ttl > 0 ? ttl : windowSec);
     return {
       allowed: count <= limit,
