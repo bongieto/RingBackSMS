@@ -12,6 +12,7 @@ const isPublicRoute = createRouteMatcher([
   '/help',
   '/privacy',
   '/terms',
+  '/manifest.json',     // public PWA metadata and brand icons
   '/payment/(.*)',      // Stripe checkout success/cancel landings for SMS customers
   '/m/(.*)',            // public menu pages for customers
   '/o/(.*)',            // public order tracker (link-only access)

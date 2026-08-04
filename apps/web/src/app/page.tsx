@@ -22,6 +22,7 @@ import {
 import { MobileNav } from '@/components/landing/MobileNav';
 import { PricingSection } from '@/components/landing/PricingSection';
 import { DesktopNavAuthLinks, FinalAuthCta, HeroAuthCtas } from '@/components/landing/AuthCtas';
+import { Logo } from '@/components/Logo';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://ringbacksms.com'),
@@ -236,20 +237,7 @@ const INDUSTRIES = [
 ];
 
 function BrandMark({ inverse = false }: { inverse?: boolean }) {
-  return (
-    <Link href="/" className="inline-flex items-center gap-2" aria-label="RingBackSMS home">
-      <span
-        className={`flex h-8 w-8 items-center justify-center rounded-full border-2 ${
-          inverse ? 'border-[#F6F0E4] text-[#F6F0E4]' : 'border-[#171713] text-[#171713]'
-        }`}
-      >
-        <Phone className="h-4 w-4" strokeWidth={2.5} />
-      </span>
-      <span className={`text-lg font-black tracking-[-0.04em] ${inverse ? 'text-[#F6F0E4]' : 'text-[#171713]'}`}>
-        RingBack<span className="text-[#F05A37]">SMS</span>
-      </span>
-    </Link>
-  );
+  return <Logo size="md" variant={inverse ? 'dark' : 'light'} />;
 }
 
 function Eyebrow({ children, inverse = false }: { children: React.ReactNode; inverse?: boolean }) {

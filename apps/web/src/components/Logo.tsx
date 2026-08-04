@@ -25,23 +25,23 @@ export function Logo({
   className,
 }: LogoProps) {
   const sz = SIZE_STYLES[size];
-  const accent = variant === 'dark' ? 'text-blue-400' : 'text-blue-600';
-  const base = variant === 'dark' ? 'text-white' : 'text-slate-900';
+  const isInverse = variant === 'dark';
+  const accent = 'text-[#F05A37]';
+  const base = isInverse ? 'text-[#F6F0E4]' : 'text-[#171713]';
 
   const content = (
-    <span className={cn('inline-flex items-center gap-1.5 font-extrabold', base, sz.text, className)}>
+    <span className={cn('inline-flex items-center gap-2 font-extrabold', base, sz.text, className)}>
       <Image
-        src="/favicon.png"
+        src={isInverse ? '/brand-mark-inverse.png' : '/brand-mark.png'}
         alt=""
         width={sz.icon}
         height={sz.icon}
-        className={cn('object-contain', variant === 'dark' && 'drop-shadow-[0_0_1px_rgba(147,197,253,0.5)]')}
-        style={variant === 'dark' ? { filter: 'brightness(1.15)' } : undefined}
-        unoptimized
+        className="shrink-0 object-contain"
+        aria-hidden="true"
       />
       <span className="flex flex-col leading-tight w-fit">
-        <span>RingBack<span className={accent}>SMS</span></span>
-        <span className={cn(sz.sub, 'font-semibold pl-[1px] whitespace-nowrap w-full text-justify', variant === 'dark' ? 'text-slate-400' : 'text-slate-500')} style={{ textAlignLast: 'justify' }}>
+        <span className="tracking-[-0.045em]">RingBack<span className={accent}>SMS</span></span>
+        <span className={cn(sz.sub, 'hidden w-full whitespace-nowrap pl-[1px] font-bold tracking-[0.02em] sm:block', isInverse ? 'text-[#B9B4A9]' : 'text-[#6A6B62]')}>
           MISSED CALL RECOVERY SYSTEM
         </span>
       </span>
@@ -50,7 +50,7 @@ export function Logo({
 
   if (href === null) return content;
   return (
-    <Link href={href} className="inline-flex items-center">
+    <Link href={href} className="inline-flex items-center" aria-label="RingBackSMS home">
       {content}
     </Link>
   );

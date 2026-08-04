@@ -10,13 +10,14 @@ export const metadata: Metadata = {
   description: 'Auto-respond to missed calls with AI-powered SMS. Never lose a customer again.',
   manifest: '/manifest.json',
   icons: {
-    icon: '/favicon.png',
-    apple: '/favicon.png',
+    icon: [{ url: '/favicon.png', type: 'image/png', sizes: '512x512' }],
+    shortcut: '/favicon.png',
+    apple: [{ url: '/apple-touch-icon.png', type: 'image/png', sizes: '180x180' }],
   },
   openGraph: {
     title: 'RingBackSMS — AI SMS for Missed Calls',
     description: 'Auto-respond to missed calls with AI-powered SMS. Never lose a customer again.',
-    images: [{ url: '/logo.png', width: 1200, height: 630 }],
+    images: [{ url: '/og-image.png', width: 1200, height: 630 }],
   },
   robots: {
     index: false,
@@ -33,7 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <head>
           <meta name="apple-mobile-web-app-capable" content="yes" />
           <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-          <meta name="theme-color" content="#0f172a" />
+          <meta name="theme-color" content="#F6F0E4" />
         </head>
         <body className={inter.className}>
           {children}
