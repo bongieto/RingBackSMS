@@ -46,6 +46,14 @@ const securityHeaders = [
 const nextConfig = {
   output: 'standalone',
   transpilePackages: ['@ringback/shared-types'],
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+      },
+    ],
+  },
   // All pages are authenticated / dynamic — skip static pre-rendering
   experimental: {
     // Suppress Clerk prerender errors when NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is absent

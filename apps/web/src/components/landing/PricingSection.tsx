@@ -24,30 +24,32 @@ export function PricingSection({ plans }: { plans: PricingPlan[] }) {
   return (
     <>
       {/* Toggle */}
-      <div className="flex items-center justify-center gap-3 mb-12">
-        <span className={`text-sm font-medium ${interval === 'monthly' ? 'text-slate-900' : 'text-slate-500'}`}>
+      <div className="mb-10 flex flex-wrap items-center gap-3">
+        <span className={`text-sm font-black ${interval === 'monthly' ? 'text-[#171713]' : 'text-[#77786F]'}`}>
           Monthly
         </span>
         <button
-          onClick={() => setInterval(interval === 'monthly' ? 'annual' : 'monthly')}
-          className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
-            interval === 'annual' ? 'bg-blue-600' : 'bg-slate-300'
+          onClick={() => setInterval((current) => current === 'monthly' ? 'annual' : 'monthly')}
+          className={`relative inline-flex h-7 w-12 items-center rounded-full border-2 border-[#171713] transition-colors ${
+            interval === 'annual' ? 'bg-[#F05A37]' : 'bg-[#D8D2C5]'
           }`}
+          aria-label="Toggle annual billing"
+          aria-pressed={interval === 'annual'}
         >
           <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
             interval === 'annual' ? 'translate-x-6' : 'translate-x-1'
           }`} />
         </button>
-        <span className={`text-sm font-medium ${interval === 'annual' ? 'text-slate-900' : 'text-slate-500'}`}>
+        <span className={`text-sm font-black ${interval === 'annual' ? 'text-[#171713]' : 'text-[#77786F]'}`}>
           Annual
         </span>
-        <span className="ml-1 px-2.5 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
+        <span className="ml-1 border border-[#171713] bg-[#DCE7A3] px-2.5 py-1 text-xs font-black">
           2 months free
         </span>
       </div>
 
       {/* Cards */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid border-l-2 border-t-2 border-[#171713] sm:grid-cols-2 lg:grid-cols-4">
         {plans.map((plan) => {
           const price = interval === 'annual' ? plan.annualPrice : plan.monthlyPrice;
           const period = interval === 'annual' ? plan.annualPeriod : plan.monthlyPeriod;
@@ -55,49 +57,47 @@ export function PricingSection({ plans }: { plans: PricingPlan[] }) {
           return (
             <div
               key={plan.name}
-              className={`rounded-2xl p-6 border-2 flex flex-col ${
+              className={`relative flex min-h-[520px] flex-col border-b-2 border-r-2 border-[#171713] p-6 ${
                 plan.highlighted
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-xl shadow-blue-600/20 scale-[1.02]'
-                  : 'bg-white text-slate-900 border-slate-200'
+                  ? 'bg-[#F05A37] text-[#171713]'
+                  : 'bg-[#F6F0E4] text-[#171713]'
               }`}
             >
               {plan.highlighted && (
-                <div className="text-xs font-bold uppercase tracking-wider text-blue-200 mb-2">Most Popular</div>
+                <div className="absolute right-4 top-4 -rotate-3 border-2 border-[#171713] bg-[#DCE7A3] px-2.5 py-1 text-[10px] font-black uppercase tracking-wider shadow-[2px_2px_0_#171713]">Most popular</div>
               )}
-              <h3 className="text-lg font-bold">{plan.name}</h3>
+              <h3 className="text-sm font-black uppercase tracking-[.14em]">{plan.name}</h3>
               <div className="mt-2 mb-1">
-                <span className="text-4xl font-extrabold">{price}</span>
-                <span className={`text-sm ${plan.highlighted ? 'text-blue-200' : 'text-slate-500'}`}>
+                <span className="font-serif text-5xl tracking-[-.05em]">{price}</span>
+                <span className="text-sm text-[#62635B]">
                   {period}
                 </span>
               </div>
               {interval === 'annual' && plan.annualSavings && (
-                <p className={`text-xs font-semibold mb-1 ${plan.highlighted ? 'text-blue-200' : 'text-green-600'}`}>
+                <p className="mb-1 text-xs font-black">
                   {plan.annualSavings}
                 </p>
               )}
-              <p className={`text-sm mb-4 ${plan.highlighted ? 'text-blue-200' : 'text-slate-500'}`}>
+              <p className="mb-4 min-h-10 text-sm font-semibold leading-5 text-[#55564F]">
                 {plan.description}
               </p>
-              <div className={`text-sm font-semibold mb-4 px-3 py-1.5 rounded-lg inline-block w-fit ${
-                plan.highlighted ? 'bg-blue-500' : 'bg-blue-50 text-blue-700'
-              }`}>
+              <div className="mb-5 inline-block w-fit border border-[#171713] bg-[#FFFBF3] px-3 py-1.5 text-xs font-black">
                 {plan.sms}
               </div>
-              <ul className="space-y-2.5 mb-6 flex-1">
+              <ul className="mb-6 flex-1 space-y-3 border-t border-[#171713]/25 pt-5">
                 {plan.features.map((feature) => (
                   <li key={feature} className="flex items-start gap-2 text-sm">
-                    <Check className={`h-4 w-4 mt-0.5 shrink-0 ${plan.highlighted ? 'text-blue-200' : 'text-green-500'}`} />
-                    <span className={plan.highlighted ? 'text-blue-100' : 'text-slate-600'}>{feature}</span>
+                    <Check className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span className="font-semibold text-[#45463F]">{feature}</span>
                   </li>
                 ))}
               </ul>
               <Link
                 href="/sign-up"
-                className={`block text-center py-2.5 rounded-lg font-semibold text-sm transition-colors ${
+                className={`block border-2 border-[#171713] py-3 text-center text-sm font-black shadow-[3px_3px_0_#171713] transition-transform hover:-translate-y-0.5 ${
                   plan.highlighted
-                    ? 'bg-white text-blue-600 hover:bg-blue-50'
-                    : 'bg-slate-900 text-white hover:bg-slate-800'
+                    ? 'bg-[#171713] text-[#F6F0E4]'
+                    : 'bg-[#FFFBF3] text-[#171713]'
                 }`}
               >
                 {plan.cta}

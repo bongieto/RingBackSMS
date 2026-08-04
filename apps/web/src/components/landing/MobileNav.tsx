@@ -19,39 +19,41 @@ export function MobileNav() {
   return (
     <div className="md:hidden">
       <button
-        onClick={() => setOpen(!open)}
-        className="p-2 -mr-2 text-slate-600 hover:text-slate-900"
+        onClick={() => setOpen((current) => !current)}
+        className="-mr-2 p-2 text-[#171713] hover:text-[#F05A37]"
         aria-label="Toggle menu"
+        aria-expanded={open}
+        aria-controls="marketing-mobile-menu"
       >
         {open ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
       </button>
 
       {open && (
-        <div className="absolute top-16 left-0 right-0 bg-white border-b border-slate-200 shadow-lg z-50">
+        <div id="marketing-mobile-menu" className="absolute left-0 right-0 top-[68px] z-50 border-b-2 border-[#171713] bg-[#F6F0E4] shadow-[0_8px_0_rgba(23,23,19,.18)]">
           <div className="px-4 py-3 space-y-1">
             {links.map((link) => (
               <a
                 key={link.href}
                 href={link.href}
                 onClick={() => setOpen(false)}
-                className="block px-3 py-2.5 text-sm font-medium text-slate-600 hover:text-blue-600 hover:bg-slate-50 rounded-lg transition-colors"
+                className="block border-b border-[#171713]/20 px-3 py-3 text-sm font-black text-[#171713] transition-colors hover:bg-[#DCE7A3]"
               >
                 {link.label}
               </a>
             ))}
-            <div className="border-t border-slate-100 pt-3 mt-2 space-y-2">
+            <div className="mt-2 space-y-2 border-t-2 border-[#171713] pt-3">
               <SignedOut>
                 <Link
                   href="/sign-in"
                   onClick={() => setOpen(false)}
-                  className="block px-3 py-2.5 text-sm font-medium text-slate-600 hover:text-blue-600 hover:bg-slate-50 rounded-lg transition-colors"
+                  className="block px-3 py-2.5 text-sm font-black text-[#171713] transition-colors hover:text-[#F05A37]"
                 >
                   Sign In
                 </Link>
                 <Link
                   href="/sign-up"
                   onClick={() => setOpen(false)}
-                  className="block px-3 py-2.5 text-sm font-semibold text-center text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                  className="block border-2 border-[#171713] bg-[#F05A37] px-3 py-2.5 text-center text-sm font-black text-[#171713] shadow-[3px_3px_0_#171713]"
                 >
                   Start Free
                 </Link>
@@ -60,7 +62,7 @@ export function MobileNav() {
                 <Link
                   href="/dashboard"
                   onClick={() => setOpen(false)}
-                  className="block px-3 py-2.5 text-sm font-semibold text-center text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                  className="block border-2 border-[#171713] bg-[#F05A37] px-3 py-2.5 text-center text-sm font-black text-[#171713] shadow-[3px_3px_0_#171713]"
                 >
                   Dashboard
                 </Link>
