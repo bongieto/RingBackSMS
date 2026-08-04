@@ -147,10 +147,10 @@ export async function createCheckoutSession(
   // is a monthly recurring item; Stripe refuses to mix it with an
   // annual base price in a single checkout session ("Checkout does not
   // support multiple prices with different billing intervals").
+  // No quantity — Stripe rejects quantities on metered prices.
   const smsPriceId = process.env.STRIPE_SMS_METERED_PRICE_ID?.trim();
   if (smsPriceId && interval === 'monthly') {
     body['line_items[1][price]'] = smsPriceId;
-    body['line_items[1][quantity]'] = '1';
   }
 
   const session = await stripePost('/checkout/sessions', body);

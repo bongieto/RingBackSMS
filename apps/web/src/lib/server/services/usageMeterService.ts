@@ -1,6 +1,5 @@
 import { UsageType } from '@prisma/client';
 import { Redis } from 'ioredis';
-import Stripe from 'stripe';
 import { PLAN_LIMITS } from '@ringback/shared-types';
 import { Plan } from '@ringback/shared-types';
 import { logger } from '../logger';
@@ -8,7 +7,10 @@ import { prisma } from '../db';
 import { buildRedisOptions } from '../redisConfig';
 
 let redisClient: Redis | null = null;
-let stripeClient: Stripe | null = null;
+
+// Must match the Billing Meter's event_name in Stripe
+// (mtr_61V9yCW00y57RxTYQ41R1QQWL4HmfEL2, backing STRIPE_SMS_METERED_PRICE_ID).
+const SMS_OVERAGE_METER_EVENT = 'sms_overage';
 
 function getRedis(): Redis {
   if (!redisClient) {
@@ -18,15 +20,6 @@ function getRedis(): Redis {
     });
   }
   return redisClient;
-}
-
-function getStripe(): Stripe {
-  if (!stripeClient) {
-    stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY ?? '', {
-      apiVersion: '2023-10-16',
-    });
-  }
-  return stripeClient;
 }
 
 /**
@@ -87,24 +80,47 @@ export async function incrementSmsUsage(
   if (!planLimits) return;
 
   // Report overage to Stripe metered billing (only when Redis counter is
-  // trustworthy — skip if Redis failed above)
+  // trustworthy — skip if Redis failed above).
+  //
+  // Uses Billing Meter events, not the deprecated usage-records API:
+  // subscriptions created by current Checkout run in flexible billing
+  // mode, which rejects usage records outright. Meter events are keyed
+  // by customer — Stripe routes them to whatever subscription item
+  // carries the meter-backed price. Events for customers without such
+  // an item (annual plans, subs predating the metered item) are
+  // recorded but bill nothing, so no need to inspect the subscription.
   if (
     newCount > planLimits.smsPerMonth &&
     stripeSubscriptionId &&
-    process.env.STRIPE_SMS_METERED_PRICE_ID
+    process.env.STRIPE_SMS_METERED_PRICE_ID?.trim()
   ) {
     try {
-      const stripe = getStripe();
-      const subscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
-      const item = subscription.items.data.find(
-        (i) => i.price.id === process.env.STRIPE_SMS_METERED_PRICE_ID
-      );
-      if (item) {
-        await stripe.subscriptionItems.createUsageRecord(item.id, {
-          quantity: 1,
-          timestamp: Math.floor(Date.now() / 1000),
-          action: 'increment',
-        });
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { stripeCustomerId: true },
+      });
+      if (!tenant?.stripeCustomerId) {
+        logger.warn('SMS overage not reported — tenant has no stripeCustomerId', { tenantId });
+        return;
+      }
+      const res = await fetch('https://api.stripe.com/v1/billing/meter_events', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY?.trim()}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          event_name: SMS_OVERAGE_METER_EVENT,
+          // Stable per counted message: retries after a network blip
+          // can't double-bill (Stripe dedups on identifier for 24h).
+          identifier: `sms:${tenantId}:${month}:${newCount}`,
+          'payload[stripe_customer_id]': tenant.stripeCustomerId,
+          'payload[value]': '1',
+        }).toString(),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error?.message ?? `Stripe meter event failed: ${res.status}`);
       }
     } catch (error) {
       logger.error('Stripe usage reporting failed', { error, tenantId });
