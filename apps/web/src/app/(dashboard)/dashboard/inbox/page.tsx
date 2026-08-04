@@ -30,7 +30,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useTenantId } from '@/components/providers/TenantProvider';
 import { recoveryInboxApi, voicemailApi } from '@/lib/api';
-import { cn, formatRelativeTime, maskPhone } from '@/lib/utils';
+import {
+  cn,
+  formatCallbackTaskTitle,
+  formatPhoneNumber,
+  formatRelativeTime,
+} from '@/lib/utils';
 import type { RecoveryPriority, RecoveryState } from '@ringback/shared-types';
 
 type InboxFilter = 'ACTIVE' | RecoveryState;
@@ -408,8 +413,9 @@ export default function RecoveryInboxPage() {
                 Mark this case done?
               </Dialog.Title>
               <Dialog.Description className="mt-1 text-sm text-slate-600">
-                This removes {resolveCase.contact?.name ?? maskPhone(resolveCase.callerPhone)} from
-                the active queue. New caller activity will reopen it automatically.
+                This removes{' '}
+                {resolveCase.contact?.name ?? formatPhoneNumber(resolveCase.callerPhone)} from the
+                active queue. New caller activity will reopen it automatically.
               </Dialog.Description>
               {resolveCase.openTaskCount > 0 ? (
                 <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -535,7 +541,8 @@ function RecoveryCaseCard({
 }) {
   const style = STATE_STYLES[item.state];
   const StateIcon = style.icon;
-  const callerLabel = item.contact?.name ?? maskPhone(item.callerPhone);
+  const readablePhone = formatPhoneNumber(item.callerPhone);
+  const callerLabel = item.contact?.name ?? readablePhone;
   const duration = compactDuration(item.voicemail?.duration ?? null);
 
   return (
@@ -578,7 +585,9 @@ function RecoveryCaseCard({
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-semibold text-slate-900">{callerLabel}</span>
                 {item.contact?.name ? (
-                  <span className="text-xs text-slate-500">{maskPhone(item.callerPhone)}</span>
+                  <span className="font-mono text-sm font-medium text-slate-600">
+                    {readablePhone}
+                  </span>
                 ) : null}
                 <Badge variant="outline" className={style.className}>
                   {style.label}
@@ -620,9 +629,10 @@ function RecoveryCaseCard({
           <div className="border-t bg-slate-50/60 p-4">
             <div className="mb-4 flex flex-wrap gap-2">
               <Button asChild size="sm">
-                <a href={`tel:${item.callerPhone}`}>
+                <a href={`tel:${item.callerPhone}`} aria-label={`Call ${readablePhone}`}>
                   <PhoneCall className="mr-1.5 h-4 w-4" />
-                  Call now
+                  <span className="sm:hidden">Call now</span>
+                  <span className="hidden sm:inline">Call {readablePhone}</span>
                 </a>
               </Button>
               {item.conversation ? (
@@ -720,7 +730,11 @@ function RecoveryCaseCard({
                       <EventIcon className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm font-medium text-slate-800">{event.title}</p>
+                          <p className="text-sm font-medium text-slate-800">
+                            {event.type === 'TASK'
+                              ? formatCallbackTaskTitle(event.title, item.callerPhone)
+                              : event.title}
+                          </p>
                           <span className="shrink-0 text-[11px] text-slate-400">
                             {formatRelativeTime(event.occurredAt)}
                           </span>

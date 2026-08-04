@@ -52,3 +52,26 @@ export function maskPhone(phone: string): string {
   if (phone.length <= 4) return '****';
   return phone.slice(0, -4).replace(/\d/g, '*') + phone.slice(-4);
 }
+
+/** Formats a caller number for authenticated operational screens. */
+export function formatPhoneNumber(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  const national = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits;
+
+  if (national.length === 10) {
+    const formatted = `(${national.slice(0, 3)}) ${national.slice(3, 6)}-${national.slice(6)}`;
+    return digits.length === 11 ? `+1 ${formatted}` : formatted;
+  }
+
+  return phone;
+}
+
+/** Replaces a masked number in a callback task title for an authenticated operator. */
+export function formatCallbackTaskTitle(title: string, callerPhone: string): string {
+  if (!/^🔥?\s*Call back /i.test(title)) return title;
+
+  return title.replace(
+    /\+?[\d*]+(?=\s+(?:—|at)\s+|$)/,
+    formatPhoneNumber(callerPhone)
+  );
+}
