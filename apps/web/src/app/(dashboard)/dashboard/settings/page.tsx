@@ -3,6 +3,12 @@
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  getBusinessLimitDefinitions,
+  getDefaultBusinessLimits,
+  type BusinessLimitKey,
+  type BusinessLimits,
+} from '@ringback/shared-types';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import {
@@ -35,8 +41,8 @@ import { useTenantId } from '@/components/providers/TenantProvider';
 import { tenantApi, phoneApi, notificationApi } from '@/lib/api';
 import { getProfile } from '@/lib/businessTypeProfile';
 import {
-  getConsentMessageOverride,
-  getDefaultConsentTemplate,
+  getDefaultConsentMessage,
+  getEditableConsentMessage,
 } from '@/lib/consentMessage';
 
 const ReplyTemplatesCard = dynamic(
@@ -83,32 +89,15 @@ interface TenantConfig {
   followupOpener?: string | null;
   consentMessage?: string | null;
   customAiInstructions?: string | null;
-  businessLimits?: BusinessLimits | null;
+  businessLimits?: Partial<BusinessLimits> | null;
 }
 
-interface BusinessLimits {
-  noDelivery?: boolean;
-  noRefundsBySms?: boolean;
-  allergyRequiresHuman?: boolean;
-  noSameDayCatering?: boolean;
-  noSubstitutions?: boolean;
-  noAfterHoursPickup?: boolean;
-  notes?: string[];
-}
-
-const DEFAULT_BUSINESS_LIMITS: Required<Omit<BusinessLimits, 'notes'>> & { notes: string[] } = {
-  noDelivery: false,
-  noRefundsBySms: true,
-  allergyRequiresHuman: true,
-  noSameDayCatering: false,
-  noSubstitutions: false,
-  noAfterHoursPickup: false,
-  notes: [],
-};
-
-function normalizeBusinessLimits(limits?: BusinessLimits | null): BusinessLimits {
+function normalizeBusinessLimits(
+  limits: Partial<BusinessLimits> | null | undefined,
+  businessType: string | null | undefined,
+): BusinessLimits {
   return {
-    ...DEFAULT_BUSINESS_LIMITS,
+    ...getDefaultBusinessLimits(businessType),
     ...(limits ?? {}),
     notes: Array.isArray(limits?.notes) ? limits.notes : [],
   };
@@ -257,13 +246,17 @@ export default function SettingsPage() {
         ordersAcceptingEnabled: (config as any).ordersAcceptingEnabled ?? true,
         customAiInstructions: (config as any).customAiInstructions ?? '',
         followupOpener: (config as any).followupOpener ?? '',
-        consentMessage: getConsentMessageOverride(config.consentMessage, tenantName ?? '') ?? '',
+        consentMessage: getEditableConsentMessage(
+          config.consentMessage,
+          tenantName ?? '',
+          businessType,
+        ),
         salesTaxRate:
           (config as any).salesTaxRate != null ? Number((config as any).salesTaxRate) : null,
         passStripeFeesToCustomer: (config as any).passStripeFeesToCustomer ?? false,
       });
     }
-  }, [config, tenantName]);
+  }, [businessType, config, tenantName]);
 
   const generateAllGreetingsMutation = useMutation({
     mutationFn: () => tenantApi.generateAllGreetings(tenantId!),
@@ -1080,18 +1073,18 @@ function AiMessagingCard({
     customAiInstructions: string | null;
   };
   setForm: (fn: (f: any) => any) => void;
-  initialBusinessLimits: BusinessLimits | null;
+  initialBusinessLimits: Partial<BusinessLimits> | null;
 }) {
   const queryClient = useQueryClient();
-  const defaultConsentMessage = getDefaultConsentTemplate(businessType).replace(
-    /\{\s*business_name\s*\}/gi,
+  const defaultConsentMessage = getDefaultConsentMessage(
     businessName || '{business_name}',
+    businessType,
   );
   const consentPreview = form.consentMessage?.trim() || defaultConsentMessage;
 
   const [customAiInstructions, setCustomAiInstructions] = useState(form.customAiInstructions ?? '');
   const [businessLimits, setBusinessLimits] = useState<BusinessLimits>(
-    normalizeBusinessLimits(initialBusinessLimits),
+    normalizeBusinessLimits(initialBusinessLimits, businessType),
   );
   const [dirty, setDirty] = useState(false);
 
@@ -1103,9 +1096,9 @@ function AiMessagingCard({
   }, [form.customAiInstructions]);
 
   useEffect(() => {
-    setBusinessLimits(normalizeBusinessLimits(initialBusinessLimits));
+    setBusinessLimits(normalizeBusinessLimits(initialBusinessLimits, businessType));
     setDirty(false);
-  }, [initialBusinessLimits]);
+  }, [businessType, initialBusinessLimits]);
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -1122,47 +1115,12 @@ function AiMessagingCard({
     onError: () => toast.error('Failed to save'),
   });
 
-  const setLimit = (key: keyof Omit<BusinessLimits, 'notes'>, value: boolean) => {
+  const setLimit = (key: BusinessLimitKey, value: boolean) => {
     setBusinessLimits((current) => ({ ...current, [key]: value }));
     setDirty(true);
   };
 
-  const limitRows: Array<{
-    key: keyof Omit<BusinessLimits, 'notes'>;
-    label: string;
-    description: string;
-  }> = [
-    {
-      key: 'noDelivery',
-      label: 'No delivery by text',
-      description: 'Pickup only unless staff handles the request.',
-    },
-    {
-      key: 'noRefundsBySms',
-      label: 'Refunds require staff',
-      description: 'The bot will not promise or confirm refunds.',
-    },
-    {
-      key: 'allergyRequiresHuman',
-      label: 'Allergies require staff',
-      description: 'The bot will not confirm allergy safety.',
-    },
-    {
-      key: 'noSameDayCatering',
-      label: 'No same-day catering',
-      description: 'Same-day catering requests are deflected to staff.',
-    },
-    {
-      key: 'noSubstitutions',
-      label: 'No substitutions by text',
-      description: 'The bot will not promise swaps or substitutions.',
-    },
-    {
-      key: 'noAfterHoursPickup',
-      label: 'No after-hours pickup',
-      description: 'Pickup requests outside hours are refused.',
-    },
-  ];
+  const limitRows = getBusinessLimitDefinitions(businessType);
 
   return (
     <Card>

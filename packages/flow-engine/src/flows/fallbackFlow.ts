@@ -149,10 +149,24 @@ function findBusinessLimitGuard(
   message: string,
   input: FlowInput,
 ): { outcome: string; reason: string; reply: string } | null {
-  const limits = getBusinessLimits(input.tenantContext.config);
+  const limits = getBusinessLimits(
+    input.tenantContext.config,
+    input.tenantContext.businessType,
+  );
   const text = message.toLowerCase();
   const tenantPhone = input.tenantContext.tenantPhoneNumber?.trim();
   const callLine = tenantPhone ? ` Please call ${tenantPhone} if you need help from staff.` : '';
+
+  if (
+    limits.emergenciesRequire911 &&
+    /\b(chest pain|can(?:not|'t) breathe|difficulty breathing|not breathing|unconscious|severe bleeding|overdose|suicid(?:e|al)|stroke|heart attack|medical emergency)\b/i.test(text)
+  ) {
+    return {
+      outcome: 'blocked_medical_emergency',
+      reason: 'tenant businessLimits.emergenciesRequire911=true',
+      reply: 'If this is an emergency, call 911 now. Do not wait for a text reply.',
+    };
+  }
 
   if (limits.noDelivery && /\b(deliver|delivery|doordash|door dash|uber\s*eats|ship|shipping)\b/i.test(text)) {
     return {
@@ -473,7 +487,10 @@ export async function processFallbackFlow(input: FlowInput): Promise<FlowOutput>
     ? '\nThe customer JUST completed an order — most messages right now are polite chit-chat ("ok", "see you", "thanks man"), questions ABOUT the existing order, or random non-requests. Treat casual messages as casual. Do NOT try to upsell or re-prompt for a new order.'
     : '';
   const recentConversationBlock = formatRecentConversationForPrompt(input.recentMessages);
-  const businessLimitsBlock = formatBusinessLimits(tenantContext.config);
+  const businessLimitsBlock = formatBusinessLimits(
+    tenantContext.config,
+    tenantContext.businessType,
+  );
   // `undefined` means the host has not adopted the grounded-knowledge
   // contract yet. An explicit empty array means it has adopted it but has
   // no verified facts, which must fail closed for factual questions.

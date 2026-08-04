@@ -382,7 +382,10 @@ export function buildOrderAgentSystemPrompt(args: BuildAgentPromptArgs): string 
       ? `/m/${tenantContext.tenantSlug}`
       : '(menu link unavailable)';
   const hours = tenantContext.hoursInfo;
-  const businessLimitsBlock = formatBusinessLimits(tenantContext.config);
+  const businessLimitsBlock = formatBusinessLimits(
+    tenantContext.config,
+    tenantContext.businessType,
+  );
   // Note: if we're closed, the order agent hard-gates before reaching
   // this prompt (orderAgent.ts runOrderAgent top). So this block only
   // needs to cover the open case — no closed-copy, no "accept orders

@@ -36,6 +36,14 @@ function renderBusinessName(template: string, businessName: string): string {
   return template.replace(/\{\s*business_name\s*\}/gi, businessName);
 }
 
+/** Render the stock consent message exactly as the tenant will send it. */
+export function getDefaultConsentMessage(
+  businessName: string,
+  businessType: BusinessTypeLike | null | undefined,
+): string {
+  return renderBusinessName(getDefaultConsentTemplate(businessType), businessName);
+}
+
 /**
  * Older tenants stored the original stock message as though it were a custom
  * override. Recognize only that exact stock copy so they can receive improved
@@ -61,4 +69,20 @@ export function getConsentMessageOverride(
   const candidate = message?.trim();
   if (!candidate || isLegacyDefaultConsentMessage(candidate, businessName)) return null;
   return candidate;
+}
+
+/**
+ * Return the value shown in the editable Settings field. Existing owner copy
+ * wins; otherwise show the effective industry default as a real value rather
+ * than as placeholder text.
+ */
+export function getEditableConsentMessage(
+  message: string | null | undefined,
+  businessName: string,
+  businessType: BusinessTypeLike | null | undefined,
+): string {
+  return (
+    getConsentMessageOverride(message, businessName) ||
+    getDefaultConsentMessage(businessName, businessType)
+  );
 }

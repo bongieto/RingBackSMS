@@ -134,6 +134,30 @@ describe('decision sink — pushDecision contract', () => {
     expect(decisions.some((d) => d.outcome === 'blocked_no_delivery')).toBe(true);
   });
 
+  it('fallbackFlow sends medical emergencies to 911 before the LLM', async () => {
+    const decisions: DecisionDraft[] = [];
+    const chatFn: ChatFn = jest.fn().mockResolvedValue('Let me ask a few questions.');
+    const out = await processFallbackFlow({
+      tenantContext: {
+        ...baseTenant,
+        businessType: BusinessType.MEDICAL,
+        config: {
+          ...baseTenant.config,
+          businessLimits: null,
+        } as unknown as TenantContext['config'],
+      },
+      callerPhone: '+19990000001',
+      inboundMessage: 'My mother has chest pain and difficulty breathing',
+      currentState: null,
+      chatFn,
+      decisions,
+    });
+
+    expect(chatFn).not.toHaveBeenCalled();
+    expect(out.smsReply).toContain('call 911 now');
+    expect(decisions.some((d) => d.outcome === 'blocked_medical_emergency')).toBe(true);
+  });
+
   it('runFlowEngine records detectIntent + confidenceGate decisions on new turn', async () => {
     const decisions: DecisionDraft[] = [];
     await runFlowEngine({
