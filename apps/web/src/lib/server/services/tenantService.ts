@@ -106,6 +106,12 @@ export async function ensureTenantHealth(tenantId: string): Promise<TenantHealth
     });
   }
 
+  // Nothing needed repair — the row we already read is current. This is
+  // the steady-state path for every dashboard request; skip the re-read.
+  if (tenant.config && missingFlows.length === 0) {
+    return buildTenantHealthSnapshot(tenant);
+  }
+
   const repaired = await prisma.tenant.findUnique({
     where: { id: tenantId },
     include: {
@@ -234,17 +240,16 @@ export async function getTenantById(id: string) {
 }
 
 export async function getTenantByClerkOrg(clerkOrgId: string) {
-  const tenant = await prisma.tenant.findUnique({
+  // Resolve the id with a cheap select first, run the self-healing check,
+  // THEN load the full payload once. This used to load the tenant with
+  // its entire available menu twice (before and after the health check).
+  const ref = await prisma.tenant.findUnique({
     where: { clerkOrgId },
-    include: {
-      config: true,
-      flows: { where: { isEnabled: true } },
-      menuItems: { where: { isAvailable: true } },
-    },
+    select: { id: true },
   });
 
-  if (!tenant) throw new NotFoundError('Tenant');
-  await ensureTenantHealth(tenant.id);
+  if (!ref) throw new NotFoundError('Tenant');
+  await ensureTenantHealth(ref.id);
 
   return prisma.tenant.findUniqueOrThrow({
     where: { clerkOrgId },

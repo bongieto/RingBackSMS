@@ -3,6 +3,7 @@
   "buildCommand": "cd ../.. && pnpm --filter=@ringback/shared-types build && pnpm --filter=@ringback/flow-engine build && pnpm --filter=@ringbacksms/web build",
   "outputDirectory": ".next",
   "framework": "nextjs",
+  "regions": ["pdx1"],
   "crons": [
     {
       "path": "/api/cron/refresh-tokens",

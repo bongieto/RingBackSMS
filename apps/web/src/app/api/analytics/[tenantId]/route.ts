@@ -84,18 +84,12 @@ export async function GET(request: NextRequest, { params }: { params: { tenantId
       where: { tenantId, createdAt: { gte: since }, status: { not: 'CANCELLED' } },
       _sum: { total: true },
     }),
-    prisma.$queryRaw<Array<{ count: number }>>(Prisma.sql`
-      SELECT COUNT(*)::int AS count
-      FROM "Conversation"
-      WHERE "tenantId" = ${tenantId}
-        AND "createdAt" >= ${since}
-        AND (
-          "messages"::text ILIKE '%quote%'
-          OR "messages"::text ILIKE '%estimate%'
-          OR "messages"::text ILIKE '%pricing%'
-          OR "messages"::text ILIKE '%how much%'
-        )
-    `).catch(() => [{ count: 0 }]),
+    // quoteRequestsCaptured: Conversation.messages is AES-GCM encrypted at
+    // rest, so the old ILIKE '%quote%' scan could never match — it full-
+    // scanned every conversation row on each analytics load and always
+    // returned 0. Report 0 without the scan until the metric is tracked
+    // properly (e.g. a flag written by the flow engine at message time).
+    Promise.resolve([{ count: 0 }] as Array<{ count: number }>),
     prisma.escalationEvent.count({
       where: {
         tenantId,

@@ -295,6 +295,10 @@ export const taskApi = {
 export const recoveryInboxApi = {
   list: (tenantId: string) =>
     webApi.get('/recovery-inbox', { params: { tenantId } }).then((r) => r.data.data),
+  counts: (tenantId: string) =>
+    webApi
+      .get('/recovery-inbox', { params: { tenantId, countsOnly: '1' } })
+      .then((r) => r.data.data),
   update: (data: {
     tenantId: string;
     callerPhone: string;

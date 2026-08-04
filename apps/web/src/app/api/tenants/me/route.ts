@@ -13,6 +13,7 @@ export async function GET() {
   if (!orgId) return apiError('Organization required', 401);
   try {
     let tenant;
+    let healed = false;
     try {
       tenant = await getTenantByClerkOrg(orgId);
     } catch (err) {
@@ -90,21 +91,27 @@ export async function GET() {
         });
         tenant = await getTenantByClerkOrg(orgId);
       }
+      healed = true;
     }
 
     // Backfill Clerk publicMetadata if tenantId is missing or stale
-    // (e.g. seed id from an earlier dev session).
-    try {
-      const clerk = await clerkClient();
-      const org = await clerk.organizations.getOrganization({ organizationId: orgId });
-      const currentMeta = org.publicMetadata?.tenantId as string | undefined;
-      if (currentMeta !== tenant.id) {
-        await clerk.organizations.updateOrganizationMetadata(orgId, {
-          publicMetadata: { tenantId: tenant.id },
-        });
+    // (e.g. seed id from an earlier dev session). Only worth doing after
+    // a self-heal: on the normal path the tenant resolved by clerkOrgId
+    // directly and the metadata is never consulted — checking it here
+    // used to add a blocking Clerk API round trip to every dashboard load.
+    if (healed) {
+      try {
+        const clerk = await clerkClient();
+        const org = await clerk.organizations.getOrganization({ organizationId: orgId });
+        const currentMeta = org.publicMetadata?.tenantId as string | undefined;
+        if (currentMeta !== tenant.id) {
+          await clerk.organizations.updateOrganizationMetadata(orgId, {
+            publicMetadata: { tenantId: tenant.id },
+          });
+        }
+      } catch {
+        // Non-critical: metadata backfill failed, tenant still works
       }
-    } catch {
-      // Non-critical: metadata backfill failed, tenant still works
     }
 
     return apiSuccess(sanitizeTenantResponse(tenant));

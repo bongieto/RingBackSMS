@@ -84,10 +84,11 @@ function useRecoveryInboxBadge() {
   const { data } = useQuery<{
     counts: { active: number; needsAttention: number };
   }>({
-    // Share the Recovery Inbox page's cache so the badge and tabs always
-    // represent the same caller-level read model.
-    queryKey: ['recovery-inbox', tenantId],
-    queryFn: () => recoveryInboxApi.list(tenantId!),
+    // Counts-only fast path: same caller-level derivation as the Recovery
+    // Inbox page, but skips the contact scan, decryption, and timeline
+    // payload — this poll runs on every dashboard page.
+    queryKey: ['recovery-inbox-counts', tenantId],
+    queryFn: () => recoveryInboxApi.counts(tenantId!),
     enabled: Boolean(tenantId),
     refetchInterval: 60_000,
     staleTime: 30_000,

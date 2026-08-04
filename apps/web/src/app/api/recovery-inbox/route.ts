@@ -66,6 +66,11 @@ function groupByCallerPhone<T extends { callerPhone: string | null }>(rows: T[])
 export async function GET(req: NextRequest) {
   const tenantId = req.nextUrl.searchParams.get('tenantId');
   if (!tenantId) return apiError('tenantId required', 400);
+  // Fast path for the sidebar badge: derive states and return counts only.
+  // Skips the contact scan + name decryption, timeline building, the
+  // full-payload response, and the auto-reopen persistence (the full
+  // route and the reopen-snoozed cron still handle that).
+  const countsOnly = req.nextUrl.searchParams.get('countsOnly') === '1';
 
   const authResult = await verifyTenantAccess(tenantId);
   if (isNextResponse(authResult)) return authResult;
@@ -163,17 +168,19 @@ export async function GET(req: NextRequest) {
           orderBy: { updatedAt: 'desc' },
           take: MAX_ROWS_PER_SOURCE,
         }),
-        prisma.contact.findMany({
-          where: { tenantId },
-          select: {
-            id: true,
-            phone: true,
-            name: true,
-            status: true,
-            totalOrders: true,
-            totalSpent: true,
-          },
-        }),
+        countsOnly
+          ? Promise.resolve([])
+          : prisma.contact.findMany({
+              where: { tenantId },
+              select: {
+                id: true,
+                phone: true,
+                name: true,
+                status: true,
+                totalOrders: true,
+                totalSpent: true,
+              },
+            }),
         prisma.recoveryCase.findMany({
           where: { tenantId },
           select: {
@@ -251,86 +258,88 @@ export async function GET(req: NextRequest) {
       });
 
       const events: TimelineEvent[] = [];
-      for (const call of callerCalls.slice(0, 5)) {
-        events.push({
-          id: `call-${call.id}`,
-          type: 'CALL',
-          occurredAt: call.occurredAt.toISOString(),
-          title: call.callerTier === 'RAPID_REDIAL' ? 'Repeat missed call' : 'Missed call',
-          detail: call.smsSent ? 'Automatic recovery text sent' : 'Recovery text was not sent',
-          href: null,
-        });
-        if (call.voicemailUrl) {
-          const stalled =
-            call.transcriptionStatus === 'pending' &&
-            now.getTime() - call.occurredAt.getTime() > 10 * 60 * 1000;
+      if (!countsOnly) {
+        for (const call of callerCalls.slice(0, 5)) {
           events.push({
-            id: `voicemail-${call.id}`,
-            type: 'VOICEMAIL',
-            occurredAt: (call.voicemailReceivedAt ?? call.occurredAt).toISOString(),
+            id: `call-${call.id}`,
+            type: 'CALL',
+            occurredAt: call.occurredAt.toISOString(),
+            title: call.callerTier === 'RAPID_REDIAL' ? 'Repeat missed call' : 'Missed call',
+            detail: call.smsSent ? 'Automatic recovery text sent' : 'Recovery text was not sent',
+            href: null,
+          });
+          if (call.voicemailUrl) {
+            const stalled =
+              call.transcriptionStatus === 'pending' &&
+              now.getTime() - call.occurredAt.getTime() > 10 * 60 * 1000;
+            events.push({
+              id: `voicemail-${call.id}`,
+              type: 'VOICEMAIL',
+              occurredAt: (call.voicemailReceivedAt ?? call.occurredAt).toISOString(),
+              title:
+                call.voicemailSummary ||
+                (call.voicemailDuration && call.voicemailDuration <= 3
+                  ? 'No usable message'
+                  : 'Voicemail received'),
+              detail:
+                call.voicemailTranscript ||
+                (stalled
+                  ? 'Transcription did not complete'
+                  : call.transcriptionStatus === 'pending'
+                    ? 'Transcribing…'
+                    : null),
+              href: `/dashboard/voicemails`,
+            });
+          }
+        }
+        for (const conversation of callerConversations.slice(0, 3)) {
+          events.push({
+            id: `conversation-${conversation.id}`,
+            type: 'CONVERSATION',
+            occurredAt: conversation.updatedAt.toISOString(),
             title:
-              call.voicemailSummary ||
-              (call.voicemailDuration && call.voicemailDuration <= 3
-                ? 'No usable message'
-                : 'Voicemail received'),
-            detail:
-              call.voicemailTranscript ||
-              (stalled
-                ? 'Transcription did not complete'
-                : call.transcriptionStatus === 'pending'
-                  ? 'Transcribing…'
-                  : null),
-            href: `/dashboard/voicemails`,
+              conversation.handoffStatus === 'HUMAN'
+                ? 'Human-owned SMS conversation'
+                : 'SMS conversation',
+            detail: conversation.lastMessagePreview,
+            href: `/dashboard/conversations/${conversation.id}`,
           });
         }
+        for (const task of callerTasks.slice(0, 3)) {
+          events.push({
+            id: `task-${task.id}`,
+            type: 'TASK',
+            occurredAt: task.updatedAt.toISOString(),
+            title: task.title,
+            detail:
+              task.status === 'SNOOZED' && task.snoozedUntil
+                ? `Snoozed until ${task.snoozedUntil.toISOString()}`
+                : task.description,
+            href: '/dashboard/tasks',
+          });
+        }
+        for (const order of callerOrders.slice(0, 2)) {
+          events.push({
+            id: `order-${order.id}`,
+            type: 'ORDER',
+            occurredAt: order.updatedAt.toISOString(),
+            title: `Order ${order.orderNumber} · ${order.status}`,
+            detail: `${order.paymentStatus ?? 'UNPAID'} · $${Number(order.total).toFixed(2)}`,
+            href: '/dashboard/orders',
+          });
+        }
+        for (const meeting of callerMeetings.slice(0, 2)) {
+          events.push({
+            id: `meeting-${meeting.id}`,
+            type: 'MEETING',
+            occurredAt: meeting.updatedAt.toISOString(),
+            title: `Meeting ${meeting.status.toLowerCase()}`,
+            detail: meeting.scheduledAt?.toISOString() ?? null,
+            href: '/dashboard/meetings',
+          });
+        }
+        events.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
       }
-      for (const conversation of callerConversations.slice(0, 3)) {
-        events.push({
-          id: `conversation-${conversation.id}`,
-          type: 'CONVERSATION',
-          occurredAt: conversation.updatedAt.toISOString(),
-          title:
-            conversation.handoffStatus === 'HUMAN'
-              ? 'Human-owned SMS conversation'
-              : 'SMS conversation',
-          detail: conversation.lastMessagePreview,
-          href: `/dashboard/conversations/${conversation.id}`,
-        });
-      }
-      for (const task of callerTasks.slice(0, 3)) {
-        events.push({
-          id: `task-${task.id}`,
-          type: 'TASK',
-          occurredAt: task.updatedAt.toISOString(),
-          title: task.title,
-          detail:
-            task.status === 'SNOOZED' && task.snoozedUntil
-              ? `Snoozed until ${task.snoozedUntil.toISOString()}`
-              : task.description,
-          href: '/dashboard/tasks',
-        });
-      }
-      for (const order of callerOrders.slice(0, 2)) {
-        events.push({
-          id: `order-${order.id}`,
-          type: 'ORDER',
-          occurredAt: order.updatedAt.toISOString(),
-          title: `Order ${order.orderNumber} · ${order.status}`,
-          detail: `${order.paymentStatus ?? 'UNPAID'} · $${Number(order.total).toFixed(2)}`,
-          href: '/dashboard/orders',
-        });
-      }
-      for (const meeting of callerMeetings.slice(0, 2)) {
-        events.push({
-          id: `meeting-${meeting.id}`,
-          type: 'MEETING',
-          occurredAt: meeting.updatedAt.toISOString(),
-          title: `Meeting ${meeting.status.toLowerCase()}`,
-          detail: meeting.scheduledAt?.toISOString() ?? null,
-          href: '/dashboard/meetings',
-        });
-      }
-      events.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
 
       const lastActivityAt =
         latestDate([
@@ -435,7 +444,7 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    if (autoReopenCaseIds.length > 0) {
+    if (autoReopenCaseIds.length > 0 && !countsOnly) {
       await prisma.$transaction(async (tx) => {
         for (const id of autoReopenCaseIds) {
           const reopened = await tx.recoveryCase.updateMany({
@@ -485,6 +494,9 @@ export async function GET(req: NextRequest) {
       resolved: cases.filter((item) => item.state === 'RESOLVED').length,
     };
 
+    if (countsOnly) {
+      return apiSuccess({ cases: [], counts, generatedAt: now.toISOString() });
+    }
     return apiSuccess({ cases, counts, generatedAt: now.toISOString() });
   } catch (error) {
     console.error('[GET /api/recovery-inbox] failed', error);
