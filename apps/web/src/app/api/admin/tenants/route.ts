@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
     data: {
       ...(body.greeting ? { greeting: body.greeting } : {}),
       industryTemplateKey: templateKey,
-      consentMessage: buildConsentMessage(body.name),
+      consentMessage: buildConsentMessage(body.name, { businessType: body.businessType }),
       followupOpener,
       voiceGreeting,
     },

@@ -34,6 +34,10 @@ import { Tabs, TabList, TabPanel, TabTrigger } from '@/components/ui/tabs';
 import { useTenantId } from '@/components/providers/TenantProvider';
 import { tenantApi, phoneApi, notificationApi } from '@/lib/api';
 import { getProfile } from '@/lib/businessTypeProfile';
+import {
+  getConsentMessageOverride,
+  getDefaultConsentTemplate,
+} from '@/lib/consentMessage';
 
 const ReplyTemplatesCard = dynamic(
   () => import('@/components/settings/ReplyTemplatesCard').then((mod) => mod.ReplyTemplatesCard),
@@ -77,6 +81,7 @@ interface TenantConfig {
   dailyDigestHour?: number;
   spamFilterEnabled?: boolean;
   followupOpener?: string | null;
+  consentMessage?: string | null;
   customAiInstructions?: string | null;
   businessLimits?: BusinessLimits | null;
 }
@@ -203,6 +208,7 @@ export default function SettingsPage() {
     ordersAcceptingEnabled: true,
     customAiInstructions: '' as string | null,
     followupOpener: '' as string | null,
+    consentMessage: '' as string | null,
     salesTaxRate: null as number | null,
     passStripeFeesToCustomer: false,
   });
@@ -251,12 +257,13 @@ export default function SettingsPage() {
         ordersAcceptingEnabled: (config as any).ordersAcceptingEnabled ?? true,
         customAiInstructions: (config as any).customAiInstructions ?? '',
         followupOpener: (config as any).followupOpener ?? '',
+        consentMessage: getConsentMessageOverride(config.consentMessage, tenantName ?? '') ?? '',
         salesTaxRate:
           (config as any).salesTaxRate != null ? Number((config as any).salesTaxRate) : null,
         passStripeFeesToCustomer: (config as any).passStripeFeesToCustomer ?? false,
       });
     }
-  }, [config]);
+  }, [config, tenantName]);
 
   const generateAllGreetingsMutation = useMutation({
     mutationFn: () => tenantApi.generateAllGreetings(tenantId!),
@@ -327,6 +334,7 @@ export default function SettingsPage() {
         ordersAcceptingEnabled: form.ordersAcceptingEnabled,
         customAiInstructions: form.customAiInstructions || null,
         followupOpener: form.followupOpener || null,
+        consentMessage: form.consentMessage?.trim() || null,
         salesTaxRate: form.salesTaxRate,
         passStripeFeesToCustomer: form.passStripeFeesToCustomer,
       } as any);
@@ -637,6 +645,7 @@ export default function SettingsPage() {
             <AiMessagingCard
               tenantId={tenantId!}
               businessName={(tenant as any)?.name ?? ''}
+              businessType={businessType}
               form={form}
               setForm={setForm}
               initialBusinessLimits={config?.businessLimits ?? null}
@@ -1057,21 +1066,28 @@ function RecapPreviewButton({
 function AiMessagingCard({
   tenantId,
   businessName,
+  businessType,
   form,
   setForm,
   initialBusinessLimits,
 }: {
   tenantId: string;
   businessName: string;
+  businessType: string | undefined;
   form: {
     followupOpener: string | null;
+    consentMessage: string | null;
     customAiInstructions: string | null;
   };
   setForm: (fn: (f: any) => any) => void;
   initialBusinessLimits: BusinessLimits | null;
 }) {
   const queryClient = useQueryClient();
-  const consentPreview = `Hey! ${businessName || '{business_name}'} here — we just missed your call and we're sorry about that! I can help you via text if you want. Reply YES to go ahead or STOP to opt out. Msg & data rates may apply.`;
+  const defaultConsentMessage = getDefaultConsentTemplate(businessType).replace(
+    /\{\s*business_name\s*\}/gi,
+    businessName || '{business_name}',
+  );
+  const consentPreview = form.consentMessage?.trim() || defaultConsentMessage;
 
   const [customAiInstructions, setCustomAiInstructions] = useState(form.customAiInstructions ?? '');
   const [businessLimits, setBusinessLimits] = useState<BusinessLimits>(
@@ -1093,7 +1109,11 @@ function AiMessagingCard({
 
   const saveMutation = useMutation({
     mutationFn: () =>
-      tenantApi.updateConfig(tenantId, { customAiInstructions, businessLimits }),
+      tenantApi.updateConfig(tenantId, {
+        customAiInstructions,
+        businessLimits,
+        consentMessage: form.consentMessage?.trim() || null,
+      }),
     onSuccess: () => {
       toast.success('AI settings saved');
       queryClient.invalidateQueries({ queryKey: ['tenant'] });
@@ -1158,11 +1178,24 @@ function AiMessagingCard({
       <CardContent className="space-y-4">
         <div>
           <Label>Consent request message</Label>
-          <div className="mt-2 p-3 bg-muted rounded-lg text-sm">
-            {consentPreview}
-          </div>
+          <textarea
+            value={form.consentMessage ?? ''}
+            onChange={(e) => {
+              setForm((current) => ({
+                ...current,
+                consentMessage: e.target.value.slice(0, 500),
+              }));
+              setDirty(true);
+            }}
+            rows={4}
+            maxLength={500}
+            className="w-full mt-2 p-3 border rounded-lg text-sm bg-background"
+            placeholder={defaultConsentMessage}
+          />
           <p className="text-xs text-muted-foreground mt-1">
-            {consentPreview.length} / 160 characters. Sent to new callers before the AI starts texting.
+            {consentPreview.length} characters (500 maximum). Sent to new callers before the AI starts
+            texting. Longer messages may use multiple SMS segments. Keep YES, STOP, and the
+            message-and-data-rates disclosure.
           </p>
         </div>
 

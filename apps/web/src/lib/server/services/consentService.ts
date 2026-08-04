@@ -10,9 +10,12 @@ import {
   buildGreetingVars,
   type BusinessHoursConfig,
 } from '../businessHours';
+import {
+  getConsentMessageOverride,
+  getDefaultConsentTemplate,
+} from '../../consentMessage';
 
-export const DEFAULT_CONSENT_TEMPLATE =
-  "Hey! {business_name} here — we just missed your call and we're sorry about that! I can help you via text if you want. Reply YES to go ahead or STOP to opt out. Msg & data rates may apply.";
+export const DEFAULT_CONSENT_TEMPLATE = getDefaultConsentTemplate('OTHER');
 
 const CONSENT_WORDS = new Set([
   'YES', 'Y', 'SURE', 'OK', 'OKAY', 'YEP', 'YEAH', 'YUP',
@@ -60,10 +63,13 @@ export function buildConsentMessage(
   tenantName: string,
   opts?: {
     customTemplate?: string | null;
+    businessType?: string | null;
     hoursConfig?: BusinessHoursConfig;
   },
 ): string {
-  const template = opts?.customTemplate?.trim() || DEFAULT_CONSENT_TEMPLATE;
+  const template =
+    getConsentMessageOverride(opts?.customTemplate, tenantName) ||
+    getDefaultConsentTemplate(opts?.businessType);
   if (opts?.hoursConfig) {
     return renderGreetingTemplate(template, buildGreetingVars(tenantName, opts.hoursConfig));
   }

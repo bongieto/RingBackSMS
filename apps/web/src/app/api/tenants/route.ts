@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
           where: { industryKey: templateKey },
           select: { consentMessageDefault: true, followupOpenerDefault: true, voiceGreetingDefault: true },
         });
-        const consentMsg = buildConsentMessage(body.name);
+        const consentMsg = buildConsentMessage(body.name, { businessType: body.businessType });
         const followupOpener = template?.followupOpenerDefault ?? `Thanks! How can ${body.name} help you today?`;
         const voiceGreeting = template?.voiceGreetingDefault?.replace(/\{business_name\}/gi, body.name) ?? null;
 
@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
       where: { industryKey: newTemplateKey },
       select: { followupOpenerDefault: true, voiceGreetingDefault: true },
     });
-    const newConsentMsg = buildConsentMessage(body.name);
+    const newConsentMsg = buildConsentMessage(body.name, { businessType: body.businessType });
     const newFollowupOpener = newTemplate?.followupOpenerDefault ?? `Thanks! How can ${body.name} help you today?`;
     const newVoiceGreeting = newTemplate?.voiceGreetingDefault?.replace(/\{business_name\}/gi, body.name) ?? null;
     await prisma.tenantConfig.update({

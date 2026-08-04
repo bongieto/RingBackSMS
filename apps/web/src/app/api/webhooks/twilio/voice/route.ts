@@ -488,10 +488,11 @@ export async function POST(request: NextRequest) {
       // Consent SMS now supports full placeholder substitution — the
       // tenant's stored consentMessage (editable in Settings) can use
       // {business_name}, {next_open}, {today_hours}, {closes_at}.
-      // Falls back to DEFAULT_CONSENT_TEMPLATE when no custom message
-      // is set.
+      // Falls back to the tenant's business-type template when no custom
+      // message is set (or when the stored value is the legacy stock copy).
       const consentMsg = buildConsentMessage(businessName, {
         customTemplate: tenant.config?.consentMessage,
+        businessType: tenant.businessType,
         hoursConfig: tenant.config
           ? {
               businessHoursStart: tenant.config.businessHoursStart,
