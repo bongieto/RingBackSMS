@@ -4,6 +4,7 @@ import {
   decideSnapshot,
   deterministicIntegrationUuid,
   hasDuplicateMenuExternalIds,
+  isDeterministicIntegrationMenu,
 } from './syncVersion';
 import { toMcInasalFulfillmentStatus, toRingBackOrderStatus } from './fulfillmentMapping';
 import { OrderStatus } from '@prisma/client';
@@ -65,6 +66,33 @@ describe('commerce integration safety', () => {
     expect(first).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(deterministicIntegrationUuid('connection:item:item-1')).toBe(first);
     expect(deterministicIntegrationUuid('connection:item:item-2')).not.toBe(first);
+  });
+
+  it('uses the bulk update path only for an empty or wholly integration-managed menu', () => {
+    const connectionId = 'connection-1';
+    const mappings = [
+      {
+        resourceType: 'menu_category',
+        externalId: 'category-1',
+        internalId: deterministicIntegrationUuid(`${connectionId}:menu-category:category-1`),
+      },
+      {
+        resourceType: 'menu_item',
+        externalId: 'item-1',
+        internalId: deterministicIntegrationUuid(`${connectionId}:menu-item:item-1`),
+      },
+    ];
+    expect(isDeterministicIntegrationMenu(connectionId, [], 0, 0)).toBe(true);
+    expect(isDeterministicIntegrationMenu(connectionId, mappings, 1, 1)).toBe(true);
+    expect(isDeterministicIntegrationMenu(connectionId, mappings, 2, 1)).toBe(false);
+    expect(
+      isDeterministicIntegrationMenu(
+        connectionId,
+        [{ ...mappings[1], internalId: 'manually-created-item' }],
+        0,
+        1
+      )
+    ).toBe(false);
   });
 
   it('rejects financial projections whose net does not reconcile', () => {

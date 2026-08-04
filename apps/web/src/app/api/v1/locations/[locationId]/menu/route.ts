@@ -11,6 +11,7 @@ import {
   decideSnapshot,
   deterministicIntegrationUuid,
   hasDuplicateMenuExternalIds,
+  isDeterministicIntegrationMenu,
 } from '@/lib/server/commerce/syncVersion';
 
 export const dynamic = 'force-dynamic';
@@ -184,7 +185,13 @@ export async function PUT(request: NextRequest, { params }: { params: { location
             tx.menuCategory.count({ where: { tenantId: auth.tenantId } }),
             tx.menuItem.count({ where: { tenantId: auth.tenantId } }),
           ]);
-          if (existingMappings.length === 0 && tenantCategoryCount === 0 && tenantItemCount === 0) {
+          const tenantMenuIsIntegrationManaged = isDeterministicIntegrationMenu(
+            auth.connectionId!,
+            existingMappings,
+            tenantCategoryCount,
+            tenantItemCount
+          );
+          if (tenantMenuIsIntegrationManaged) {
             const categoryIdByExternalId = new Map(
               input.categories.map((category) => [
                 category.externalId,
@@ -199,19 +206,30 @@ export async function PUT(request: NextRequest, { params }: { params: { location
                 deterministicIntegrationUuid(`${auth.connectionId}:menu-item:${item.externalId}`),
               ])
             );
-            await tx.menuCategory.createMany({
-              data: input.categories.map((category) => ({
-                id: categoryIdByExternalId.get(category.externalId)!,
-                tenantId: auth.tenantId,
-                name: category.name,
-                sortOrder: category.sortOrder,
-                isAvailable: category.isAvailable,
-              })),
-            });
-            await tx.menuItem.createMany({
-              data: input.items.map((item, index) => ({
-                id: itemIdByExternalId.get(item.externalId)!,
-                tenantId: auth.tenantId,
+            const categoryNameByExternalId = new Map(
+              input.categories.map((category) => [category.externalId, category.name])
+            );
+            for (const category of input.categories) {
+              const id = categoryIdByExternalId.get(category.externalId)!;
+              await tx.menuCategory.upsert({
+                where: { id },
+                create: {
+                  id,
+                  tenantId: auth.tenantId,
+                  name: category.name,
+                  sortOrder: category.sortOrder,
+                  isAvailable: category.isAvailable,
+                },
+                update: {
+                  name: category.name,
+                  sortOrder: category.sortOrder,
+                  isAvailable: category.isAvailable,
+                },
+              });
+            }
+            for (const [index, item] of input.items.entries()) {
+              const id = itemIdByExternalId.get(item.externalId)!;
+              const data = {
                 name: item.name,
                 description: item.description ?? null,
                 price: item.price,
@@ -219,15 +237,19 @@ export async function PUT(request: NextRequest, { params }: { params: { location
                   ? (categoryIdByExternalId.get(item.categoryExternalId) ?? null)
                   : null,
                 category: item.categoryExternalId
-                  ? (input.categories.find(
-                      (category) => category.externalId === item.categoryExternalId
-                    )?.name ?? null)
+                  ? (categoryNameByExternalId.get(item.categoryExternalId) ?? null)
                   : null,
                 sortOrder: index,
                 imageUrl: item.imageUrl ?? null,
                 isAvailable: true,
-              })),
-            });
+                posDeletedAt: null,
+              };
+              await tx.menuItem.upsert({
+                where: { id },
+                create: { id, tenantId: auth.tenantId, ...data },
+                update: data,
+              });
+            }
             const groupRows = input.items.flatMap((item) => {
               const menuItemId = itemIdByExternalId.get(item.externalId)!;
               return item.modifierGroups.map((group) => ({
@@ -244,6 +266,9 @@ export async function PUT(request: NextRequest, { params }: { params: { location
                 posGroupId: group.externalId,
                 conditions: group.conditions as Prisma.InputJsonValue,
               }));
+            });
+            await tx.menuItemModifierGroup.deleteMany({
+              where: { menuItemId: { in: [...itemIdByExternalId.values()] } },
             });
             if (groupRows.length > 0) {
               await tx.menuItemModifierGroup.createMany({ data: groupRows });
@@ -269,38 +294,89 @@ export async function PUT(request: NextRequest, { params }: { params: { location
             if (optionRows.length > 0) {
               await tx.menuItemModifier.createMany({ data: optionRows });
             }
-            await tx.menuItemAvailability.createMany({
-              data: input.items.map((item) => ({
+            for (const item of input.items) {
+              const menuItemId = itemIdByExternalId.get(item.externalId)!;
+              await tx.menuItemAvailability.upsert({
+                where: { locationId_menuItemId: { locationId: location.id, menuItemId } },
+                create: {
+                  tenantId: auth.tenantId,
+                  locationId: location.id,
+                  menuItemId,
+                  isAvailable: item.isAvailable,
+                  reason: item.isAvailable ? null : 'Unavailable in source menu',
+                  updatedBy: `api:${auth.credentialId}`,
+                },
+                update: {
+                  isAvailable: item.isAvailable,
+                  reason: item.isAvailable ? null : 'Unavailable in source menu',
+                  revision: { increment: 1 },
+                  updatedBy: `api:${auth.credentialId}`,
+                },
+              });
+            }
+            const mappingRows = [
+              ...input.categories.map((category) => ({
                 tenantId: auth.tenantId,
-                locationId: location.id,
-                menuItemId: itemIdByExternalId.get(item.externalId)!,
-                isAvailable: item.isAvailable,
-                reason: item.isAvailable ? null : 'Unavailable in source menu',
-                updatedBy: `api:${auth.credentialId}`,
+                connectionId: auth.connectionId!,
+                resourceType: 'menu_category',
+                internalId: categoryIdByExternalId.get(category.externalId)!,
+                externalId: category.externalId,
+                externalVersion: input.revision,
+                lastSyncedAt: new Date(),
               })),
+              ...input.items.map((item) => ({
+                tenantId: auth.tenantId,
+                connectionId: auth.connectionId!,
+                resourceType: 'menu_item',
+                internalId: itemIdByExternalId.get(item.externalId)!,
+                externalId: item.externalId,
+                externalVersion: input.revision,
+                lastSyncedAt: new Date(),
+              })),
+            ];
+            if (mappingRows.length > 0) {
+              await tx.externalResourceMapping.createMany({
+                data: mappingRows,
+                skipDuplicates: true,
+              });
+            }
+            await tx.externalResourceMapping.updateMany({
+              where: {
+                connectionId: auth.connectionId!,
+                resourceType: 'menu_category',
+                externalId: { in: categoryExternalIds },
+              },
+              data: { externalVersion: input.revision, lastSyncedAt: new Date() },
             });
-            await tx.externalResourceMapping.createMany({
-              data: [
-                ...input.categories.map((category) => ({
-                  tenantId: auth.tenantId,
-                  connectionId: auth.connectionId!,
-                  resourceType: 'menu_category',
-                  internalId: categoryIdByExternalId.get(category.externalId)!,
-                  externalId: category.externalId,
-                  externalVersion: input.revision,
-                  lastSyncedAt: new Date(),
-                })),
-                ...input.items.map((item) => ({
-                  tenantId: auth.tenantId,
-                  connectionId: auth.connectionId!,
-                  resourceType: 'menu_item',
-                  internalId: itemIdByExternalId.get(item.externalId)!,
-                  externalId: item.externalId,
-                  externalVersion: input.revision,
-                  lastSyncedAt: new Date(),
-                })),
-              ],
+            await tx.externalResourceMapping.updateMany({
+              where: {
+                connectionId: auth.connectionId!,
+                resourceType: 'menu_item',
+                externalId: { in: itemExternalIds },
+              },
+              data: { externalVersion: input.revision, lastSyncedAt: new Date() },
             });
+            const removedMappings = existingMappings.filter(
+              (mapping) =>
+                mapping.resourceType === 'menu_item' &&
+                !itemExternalIds.includes(mapping.externalId)
+            );
+            if (removedMappings.length > 0) {
+              await tx.menuItemAvailability.updateMany({
+                where: {
+                  locationId: location.id,
+                  menuItemId: { in: removedMappings.map((mapping) => mapping.internalId) },
+                },
+                data: {
+                  isAvailable: false,
+                  reason: 'Removed from source menu',
+                  revision: { increment: 1 },
+                  updatedBy: `api:${auth.credentialId}`,
+                },
+              });
+            }
+            const created = input.items.filter((item) => !itemMappings.has(item.externalId)).length;
+            const updated = input.items.length - created;
             await enqueueIntegrationEvent(tx, {
               tenantId: auth.tenantId,
               sourceConnectionId: auth.connectionId,
@@ -312,17 +388,28 @@ export async function PUT(request: NextRequest, { params }: { params: { location
                 revision: input.revision,
                 sequence: input.sequence,
                 checksum: input.checksum,
-                created: input.items.length,
-                updated: 0,
-                unavailable: 0,
+                created,
+                updated,
+                unavailable: removedMappings.length,
                 item_ids: [...itemIdByExternalId.values()],
               },
             });
-            await tx.menuSyncCursor.create({
-              data: {
+            await tx.menuSyncCursor.upsert({
+              where: {
+                connectionId_locationId: {
+                  connectionId: auth.connectionId!,
+                  locationId: location.id,
+                },
+              },
+              create: {
                 tenantId: auth.tenantId,
                 connectionId: auth.connectionId!,
                 locationId: location.id,
+                revision: input.revision,
+                sequence: input.sequence,
+                checksum: input.checksum,
+              },
+              update: {
                 revision: input.revision,
                 sequence: input.sequence,
                 checksum: input.checksum,
@@ -332,9 +419,9 @@ export async function PUT(request: NextRequest, { params }: { params: { location
               revision: input.revision,
               sequence: input.sequence,
               checksum: input.checksum,
-              created: input.items.length,
-              updated: 0,
-              unavailable: 0,
+              created,
+              updated,
+              unavailable: removedMappings.length,
               total: input.items.length,
             };
           }
