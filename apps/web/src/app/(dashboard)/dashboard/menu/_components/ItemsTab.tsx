@@ -14,6 +14,7 @@ import { BulkActionBar } from './BulkActionBar';
 import { ItemForm } from './ItemForm';
 import type { MenuCategory, MenuItem } from './types';
 import { mergeOrderedSubset, moveIdToPosition } from '@/lib/menuOrdering';
+import { menuMutationError, validSelectedIds } from '@/lib/menuBulk';
 
 export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?: string }) {
   const queryClient = useQueryClient();
@@ -36,6 +37,7 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
     queryFn: () => tenantApi.listCategories(tenantId),
     enabled: !!tenantId,
   });
+  const currentSelectedIds = useMemo(() => validSelectedIds(selected, items), [selected, items]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -81,7 +83,7 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
         intakeQuestions: item.intakeQuestions ?? [],
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['menu', tenantId] }),
-    onError: () => toast.error('Failed to update'),
+    onError: (error) => toast.error(menuMutationError(error, 'Failed to update')),
   });
 
   const deleteMutation = useMutation({
@@ -93,33 +95,67 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
       queryClient.invalidateQueries({ queryKey: ['options', tenantId] });
       toast.success('Item deleted');
     },
-    onError: () => toast.error('Failed to delete'),
+    onError: (error) => toast.error(menuMutationError(error, 'Failed to delete')),
   });
 
   const bulkMutation = useMutation({
     mutationFn: ({ ids, isAvailable }: { ids: string[]; isAvailable: boolean }) =>
       tenantApi.bulkSetItemAvailability(tenantId, ids, isAvailable),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['menu', tenantId] });
+    onSuccess: async ({ count }: { count: number }, variables) => {
+      if (count !== variables.ids.length) {
+        await queryClient.invalidateQueries({ queryKey: ['menu', tenantId] });
+        toast.error(
+          `Only ${count} of ${variables.ids.length} selected items were updated. Refresh and try again.`
+        );
+        return;
+      }
+      const updatedIds = new Set(variables.ids);
+      queryClient.setQueryData<MenuItem[]>(['menu', tenantId], (current = []) =>
+        current.map((item) =>
+          updatedIds.has(item.id) ? { ...item, isAvailable: variables.isAvailable } : item
+        )
+      );
+      await queryClient.invalidateQueries({ queryKey: ['menu', tenantId] });
       setSelected(new Set());
-      toast.success('Bulk update applied');
+      toast.success(
+        `${count} ${count === 1 ? noun.toLowerCase() : `${noun.toLowerCase()}s`} updated`
+      );
     },
-    onError: () => toast.error('Bulk update failed'),
+    onError: async (error) => {
+      await queryClient.invalidateQueries({ queryKey: ['menu', tenantId] });
+      toast.error(menuMutationError(error, 'Bulk update failed'));
+    },
   });
 
   const bulkDeleteMutation = useMutation({
     mutationFn: (ids: string[]) => tenantApi.bulkDeleteMenuItems(tenantId, ids),
-    onSuccess: ({ count }: { count: number }) => {
-      queryClient.invalidateQueries({ queryKey: ['menu', tenantId] });
-      queryClient.invalidateQueries({ queryKey: ['menu-categories', tenantId] });
-      queryClient.invalidateQueries({ queryKey: ['option-groups', tenantId] });
-      queryClient.invalidateQueries({ queryKey: ['options', tenantId] });
+    onSuccess: async ({ count }: { count: number }, ids) => {
+      if (count !== ids.length) {
+        await queryClient.invalidateQueries({ queryKey: ['menu', tenantId] });
+        toast.error(
+          `Only ${count} of ${ids.length} selected items were deleted. Refresh and try again.`
+        );
+        return;
+      }
+      const deletedIds = new Set(ids);
+      queryClient.setQueryData<MenuItem[]>(['menu', tenantId], (current = []) =>
+        current.filter((item) => !deletedIds.has(item.id))
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['menu', tenantId] }),
+        queryClient.invalidateQueries({ queryKey: ['menu-categories', tenantId] }),
+        queryClient.invalidateQueries({ queryKey: ['option-groups', tenantId] }),
+        queryClient.invalidateQueries({ queryKey: ['options', tenantId] }),
+      ]);
       setSelected(new Set());
       toast.success(
         `${count} ${count === 1 ? noun.toLowerCase() : `${noun.toLowerCase()}s`} deleted`
       );
     },
-    onError: () => toast.error('Bulk delete failed'),
+    onError: async (error) => {
+      await queryClient.invalidateQueries({ queryKey: ['menu', tenantId] });
+      toast.error(menuMutationError(error, 'Bulk delete failed'));
+    },
   });
 
   const reorderMutation = useMutation({
@@ -134,7 +170,10 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
     },
   });
 
-  const canReorder = Boolean(filterCategoryId) && showDisabled && search.trim() === '';
+  const bulkBusy = bulkMutation.isPending || bulkDeleteMutation.isPending;
+  const actionBusy =
+    bulkBusy || toggleMutation.isPending || deleteMutation.isPending || reorderMutation.isPending;
+  const canReorder = Boolean(filterCategoryId) && showDisabled && search.trim() === '' && !bulkBusy;
 
   const handleDrop = (event: DragEvent<HTMLDivElement>, targetId: string) => {
     event.preventDefault();
@@ -192,7 +231,11 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
           <Input
             placeholder={`Search ${noun.toLowerCase()}s…`}
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setSelected(new Set());
+            }}
+            disabled={bulkBusy}
             className="pl-9"
           />
         </div>
@@ -201,6 +244,7 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
           onChange={(e) => {
             const nextCategoryId = e.target.value;
             setFilterCategoryId(nextCategoryId);
+            setSelected(new Set());
             // Category counts include both curated and staged POS items. When
             // an operator intentionally filters to a category, reveal all of
             // its rows so a category such as "Lumpia Bowls (12)" does not
@@ -209,6 +253,7 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
             // normal curated-only Items view.
             setShowDisabled(Boolean(nextCategoryId));
           }}
+          disabled={bulkBusy}
           className="h-9 rounded-md border bg-background px-3 text-sm"
         >
           <option value="">All categories</option>
@@ -222,7 +267,11 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
           <input
             type="checkbox"
             checked={showDisabled}
-            onChange={(e) => setShowDisabled(e.target.checked)}
+            onChange={(e) => {
+              setShowDisabled(e.target.checked);
+              setSelected(new Set());
+            }}
+            disabled={bulkBusy}
             className="h-4 w-4"
           />
           Show disabled
@@ -233,6 +282,7 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
             setEditing(null);
             setCreating(true);
           }}
+          disabled={actionBusy}
         >
           <Plus className="h-4 w-4 mr-1" /> Create {noun}
         </Button>
@@ -252,21 +302,21 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
       )}
 
       <BulkActionBar
-        count={selected.size}
-        onEnable={() => bulkMutation.mutate({ ids: [...selected], isAvailable: true })}
-        onDisable={() => bulkMutation.mutate({ ids: [...selected], isAvailable: false })}
+        count={currentSelectedIds.length}
+        onEnable={() => bulkMutation.mutate({ ids: currentSelectedIds, isAvailable: true })}
+        onDisable={() => bulkMutation.mutate({ ids: currentSelectedIds, isAvailable: false })}
         onDelete={() => {
-          const count = selected.size;
+          const count = currentSelectedIds.length;
           if (
             confirm(
               `Permanently delete ${count} selected ${count === 1 ? noun.toLowerCase() : `${noun.toLowerCase()}s`}? This cannot be undone. Items linked to your POS may return the next time you pull its menu.`
             )
           ) {
-            bulkDeleteMutation.mutate([...selected]);
+            bulkDeleteMutation.mutate(currentSelectedIds);
           }
         }}
         onClear={() => setSelected(new Set())}
-        busy={bulkMutation.isPending || bulkDeleteMutation.isPending}
+        busy={actionBusy}
       />
 
       {!canReorder && (
@@ -284,7 +334,7 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
                 type="checkbox"
                 checked={allVisibleSelected}
                 onChange={toggleAllVisible}
-                disabled={filtered.length === 0}
+                disabled={filtered.length === 0 || bulkBusy}
                 aria-label={`Select all visible ${noun.toLowerCase()}s`}
                 className="h-4 w-4"
               />
@@ -338,6 +388,7 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
                     type="checkbox"
                     checked={selected.has(item.id)}
                     onChange={() => toggleSelect(item.id)}
+                    disabled={bulkBusy}
                     className="h-4 w-4"
                   />
                 </div>
@@ -360,6 +411,7 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
                 <Switch
                   checked={item.isAvailable}
                   onCheckedChange={(v) => toggleMutation.mutate({ item, isAvailable: v })}
+                  disabled={actionBusy}
                 />
                 <div className="flex items-center gap-1">
                   <Button
@@ -369,6 +421,7 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
                       setCreating(false);
                       setEditing(item);
                     }}
+                    disabled={actionBusy}
                     aria-label="Edit"
                   >
                     <Pencil className="h-4 w-4" />
@@ -379,6 +432,7 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
                     onClick={() => {
                       if (confirm(`Delete "${item.name}"?`)) deleteMutation.mutate(item.id);
                     }}
+                    disabled={actionBusy}
                     aria-label="Delete"
                   >
                     <Trash2 className="h-4 w-4 text-destructive" />

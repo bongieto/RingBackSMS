@@ -4,6 +4,7 @@ import { bulkSetCategoriesAvailability } from '@/lib/server/services/tenantServi
 import { BulkAvailabilityRequestSchema } from '@ringback/shared-types';
 import { apiSuccess, apiError } from '@/lib/server/response';
 import { AppError } from '@/lib/server/errors';
+import { ZodError } from 'zod';
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const authResult = await verifyTenantAccess(params.id);
@@ -14,6 +15,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       await bulkSetCategoriesAvailability(params.id, body.ids, body.isAvailable),
     );
   } catch (err) {
+    if (err instanceof ZodError) return apiError('Invalid category selection', 400);
     if (err instanceof AppError) return apiError(err.message, err.statusCode);
     console.error('[PATCH categories/bulk-availability] failed', err);
     return apiError('Failed to update availability', 500);

@@ -723,11 +723,24 @@ export async function bulkSetCategoriesAvailability(
   ids: string[],
   isAvailable: boolean,
 ) {
-  const result = await prisma.menuCategory.updateMany({
-    where: { tenantId, id: { in: ids } },
-    data: { isAvailable },
+  return prisma.$transaction(async (tx) => {
+    const matched = await tx.menuCategory.count({
+      where: { tenantId, id: { in: ids } },
+    });
+    if (matched !== ids.length) {
+      throw new ValidationError(
+        'Some selected categories are no longer available. Refresh and try again.'
+      );
+    }
+    const result = await tx.menuCategory.updateMany({
+      where: { tenantId, id: { in: ids } },
+      data: { isAvailable },
+    });
+    if (result.count !== ids.length) {
+      throw new ValidationError('Not every selected category was updated. Refresh and try again.');
+    }
+    return { count: result.count };
   });
-  return { count: result.count };
 }
 
 export async function bulkSetItemsAvailability(
@@ -735,18 +748,44 @@ export async function bulkSetItemsAvailability(
   ids: string[],
   isAvailable: boolean,
 ) {
-  const result = await prisma.menuItem.updateMany({
-    where: { tenantId, id: { in: ids } },
-    data: { isAvailable },
+  return prisma.$transaction(async (tx) => {
+    const matched = await tx.menuItem.count({
+      where: { tenantId, id: { in: ids } },
+    });
+    if (matched !== ids.length) {
+      throw new ValidationError(
+        'Some selected items are no longer available. Refresh and try again.'
+      );
+    }
+    const result = await tx.menuItem.updateMany({
+      where: { tenantId, id: { in: ids } },
+      data: { isAvailable },
+    });
+    if (result.count !== ids.length) {
+      throw new ValidationError('Not every selected item was updated. Refresh and try again.');
+    }
+    return { count: result.count };
   });
-  return { count: result.count };
 }
 
 export async function bulkDeleteMenuItems(tenantId: string, ids: string[]) {
-  const result = await prisma.menuItem.deleteMany({
-    where: { tenantId, id: { in: ids } },
+  return prisma.$transaction(async (tx) => {
+    const matched = await tx.menuItem.count({
+      where: { tenantId, id: { in: ids } },
+    });
+    if (matched !== ids.length) {
+      throw new ValidationError(
+        'Some selected items are no longer available. Refresh and try again.'
+      );
+    }
+    const result = await tx.menuItem.deleteMany({
+      where: { tenantId, id: { in: ids } },
+    });
+    if (result.count !== ids.length) {
+      throw new ValidationError('Not every selected item was deleted. Refresh and try again.');
+    }
+    return { count: result.count };
   });
-  return { count: result.count };
 }
 
 export async function reorderMenuCategories(tenantId: string, ids: string[]) {

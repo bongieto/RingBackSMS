@@ -84,10 +84,10 @@ export default function MenuPage() {
           <MenusTab tenantId={tenantId} />
         </TabPanel>
         <TabPanel value="categories">
-          <CategoriesTab tenantId={tenantId} />
+          <CategoriesTab key={tenantId} tenantId={tenantId} />
         </TabPanel>
         <TabPanel value="items">
-          <ItemsTab tenantId={tenantId} noun={itemNoun} />
+          <ItemsTab key={tenantId} tenantId={tenantId} noun={itemNoun} />
         </TabPanel>
         <TabPanel value="import">
           <ImportTab tenantId={tenantId} />

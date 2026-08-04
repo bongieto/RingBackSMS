@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type DragEvent } from 'react';
+import { useMemo, useState, type DragEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { GripVertical, Plus, Pencil, Trash2 } from 'lucide-react';
@@ -12,6 +12,7 @@ import { BulkActionBar } from './BulkActionBar';
 import { CategoryForm } from './CategoryForm';
 import type { MenuCategory } from './types';
 import { moveIdToPosition } from '@/lib/menuOrdering';
+import { menuMutationError, validSelectedIds } from '@/lib/menuBulk';
 
 export function CategoriesTab({ tenantId }: { tenantId: string }) {
   const queryClient = useQueryClient();
@@ -26,6 +27,10 @@ export function CategoriesTab({ tenantId }: { tenantId: string }) {
     queryFn: () => tenantApi.listCategories(tenantId),
     enabled: !!tenantId,
   });
+  const currentSelectedIds = useMemo(
+    () => validSelectedIds(selected, categories),
+    [selected, categories]
+  );
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, isAvailable }: { id: string; isAvailable: boolean }) =>
@@ -34,7 +39,7 @@ export function CategoriesTab({ tenantId }: { tenantId: string }) {
         name: categories.find((c) => c.id === id)?.name,
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['menu-categories', tenantId] }),
-    onError: () => toast.error('Failed to update'),
+    onError: (error) => toast.error(menuMutationError(error, 'Failed to update')),
   });
 
   const deleteMutation = useMutation({
@@ -44,18 +49,36 @@ export function CategoriesTab({ tenantId }: { tenantId: string }) {
       queryClient.invalidateQueries({ queryKey: ['menu', tenantId] });
       toast.success('Category deleted');
     },
-    onError: () => toast.error('Failed to delete'),
+    onError: (error) => toast.error(menuMutationError(error, 'Failed to delete')),
   });
 
   const bulkMutation = useMutation({
     mutationFn: ({ ids, isAvailable }: { ids: string[]; isAvailable: boolean }) =>
       tenantApi.bulkSetCategoryAvailability(tenantId, ids, isAvailable),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['menu-categories', tenantId] });
+    onSuccess: async ({ count }: { count: number }, variables) => {
+      if (count !== variables.ids.length) {
+        await queryClient.invalidateQueries({ queryKey: ['menu-categories', tenantId] });
+        toast.error(
+          `Only ${count} of ${variables.ids.length} selected categories were updated. Refresh and try again.`
+        );
+        return;
+      }
+      const updatedIds = new Set(variables.ids);
+      queryClient.setQueryData<MenuCategory[]>(['menu-categories', tenantId], (current = []) =>
+        current.map((category) =>
+          updatedIds.has(category.id)
+            ? { ...category, isAvailable: variables.isAvailable }
+            : category
+        )
+      );
+      await queryClient.invalidateQueries({ queryKey: ['menu-categories', tenantId] });
       setSelected(new Set());
-      toast.success('Bulk update applied');
+      toast.success(`${count} ${count === 1 ? 'category' : 'categories'} updated`);
     },
-    onError: () => toast.error('Bulk update failed'),
+    onError: async (error) => {
+      await queryClient.invalidateQueries({ queryKey: ['menu-categories', tenantId] });
+      toast.error(menuMutationError(error, 'Bulk update failed'));
+    },
   });
 
   const reorderMutation = useMutation({
@@ -71,9 +94,13 @@ export function CategoriesTab({ tenantId }: { tenantId: string }) {
     },
   });
 
+  const bulkBusy = bulkMutation.isPending;
+  const actionBusy =
+    bulkBusy || toggleMutation.isPending || deleteMutation.isPending || reorderMutation.isPending;
+
   const handleDrop = (event: DragEvent<HTMLDivElement>, targetId: string) => {
     event.preventDefault();
-    if (!draggedId || draggedId === targetId || reorderMutation.isPending) {
+    if (!draggedId || draggedId === targetId || actionBusy) {
       setDraggedId(null);
       setDragOverId(null);
       return;
@@ -112,6 +139,7 @@ export function CategoriesTab({ tenantId }: { tenantId: string }) {
             setEditing(null);
             setCreating(true);
           }}
+          disabled={actionBusy}
         >
           <Plus className="h-4 w-4 mr-1" /> Create Category
         </Button>
@@ -129,11 +157,11 @@ export function CategoriesTab({ tenantId }: { tenantId: string }) {
       )}
 
       <BulkActionBar
-        count={selected.size}
-        onEnable={() => bulkMutation.mutate({ ids: [...selected], isAvailable: true })}
-        onDisable={() => bulkMutation.mutate({ ids: [...selected], isAvailable: false })}
+        count={currentSelectedIds.length}
+        onEnable={() => bulkMutation.mutate({ ids: currentSelectedIds, isAvailable: true })}
+        onDisable={() => bulkMutation.mutate({ ids: currentSelectedIds, isAvailable: false })}
         onClear={() => setSelected(new Set())}
-        busy={bulkMutation.isPending}
+        busy={actionBusy}
       />
 
       <Card>
@@ -162,7 +190,7 @@ export function CategoriesTab({ tenantId }: { tenantId: string }) {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    draggable={!reorderMutation.isPending}
+                    draggable={!actionBusy}
                     onDragStart={(event) => {
                       event.dataTransfer.effectAllowed = 'move';
                       event.dataTransfer.setData('text/plain', c.id);
@@ -175,7 +203,7 @@ export function CategoriesTab({ tenantId }: { tenantId: string }) {
                     className="cursor-grab text-muted-foreground hover:text-foreground active:cursor-grabbing disabled:cursor-not-allowed"
                     aria-label={`Drag ${c.name} to reorder`}
                     title="Drag to reorder"
-                    disabled={reorderMutation.isPending}
+                    disabled={actionBusy}
                   >
                     <GripVertical className="h-4 w-4" />
                   </button>
@@ -183,6 +211,7 @@ export function CategoriesTab({ tenantId }: { tenantId: string }) {
                     type="checkbox"
                     checked={selected.has(c.id)}
                     onChange={() => toggleSelect(c.id)}
+                    disabled={bulkBusy}
                     className="h-4 w-4"
                   />
                 </div>
@@ -191,6 +220,7 @@ export function CategoriesTab({ tenantId }: { tenantId: string }) {
                 <Switch
                   checked={c.isAvailable}
                   onCheckedChange={(v) => toggleMutation.mutate({ id: c.id, isAvailable: v })}
+                  disabled={actionBusy}
                 />
                 <div className="flex items-center gap-1">
                   <Button
@@ -200,6 +230,7 @@ export function CategoriesTab({ tenantId }: { tenantId: string }) {
                       setCreating(false);
                       setEditing(c);
                     }}
+                    disabled={actionBusy}
                     aria-label="Edit"
                   >
                     <Pencil className="h-4 w-4" />
@@ -216,6 +247,7 @@ export function CategoriesTab({ tenantId }: { tenantId: string }) {
                         deleteMutation.mutate(c.id);
                       }
                     }}
+                    disabled={actionBusy}
                     aria-label="Delete"
                   >
                     <Trash2 className="h-4 w-4 text-destructive" />

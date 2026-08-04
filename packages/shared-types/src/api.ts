@@ -95,7 +95,10 @@ export const UpdateMenuCategoryRequestSchema = CreateMenuCategoryRequestSchema.p
 export type UpdateMenuCategoryRequest = z.infer<typeof UpdateMenuCategoryRequestSchema>;
 
 export const BulkAvailabilityRequestSchema = z.object({
-  ids: z.array(z.string().uuid()).min(1).max(500),
+  ids: z.array(z.string().uuid()).min(1).max(500).refine(
+    (ids) => new Set(ids).size === ids.length,
+    'ids must be unique',
+  ),
   isAvailable: z.boolean(),
 });
 export type BulkAvailabilityRequest = z.infer<typeof BulkAvailabilityRequestSchema>;
