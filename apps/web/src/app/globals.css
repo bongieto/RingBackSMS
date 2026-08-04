@@ -76,3 +76,267 @@
     @apply bg-background text-foreground;
   }
 }
+
+/*
+ * Platform administration inherits the public brand without sacrificing the
+ * density and semantic color cues an operations console needs. Keeping these
+ * mappings scoped to .admin-content lets every admin route move together while
+ * the tenant dashboard retains its existing theme.
+ */
+.admin-surface {
+  --background: 40 43% 93%;
+  --foreground: 60 10% 8%;
+  --card: 42 71% 98%;
+  --card-foreground: 60 10% 8%;
+  --popover: 42 71% 98%;
+  --popover-foreground: 60 10% 8%;
+  --primary: 11 85% 58%;
+  --primary-foreground: 60 10% 8%;
+  --secondary: 38 32% 88%;
+  --secondary-foreground: 60 10% 8%;
+  --muted: 38 28% 88%;
+  --muted-foreground: 58 5% 37%;
+  --accent: 11 85% 58%;
+  --accent-foreground: 60 10% 8%;
+  --border: 38 20% 73%;
+  --input: 38 20% 73%;
+  --ring: 11 85% 58%;
+}
+
+.admin-surface summary::-webkit-details-marker {
+  display: none;
+}
+
+/* ViewSwitcher is shared with the tenant dashboard, so recolor it only when
+ * it lives in the branded administration rail. */
+.admin-sidebar [class~='bg-slate-700/80'] {
+  background-color: #30312b;
+}
+
+.admin-sidebar .bg-slate-900 {
+  background-color: #22231f;
+}
+
+.admin-sidebar :is(.border-slate-600, .border-slate-700, .border-slate-800) {
+  border-color: rgba(246, 240, 228, 0.16);
+}
+
+.admin-sidebar :is(.text-white, .text-slate-300) {
+  color: #f6f0e4;
+}
+
+.admin-sidebar :is(.text-slate-400, .text-slate-500) {
+  color: #98958d;
+}
+
+.admin-sidebar .text-blue-400 {
+  color: #f05a37;
+}
+
+.admin-sidebar [class~='bg-blue-600/20'] {
+  background-color: rgba(240, 90, 55, 0.14);
+}
+
+.admin-sidebar [class~='hover:bg-slate-600']:hover,
+.admin-sidebar [class~='hover:bg-slate-800']:hover {
+  background-color: #383933;
+}
+
+.admin-content h1 {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(2rem, 4vw, 3.25rem);
+  font-weight: 400;
+  line-height: 0.98;
+  letter-spacing: -0.045em;
+}
+
+.admin-content :is(input, select, textarea) {
+  accent-color: #f05a37;
+}
+
+.admin-content :is(input, select, textarea):focus {
+  border-color: #f05a37;
+  box-shadow: 0 0 0 2px rgba(240, 90, 55, 0.18);
+  outline: none;
+}
+
+.admin-content .bg-slate-950,
+.admin-content [class~='bg-slate-950/60'],
+.admin-content [class~='bg-slate-950/70'] {
+  background-color: #f3ecdf;
+}
+
+.admin-content .bg-slate-900 {
+  background-color: #fffcf5;
+}
+
+.admin-content .bg-slate-800 {
+  background-color: #e9e0d2;
+}
+
+.admin-content [class~='bg-slate-800/50'] {
+  background-color: rgba(233, 224, 210, 0.62);
+}
+
+.admin-content .bg-slate-700 {
+  background-color: #d9cfbf;
+}
+
+.admin-content .bg-slate-600 {
+  background-color: #8a887f;
+}
+
+.admin-content .border-slate-800 {
+  border-color: #d7cebf;
+}
+
+.admin-content .border-slate-700 {
+  border-color: #bfb4a3;
+}
+
+.admin-content .divide-slate-800 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #d7cebf;
+}
+
+.admin-content :is(.text-white, .text-slate-100) {
+  color: #171713;
+}
+
+.admin-content .text-slate-200 {
+  color: #2e2e29;
+}
+
+.admin-content .text-slate-300 {
+  color: #44443e;
+}
+
+.admin-content .text-slate-400 {
+  color: #5f6058;
+}
+
+.admin-content .text-slate-500 {
+  color: #74756b;
+}
+
+.admin-content .text-slate-600 {
+  color: #8b887e;
+}
+
+.admin-content :is(.text-blue-300, .text-blue-400, .text-blue-500, .text-blue-600) {
+  color: #d94828;
+}
+
+.admin-content :is(.bg-blue-500, .bg-blue-600, .bg-blue-700, .hover\:bg-blue-500:hover, .hover\:bg-blue-700:hover) {
+  background-color: #f05a37;
+  color: #171713;
+}
+
+.admin-content :is(.bg-blue-900, .bg-purple-900) {
+  background-color: #bbc9f4;
+  color: #171713;
+}
+
+.admin-content .bg-purple-600 {
+  background-color: #8d9fda;
+}
+
+.admin-content :is(.text-purple-300, .text-purple-400) {
+  color: #5666a0;
+}
+
+.admin-content .border-blue-500 {
+  border-color: #f05a37;
+}
+
+.admin-content :is(.bg-yellow-500, .bg-yellow-900, [class~='bg-yellow-900/30']) {
+  background-color: #dce7a3;
+  color: #171713;
+}
+
+.admin-content .border-yellow-800 {
+  border-color: #9aa958;
+}
+
+.admin-content :is(.text-yellow-300, .text-yellow-400, .text-amber-300, .text-amber-400, [class~='text-amber-200/80']) {
+  color: #835900;
+}
+
+.admin-content :is([class~='bg-amber-500/5'], [class~='bg-amber-500/10'], [class~='bg-amber-500/20'], [class~='bg-amber-900/30']) {
+  background-color: #f5e7c5;
+}
+
+.admin-content :is(.border-amber-700, .border-amber-800, [class~='border-amber-500/30']) {
+  border-color: #c39331;
+}
+
+.admin-content :is(.text-green-300, .text-green-400, .text-emerald-300, .text-emerald-400, .text-emerald-600) {
+  color: #356b49;
+}
+
+.admin-content :is(.bg-emerald-600, .bg-emerald-700, .hover\:bg-emerald-600:hover) {
+  background-color: #4e8a63;
+  color: #fffdf7;
+}
+
+.admin-content :is([class~='bg-emerald-500/10'], [class~='bg-emerald-900/30'], [class~='bg-green-500/20'], [class~='bg-green-900/20'], [class~='bg-green-900/30']) {
+  background-color: #dcebd9;
+}
+
+.admin-content :is(.border-emerald-800, .border-green-700, .border-green-800, [class~='border-emerald-500/30']) {
+  border-color: #76a482;
+}
+
+.admin-content [class~='text-emerald-400/90'] {
+  color: #356b49;
+}
+
+.admin-content :is(.text-red-300, .text-red-400) {
+  color: #b42318;
+}
+
+.admin-content :is([class~='bg-red-500/10'], [class~='bg-red-500/20'], [class~='bg-red-900/20'], [class~='bg-red-900/30'], [class~='bg-red-950/20'], [class~='bg-red-950/30'], [class~='bg-red-950/40']) {
+  background-color: #f4d5d0;
+}
+
+.admin-content :is(.border-red-700, .border-red-800, [class~='border-red-500/30'], [class~='border-red-900/40'], [class~='border-red-900/50'], [class~='border-red-900/60']) {
+  border-color: #d78b80;
+}
+
+.admin-content :is(.text-orange-400, .text-pink-400) {
+  color: #d94828;
+}
+
+.admin-content [class~='placeholder:text-slate-500']::placeholder {
+  color: #8b887e;
+}
+
+.admin-content [class~='hover:bg-slate-800']:hover,
+.admin-content [class~='hover:bg-slate-800/50']:hover {
+  background-color: #e4dacb;
+}
+
+.admin-content [class~='hover:text-white']:hover,
+.admin-content [class~='hover:text-slate-200']:hover,
+.admin-content [class~='hover:text-slate-300']:hover {
+  color: #171713;
+}
+
+.admin-content [class~='focus:ring-blue-500']:focus {
+  --tw-ring-color: rgba(240, 90, 55, 0.38);
+}
+
+.admin-content table {
+  border-color: #d7cebf;
+}
+
+.admin-content thead {
+  background-color: rgba(23, 23, 19, 0.035);
+}
+
+.admin-content tbody tr {
+  transition: background-color 150ms ease;
+}
+
+.admin-content [class~='shadow-2xl'] {
+  box-shadow: 8px 8px 0 rgba(23, 23, 19, 0.16);
+}
