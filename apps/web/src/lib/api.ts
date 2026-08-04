@@ -55,10 +55,16 @@ export const tenantApi = {
     webApi
       .patch(`/tenants/${tenantId}/menu/categories/bulk-availability`, { ids, isAvailable })
       .then((r) => r.data.data),
+  reorderCategories: (tenantId: string, ids: string[]) =>
+    webApi.post(`/tenants/${tenantId}/menu/categories/reorder`, { ids }).then((r) => r.data.data),
   bulkSetItemAvailability: (tenantId: string, ids: string[], isAvailable: boolean) =>
     webApi
       .patch(`/tenants/${tenantId}/menu/items/bulk-availability`, { ids, isAvailable })
       .then((r) => r.data.data),
+  bulkDeleteMenuItems: (tenantId: string, ids: string[]) =>
+    webApi.post(`/tenants/${tenantId}/menu/items/bulk-delete`, { ids }).then((r) => r.data.data),
+  reorderMenuItems: (tenantId: string, ids: string[]) =>
+    webApi.post(`/tenants/${tenantId}/menu/items/reorder`, { ids }).then((r) => r.data.data),
   // Option groups
   listOptionGroups: (tenantId: string) =>
     webApi.get(`/tenants/${tenantId}/menu/option-groups`).then((r) => r.data.data),
@@ -79,6 +85,8 @@ export const tenantApi = {
     webApi.patch(`/tenants/${tenantId}/menu/options/${optionId}`, body).then((r) => r.data.data),
   deleteOption: (tenantId: string, optionId: string) =>
     webApi.delete(`/tenants/${tenantId}/menu/options/${optionId}`).then((r) => r.data.data),
+  reorderOptions: (tenantId: string, ids: string[]) =>
+    webApi.post(`/tenants/${tenantId}/menu/options/reorder`, { ids }).then((r) => r.data.data),
   getFlows: (id: string) => webApi.get(`/tenants/${id}/flows`).then((r) => r.data.data),
   updateFlow: (tenantId: string, flowId: string, data: Record<string, unknown>) =>
     webApi.patch(`/tenants/${tenantId}/flows/${flowId}`, data).then((r) => r.data.data),

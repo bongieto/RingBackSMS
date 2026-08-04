@@ -1,5 +1,6 @@
 import { prisma } from '../db';
-import { NotFoundError } from '../errors';
+import { NotFoundError, ValidationError } from '../errors';
+import { mergeOrderedSubset } from '@/lib/menuOrdering';
 
 // ── Option groups ────────────────────────────────────────────────────────────
 
@@ -111,7 +112,13 @@ export async function deleteOptionGroup(tenantId: string, id: string) {
 export async function listOptions(tenantId: string) {
   const opts = await prisma.menuItemModifier.findMany({
     where: { group: { menuItem: { tenantId } } },
-    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    orderBy: [
+      { group: { menuItem: { name: 'asc' } } },
+      { group: { sortOrder: 'asc' } },
+      { group: { name: 'asc' } },
+      { sortOrder: 'asc' },
+      { name: 'asc' },
+    ],
     include: {
       group: { select: { id: true, name: true } },
     },
@@ -167,13 +174,17 @@ export async function upsertOption(
     });
   }
 
+  const lastOption = await prisma.menuItemModifier.aggregate({
+    where: { groupId: input.groupId },
+    _max: { sortOrder: true },
+  });
   return prisma.menuItemModifier.create({
     data: {
       groupId: input.groupId,
       name: input.name,
       priceAdjust: input.priceAdjust ?? 0,
       isDefault: input.isDefault ?? false,
-      sortOrder: input.sortOrder ?? 0,
+      sortOrder: input.sortOrder ?? (lastOption._max.sortOrder ?? -1) + 1,
     },
   });
 }
@@ -186,4 +197,42 @@ export async function deleteOption(tenantId: string, id: string) {
   if (!existing || existing.group.menuItem.tenantId !== tenantId)
     throw new NotFoundError('Option');
   await prisma.menuItemModifier.delete({ where: { id } });
+}
+
+export async function reorderOptions(tenantId: string, ids: string[]) {
+  const requested = await prisma.menuItemModifier.findMany({
+    where: { id: { in: ids }, group: { menuItem: { tenantId } } },
+    select: { id: true, groupId: true },
+  });
+  if (requested.length !== ids.length) {
+    throw new ValidationError('One or more options cannot be reordered');
+  }
+
+  const groupId = requested[0]?.groupId;
+  if (!groupId || requested.some((option) => option.groupId !== groupId)) {
+    throw new ValidationError('Options can only be reordered within one option group');
+  }
+
+  const current = await prisma.menuItemModifier.findMany({
+    where: { groupId, group: { menuItem: { tenantId } } },
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    select: { id: true },
+  });
+
+  let orderedIds: string[];
+  try {
+    orderedIds = mergeOrderedSubset(current.map((option) => option.id), ids);
+  } catch {
+    throw new ValidationError('One or more options cannot be reordered');
+  }
+
+  await prisma.$transaction(
+    orderedIds.map((id, sortOrder) =>
+      prisma.menuItemModifier.updateMany({
+        where: { id, groupId, group: { menuItem: { tenantId } } },
+        data: { sortOrder },
+      }),
+    ),
+  );
+  return { count: orderedIds.length };
 }

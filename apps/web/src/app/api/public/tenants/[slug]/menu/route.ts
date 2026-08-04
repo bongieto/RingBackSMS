@@ -24,7 +24,7 @@ export async function GET(
       isActive: true,
       menuItems: {
         where: { isAvailable: true },
-        orderBy: [{ category: 'asc' }, { name: 'asc' }],
+        orderBy: [{ categoryRef: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { name: 'asc' }],
         select: {
           id: true,
           name: true,

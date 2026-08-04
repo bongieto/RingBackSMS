@@ -369,14 +369,16 @@ export class SquareAdapter extends BasePosAdapter {
     // miss Square-synced items even when their `category` string is
     // correct. Upsert is safe — unique on (tenantId, name).
     const menuCategoryRowIdByPosId = new Map<string, string>();
+    let categorySortOrder = 0;
     for (const [posCategoryId, name] of categoryNameById) {
       const row = await this.prisma.menuCategory.upsert({
         where: { tenantId_name: { tenantId, name } },
-        create: { tenantId, name, sortOrder: 0, isAvailable: true, posCategoryId },
+        create: { tenantId, name, sortOrder: categorySortOrder, isAvailable: true, posCategoryId },
         update: { posCategoryId }, // leave availability + sort order operator-controlled
         select: { id: true },
       });
       menuCategoryRowIdByPosId.set(posCategoryId, row.id);
+      categorySortOrder++;
     }
 
     // Build a lookup map: modifier list ID → modifier list data
@@ -556,7 +558,7 @@ export class SquareAdapter extends BasePosAdapter {
           // /dashboard/menu → Items tab. Prevents a Pull from POS from
           // silently flooding the customer-facing menu.
           const created = await this.prisma.menuItem.create({
-            data: { tenantId, isAvailable: false, ...itemData },
+            data: { tenantId, isAvailable: false, sortOrder: result.total, ...itemData },
           });
           result.newItems++;
           menuItemId = created.id;
@@ -742,7 +744,8 @@ export class SquareAdapter extends BasePosAdapter {
       if (existingMod) {
         await this.prisma.menuItemModifier.update({
           where: { id: existingMod.id },
-          data: { name: mod.name, priceAdjust, sortOrder: idx },
+          // Preserve the operator-controlled order after the initial import.
+          data: { name: mod.name, priceAdjust },
         });
       } else {
         await this.prisma.menuItemModifier.create({

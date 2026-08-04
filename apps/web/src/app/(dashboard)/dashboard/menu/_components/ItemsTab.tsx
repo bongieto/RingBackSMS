@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type DragEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2, Search } from 'lucide-react';
+import { GripVertical, Plus, Pencil, Trash2, Search } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,6 +13,7 @@ import { tenantApi } from '@/lib/api';
 import { BulkActionBar } from './BulkActionBar';
 import { ItemForm } from './ItemForm';
 import type { MenuCategory, MenuItem } from './types';
+import { mergeOrderedSubset, moveIdToPosition } from '@/lib/menuOrdering';
 
 export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?: string }) {
   const queryClient = useQueryClient();
@@ -22,6 +23,8 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
   const [editing, setEditing] = useState<MenuItem | null>(null);
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const { data: items = [] } = useQuery<MenuItem[]>({
     queryKey: ['menu', tenantId],
@@ -43,17 +46,17 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
     //    live in the Import tab awaiting re-review.
     //  - "Show disabled" checkbox bypasses this so operators can still audit
     //    everything if they want.
-    const isCurated = (i: MenuItem) =>
-      i.isAvailable || !(i.squareCatalogId ?? i.posCatalogId);
+    const isCurated = (i: MenuItem) => i.isAvailable || !(i.squareCatalogId ?? i.posCatalogId);
     return items
       .filter((i) => !i.requiresBooking)
       .filter((i) => showDisabled || isCurated(i))
       .filter((i) => !filterCategoryId || i.categoryId === filterCategoryId)
-      .filter((i) =>
-        !q ||
-        i.name.toLowerCase().includes(q) ||
-        (i.aliases ?? []).some((a) => a.toLowerCase().includes(q)) ||
-        (i.description ?? '').toLowerCase().includes(q),
+      .filter(
+        (i) =>
+          !q ||
+          i.name.toLowerCase().includes(q) ||
+          (i.aliases ?? []).some((a) => a.toLowerCase().includes(q)) ||
+          (i.description ?? '').toLowerCase().includes(q)
       );
   }, [items, search, filterCategoryId, showDisabled]);
 
@@ -85,6 +88,9 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
     mutationFn: (id: string) => tenantApi.deleteMenuItem(tenantId, id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['menu', tenantId] });
+      queryClient.invalidateQueries({ queryKey: ['menu-categories', tenantId] });
+      queryClient.invalidateQueries({ queryKey: ['option-groups', tenantId] });
+      queryClient.invalidateQueries({ queryKey: ['options', tenantId] });
       toast.success('Item deleted');
     },
     onError: () => toast.error('Failed to delete'),
@@ -101,11 +107,77 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
     onError: () => toast.error('Bulk update failed'),
   });
 
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => tenantApi.bulkDeleteMenuItems(tenantId, ids),
+    onSuccess: ({ count }: { count: number }) => {
+      queryClient.invalidateQueries({ queryKey: ['menu', tenantId] });
+      queryClient.invalidateQueries({ queryKey: ['menu-categories', tenantId] });
+      queryClient.invalidateQueries({ queryKey: ['option-groups', tenantId] });
+      queryClient.invalidateQueries({ queryKey: ['options', tenantId] });
+      setSelected(new Set());
+      toast.success(
+        `${count} ${count === 1 ? noun.toLowerCase() : `${noun.toLowerCase()}s`} deleted`
+      );
+    },
+    onError: () => toast.error('Bulk delete failed'),
+  });
+
+  const reorderMutation = useMutation({
+    mutationFn: (ids: string[]) => tenantApi.reorderMenuItems(tenantId, ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['menu', tenantId] });
+      toast.success(`${noun} order saved`);
+    },
+    onError: () => {
+      queryClient.invalidateQueries({ queryKey: ['menu', tenantId] });
+      toast.error(`Failed to save ${noun.toLowerCase()} order`);
+    },
+  });
+
+  const canReorder = Boolean(filterCategoryId) && showDisabled && search.trim() === '';
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>, targetId: string) => {
+    event.preventDefault();
+    if (!canReorder || !draggedId || draggedId === targetId || reorderMutation.isPending) {
+      setDraggedId(null);
+      setDragOverId(null);
+      return;
+    }
+
+    const nextVisibleIds = moveIdToPosition(
+      filtered.map((item) => item.id),
+      draggedId,
+      targetId
+    );
+    const nextAllIds = mergeOrderedSubset(
+      items.map((item) => item.id),
+      nextVisibleIds
+    );
+    const byId = new Map(items.map((item) => [item.id, item]));
+    queryClient.setQueryData<MenuItem[]>(
+      ['menu', tenantId],
+      nextAllIds.map((id) => byId.get(id)).filter((item): item is MenuItem => !!item)
+    );
+    reorderMutation.mutate(nextVisibleIds);
+    setDraggedId(null);
+    setDragOverId(null);
+  };
+
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  };
+
+  const allVisibleSelected = filtered.length > 0 && filtered.every((item) => selected.has(item.id));
+  const toggleAllVisible = () => {
+    setSelected((previous) => {
+      const next = new Set(previous);
+      if (allVisibleSelected) filtered.forEach((item) => next.delete(item.id));
+      else filtered.forEach((item) => next.add(item.id));
       return next;
     });
   };
@@ -183,33 +255,92 @@ export function ItemsTab({ tenantId, noun = 'Item' }: { tenantId: string; noun?:
         count={selected.size}
         onEnable={() => bulkMutation.mutate({ ids: [...selected], isAvailable: true })}
         onDisable={() => bulkMutation.mutate({ ids: [...selected], isAvailable: false })}
+        onDelete={() => {
+          const count = selected.size;
+          if (
+            confirm(
+              `Permanently delete ${count} selected ${count === 1 ? noun.toLowerCase() : `${noun.toLowerCase()}s`}? This cannot be undone. Items linked to your POS may return the next time you pull its menu.`
+            )
+          ) {
+            bulkDeleteMutation.mutate([...selected]);
+          }
+        }}
         onClear={() => setSelected(new Set())}
-        busy={bulkMutation.isPending}
+        busy={bulkMutation.isPending || bulkDeleteMutation.isPending}
       />
+
+      {!canReorder && (
+        <p className="mb-3 text-xs text-muted-foreground">
+          Select a category and clear search to drag {noun.toLowerCase()}s into order.
+        </p>
+      )}
 
       <Card>
         <CardContent className="p-0">
           <div className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-4 border-b px-4 py-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            <div />
+            <div className="flex items-center gap-2">
+              <span className="w-4" aria-hidden="true" />
+              <input
+                type="checkbox"
+                checked={allVisibleSelected}
+                onChange={toggleAllVisible}
+                disabled={filtered.length === 0}
+                aria-label={`Select all visible ${noun.toLowerCase()}s`}
+                className="h-4 w-4"
+              />
+            </div>
             <div>{noun}</div>
             <div>Price</div>
             <div>Available</div>
             <div>Actions</div>
           </div>
           {filtered.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground text-sm">No {noun.toLowerCase()}s match.</div>
+            <div className="p-8 text-center text-muted-foreground text-sm">
+              No {noun.toLowerCase()}s match.
+            </div>
           ) : (
             filtered.map((item) => (
               <div
                 key={item.id}
-                className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-4 px-4 py-3 border-b last:border-b-0 hover:bg-muted/40"
+                onDragOver={(event) => {
+                  if (!canReorder) return;
+                  event.preventDefault();
+                  if (draggedId && draggedId !== item.id) setDragOverId(item.id);
+                }}
+                onDragLeave={() =>
+                  setDragOverId((current) => (current === item.id ? null : current))
+                }
+                onDrop={(event) => handleDrop(event, item.id)}
+                className={`grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-4 px-4 py-3 border-b last:border-b-0 hover:bg-muted/40 ${dragOverId === item.id ? 'border-t-2 border-t-primary bg-primary/5' : ''}`}
               >
-                <input
-                  type="checkbox"
-                  checked={selected.has(item.id)}
-                  onChange={() => toggleSelect(item.id)}
-                  className="h-4 w-4"
-                />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    draggable={canReorder && !reorderMutation.isPending}
+                    onDragStart={(event) => {
+                      if (!canReorder) return;
+                      event.dataTransfer.effectAllowed = 'move';
+                      event.dataTransfer.setData('text/plain', item.id);
+                      setDraggedId(item.id);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedId(null);
+                      setDragOverId(null);
+                    }}
+                    className="text-muted-foreground hover:text-foreground enabled:cursor-grab enabled:active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-30"
+                    aria-label={`Drag ${item.name} to reorder`}
+                    title={canReorder ? 'Drag to reorder' : 'Select a category to reorder'}
+                    disabled={!canReorder || reorderMutation.isPending}
+                  >
+                    <GripVertical className="h-4 w-4" />
+                  </button>
+                  <input
+                    type="checkbox"
+                    checked={selected.has(item.id)}
+                    onChange={() => toggleSelect(item.id)}
+                    className="h-4 w-4"
+                  />
+                </div>
                 <div className="min-w-0">
                   <div className="font-medium truncate">{item.name}</div>
                   <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1 flex-wrap">

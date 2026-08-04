@@ -26,7 +26,7 @@ export async function GET(request: NextRequest, { params }: { params: { location
     }
     const items = await prisma.menuItem.findMany({
       where: { tenantId: auth.tenantId, posDeletedAt: null },
-      orderBy: [{ categoryRef: { sortOrder: 'asc' } }, { name: 'asc' }],
+      orderBy: [{ categoryRef: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { name: 'asc' }],
       include: {
         categoryRef: { select: { id: true, name: true, isAvailable: true, sortOrder: true } },
         modifierGroups: {

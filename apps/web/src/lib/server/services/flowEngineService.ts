@@ -640,6 +640,7 @@ async function processInboundSmsInner(
           // doesn't support OR on relation fields inline, so we filter
           // after the query rather than at the SQL layer.
           where: { isAvailable: true, posDeletedAt: null },
+          orderBy: [{ categoryRef: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { name: 'asc' }],
           include: {
             categoryRef: { select: { isAvailable: true } },
             modifierGroups: {

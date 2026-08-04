@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type DragEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { GripVertical, Plus, Pencil, Trash2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -11,12 +11,15 @@ import { tenantApi } from '@/lib/api';
 import { BulkActionBar } from './BulkActionBar';
 import { CategoryForm } from './CategoryForm';
 import type { MenuCategory } from './types';
+import { moveIdToPosition } from '@/lib/menuOrdering';
 
 export function CategoriesTab({ tenantId }: { tenantId: string }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<MenuCategory | null>(null);
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const { data: categories = [] } = useQuery<MenuCategory[]>({
     queryKey: ['menu-categories', tenantId],
@@ -26,7 +29,10 @@ export function CategoriesTab({ tenantId }: { tenantId: string }) {
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, isAvailable }: { id: string; isAvailable: boolean }) =>
-      tenantApi.updateCategory(tenantId, id, { isAvailable, name: categories.find((c) => c.id === id)?.name }),
+      tenantApi.updateCategory(tenantId, id, {
+        isAvailable,
+        name: categories.find((c) => c.id === id)?.name,
+      }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['menu-categories', tenantId] }),
     onError: () => toast.error('Failed to update'),
   });
@@ -51,6 +57,41 @@ export function CategoriesTab({ tenantId }: { tenantId: string }) {
     },
     onError: () => toast.error('Bulk update failed'),
   });
+
+  const reorderMutation = useMutation({
+    mutationFn: (ids: string[]) => tenantApi.reorderCategories(tenantId, ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['menu-categories', tenantId] });
+      queryClient.invalidateQueries({ queryKey: ['menu', tenantId] });
+      toast.success('Category order saved');
+    },
+    onError: () => {
+      queryClient.invalidateQueries({ queryKey: ['menu-categories', tenantId] });
+      toast.error('Failed to save category order');
+    },
+  });
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>, targetId: string) => {
+    event.preventDefault();
+    if (!draggedId || draggedId === targetId || reorderMutation.isPending) {
+      setDraggedId(null);
+      setDragOverId(null);
+      return;
+    }
+    const nextIds = moveIdToPosition(
+      categories.map((category) => category.id),
+      draggedId,
+      targetId
+    );
+    const byId = new Map(categories.map((category) => [category.id, category]));
+    queryClient.setQueryData<MenuCategory[]>(
+      ['menu-categories', tenantId],
+      nextIds.map((id) => byId.get(id)).filter((category): category is MenuCategory => !!category)
+    );
+    reorderMutation.mutate(nextIds);
+    setDraggedId(null);
+    setDragOverId(null);
+  };
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
@@ -110,14 +151,41 @@ export function CategoriesTab({ tenantId }: { tenantId: string }) {
             categories.map((c) => (
               <div
                 key={c.id}
-                className="grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-4 px-4 py-3 border-b last:border-b-0 hover:bg-muted/40"
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  if (draggedId && draggedId !== c.id) setDragOverId(c.id);
+                }}
+                onDragLeave={() => setDragOverId((current) => (current === c.id ? null : current))}
+                onDrop={(event) => handleDrop(event, c.id)}
+                className={`grid grid-cols-[auto_1fr_auto_auto_auto] items-center gap-4 px-4 py-3 border-b last:border-b-0 hover:bg-muted/40 ${dragOverId === c.id ? 'border-t-2 border-t-primary bg-primary/5' : ''}`}
               >
-                <input
-                  type="checkbox"
-                  checked={selected.has(c.id)}
-                  onChange={() => toggleSelect(c.id)}
-                  className="h-4 w-4"
-                />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    draggable={!reorderMutation.isPending}
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = 'move';
+                      event.dataTransfer.setData('text/plain', c.id);
+                      setDraggedId(c.id);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedId(null);
+                      setDragOverId(null);
+                    }}
+                    className="cursor-grab text-muted-foreground hover:text-foreground active:cursor-grabbing disabled:cursor-not-allowed"
+                    aria-label={`Drag ${c.name} to reorder`}
+                    title="Drag to reorder"
+                    disabled={reorderMutation.isPending}
+                  >
+                    <GripVertical className="h-4 w-4" />
+                  </button>
+                  <input
+                    type="checkbox"
+                    checked={selected.has(c.id)}
+                    onChange={() => toggleSelect(c.id)}
+                    className="h-4 w-4"
+                  />
+                </div>
                 <div className="font-medium">{c.name}</div>
                 <div className="text-sm text-muted-foreground">{c.itemCount}</div>
                 <Switch
@@ -140,7 +208,11 @@ export function CategoriesTab({ tenantId }: { tenantId: string }) {
                     variant="ghost"
                     size="icon"
                     onClick={() => {
-                      if (confirm(`Delete category "${c.name}"? Items in it will become uncategorized.`)) {
+                      if (
+                        confirm(
+                          `Delete category "${c.name}"? Items in it will become uncategorized.`
+                        )
+                      ) {
                         deleteMutation.mutate(c.id);
                       }
                     }}

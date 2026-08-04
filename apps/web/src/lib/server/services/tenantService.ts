@@ -3,8 +3,9 @@ import { FlowType } from '@ringback/shared-types';
 import { clerkClient } from '@clerk/nextjs/server';
 import { waitUntil } from '@vercel/functions';
 import { logger } from '../logger';
-import { NotFoundError } from '../errors';
+import { NotFoundError, ValidationError } from '../errors';
 import { prisma } from '../db';
+import { mergeOrderedSubset } from '@/lib/menuOrdering';
 import { createStripeCustomer } from './billingService';
 import { getProfile } from '@/lib/businessTypeProfile';
 import { generateUniqueTenantSlug } from '../slugify';
@@ -491,7 +492,7 @@ export async function listTenants(page = 1, pageSize = 20) {
 export async function getTenantMenuItems(tenantId: string) {
   const rows = await prisma.menuItem.findMany({
     where: { tenantId },
-    orderBy: [{ category: 'asc' }, { name: 'asc' }],
+    orderBy: [{ categoryRef: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { name: 'asc' }],
     include: {
       categoryRef: true,
       modifierGroups: {
@@ -616,6 +617,10 @@ export async function upsertMenuItem(
     });
   }
 
+  const lastItem = await prisma.menuItem.aggregate({
+    where: { tenantId, categoryId },
+    _max: { sortOrder: true },
+  });
   return prisma.menuItem.create({
     data: {
       tenantId,
@@ -625,6 +630,7 @@ export async function upsertMenuItem(
       price: item.price,
       category: categoryName,
       categoryId,
+      sortOrder: (lastItem._max.sortOrder ?? -1) + 1,
       imageUrl: item.imageUrl ?? null,
       isAvailable: item.isAvailable ?? true,
       duration: item.duration ?? null,
@@ -734,4 +740,74 @@ export async function bulkSetItemsAvailability(
     data: { isAvailable },
   });
   return { count: result.count };
+}
+
+export async function bulkDeleteMenuItems(tenantId: string, ids: string[]) {
+  const result = await prisma.menuItem.deleteMany({
+    where: { tenantId, id: { in: ids } },
+  });
+  return { count: result.count };
+}
+
+export async function reorderMenuCategories(tenantId: string, ids: string[]) {
+  const current = await prisma.menuCategory.findMany({
+    where: { tenantId },
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    select: { id: true },
+  });
+
+  let orderedIds: string[];
+  try {
+    orderedIds = mergeOrderedSubset(current.map((category) => category.id), ids);
+  } catch {
+    throw new ValidationError('One or more categories cannot be reordered');
+  }
+
+  await prisma.$transaction(
+    orderedIds.map((id, sortOrder) =>
+      prisma.menuCategory.updateMany({
+        where: { id, tenantId },
+        data: { sortOrder },
+      }),
+    ),
+  );
+  return { count: orderedIds.length };
+}
+
+export async function reorderMenuItems(tenantId: string, ids: string[]) {
+  const requested = await prisma.menuItem.findMany({
+    where: { tenantId, id: { in: ids } },
+    select: { id: true, categoryId: true },
+  });
+  if (requested.length !== ids.length) {
+    throw new ValidationError('One or more items cannot be reordered');
+  }
+
+  const categoryId = requested[0]?.categoryId ?? null;
+  if (requested.some((item) => item.categoryId !== categoryId)) {
+    throw new ValidationError('Items can only be reordered within one category');
+  }
+
+  const current = await prisma.menuItem.findMany({
+    where: { tenantId, categoryId },
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    select: { id: true },
+  });
+
+  let orderedIds: string[];
+  try {
+    orderedIds = mergeOrderedSubset(current.map((item) => item.id), ids);
+  } catch {
+    throw new ValidationError('One or more items cannot be reordered');
+  }
+
+  await prisma.$transaction(
+    orderedIds.map((id, sortOrder) =>
+      prisma.menuItem.updateMany({
+        where: { id, tenantId, categoryId },
+        data: { sortOrder },
+      }),
+    ),
+  );
+  return { count: orderedIds.length };
 }

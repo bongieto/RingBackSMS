@@ -742,6 +742,7 @@ model MenuItem {
   category          String? // kept for back-compat with POS sync (Square pushes strings)
   categoryId        String? // preferred: FK to MenuCategory
   categoryRef       MenuCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  sortOrder         Int           @default(0)
   imageUrl          String?
   isAvailable       Boolean       @default(true)
   duration          Int?
@@ -771,6 +772,7 @@ model MenuItem {
 
   @@index([tenantId, isAvailable])
   @@index([tenantId, category])
+  @@index([tenantId, categoryId, sortOrder])
   @@index([categoryId])
 }
 

@@ -21,7 +21,7 @@ export async function buildSystemPrompt(tenantId: string): Promise<string> {
       flows: { where: { isEnabled: true } },
       menuItems: {
         where: { isAvailable: true },
-        orderBy: [{ category: 'asc' }, { name: 'asc' }],
+        orderBy: [{ categoryRef: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { name: 'asc' }],
       },
     },
   });

@@ -64,7 +64,7 @@ async function loadTenantMenu(slug: string): Promise<TenantMenu | null> {
         // tombstoned item in the KDS drawer we still don't want it on
         // the public menu.
         where: { isAvailable: true, posDeletedAt: null },
-        orderBy: [{ category: 'asc' }, { name: 'asc' }],
+        orderBy: [{ categoryRef: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { name: 'asc' }],
         select: {
           id: true,
           name: true,

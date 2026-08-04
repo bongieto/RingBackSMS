@@ -1,18 +1,20 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { X } from 'lucide-react';
+import { Trash2, X } from 'lucide-react';
 
 export function BulkActionBar({
   count,
   onEnable,
   onDisable,
+  onDelete,
   onClear,
   busy,
 }: {
   count: number;
   onEnable: () => void;
   onDisable: () => void;
+  onDelete?: () => void;
   onClear: () => void;
   busy?: boolean;
 }) {
@@ -27,7 +29,18 @@ export function BulkActionBar({
       <Button size="sm" variant="outline" onClick={onDisable} disabled={busy}>
         Disable
       </Button>
-      <Button size="sm" variant="ghost" onClick={onClear} disabled={busy} aria-label="Clear selection">
+      {onDelete && (
+        <Button size="sm" variant="destructive" onClick={onDelete} disabled={busy}>
+          <Trash2 className="mr-1 h-4 w-4" /> Delete
+        </Button>
+      )}
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={onClear}
+        disabled={busy}
+        aria-label="Clear selection"
+      >
         <X className="h-4 w-4" />
       </Button>
     </div>

@@ -46,6 +46,7 @@ export interface MenuItem {
   priceMax?: number | null;
   category: string | null;
   categoryId: string | null;
+  sortOrder: number;
   categoryRef?: CategoryRef | null;
   imageUrl?: string | null;
   isAvailable: boolean;

@@ -100,6 +100,14 @@ export const BulkAvailabilityRequestSchema = z.object({
 });
 export type BulkAvailabilityRequest = z.infer<typeof BulkAvailabilityRequestSchema>;
 
+export const MenuIdsRequestSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(500).refine(
+    (ids) => new Set(ids).size === ids.length,
+    'ids must be unique',
+  ),
+});
+export type MenuIdsRequest = z.infer<typeof MenuIdsRequestSchema>;
+
 // ── Menu — option groups ─────────────────────────────────────────────────────
 
 export const CreateOptionGroupRequestSchema = z.object({

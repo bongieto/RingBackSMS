@@ -24,7 +24,10 @@ export async function buildTenantSystemPrompt(tenantId: string): Promise<string>
     include: {
       config: true,
       flows: { where: { isEnabled: true } },
-      menuItems: { where: { isAvailable: true }, orderBy: [{ category: 'asc' }, { name: 'asc' }] },
+      menuItems: {
+        where: { isAvailable: true },
+        orderBy: [{ categoryRef: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { name: 'asc' }],
+      },
     },
   });
 
