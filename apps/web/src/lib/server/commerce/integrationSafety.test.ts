@@ -1,6 +1,10 @@
 import { CanonicalSaleProjectionSchema, MenuSnapshotSchema } from '@ringback/shared-types';
 import { assertMonotonicProjection, isRecognizedRevenue } from './financialProjection';
-import { decideSnapshot, hasDuplicateMenuExternalIds } from './syncVersion';
+import {
+  decideSnapshot,
+  deterministicIntegrationUuid,
+  hasDuplicateMenuExternalIds,
+} from './syncVersion';
 import { toMcInasalFulfillmentStatus, toRingBackOrderStatus } from './fulfillmentMapping';
 import { OrderStatus } from '@prisma/client';
 import { readFileSync } from 'node:fs';
@@ -54,6 +58,13 @@ describe('commerce integration safety', () => {
         ],
       })
     ).toBe(true);
+  });
+
+  it('generates stable, distinct UUIDs for bulk integration resources', () => {
+    const first = deterministicIntegrationUuid('connection:item:item-1');
+    expect(first).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(deterministicIntegrationUuid('connection:item:item-1')).toBe(first);
+    expect(deterministicIntegrationUuid('connection:item:item-2')).not.toBe(first);
   });
 
   it('rejects financial projections whose net does not reconcile', () => {

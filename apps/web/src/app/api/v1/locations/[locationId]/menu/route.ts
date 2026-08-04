@@ -7,7 +7,11 @@ import { prisma } from '@/lib/server/db';
 import { logger } from '@/lib/server/logger';
 import { enqueueIntegrationEvent } from '@/lib/server/commerce/outbox';
 import { conflict } from '@/lib/server/commerce/http';
-import { decideSnapshot, hasDuplicateMenuExternalIds } from '@/lib/server/commerce/syncVersion';
+import {
+  decideSnapshot,
+  deterministicIntegrationUuid,
+  hasDuplicateMenuExternalIds,
+} from '@/lib/server/commerce/syncVersion';
 
 export const dynamic = 'force-dynamic';
 
@@ -176,6 +180,164 @@ export async function PUT(request: NextRequest, { params }: { params: { location
               .filter((mapping) => mapping.resourceType === 'menu_item')
               .map((mapping) => [mapping.externalId, mapping])
           );
+          const [tenantCategoryCount, tenantItemCount] = await Promise.all([
+            tx.menuCategory.count({ where: { tenantId: auth.tenantId } }),
+            tx.menuItem.count({ where: { tenantId: auth.tenantId } }),
+          ]);
+          if (existingMappings.length === 0 && tenantCategoryCount === 0 && tenantItemCount === 0) {
+            const categoryIdByExternalId = new Map(
+              input.categories.map((category) => [
+                category.externalId,
+                deterministicIntegrationUuid(
+                  `${auth.connectionId}:menu-category:${category.externalId}`
+                ),
+              ])
+            );
+            const itemIdByExternalId = new Map(
+              input.items.map((item) => [
+                item.externalId,
+                deterministicIntegrationUuid(`${auth.connectionId}:menu-item:${item.externalId}`),
+              ])
+            );
+            await tx.menuCategory.createMany({
+              data: input.categories.map((category) => ({
+                id: categoryIdByExternalId.get(category.externalId)!,
+                tenantId: auth.tenantId,
+                name: category.name,
+                sortOrder: category.sortOrder,
+                isAvailable: category.isAvailable,
+              })),
+            });
+            await tx.menuItem.createMany({
+              data: input.items.map((item, index) => ({
+                id: itemIdByExternalId.get(item.externalId)!,
+                tenantId: auth.tenantId,
+                name: item.name,
+                description: item.description ?? null,
+                price: item.price,
+                categoryId: item.categoryExternalId
+                  ? (categoryIdByExternalId.get(item.categoryExternalId) ?? null)
+                  : null,
+                category: item.categoryExternalId
+                  ? (input.categories.find(
+                      (category) => category.externalId === item.categoryExternalId
+                    )?.name ?? null)
+                  : null,
+                sortOrder: index,
+                imageUrl: item.imageUrl ?? null,
+                isAvailable: true,
+              })),
+            });
+            const groupRows = input.items.flatMap((item) => {
+              const menuItemId = itemIdByExternalId.get(item.externalId)!;
+              return item.modifierGroups.map((group) => ({
+                id: deterministicIntegrationUuid(
+                  `${auth.connectionId}:menu-group:${item.externalId}:${group.externalId}`
+                ),
+                menuItemId,
+                name: group.name,
+                required: group.required,
+                minSelections: group.minSelections,
+                maxSelections: group.maxSelections,
+                selectionType: group.maxSelections === 1 ? 'SINGLE' : 'MULTIPLE',
+                sortOrder: group.sortOrder,
+                posGroupId: group.externalId,
+                conditions: group.conditions as Prisma.InputJsonValue,
+              }));
+            });
+            if (groupRows.length > 0) {
+              await tx.menuItemModifierGroup.createMany({ data: groupRows });
+            }
+            const optionRows = input.items.flatMap((item) =>
+              item.modifierGroups.flatMap((group) => {
+                const groupId = deterministicIntegrationUuid(
+                  `${auth.connectionId}:menu-group:${item.externalId}:${group.externalId}`
+                );
+                return group.options.map((option) => ({
+                  id: deterministicIntegrationUuid(
+                    `${auth.connectionId}:menu-option:${item.externalId}:${group.externalId}:${option.externalId}`
+                  ),
+                  groupId,
+                  name: option.name,
+                  priceAdjust: option.priceAdjustment,
+                  isDefault: option.isDefault,
+                  sortOrder: option.sortOrder,
+                  posModifierId: option.externalId,
+                }));
+              })
+            );
+            if (optionRows.length > 0) {
+              await tx.menuItemModifier.createMany({ data: optionRows });
+            }
+            await tx.menuItemAvailability.createMany({
+              data: input.items.map((item) => ({
+                tenantId: auth.tenantId,
+                locationId: location.id,
+                menuItemId: itemIdByExternalId.get(item.externalId)!,
+                isAvailable: item.isAvailable,
+                reason: item.isAvailable ? null : 'Unavailable in source menu',
+                updatedBy: `api:${auth.credentialId}`,
+              })),
+            });
+            await tx.externalResourceMapping.createMany({
+              data: [
+                ...input.categories.map((category) => ({
+                  tenantId: auth.tenantId,
+                  connectionId: auth.connectionId!,
+                  resourceType: 'menu_category',
+                  internalId: categoryIdByExternalId.get(category.externalId)!,
+                  externalId: category.externalId,
+                  externalVersion: input.revision,
+                  lastSyncedAt: new Date(),
+                })),
+                ...input.items.map((item) => ({
+                  tenantId: auth.tenantId,
+                  connectionId: auth.connectionId!,
+                  resourceType: 'menu_item',
+                  internalId: itemIdByExternalId.get(item.externalId)!,
+                  externalId: item.externalId,
+                  externalVersion: input.revision,
+                  lastSyncedAt: new Date(),
+                })),
+              ],
+            });
+            await enqueueIntegrationEvent(tx, {
+              tenantId: auth.tenantId,
+              sourceConnectionId: auth.connectionId,
+              type: 'menu.updated',
+              locationId: location.id,
+              resourceType: 'menu',
+              resourceId: location.id,
+              data: {
+                revision: input.revision,
+                sequence: input.sequence,
+                checksum: input.checksum,
+                created: input.items.length,
+                updated: 0,
+                unavailable: 0,
+                item_ids: [...itemIdByExternalId.values()],
+              },
+            });
+            await tx.menuSyncCursor.create({
+              data: {
+                tenantId: auth.tenantId,
+                connectionId: auth.connectionId!,
+                locationId: location.id,
+                revision: input.revision,
+                sequence: input.sequence,
+                checksum: input.checksum,
+              },
+            });
+            return {
+              revision: input.revision,
+              sequence: input.sequence,
+              checksum: input.checksum,
+              created: input.items.length,
+              updated: 0,
+              unavailable: 0,
+              total: input.items.length,
+            };
+          }
           const categoryInternalIds = new Map<string, string>();
           for (const category of input.categories) {
             const mapping = categoryMappings.get(category.externalId);

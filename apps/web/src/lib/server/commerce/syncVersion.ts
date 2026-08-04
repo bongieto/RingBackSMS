@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 export type SyncCursor = { sequence: number; checksum: string };
 
 type MenuIdentitySnapshot = {
@@ -34,4 +36,12 @@ export function decideSnapshot(
   if (!cursor || incoming.sequence > cursor.sequence) return 'apply';
   if (incoming.sequence < cursor.sequence) return 'stale';
   return incoming.checksum === cursor.checksum ? 'idempotent' : 'conflict';
+}
+
+export function deterministicIntegrationUuid(seed: string): string {
+  const chars = createHash('sha256').update(seed).digest('hex').slice(0, 32).split('');
+  chars[12] = '5';
+  chars[16] = ((Number.parseInt(chars[16], 16) & 0x3) | 0x8).toString(16);
+  const hex = chars.join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
