@@ -432,11 +432,13 @@ model Conversation {
   lastMessagePreview     String?       @db.Text
   messageCount           Int           @default(0)
   messageSummarySyncedAt DateTime?
-  /// When the daily conversation-quality review last covered this
-  /// conversation. Reviews skip conversations with no new messages since
-  /// this stamp — without it, the same conversations were re-flagged on
-  /// every run for as long as they stayed inside the 24h window.
+  /// When the daily conversation-quality review last covered this conversation.
+  /// reviewedMessageCount is the authoritative new-transcript cursor; this
+  /// timestamp remains useful for operations and reporting.
   reviewedAt             DateTime?
+  /// Number of transcript messages covered by the latest successful review.
+  /// Unlike updatedAt, this is unaffected by task completion or handoff edits.
+  reviewedMessageCount   Int           @default(0)
   intake                 Json?
   flowType               FlowType?
   handoffStatus          HandoffStatus @default(AI)

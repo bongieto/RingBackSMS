@@ -6,6 +6,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import { RefreshCw, Play, ChevronDown, ChevronRight, MessageSquareWarning } from 'lucide-react';
+import {
+  collectResolvedReviewFindingKeys,
+  countUnresolvedReviewFindings,
+  indexVisibleReviewFindings,
+} from '@/lib/conversationReviewState';
 
 interface ReviewFinding {
   conversationId: string;
@@ -48,10 +53,12 @@ function FindingRow({
   finding,
   reportId,
   findingIndex,
+  resolvedByHistory,
 }: {
   finding: ReviewFinding;
   reportId: string;
   findingIndex: number;
+  resolvedByHistory: boolean;
 }) {
   const queryClient = useQueryClient();
   const decide = useMutation({
@@ -60,7 +67,7 @@ function FindingRow({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-conversation-reviews'] }),
   });
 
-  const decided = finding.status;
+  const decided = finding.status ?? (resolvedByHistory ? 'resolved' : undefined);
 
   return (
     <div className={`border border-slate-800 rounded-lg p-4 space-y-2 ${decided === 'dismissed' ? 'opacity-50' : ''}`}>
@@ -78,7 +85,11 @@ function FindingRow({
                 : 'bg-slate-800 text-slate-400 border-slate-700'
             }`}
           >
-            {decided === 'approved' ? 'Approved → task created' : 'Dismissed'}
+            {decided === 'approved'
+              ? 'Approved → task created'
+              : decided === 'dismissed'
+                ? 'Dismissed'
+                : 'Already resolved'}
           </span>
         )}
         <a
@@ -126,14 +137,27 @@ function FindingRow({
   );
 }
 
-function ReportCard({ report }: { report: ReviewReport }) {
+function ReportCard({
+  report,
+  showResolved,
+  resolvedKeys,
+}: {
+  report: ReviewReport;
+  showResolved: boolean;
+  resolvedKeys: Set<string>;
+}) {
   const [open, setOpen] = useState(false);
   const findings = Array.isArray(report.findings) ? report.findings : [];
+  const unresolvedCount = countUnresolvedReviewFindings(findings, resolvedKeys);
+  const resolvedCount = findings.length - unresolvedCount;
+  const visibleFindings = indexVisibleReviewFindings(findings, showResolved, resolvedKeys);
   const day = new Date(report.periodEnd).toLocaleDateString(undefined, {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
   });
+
+  if (!showResolved && unresolvedCount === 0) return null;
 
   return (
     <Card className="bg-slate-900 border-slate-800">
@@ -153,28 +177,36 @@ function ReportCard({ report }: { report: ReviewReport }) {
               <span className="text-xs text-slate-500">
                 {report.conversationCount} conversations
               </span>
-              {report.findingCount > 0 ? (
+              {unresolvedCount > 0 ? (
                 <span className="text-xs px-2 py-0.5 rounded border border-amber-800 bg-amber-900/30 text-amber-400">
-                  {report.findingCount} finding{report.findingCount === 1 ? '' : 's'}
+                  {unresolvedCount} to review
                 </span>
               ) : (
                 <span className="text-xs px-2 py-0.5 rounded border border-green-800 bg-green-900/30 text-green-400">
-                  clean
+                  resolved
                 </span>
               )}
+              {showResolved && resolvedCount > 0 && (
+                <span className="text-xs text-slate-500">{resolvedCount} reviewed</span>
+              )}
             </div>
-            <p className="text-sm text-slate-400 mt-1 truncate">{report.summary}</p>
+            <p className="text-sm text-slate-400 mt-1 truncate">
+              {unresolvedCount > 0
+                ? `${unresolvedCount} finding${unresolvedCount === 1 ? '' : 's'} still need review.${resolvedCount > 0 ? ` ${resolvedCount} already reviewed.` : ''}`
+                : `All ${resolvedCount} finding${resolvedCount === 1 ? '' : 's'} from this run were reviewed.`}
+            </p>
           </div>
         </button>
 
-        {open && findings.length > 0 && (
+        {open && visibleFindings.length > 0 && (
           <div className="mt-4 space-y-3">
-            {findings.map((f, i) => (
+            {visibleFindings.map(({ finding, findingIndex, resolvedByHistory }) => (
               <FindingRow
-                key={`${f.conversationId}-${i}`}
-                finding={f}
+                key={`${finding.conversationId}-${findingIndex}`}
+                finding={finding}
                 reportId={report.id}
-                findingIndex={i}
+                findingIndex={findingIndex}
+                resolvedByHistory={resolvedByHistory}
               />
             ))}
           </div>
@@ -186,6 +218,7 @@ function ReportCard({ report }: { report: ReviewReport }) {
 
 export default function AdminConversationReviewsPage() {
   const queryClient = useQueryClient();
+  const [showResolved, setShowResolved] = useState(false);
 
   const { data, isLoading, isError, refetch } = useQuery<{ reports: ReviewReport[] }>({
     queryKey: ['admin-conversation-reviews'],
@@ -201,6 +234,16 @@ export default function AdminConversationReviewsPage() {
   });
 
   const reports = data?.reports ?? [];
+  const resolvedKeys = collectResolvedReviewFindingKeys(reports);
+  const unresolvedCount = reports.reduce(
+    (count, report) =>
+      count +
+      countUnresolvedReviewFindings(
+        Array.isArray(report.findings) ? report.findings : [],
+        resolvedKeys,
+      ),
+    0,
+  );
 
   return (
     <div>
@@ -213,6 +256,14 @@ export default function AdminConversationReviewsPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowResolved((current) => !current)}
+            className="border-slate-700 text-slate-300 hover:text-white"
+          >
+            {showResolved ? 'Hide resolved history' : 'Show resolved history'}
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -252,9 +303,24 @@ export default function AdminConversationReviewsPage() {
         </Card>
       )}
 
+      {!isLoading && reports.length > 0 && unresolvedCount === 0 && !showResolved && !isError && (
+        <Card className="bg-slate-900 border-slate-800">
+          <CardContent className="p-8 text-center text-slate-400">
+            <MessageSquareWarning className="h-8 w-8 mx-auto mb-3 text-emerald-600" />
+            Nothing needs attention. Approved and dismissed findings are available under resolved
+            history.
+          </CardContent>
+        </Card>
+      )}
+
       <div className="space-y-3">
         {reports.map((r) => (
-          <ReportCard key={r.id} report={r} />
+          <ReportCard
+            key={r.id}
+            report={r}
+            showResolved={showResolved}
+            resolvedKeys={resolvedKeys}
+          />
         ))}
       </div>
     </div>

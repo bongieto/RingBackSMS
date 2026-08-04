@@ -4,6 +4,11 @@ import { logger } from '../logger';
 import { decryptMessages } from '../encryption';
 import { chatCompletion } from './aiClient';
 import { createTask } from './taskService';
+import {
+  collectResolvedReviewFindingKeys,
+  hasUnreviewedConversationMessages,
+  suppressResolvedReviewFindings,
+} from '../../conversationReviewState';
 
 /**
  * Daily conversation QA reviewer.
@@ -29,6 +34,7 @@ export interface ReviewFinding {
   /** Short verbatim quote from the transcript demonstrating the issue */
   evidence: string;
   suggestedFix: string;
+  status?: 'approved' | 'dismissed';
 }
 
 export interface ReviewRunResult {
@@ -43,6 +49,10 @@ export interface ReviewRunResult {
  * production run used 12 convos + 2000 tokens and Claude's response
  * was truncated mid-array, silently parsing to zero findings. */
 const MAX_CONVERSATIONS = 60;
+// Administrative changes can move already-reviewed rows to the front of an
+// updatedAt query. Fetch a wider pool before applying the message-count cursor
+// so those rows cannot crowd genuinely new conversations out of the run.
+const MAX_CANDIDATE_CONVERSATIONS = MAX_CONVERSATIONS * 5;
 const BATCH_SIZE = 6;
 const REVIEW_MAX_TOKENS = 8000;
 /** Per-conversation transcript caps to keep prompts bounded. */
@@ -163,22 +173,20 @@ export async function runConversationReview(periodHours = 24): Promise<ReviewRun
       id: true,
       tenantId: true,
       messages: true,
-      updatedAt: true,
-      reviewedAt: true,
+      messageCount: true,
+      reviewedMessageCount: true,
       tenant: { select: { name: true } },
     },
     orderBy: { updatedAt: 'desc' },
-    take: MAX_CONVERSATIONS,
+    take: MAX_CANDIDATE_CONVERSATIONS,
   });
 
-  // Only review conversations with NEW activity since their last review.
-  // Without this, a conversation sat inside the trailing window and got
-  // re-flagged with the same findings on every cron tick and every
-  // manual "Run now" — three near-identical reports in the first day.
-  // (Prisma can't compare two columns in a where clause, so filter here.)
+  // Only transcript growth makes a conversation reviewable. updatedAt also
+  // changes when a task is completed or a handoff is cleared, so comparing it
+  // to reviewedAt re-flagged already-fixed conversations on the next run.
   const unreviewed = conversations.filter(
-    (c) => !c.reviewedAt || c.updatedAt > c.reviewedAt,
-  );
+    (c) => hasUnreviewedConversationMessages(c.messageCount, c.reviewedMessageCount),
+  ).slice(0, MAX_CONVERSATIONS);
 
   if (unreviewed.length === 0) {
     logger.info('Conversation review: no new conversation activity since last review, skipping', {
@@ -266,6 +274,19 @@ export async function runConversationReview(periodHours = 24): Promise<ReviewRun
     throw new Error(`Conversation review failed: all ${batchCount} LLM batches errored`);
   }
 
+  // Decisions belong to the specific transcript evidence, not just the report
+  // that first contained them. Suppress model restatements of the same evidence
+  // while allowing a genuinely new recurrence in the same category through.
+  const decidedReports = await prisma.conversationReviewReport.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+    select: { findings: true },
+  });
+  const resolvedFindingKeys = collectResolvedReviewFindingKeys(decidedReports);
+  const unsuppressedFindings = suppressResolvedReviewFindings(allFindings, resolvedFindingKeys);
+  const suppressedResolvedFindings = allFindings.length - unsuppressedFindings.length;
+  allFindings.splice(0, allFindings.length, ...unsuppressedFindings);
+
   // Aggregate stats
   const bySeverity: Record<string, number> = {};
   const byCategory: Record<string, number> = {};
@@ -281,10 +302,14 @@ export async function runConversationReview(periodHours = 24): Promise<ReviewRun
     .join(', ');
   const partialNote =
     batchFailures > 0 ? ` (${batchFailures}/${batchCount} review batches failed — partial coverage)` : '';
+  const resolvedNote =
+    suppressedResolvedFindings > 0
+      ? ` ${suppressedResolvedFindings} previously resolved finding${suppressedResolvedFindings === 1 ? '' : 's'} omitted.`
+      : '';
   const summary =
     allFindings.length === 0
-      ? `Reviewed ${transcripts.length} conversations — no issues found.${partialNote}`
-      : `Reviewed ${transcripts.length} conversations, found ${allFindings.length} issue${allFindings.length === 1 ? '' : 's'} (${bySeverity.high ?? 0} high, ${bySeverity.medium ?? 0} medium, ${bySeverity.low ?? 0} low). Top categories: ${topCategories}.${partialNote}`;
+      ? `Reviewed ${transcripts.length} conversations — no new issues found.${resolvedNote}${partialNote}`
+      : `Reviewed ${transcripts.length} conversations, found ${allFindings.length} issue${allFindings.length === 1 ? '' : 's'} (${bySeverity.high ?? 0} high, ${bySeverity.medium ?? 0} medium, ${bySeverity.low ?? 0} low). Top categories: ${topCategories}.${resolvedNote}${partialNote}`;
 
   const report = await prisma.conversationReviewReport.create({
     data: {
@@ -294,18 +319,32 @@ export async function runConversationReview(periodHours = 24): Promise<ReviewRun
       findingCount: allFindings.length,
       summary,
       findings: allFindings as unknown as object,
-      stats: { bySeverity, byCategory, batchCount, batchFailures },
+      stats: { bySeverity, byCategory, batchCount, batchFailures, suppressedResolvedFindings },
     },
   });
 
-  // Stamp coverage so the next run (cron or manual) skips these unless
-  // they get new messages. Failed-batch conversations are deliberately
-  // not stamped — they stay eligible for retry.
+  // Stamp the exact transcript size covered by each successful batch. Grouped
+  // updateMany calls avoid failing the run if a conversation is deleted, and
+  // the messageCount condition prevents a message arriving mid-review from
+  // being incorrectly marked as covered.
   if (reviewedConvoIds.length > 0) {
-    await prisma.conversation.updateMany({
-      where: { id: { in: reviewedConvoIds } },
-      data: { reviewedAt: periodEnd },
-    });
+    const idsByMessageCount = new Map<number, string[]>();
+    const reviewedIdSet = new Set(reviewedConvoIds);
+    for (const conversation of unreviewed) {
+      if (!reviewedIdSet.has(conversation.id)) continue;
+      const ids = idsByMessageCount.get(conversation.messageCount) ?? [];
+      ids.push(conversation.id);
+      idsByMessageCount.set(conversation.messageCount, ids);
+    }
+
+    await prisma.$transaction(
+      Array.from(idsByMessageCount.entries()).map(([messageCount, ids]) =>
+        prisma.conversation.updateMany({
+          where: { id: { in: ids }, messageCount },
+          data: { reviewedAt: periodEnd, reviewedMessageCount: messageCount },
+        }),
+      ),
+    );
   }
 
   // Close the loop: high-severity findings become Tasks in the tenant's
@@ -346,6 +385,7 @@ export async function runConversationReview(periodHours = 24): Promise<ReviewRun
     conversations: transcripts.length,
     findings: allFindings.length,
     tasksCreated,
+    suppressedResolvedFindings,
   });
 
   return { reportId: report.id, conversationCount: transcripts.length, findingCount: allFindings.length };
