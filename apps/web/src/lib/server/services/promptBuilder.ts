@@ -1,6 +1,11 @@
 import { prisma } from '../db';
 import { getProfile } from '@/lib/businessTypeProfile';
-import { buildCatalogPromptContext, buildVerticalPromptGuidance, getVerticalProfile } from '@ringback/flow-engine';
+import {
+  buildCatalogPromptContext,
+  buildVerticalPromptGuidance,
+  getVerticalProfile,
+} from '@ringback/flow-engine';
+import { isAvailableAtAnyActiveLocation } from '../commerce/menuAvailability';
 
 /**
  * Builds the full Claude system prompt for a tenant by combining:
@@ -18,10 +23,18 @@ export async function buildSystemPrompt(tenantId: string): Promise<string> {
     where: { id: tenantId },
     include: {
       config: true,
+      locations: { where: { isActive: true }, select: { id: true } },
       flows: { where: { isEnabled: true } },
       menuItems: {
         where: { isAvailable: true },
         orderBy: [{ categoryRef: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { name: 'asc' }],
+        include: {
+          categoryRef: { select: { isAvailable: true } },
+          locationAvailability: {
+            where: { location: { isActive: true } },
+            select: { isAvailable: true },
+          },
+        },
       },
     },
   });
@@ -43,10 +56,7 @@ export async function buildSystemPrompt(tenantId: string): Promise<string> {
       basePrompt = template.aiSystemPrompt
         .replace(/\{business_name\}/g, tenant.name)
         .replace(/\{timezone\}/g, tz)
-        .replace(
-          /\{pos_system\}/g,
-          tenant.posProvider ?? 'none configured',
-        );
+        .replace(/\{pos_system\}/g, tenant.posProvider ?? 'none configured');
     } else {
       basePrompt = buildFallbackPrompt(tenant, profile, tz);
     }
@@ -63,22 +73,25 @@ export async function buildSystemPrompt(tenantId: string): Promise<string> {
     intakeFieldOverrides: config?.intakeFieldOverrides,
   };
   const verticalProfile = getVerticalProfile(verticalInput);
+  const availableMenuItems = tenant.menuItems.filter(
+    (item) =>
+      item.categoryRef?.isAvailable !== false &&
+      isAvailableAtAnyActiveLocation(item, tenant.locations.length)
+  );
 
   parts.push(buildVerticalPromptGuidance(verticalInput));
 
   // 2. Business hours
   if (config?.businessHoursStart && config?.businessHoursEnd) {
-    parts.push(
-      `Business hours: ${config.businessHoursStart} - ${config.businessHoursEnd} (${tz})`,
-    );
+    parts.push(`Business hours: ${config.businessHoursStart} - ${config.businessHoursEnd} (${tz})`);
   }
 
   // 3. Catalog items: menu, services, or products depending on vertical.
-  if (tenant.menuItems.length > 0) {
+  if (availableMenuItems.length > 0) {
     parts.push(
       buildCatalogPromptContext({
         catalogNoun: verticalProfile.catalogNoun,
-        items: tenant.menuItems.map((item) => ({
+        items: availableMenuItems.map((item) => ({
           ...item,
           price: Number(item.price),
           priceMin: item.priceMin == null ? null : Number(item.priceMin),
@@ -87,15 +100,13 @@ export async function buildSystemPrompt(tenantId: string): Promise<string> {
             ? item.intakeQuestions.filter((q): q is string => typeof q === 'string')
             : [],
         })),
-      }),
+      })
     );
   }
 
   // 4. Custom AI instructions from tenant
   if (config?.customAiInstructions?.trim()) {
-    parts.push(
-      `\nOwner's custom instructions:\n${config.customAiInstructions.trim()}`,
-    );
+    parts.push(`\nOwner's custom instructions:\n${config.customAiInstructions.trim()}`);
   }
 
   // 5. Current date/time
@@ -119,7 +130,7 @@ export async function buildSystemPrompt(tenantId: string): Promise<string> {
       .filter(Boolean)
       .join(', ');
     parts.push(
-      `\nIf the customer needs human help, tell them someone will follow up. Owner contact: ${contacts}`,
+      `\nIf the customer needs human help, tell them someone will follow up. Owner contact: ${contacts}`
     );
   }
 
@@ -129,7 +140,7 @@ export async function buildSystemPrompt(tenantId: string): Promise<string> {
 function buildFallbackPrompt(
   tenant: { name: string; businessType: string },
   profile: ReturnType<typeof getProfile>,
-  tz: string,
+  tz: string
 ): string {
   const personality = profile.aiPersonalityHint;
   return `You are a helpful SMS assistant for ${tenant.name}.

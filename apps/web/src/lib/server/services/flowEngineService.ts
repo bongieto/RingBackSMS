@@ -1,4 +1,13 @@
-import { runFlowEngine, TenantContext, matchEscalationPolicy, matchSafetyPolicy, type CallerMemory, type ChatFn, type ChatWithToolsFn, type StructuredIntake } from '@ringback/flow-engine';
+import {
+  runFlowEngine,
+  TenantContext,
+  matchEscalationPolicy,
+  matchSafetyPolicy,
+  type CallerMemory,
+  type ChatFn,
+  type ChatWithToolsFn,
+  type StructuredIntake,
+} from '@ringback/flow-engine';
 import { chatCompletion, chatWithTools } from './aiClient';
 import { getCallerContext } from './callerContextService';
 import { FlowType, SideEffect } from '@ringback/shared-types';
@@ -10,17 +19,33 @@ import { autoCompleteTasksForCaller, createTask } from './taskService';
 import { sendSms } from './twilioService';
 import { matchesLocationKeyword, buildLocationReply } from './foodTruckLocationService';
 import { createOrderPaymentSession } from './paymentService';
-import { delegateCheckoutToMcInasal, hasActiveMcInasalConnection } from '../commerce/mcinasalClient';
+import {
+  delegateCheckoutToMcInasal,
+  hasActiveMcInasalConnection,
+} from '../commerce/mcinasalClient';
+import { isAvailableAtAnyActiveLocation } from '../commerce/menuAvailability';
 import { incrementSmsUsage } from './usageMeterService';
 import { logger } from '../logger';
-import { isWithinBusinessHours, getBusinessHoursDisplay, getNextOpenDisplay, getTodayHoursDisplay, getMinutesUntilClose, getClosesAtDisplay } from '../businessHours';
+import {
+  isWithinBusinessHours,
+  getBusinessHoursDisplay,
+  getNextOpenDisplay,
+  getTodayHoursDisplay,
+  getMinutesUntilClose,
+  getClosesAtDisplay,
+} from '../businessHours';
 import { getActiveOrderCount } from './queueService';
 import { prisma } from '../db';
 import { encryptMessages, decryptMessages } from '../encryption';
 import { summarizeConversationMessages } from '../conversationSummary';
 import { ensureTenantSlug } from '../slugify';
 import { Prisma } from '@prisma/client';
-import { recordDecision, mergeDecisions, currentTurnId, setTurnSnapshots } from '../turn/TurnContext';
+import {
+  recordDecision,
+  mergeDecisions,
+  currentTurnId,
+  setTurnSnapshots,
+} from '../turn/TurnContext';
 import { withTurn } from '../turn/withTurn';
 import type { DecisionDraft, TurnOutcome } from '@ringback/shared-types';
 import { logTiming, startTimer as startPerfTimer } from '../perf';
@@ -73,7 +98,10 @@ function isStructuredIntake(value: unknown): value is StructuredIntake {
   );
 }
 
-function mergeConversationIntake(existing: unknown, incoming?: StructuredIntake): StructuredIntake | undefined {
+function mergeConversationIntake(
+  existing: unknown,
+  incoming?: StructuredIntake
+): StructuredIntake | undefined {
   if (!incoming) return isStructuredIntake(existing) ? existing : undefined;
 
   const capturedByKey = new Map<string, StructuredIntake['captured'][number]>();
@@ -100,7 +128,7 @@ function formatIntakeForTask(intake?: StructuredIntake): string {
 
 export async function processInboundSms(
   input: ProcessInboundSmsInput,
-  options?: ProcessInboundSmsOptions,
+  options?: ProcessInboundSmsOptions
 ): Promise<void | ProcessInboundSmsTestResult> {
   // Turn Record wrapper: when TURN_RECORD_ENABLED=1, opens an ALS scope so
   // pre-handler + flow-engine decisions land on a single Turn row. When
@@ -139,13 +167,13 @@ export async function processInboundSms(
         outcome: turnOutcome,
         replyBody,
       }) as any;
-    },
+    }
   ) as Promise<void | ProcessInboundSmsTestResult>;
 }
 
 async function processInboundSmsInner(
   input: ProcessInboundSmsInput,
-  options?: ProcessInboundSmsOptions,
+  options?: ProcessInboundSmsOptions
 ): Promise<void | ProcessInboundSmsTestResult> {
   const { tenantId, callerPhone, inboundMessage, messageSid } = input;
   const testMode = options?.testMode === true;
@@ -245,12 +273,16 @@ async function processInboundSmsInner(
         evidence: { conversationId: existingConversationId },
         durationMs: 0,
       });
-      logger.info('Message received during human handoff, skipping AI', { tenantId, callerPhone, testMode });
+      logger.info('Message received during human handoff, skipping AI', {
+        tenantId,
+        callerPhone,
+        testMode,
+      });
       if (testMode) {
         return {
           reply: '',
           sideEffects: [],
-          nextState: (currentState as unknown as ProcessInboundSmsTestResult['nextState']),
+          nextState: currentState as unknown as ProcessInboundSmsTestResult['nextState'],
           flowType: FlowType.FALLBACK,
         };
       }
@@ -342,7 +374,7 @@ async function processInboundSmsInner(
       }
       if (!testMode) {
         await sendSms(tenantId, callerPhone, reply).catch((err) =>
-          logger.error('Failed to send English-only gate SMS', { err, tenantId }),
+          logger.error('Failed to send English-only gate SMS', { err, tenantId })
         );
       }
       // Spanish-speaker callback task: bilingual reply alone leaves the
@@ -374,7 +406,7 @@ async function processInboundSmsInner(
         return {
           reply,
           sideEffects: [],
-          nextState: (st as unknown as ProcessInboundSmsTestResult['nextState']),
+          nextState: st as unknown as ProcessInboundSmsTestResult['nextState'],
           flowType: FlowType.FALLBACK,
         };
       }
@@ -461,7 +493,7 @@ async function processInboundSmsInner(
 
         if (!testMode) {
           await sendSms(tenantId, callerPhone, reply).catch((err) =>
-            logger.error('Failed to send callback-request SMS', { err, tenantId }),
+            logger.error('Failed to send callback-request SMS', { err, tenantId })
           );
 
           // Create the snoozed task. Idempotent on (CONVERSATION,
@@ -512,7 +544,7 @@ async function processInboundSmsInner(
             logger.warn('Owner notification for callback failed', {
               err: (err as Error).message,
               tenantId,
-            }),
+            })
           );
         }
 
@@ -527,7 +559,7 @@ async function processInboundSmsInner(
           return {
             reply,
             sideEffects: [],
-            nextState: (st as unknown as ProcessInboundSmsTestResult['nextState']),
+            nextState: st as unknown as ProcessInboundSmsTestResult['nextState'],
             flowType: FlowType.FALLBACK,
           };
         }
@@ -616,7 +648,7 @@ async function processInboundSmsInner(
           return {
             reply,
             sideEffects: [],
-            nextState: (st as unknown as ProcessInboundSmsTestResult['nextState']),
+            nextState: st as unknown as ProcessInboundSmsTestResult['nextState'],
             flowType: FlowType.FALLBACK,
           };
         }
@@ -634,6 +666,7 @@ async function processInboundSmsInner(
       where: { id: tenantId },
       include: {
         config: true,
+        locations: { where: { isActive: true }, select: { id: true } },
         flows: { where: { isEnabled: true } },
         menuItems: {
           // Include category availability so we can filter below — Prisma
@@ -643,6 +676,10 @@ async function processInboundSmsInner(
           orderBy: [{ categoryRef: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { name: 'asc' }],
           include: {
             categoryRef: { select: { isAvailable: true } },
+            locationAvailability: {
+              where: { location: { isActive: true } },
+              select: { isAvailable: true },
+            },
             modifierGroups: {
               include: { modifiers: { orderBy: { sortOrder: 'asc' } } },
               orderBy: { sortOrder: 'asc' },
@@ -686,7 +723,7 @@ async function processInboundSmsInner(
         tenantId,
         error: err instanceof Error ? err.message : String(err),
       });
-    }),
+    })
   );
 
   // Populate the Turn's snapshot fields now that we have the tenant in
@@ -700,10 +737,8 @@ async function processInboundSmsInner(
       currentFlow: currentState?.currentFlow ?? null,
       conversationId: currentState?.conversationId ?? null,
       orderSlots: {
-        itemCount: currentState?.orderDraft?.items?.reduce(
-          (sum, item) => sum + item.quantity,
-          0,
-        ) ?? 0,
+        itemCount:
+          currentState?.orderDraft?.items?.reduce((sum, item) => sum + item.quantity, 0) ?? 0,
         hasCustomerName: Boolean(currentState?.customerName),
         hasPickupTime: Boolean(currentState?.orderDraft?.pickupTime),
         dineIn: currentState?.orderDraft?.dineIn === true,
@@ -714,6 +749,11 @@ async function processInboundSmsInner(
 
   // Lazily backfill slug for tenants that pre-date the slug feature
   const tenantSlug = tenant.slug ?? (await ensureTenantSlug(tenant.id).catch(() => null));
+  const availableMenuItems = tenant.menuItems.filter(
+    (item) =>
+      item.categoryRef?.isAvailable !== false &&
+      isAvailableAtAnyActiveLocation(item, tenant.locations.length)
+  );
 
   const tenantContext: TenantContext = {
     tenantId: tenant.id,
@@ -725,7 +765,10 @@ async function processInboundSmsInner(
     config: {
       ...tenant.config,
       businessDays: tenant.config.businessDays as number[],
-      businessSchedule: tenant.config.businessSchedule as Record<string, { open: string; close: string }> | null | undefined,
+      businessSchedule: tenant.config.businessSchedule as
+        | Record<string, { open: string; close: string }>
+        | null
+        | undefined,
       closedDates: tenant.config.closedDates as string[],
       // Decimal → number for serializable shared-types shape.
       salesTaxRate: tenant.config.salesTaxRate != null ? Number(tenant.config.salesTaxRate) : null,
@@ -744,9 +787,7 @@ async function processInboundSmsInner(
     // availability filter runs in SQL; category-level is post-filter
     // because Prisma can't express "item.isAvailable AND (categoryRef IS
     // NULL OR categoryRef.isAvailable = true)" in a single relation `where`.
-    menuItems: tenant.menuItems
-      .filter((m) => (m as { categoryRef?: { isAvailable: boolean } }).categoryRef?.isAvailable !== false)
-      .map((m) => ({
+    menuItems: availableMenuItems.map((m) => ({
       ...m,
       price: Number(m.price),
       priceMin: m.priceMin == null ? null : Number(m.priceMin),
@@ -761,7 +802,9 @@ async function processInboundSmsInner(
         ...g,
         // QUANTITY / PIZZA / MIXED are stored but not yet honored by the SMS
         // agent — downgrade them to SINGLE so the prompt stays understandable.
-        selectionType: (g.selectionType === 'MULTIPLE' ? 'MULTIPLE' : 'SINGLE') as 'SINGLE' | 'MULTIPLE',
+        selectionType: (g.selectionType === 'MULTIPLE' ? 'MULTIPLE' : 'SINGLE') as
+          | 'SINGLE'
+          | 'MULTIPLE',
         modifiers: g.modifiers.map((mod) => ({
           ...mod,
           priceAdjust: Number(mod.priceAdjust),
@@ -775,7 +818,10 @@ async function processInboundSmsInner(
     businessHoursStart: tenant.config.businessHoursStart,
     businessHoursEnd: tenant.config.businessHoursEnd,
     businessDays: tenant.config.businessDays as number[],
-    businessSchedule: tenant.config.businessSchedule as Record<string, { open: string; close: string }> | null,
+    businessSchedule: tenant.config.businessSchedule as Record<
+      string,
+      { open: string; close: string }
+    > | null,
     closedDates: tenant.config.closedDates as string[],
     timezone: tenant.config.timezone,
   };
@@ -805,7 +851,7 @@ async function processInboundSmsInner(
       name: tenant.name,
       twilioPhoneNumber: tenant.twilioPhoneNumber,
       slug: tenant.slug,
-      menuItems: tenant.menuItems,
+      menuItems: availableMenuItems,
       knowledgeFacts: tenant.knowledgeFacts,
     },
     todayHoursDisplay: tenantContext.hoursInfo.todayHoursDisplay,
@@ -822,7 +868,7 @@ async function processInboundSmsInner(
     (tenant.config as { acceptClosedHourOrders?: boolean }).acceptClosedHourOrders ?? true;
   if (!withinBusinessHours && !acceptClosedHourOrders) {
     tenantContext.flows = tenantContext.flows.map((f) =>
-      f.type === FlowType.ORDER ? { ...f, isEnabled: false } : f,
+      f.type === FlowType.ORDER ? { ...f, isEnabled: false } : f
     );
   }
 
@@ -837,9 +883,14 @@ async function processInboundSmsInner(
   // arrival → hours. Compliance keywords win even if the caller is
   // suppressed (so a STOP re-confirms, a START unsuppresses).
   {
-    const { handleComplianceKeyword, checkSuppression, handleOpsCommand,
-      handleAllergyIntent, handleArrivalIntent, handleHoursIntent } =
-      await import('./preHandlers');
+    const {
+      handleComplianceKeyword,
+      checkSuppression,
+      handleOpsCommand,
+      handleAllergyIntent,
+      handleArrivalIntent,
+      handleHoursIntent,
+    } = await import('./preHandlers');
     const preCtx = {
       tenantId,
       tenantName: tenant.name,
@@ -883,7 +934,14 @@ async function processInboundSmsInner(
       const newMessages = [
         { role: 'user', content: inboundMessage, timestamp: new Date(), sender: 'customer' },
         ...(preResult.reply
-          ? [{ role: 'assistant', content: preResult.reply, timestamp: new Date(), sender: 'bot' } as const]
+          ? [
+              {
+                role: 'assistant',
+                content: preResult.reply,
+                timestamp: new Date(),
+                sender: 'bot',
+              } as const,
+            ]
           : []),
       ];
       try {
@@ -937,7 +995,7 @@ async function processInboundSmsInner(
 
       if (!testMode && preResult.reply) {
         await sendSms(tenantId, callerPhone, preResult.reply).catch((err) =>
-          logger.error('Failed to send pre-handler SMS', { err, tenantId }),
+          logger.error('Failed to send pre-handler SMS', { err, tenantId })
         );
       }
       logger.info('Turn complete', {
@@ -954,7 +1012,7 @@ async function processInboundSmsInner(
         return {
           reply: preResult.reply,
           sideEffects: preResult.sideEffects,
-          nextState: (st as unknown as ProcessInboundSmsTestResult['nextState']),
+          nextState: st as unknown as ProcessInboundSmsTestResult['nextState'],
           flowType: preResult.flowType,
         };
       }
@@ -1040,7 +1098,7 @@ async function processInboundSmsInner(
 
     if (!testMode) {
       await sendSms(tenantId, callerPhone, reply).catch((err) =>
-        logger.error('Failed to send vertical safety handoff SMS', { err, tenantId }),
+        logger.error('Failed to send vertical safety handoff SMS', { err, tenantId })
       );
 
       if (conversationId) {
@@ -1049,7 +1107,9 @@ async function processInboundSmsInner(
           subject: safetyMatch.ownerSubject,
           message: safetyMatch.ownerMessage,
           channel: 'email',
-        }).catch((err) => logger.warn('Failed to send vertical safety notification', { error: err }));
+        }).catch((err) =>
+          logger.warn('Failed to send vertical safety notification', { error: err })
+        );
 
         await createTask({
           tenantId,
@@ -1061,15 +1121,19 @@ async function processInboundSmsInner(
           conversationId,
         }).catch((err) => logger.warn('Failed to create vertical safety task', { error: err }));
 
-        await prisma.escalationEvent.create({
-          data: {
-            tenantId,
-            callerPhone,
-            conversationId,
-            triggerKeyword: safetyMatch.policy.id,
-            messageBody: inboundMessage,
-          },
-        }).catch((err) => logger.warn('Failed to record vertical safety escalation event', { error: err }));
+        await prisma.escalationEvent
+          .create({
+            data: {
+              tenantId,
+              callerPhone,
+              conversationId,
+              triggerKeyword: safetyMatch.policy.id,
+              messageBody: inboundMessage,
+            },
+          })
+          .catch((err) =>
+            logger.warn('Failed to record vertical safety escalation event', { error: err })
+          );
       }
     }
 
@@ -1085,7 +1149,7 @@ async function processInboundSmsInner(
       return {
         reply,
         sideEffects: [],
-        nextState: (st as unknown as ProcessInboundSmsTestResult['nextState']),
+        nextState: st as unknown as ProcessInboundSmsTestResult['nextState'],
         flowType: FlowType.FALLBACK,
       };
     }
@@ -1114,7 +1178,9 @@ async function processInboundSmsInner(
     if (callerContext.lastOrder) {
       const daysAgo = Math.max(
         1,
-        Math.round((Date.now() - callerContext.lastOrder.createdAt.getTime()) / (24 * 60 * 60 * 1000))
+        Math.round(
+          (Date.now() - callerContext.lastOrder.createdAt.getTime()) / (24 * 60 * 60 * 1000)
+        )
       );
       const total = (callerContext.lastOrder.totalCents / 100).toFixed(2);
       lastOrderSummary = `order #${callerContext.lastOrder.orderNumber}, $${total}, ${daysAgo} day${daysAgo === 1 ? '' : 's'} ago`;
@@ -1191,7 +1257,7 @@ async function processInboundSmsInner(
           .map((i) =>
             typeof i.name === 'string' && typeof i.quantity === 'number'
               ? `${i.quantity}× ${i.name}`
-              : null,
+              : null
           )
           .filter(Boolean)
           .slice(0, 5)
@@ -1305,7 +1371,7 @@ async function processInboundSmsInner(
           tenantId,
           error: err instanceof Error ? err.message : String(err),
         });
-      }),
+      })
     );
   }
 
@@ -1327,7 +1393,7 @@ async function processInboundSmsInner(
             eventTypeId,
             effect.payload.startUtc,
             effect.payload.endUtc,
-            calConfig.timezone ?? 'America/Chicago',
+            calConfig.timezone ?? 'America/Chicago'
           );
           const top = slots.slice(0, 6);
           if (top.length === 0) {
@@ -1388,12 +1454,14 @@ async function processInboundSmsInner(
             notes: [
               `Booked via SMS: ${effect.payload.name} <${effect.payload.email}>`,
               effect.payload.notes?.trim(),
-            ].filter(Boolean).join('\n\n'),
+            ]
+              .filter(Boolean)
+              .join('\n\n'),
             calcomBookingId: String(booking.id),
             calcomBookingUid: booking.uid,
             status: 'CONFIRMED',
           }).catch((err) =>
-            logger.warn('createMeeting after cal.com booking failed', { err, tenantId }),
+            logger.warn('createMeeting after cal.com booking failed', { err, tenantId })
           );
           const friendly = new Intl.DateTimeFormat('en-US', {
             timeZone: calConfig.timezone ?? 'America/Chicago',
@@ -1415,7 +1483,11 @@ async function processInboundSmsInner(
         result.smsReply = `Sorry, I couldn't book that slot — it may have just been taken. Please reply with another day to try again.`;
         // Back to date prompt
         result.nextState.flowStep = 'MEETING_DATE_PROMPT';
-        result.nextState.meetingDraft = { ...(result.nextState.meetingDraft ?? {}), slots: undefined, pickedSlotStart: undefined };
+        result.nextState.meetingDraft = {
+          ...(result.nextState.meetingDraft ?? {}),
+          slots: undefined,
+          pickedSlotStart: undefined,
+        };
       }
     } else if (effect.type === 'FETCH_LOCAL_SLOTS') {
       try {
@@ -1435,7 +1507,7 @@ async function processInboundSmsInner(
           day: '2-digit',
         });
         const startDayParts = fmt.formatToParts(
-          new Date(new Date(effect.payload.startUtc).getTime() + 12 * 60 * 60_000),
+          new Date(new Date(effect.payload.startUtc).getTime() + 12 * 60 * 60_000)
         );
         const startDate = {
           year: Number(startDayParts.find((p) => p.type === 'year')?.value ?? '0'),
@@ -1461,8 +1533,22 @@ async function processInboundSmsInner(
             month: cursorUtc.getUTCMonth() + 1,
             day: cursorUtc.getUTCDate(),
           };
-          const dayStart = zonedDateToUtc(cursorDate.year, cursorDate.month, cursorDate.day, 0, 0, tz);
-          const dayEnd = zonedDateToUtc(cursorDate.year, cursorDate.month, cursorDate.day, 23, 59, tz);
+          const dayStart = zonedDateToUtc(
+            cursorDate.year,
+            cursorDate.month,
+            cursorDate.day,
+            0,
+            0,
+            tz
+          );
+          const dayEnd = zonedDateToUtc(
+            cursorDate.year,
+            cursorDate.month,
+            cursorDate.day,
+            23,
+            59,
+            tz
+          );
           const inputs = await fetchAvailabilityInputs(tenantId, dayStart, dayEnd, duration);
 
           slots = computeAvailableSlots({
@@ -1471,7 +1557,10 @@ async function processInboundSmsInner(
             durationMinutes: duration,
             bufferMinutes: buffer,
             leadTimeMinutes: leadTime,
-            businessSchedule: (calConfig.businessSchedule ?? null) as Record<string, { open: string; close: string }> | null,
+            businessSchedule: (calConfig.businessSchedule ?? null) as Record<
+              string,
+              { open: string; close: string }
+            > | null,
             businessHoursStart: calConfig.businessHoursStart,
             businessHoursEnd: calConfig.businessHoursEnd,
             businessDays: calConfig.businessDays as number[],
@@ -1561,7 +1650,7 @@ async function processInboundSmsInner(
             timezone: tz,
             durationMinutes: duration,
           }).catch((err) =>
-            logger.warn('Guest confirmation email failed', { tenantId, err: err?.message }),
+            logger.warn('Guest confirmation email failed', { tenantId, err: err?.message })
           );
 
           // Owner notification — fired inline via NOTIFY_OWNER side effect
@@ -1584,7 +1673,9 @@ async function processInboundSmsInner(
                 `${effect.payload.name} (${effect.payload.callerPhone}) booked a meeting for ${friendly}.`,
                 `Email: ${effect.payload.email}`,
                 effect.payload.notes?.trim() ? `\n${effect.payload.notes.trim()}` : '',
-              ].filter(Boolean).join('\n'),
+              ]
+                .filter(Boolean)
+                .join('\n'),
               channel: 'email',
             },
           });
@@ -1595,7 +1686,11 @@ async function processInboundSmsInner(
           if (err instanceof SlotConflictError) {
             result.smsReply = `That slot was just taken — reply with another day to try again.`;
             result.nextState.flowStep = 'MEETING_DATE_PROMPT';
-            result.nextState.meetingDraft = { ...(result.nextState.meetingDraft ?? {}), slots: undefined, pickedSlotStart: undefined };
+            result.nextState.meetingDraft = {
+              ...(result.nextState.meetingDraft ?? {}),
+              slots: undefined,
+              pickedSlotStart: undefined,
+            };
           } else {
             throw err;
           }
@@ -1632,7 +1727,10 @@ async function processInboundSmsInner(
       businessHoursStart: tenant.config.businessHoursStart,
       businessHoursEnd: tenant.config.businessHoursEnd,
       businessDays: tenant.config.businessDays as number[],
-      businessSchedule: tenant.config.businessSchedule as Record<string, { open: string; close: string }> | null,
+      businessSchedule: tenant.config.businessSchedule as Record<
+        string,
+        { open: string; close: string }
+      > | null,
       timezone: tenant.config.timezone,
     });
     const afterHoursNotice =
@@ -1724,7 +1822,9 @@ async function processInboundSmsInner(
         flowType: result.flowType,
         messages: encryptMessages(newMessages) as unknown as Prisma.InputJsonValue,
         ...summary,
-        ...(nextConversationIntake && { intake: nextConversationIntake as unknown as Prisma.InputJsonValue }),
+        ...(nextConversationIntake && {
+          intake: nextConversationIntake as unknown as Prisma.InputJsonValue,
+        }),
         isActive: true,
         causingTurnId: currentTurnId() ?? null,
         ...(stopAutomationForEscalation && { handoffStatus: 'HUMAN', handoffAt: new Date() }),
@@ -1780,7 +1880,7 @@ async function processInboundSmsInner(
   // rapid-redial alert even when the bot continues handling the conversation.
   if (!testMode) {
     await autoCompleteTasksForCaller(tenantId, callerPhone).catch((err) =>
-      logger.warn('Failed to close rapid-redial task after caller reply', { error: err }),
+      logger.warn('Failed to close rapid-redial task after caller reply', { error: err })
     );
   }
 
@@ -1803,15 +1903,17 @@ async function processInboundSmsInner(
       conversationId: conversationId as string,
     }).catch((err) => logger.warn('Failed to create handoff task', { error: err }));
 
-    await prisma.escalationEvent.create({
-      data: {
-        tenantId,
-        callerPhone,
-        conversationId: conversationId as string,
-        triggerKeyword: escalationMatch.triggerKeyword || escalationMatch.policy.id,
-        messageBody: inboundMessage,
-      },
-    }).catch((err) => logger.warn('Failed to record escalation event', { error: err }));
+    await prisma.escalationEvent
+      .create({
+        data: {
+          tenantId,
+          callerPhone,
+          conversationId: conversationId as string,
+          triggerKeyword: escalationMatch.triggerKeyword || escalationMatch.policy.id,
+          messageBody: inboundMessage,
+        },
+      })
+      .catch((err) => logger.warn('Failed to record escalation event', { error: err }));
   }
 
   // Process side effects + send SMS + record usage, wrapped in an error
@@ -1844,7 +1946,13 @@ async function processInboundSmsInner(
       if (criticalFailure) return; // abort chain once a critical effect fails
       if (testMode && !TEST_MODE_EXECUTABLE.has(effect.type)) return;
       try {
-        await processSideEffect(effect, tenantId, conversationId as string, callerPhone, sideEffectContext);
+        await processSideEffect(
+          effect,
+          tenantId,
+          conversationId as string,
+          callerPhone,
+          sideEffectContext
+        );
       } catch (effectErr: any) {
         const msg = effectErr?.message ?? String(effectErr);
         if (CRITICAL_EFFECTS.has(effect.type)) {
@@ -1890,11 +1998,9 @@ async function processInboundSmsInner(
       // payment-link generation failed. Send one clear recovery message.
       const { sms: i18nSms } = await import('@/lib/server/i18n');
       if (!testMode) {
-        await sendSms(
-          tenantId,
-          callerPhone,
-          i18nSms('orderProcessingFailed', null, {}),
-        ).catch(() => {});
+        await sendSms(tenantId, callerPhone, i18nSms('orderProcessingFailed', null, {})).catch(
+          () => {}
+        );
       }
       // Mark any partially-created order as UNPAID (not stuck in PENDING)
       // so operator-facing dashboards show it didn't finalize.
@@ -1979,16 +2085,20 @@ async function processInboundSmsInner(
         messageCount: (currentState?.messageCount ?? 0) + 1,
         dedupKey: messageSid,
       });
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
     // Send a generic fallback SMS so the customer isn't silently abandoned.
     if (!testMode) {
       try {
         await sendSms(
           tenantId,
           callerPhone,
-          `Sorry, something went wrong on our end. A team member has been notified and will follow up with you shortly.`,
+          `Sorry, something went wrong on our end. A team member has been notified and will follow up with you shortly.`
         );
-      } catch { /* best-effort */ }
+      } catch {
+        /* best-effort */
+      }
     }
     // Notify the owner
     if (!testMode) {
@@ -2104,7 +2214,10 @@ async function processSideEffect(
               locationId: effect.payload.locationId || tenant.posLocationId,
               idempotencyKey: `ringback-${conversationId}-${Date.now()}`,
             });
-            logger.info('POS order created (via legacy CREATE_SQUARE_ORDER)', { tenantId, externalOrderId: result.externalOrderId });
+            logger.info('POS order created (via legacy CREATE_SQUARE_ORDER)', {
+              tenantId,
+              externalOrderId: result.externalOrderId,
+            });
           }
         }
       } catch (err) {
@@ -2139,7 +2252,11 @@ async function processSideEffect(
           locationId: tenant.posLocationId,
           idempotencyKey: `ringback-${conversationId}-${Date.now()}`,
         });
-        logger.info('POS order created', { tenantId, provider: tenant.posProvider, externalOrderId: result.externalOrderId });
+        logger.info('POS order created', {
+          tenantId,
+          provider: tenant.posProvider,
+          externalOrderId: result.externalOrderId,
+        });
       } catch (err) {
         logger.error('CREATE_POS_ORDER failed', { tenantId, error: err });
       }
@@ -2148,7 +2265,7 @@ async function processSideEffect(
 
     case 'CREATE_PAYMENT_LINK': {
       try {
-        if (!context.orderId && await hasActiveMcInasalConnection(tenantId)) {
+        if (!context.orderId && (await hasActiveMcInasalConnection(tenantId))) {
           const draftOrder = await createOrder({
             tenantId,
             conversationId,
@@ -2238,7 +2355,9 @@ async function processSideEffect(
           // webhook's payment-first branches key on orderDraft + metadata
           // orderId, so setting paymentPending here doesn't affect them.
           try {
-            const appBaseForState = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://ringbacksms.com').replace(/\/+$/, '');
+            const appBaseForState = (
+              process.env.NEXT_PUBLIC_APP_URL ?? 'https://ringbacksms.com'
+            ).replace(/\/+$/, '');
             const currentState = await getCallerState(tenantId, callerPhone);
             if (currentState) {
               await setCallerState({
@@ -2277,7 +2396,10 @@ async function processSideEffect(
         // For pay-after-order, route through our tip-jar interstitial so
         // the customer picks a tip before Stripe. Payment-first keeps the
         // direct Stripe URL — there's no Order row yet to hang /pay off of.
-        const appBase = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://ringbacksms.com').replace(/\/+$/, '');
+        const appBase = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://ringbacksms.com').replace(
+          /\/+$/,
+          ''
+        );
         const payLink = context.orderId ? `${appBase}/pay/${context.orderId}` : url;
         if (context.deferPaymentSms) {
           context.paymentLink = payLink;
@@ -2289,7 +2411,11 @@ async function processSideEffect(
           break;
         }
         await sendSms(tenantId, callerPhone, `Pay securely here: ${payLink}`);
-        logger.info('Payment link sent', { tenantId, orderId: context.orderId ?? 'pending', sessionId });
+        logger.info('Payment link sent', {
+          tenantId,
+          orderId: context.orderId ?? 'pending',
+          sessionId,
+        });
       } catch (err) {
         logger.error('CREATE_PAYMENT_LINK failed', { tenantId, error: err });
         // Re-throw so the caller's critical-effect handler knows to
@@ -2319,7 +2445,7 @@ async function processSideEffect(
         logger.warn('Failed to create menu phrase review task', {
           tenantId,
           err: (err as Error).message,
-        }),
+        })
       );
       break;
     }

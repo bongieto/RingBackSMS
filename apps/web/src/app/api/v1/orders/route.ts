@@ -11,6 +11,7 @@ import { commerceError, commerceResponse, conflict } from '@/lib/server/commerce
 import { enqueueIntegrationEvent } from '@/lib/server/commerce/outbox';
 import { prisma } from '@/lib/server/db';
 import { logger } from '@/lib/server/logger';
+import { isAvailableAtLocation } from '@/lib/server/commerce/menuAvailability';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,14 +69,25 @@ export async function POST(request: NextRequest) {
       return commerceResponse(prior.response, prior.statusCode);
     }
 
-    const [location, menuCount, config] = await Promise.all([
+    const uniqueMenuItemIds = [...new Set(input.items.map((item) => item.menuItemId))];
+    const [location, menuItems, config] = await Promise.all([
       prisma.tenantLocation.findFirst({
         where: { id: input.locationId, tenantId: auth.tenantId, isActive: true },
       }),
-      prisma.menuItem.count({
+      prisma.menuItem.findMany({
         where: {
           tenantId: auth.tenantId,
-          id: { in: [...new Set(input.items.map((item) => item.menuItemId))] },
+          id: { in: uniqueMenuItemIds },
+          posDeletedAt: null,
+        },
+        select: {
+          id: true,
+          isAvailable: true,
+          categoryRef: { select: { isAvailable: true } },
+          locationAvailability: {
+            where: { locationId: input.locationId },
+            select: { isAvailable: true },
+          },
         },
       }),
       prisma.tenantConfig.findUnique({
@@ -83,10 +95,20 @@ export async function POST(request: NextRequest) {
         select: { requirePayment: true },
       }),
     ]);
-    if (!location || menuCount !== new Set(input.items.map((item) => item.menuItemId)).size) {
+    if (!location || menuItems.length !== uniqueMenuItemIds.length) {
       return Response.json(
         { error: { code: 'not_found', message: 'Location or menu item not found' } },
         { status: 404 }
+      );
+    }
+    if (
+      menuItems.some(
+        (item) => item.categoryRef?.isAvailable === false || !isAvailableAtLocation(item)
+      )
+    ) {
+      return Response.json(
+        { error: { code: 'unavailable', message: 'One or more menu items are unavailable' } },
+        { status: 409 }
       );
     }
     const owner = `integration:${auth.connectionId}`;

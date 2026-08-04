@@ -1,10 +1,6 @@
 import { NextRequest } from 'next/server';
 import { FlowType } from '@ringback/shared-types';
-import {
-  runVerticalReadinessSuite,
-  type ChatFn,
-  type TenantContext,
-} from '@ringback/flow-engine';
+import { runVerticalReadinessSuite, type ChatFn, type TenantContext } from '@ringback/flow-engine';
 import { verifyTenantAccess, isNextResponse } from '@/lib/server/auth';
 import { apiError, apiSuccess } from '@/lib/server/response';
 import { prisma } from '@/lib/server/db';
@@ -20,6 +16,7 @@ import {
 import { logTiming, startTimer } from '@/lib/server/perf';
 import { buildVerifiedKnowledge } from '@/lib/server/services/knowledgeService';
 import { chatCompletion } from '@/lib/server/services/aiClient';
+import { isAvailableAtAnyActiveLocation } from '@/lib/server/commerce/menuAvailability';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,8 +31,18 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     where: { id: params.id },
     include: {
       config: true,
+      locations: { where: { isActive: true }, select: { id: true } },
       flows: { where: { isEnabled: true } },
-      menuItems: { where: { isAvailable: true } },
+      menuItems: {
+        where: { isAvailable: true, posDeletedAt: null },
+        include: {
+          categoryRef: { select: { isAvailable: true } },
+          locationAvailability: {
+            where: { location: { isActive: true } },
+            select: { isAvailable: true },
+          },
+        },
+      },
       knowledgeFacts: {
         where: {
           isActive: true,
@@ -52,12 +59,20 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     businessHoursStart: tenant.config.businessHoursStart,
     businessHoursEnd: tenant.config.businessHoursEnd,
     businessDays: tenant.config.businessDays as number[],
-    businessSchedule: tenant.config.businessSchedule as Record<string, { open: string; close: string }> | null,
+    businessSchedule: tenant.config.businessSchedule as Record<
+      string,
+      { open: string; close: string }
+    > | null,
     closedDates: tenant.config.closedDates as string[],
     timezone: tenant.config.timezone,
   };
   const openNow = isWithinBusinessHours(hoursConfig);
   const minutesUntilClose = openNow ? getMinutesUntilClose(hoursConfig) : null;
+  const availableMenuItems = tenant.menuItems.filter(
+    (item) =>
+      item.categoryRef?.isAvailable !== false &&
+      isAvailableAtAnyActiveLocation(item, tenant.locations.length)
+  );
 
   const tenantContext: TenantContext = {
     tenantId: tenant.id,
@@ -69,7 +84,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     config: {
       ...tenant.config,
       businessDays: tenant.config.businessDays as number[],
-      businessSchedule: tenant.config.businessSchedule as Record<string, { open: string; close: string }> | null | undefined,
+      businessSchedule: tenant.config.businessSchedule as
+        | Record<string, { open: string; close: string }>
+        | null
+        | undefined,
       closedDates: tenant.config.closedDates as string[],
       salesTaxRate: tenant.config.salesTaxRate != null ? Number(tenant.config.salesTaxRate) : null,
       businessLimits: (tenant.config.businessLimits ?? {}) as any,
@@ -83,7 +101,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       createdAt: flow.createdAt,
       updatedAt: flow.updatedAt,
     })),
-    menuItems: tenant.menuItems.map((item) => ({
+    menuItems: availableMenuItems.map((item) => ({
       ...item,
       price: Number(item.price),
       priceMin: item.priceMin == null ? null : Number(item.priceMin),
@@ -111,7 +129,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       name: tenant.name,
       twilioPhoneNumber: tenant.twilioPhoneNumber,
       slug: tenant.slug,
-      menuItems: tenant.menuItems,
+      menuItems: availableMenuItems,
       knowledgeFacts: tenant.knowledgeFacts,
     },
     todayHoursDisplay: tenantContext.hoursInfo!.todayHoursDisplay,
@@ -121,21 +139,22 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   });
 
   try {
-    const evaluationMode = request.nextUrl.searchParams.get('mode') === 'live'
-      ? 'live'
-      : 'deterministic';
-    const liveChatFn: ChatFn | undefined = evaluationMode === 'live'
-      ? (chatParams) => chatCompletion({
-          ...chatParams,
-          tenantId: tenant.id,
-          purpose: 'vertical_readiness_live',
-          metadata: {
-            vertical: tenantContext.industryTemplateKey ?? tenantContext.businessType,
-            evaluationMode,
-          },
-          timeoutMs: 15_000,
-        })
-      : undefined;
+    const evaluationMode =
+      request.nextUrl.searchParams.get('mode') === 'live' ? 'live' : 'deterministic';
+    const liveChatFn: ChatFn | undefined =
+      evaluationMode === 'live'
+        ? (chatParams) =>
+            chatCompletion({
+              ...chatParams,
+              tenantId: tenant.id,
+              purpose: 'vertical_readiness_live',
+              metadata: {
+                vertical: tenantContext.industryTemplateKey ?? tenantContext.businessType,
+                evaluationMode,
+              },
+              timeoutMs: 15_000,
+            })
+        : undefined;
     const result = await runVerticalReadinessSuite({
       tenantContext,
       chatFn: liveChatFn,

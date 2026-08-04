@@ -3,6 +3,7 @@ import { OrderStatus } from '@prisma/client';
 import { prisma } from '../db';
 import { decrypt } from '../encryption';
 import { toMcInasalFulfillmentStatus, toRingBackOrderStatus } from './fulfillmentMapping';
+import { isAvailableAtLocation } from './menuAvailability';
 
 const ConnectionConfigSchema = z.object({
   endpointUrl: z.string().url(),
@@ -102,7 +103,14 @@ export async function delegateCheckoutToMcInasal(input: {
     }),
     prisma.menuItem.findMany({
       where: { tenantId: input.tenantId, id: { in: uniqueItemIds } },
-      include: { modifierGroups: { include: { modifiers: true } } },
+      include: {
+        categoryRef: { select: { isAvailable: true } },
+        locationAvailability: {
+          where: { locationId: config.ringbackLocationId },
+          select: { isAvailable: true },
+        },
+        modifierGroups: { include: { modifiers: true } },
+      },
     }),
   ]);
   const externalByInternal = new Map(
@@ -111,6 +119,13 @@ export async function delegateCheckoutToMcInasal(input: {
   const missing = uniqueItemIds.filter((id) => !externalByInternal.has(id));
   if (missing.length > 0) {
     throw new McInasalIntegrationError('One or more items are no longer mapped to McInasal');
+  }
+  if (
+    menuItems.some(
+      (item) => item.categoryRef?.isAvailable === false || !isAvailableAtLocation(item)
+    )
+  ) {
+    throw new McInasalIntegrationError('One or more items are currently unavailable', false, 409);
   }
   const nameParts = (input.customerName || '').trim().split(/\s+/).filter(Boolean);
   const menuById = new Map(menuItems.map((item) => [item.id, item]));

@@ -9,6 +9,7 @@ import {
 import { toMcInasalFulfillmentStatus, toRingBackOrderStatus } from './fulfillmentMapping';
 import { OrderStatus } from '@prisma/client';
 import { readFileSync } from 'node:fs';
+import { isAvailableAtAnyActiveLocation, isAvailableAtLocation } from './menuAvailability';
 
 describe('commerce integration safety', () => {
   it('rejects stale or conflicting snapshots and accepts exact retries', () => {
@@ -93,6 +94,29 @@ describe('commerce integration safety', () => {
         1
       )
     ).toBe(false);
+  });
+
+  it('honors location 86 state while preserving tenants without overrides', () => {
+    expect(isAvailableAtAnyActiveLocation({ isAvailable: true }, 1)).toBe(true);
+    expect(
+      isAvailableAtAnyActiveLocation(
+        { isAvailable: true, locationAvailability: [{ isAvailable: false }] },
+        1
+      )
+    ).toBe(false);
+    expect(
+      isAvailableAtAnyActiveLocation(
+        { isAvailable: true, locationAvailability: [{ isAvailable: false }] },
+        2
+      )
+    ).toBe(true);
+    expect(
+      isAvailableAtLocation({
+        isAvailable: true,
+        locationAvailability: [{ isAvailable: false }],
+      })
+    ).toBe(false);
+    expect(isAvailableAtLocation({ isAvailable: false })).toBe(false);
   });
 
   it('rejects financial projections whose net does not reconcile', () => {

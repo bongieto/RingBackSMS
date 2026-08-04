@@ -14,6 +14,7 @@ import {
   isWithinBusinessHours,
 } from '@/lib/server/businessHours';
 import { logTiming, startTimer } from '@/lib/server/perf';
+import { isAvailableAtAnyActiveLocation } from '@/lib/server/commerce/menuAvailability';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -37,8 +38,18 @@ export async function POST(request: NextRequest) {
     where: { id: tenantId },
     include: {
       config: true,
+      locations: { where: { isActive: true }, select: { id: true } },
       flows: { where: { isEnabled: true } },
-      menuItems: { where: { isAvailable: true } },
+      menuItems: {
+        where: { isAvailable: true, posDeletedAt: null },
+        include: {
+          categoryRef: { select: { isAvailable: true } },
+          locationAvailability: {
+            where: { location: { isActive: true } },
+            select: { isAvailable: true },
+          },
+        },
+      },
     },
   });
 
@@ -48,12 +59,20 @@ export async function POST(request: NextRequest) {
     businessHoursStart: tenant.config.businessHoursStart,
     businessHoursEnd: tenant.config.businessHoursEnd,
     businessDays: tenant.config.businessDays as number[],
-    businessSchedule: tenant.config.businessSchedule as Record<string, { open: string; close: string }> | null,
+    businessSchedule: tenant.config.businessSchedule as Record<
+      string,
+      { open: string; close: string }
+    > | null,
     closedDates: tenant.config.closedDates as string[],
     timezone: tenant.config.timezone,
   };
   const openNow = isWithinBusinessHours(hoursConfig);
   const minutesUntilClose = openNow ? getMinutesUntilClose(hoursConfig) : null;
+  const availableMenuItems = tenant.menuItems.filter(
+    (item) =>
+      item.categoryRef?.isAvailable !== false &&
+      isAvailableAtAnyActiveLocation(item, tenant.locations.length)
+  );
 
   const tenantContext: TenantContext = {
     tenantId: tenant.id,
@@ -65,7 +84,10 @@ export async function POST(request: NextRequest) {
     config: {
       ...tenant.config,
       businessDays: tenant.config.businessDays as number[],
-      businessSchedule: tenant.config.businessSchedule as Record<string, { open: string; close: string }> | null | undefined,
+      businessSchedule: tenant.config.businessSchedule as
+        | Record<string, { open: string; close: string }>
+        | null
+        | undefined,
       closedDates: tenant.config.closedDates as string[],
       salesTaxRate: tenant.config.salesTaxRate != null ? Number(tenant.config.salesTaxRate) : null,
       businessLimits: (tenant.config.businessLimits ?? {}) as any,
@@ -79,7 +101,7 @@ export async function POST(request: NextRequest) {
       createdAt: f.createdAt,
       updatedAt: f.updatedAt,
     })),
-    menuItems: tenant.menuItems.map((m) => ({
+    menuItems: availableMenuItems.map((m) => ({
       ...m,
       price: Number(m.price),
       priceMin: m.priceMin == null ? null : Number(m.priceMin),

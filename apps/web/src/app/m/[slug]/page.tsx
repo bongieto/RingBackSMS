@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { prisma } from '@/lib/server/db';
+import { isAvailableAtAnyActiveLocation } from '@/lib/server/commerce/menuAvailability';
 import { PublicMenuClient } from './_components/PublicMenuClient';
 
 export const dynamic = 'force-dynamic';
@@ -54,6 +55,7 @@ async function loadTenantMenu(slug: string): Promise<TenantMenu | null> {
       config: {
         select: { brandColor: true, brandLogoUrl: true, hidePoweredBy: true },
       },
+      locations: { where: { isActive: true }, select: { id: true } },
       menuItems: {
         // Items pass the item-level filter here; the category filter
         // runs post-query because Prisma can't express `OR` across a
@@ -67,6 +69,7 @@ async function loadTenantMenu(slug: string): Promise<TenantMenu | null> {
         orderBy: [{ categoryRef: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { name: 'asc' }],
         select: {
           id: true,
+          isAvailable: true,
           name: true,
           description: true,
           price: true,
@@ -74,6 +77,10 @@ async function loadTenantMenu(slug: string): Promise<TenantMenu | null> {
           imageUrl: true,
           duration: true,
           categoryRef: { select: { isAvailable: true } },
+          locationAvailability: {
+            where: { location: { isActive: true } },
+            select: { isAvailable: true },
+          },
           modifierGroups: {
             orderBy: { sortOrder: 'asc' },
             select: {
@@ -112,7 +119,11 @@ async function loadTenantMenu(slug: string): Promise<TenantMenu | null> {
       // Hide items whose category has been marked unavailable — gives
       // operators a "mute this whole section" switch without having to
       // toggle every item individually.
-      .filter((m) => (m.categoryRef?.isAvailable ?? true) !== false)
+      .filter(
+        (m) =>
+          (m.categoryRef?.isAvailable ?? true) !== false &&
+          isAvailableAtAnyActiveLocation(m, tenant.locations.length)
+      )
       .map((m) => ({
         id: m.id,
         name: m.name,
@@ -124,7 +135,9 @@ async function loadTenantMenu(slug: string): Promise<TenantMenu | null> {
         modifierGroups: m.modifierGroups.map((g) => ({
           id: g.id,
           name: g.name,
-          selectionType: (g.selectionType === 'MULTIPLE' ? 'MULTIPLE' : 'SINGLE') as 'SINGLE' | 'MULTIPLE',
+          selectionType: (g.selectionType === 'MULTIPLE' ? 'MULTIPLE' : 'SINGLE') as
+            | 'SINGLE'
+            | 'MULTIPLE',
           required: g.required,
           minSelections: g.minSelections,
           maxSelections: g.maxSelections,
@@ -139,9 +152,11 @@ async function loadTenantMenu(slug: string): Promise<TenantMenu | null> {
   };
 }
 
-export async function generateMetadata(
-  { params }: { params: { slug: string } },
-): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+}: {
+  params: { slug: string };
+}): Promise<Metadata> {
   const tenant = await loadTenantMenu(params.slug);
   if (!tenant) {
     return {

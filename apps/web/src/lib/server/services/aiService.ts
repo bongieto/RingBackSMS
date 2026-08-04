@@ -4,6 +4,7 @@ import { logger } from '../logger';
 import { prisma } from '../db';
 import { getProfile } from '@/lib/businessTypeProfile';
 import { buildCatalogPromptContext, getVerticalProfileWithOverrides } from '@ringback/flow-engine';
+import { isAvailableAtAnyActiveLocation } from '../commerce/menuAvailability';
 
 function stripThinkTags(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
@@ -23,10 +24,18 @@ export async function buildTenantSystemPrompt(tenantId: string): Promise<string>
     where: { id: tenantId },
     include: {
       config: true,
+      locations: { where: { isActive: true }, select: { id: true } },
       flows: { where: { isEnabled: true } },
       menuItems: {
         where: { isAvailable: true },
         orderBy: [{ categoryRef: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { name: 'asc' }],
+        include: {
+          categoryRef: { select: { isAvailable: true } },
+          locationAvailability: {
+            where: { location: { isActive: true } },
+            select: { isAvailable: true },
+          },
+        },
       },
     },
   });
@@ -46,9 +55,14 @@ export async function buildTenantSystemPrompt(tenantId: string): Promise<string>
     websiteContext: config?.websiteContext,
     intakeFieldOverrides: config?.intakeFieldOverrides,
   });
+  const availableMenuItems = tenant.menuItems.filter(
+    (item) =>
+      item.categoryRef?.isAvailable !== false &&
+      isAvailableAtAnyActiveLocation(item, tenant.locations.length)
+  );
   const catalogContext = buildCatalogPromptContext({
     catalogNoun: verticalProfile.catalogNoun,
-    items: tenant.menuItems.map((item) => ({
+    items: availableMenuItems.map((item) => ({
       ...item,
       price: Number(item.price),
       priceMin: item.priceMin == null ? null : Number(item.priceMin),
@@ -88,9 +102,10 @@ export async function generateReply(
   const systemPrompt = await buildSystemPrompt(tenantId);
 
   // Build a single user message that includes conversation context
-  const historyContext = conversationHistory.length > 0
-    ? `Previous conversation:\n${conversationHistory.map((m) => `${m.role}: ${m.content}`).join('\n')}\n\nLatest message: ${userMessage}`
-    : userMessage;
+  const historyContext =
+    conversationHistory.length > 0
+      ? `Previous conversation:\n${conversationHistory.map((m) => `${m.role}: ${m.content}`).join('\n')}\n\nLatest message: ${userMessage}`
+      : userMessage;
 
   try {
     const rawText = await chatCompletion({
@@ -114,7 +129,14 @@ export interface VoicemailAnalysis {
   intent: VoicemailIntent;
 }
 
-const VOICEMAIL_INTENTS: VoicemailIntent[] = ['ORDER', 'BOOKING', 'QUESTION', 'COMPLAINT', 'SPAM', 'OTHER'];
+const VOICEMAIL_INTENTS: VoicemailIntent[] = [
+  'ORDER',
+  'BOOKING',
+  'QUESTION',
+  'COMPLAINT',
+  'SPAM',
+  'OTHER',
+];
 
 /**
  * Summarize a voicemail transcript and classify it into one intent.
