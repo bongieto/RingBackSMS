@@ -7,9 +7,12 @@ const isPublicRoute = createRouteMatcher([
   '/api/(.*)',          // API routes handle their own auth
   '/industries(.*)',    // marketing pages
   '/become-a-partner',  // public partner application page
+  '/pricing',
+  '/about',
   '/help',
   '/privacy',
   '/terms',
+  '/payment/(.*)',      // Stripe checkout success/cancel landings for SMS customers
   '/m/(.*)',            // public menu pages for customers
   '/o/(.*)',            // public order tracker (link-only access)
   '/r/(.*)',            // public digital receipt
