@@ -25,6 +25,7 @@ interface Order {
   id: string;
   orderNumber: string;
   callerPhone: string;
+  customerName: string | null;
   status: string;
   items: OrderItem[];
   total: number;
@@ -166,6 +167,7 @@ export default function OrdersPage() {
                 const isExpanded = expandedId === order.id;
                 const actions = STATUS_ACTIONS[order.status] ?? [];
                 const items: OrderItem[] = Array.isArray(order.items) ? order.items : [];
+                const customerName = order.customerName?.trim() || null;
 
                 return (
                   <div key={order.id}>
@@ -185,8 +187,17 @@ export default function OrdersPage() {
                               {order.status}
                             </span>
                           </div>
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            {customerName && (
+                              <>
+                                <span className="font-medium text-foreground truncate max-w-[12rem]">
+                                  {customerName}
+                                </span>
+                                <span aria-hidden="true">&middot;</span>
+                              </>
+                            )}
                             <span>{maskPhone(order.callerPhone)}</span>
+                            <span aria-hidden="true">&middot;</span>
                             <span className="truncate max-w-xs">{itemsSummary(items)}</span>
                           </div>
                         </div>
