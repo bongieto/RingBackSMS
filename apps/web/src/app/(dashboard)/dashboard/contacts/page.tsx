@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { contactApi } from '@/lib/api';
-import { cn, formatCurrency, maskPhone, formatRelativeTime } from '@/lib/utils';
+import { cn, formatCurrency, formatPhoneNumber, formatRelativeTime } from '@/lib/utils';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -273,9 +273,9 @@ export default function ContactsPage() {
 
           {/* Bulk Actions Bar */}
           {selectedIds.size > 0 && (
-            <div className="flex items-center gap-3 mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="mb-4 flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 sm:flex-row sm:items-center">
               <span className="text-sm font-medium text-blue-800">{selectedIds.size} selected</span>
-              <div className="flex gap-2 ml-auto">
+              <div className="flex max-w-full flex-wrap gap-2 sm:ml-auto">
                 <div className="flex gap-1.5">
                   <Input
                     value={bulkTag}
@@ -385,7 +385,7 @@ export default function ContactsPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="font-medium">{c.name || 'Unknown'}</div>
-                            <div className="text-xs text-muted-foreground font-mono">{maskPhone(c.phone)}</div>
+                            <div className="text-xs text-muted-foreground font-mono">{formatPhoneNumber(c.phone)}</div>
                           </td>
                           <td className="px-4 py-3">
                             <span className={cn('text-xs font-medium px-2 py-0.5 rounded-full border', statusCfg.color)}>
@@ -516,7 +516,7 @@ function ContactDetailPanel({ contact, onSave, onDelete, onSendSms, isSaving }: 
           <div className="flex items-start justify-between">
             <div>
               <CardTitle className="text-base">{contact.name || 'Unknown Contact'}</CardTitle>
-              <p className="text-xs text-muted-foreground font-mono mt-0.5">{maskPhone(contact.phone)}</p>
+              <p className="text-xs text-muted-foreground font-mono mt-0.5">{formatPhoneNumber(contact.phone)}</p>
             </div>
             <span className={cn('text-xs font-medium px-2 py-0.5 rounded-full border', STATUS_CONFIG[contact.status].color)}>
               {STATUS_CONFIG[contact.status].label}
@@ -808,7 +808,7 @@ function SendSmsModal({ contact, onClose, onSend, isSending }: {
             <Button variant="ghost" size="icon" onClick={onClose}><X className="h-4 w-4" /></Button>
           </div>
           <p className="text-sm text-muted-foreground">
-            To: <span className="font-mono">{maskPhone(contact.phone)}</span>
+            To: <span className="font-mono">{formatPhoneNumber(contact.phone)}</span>
             {contact.name && ` (${contact.name})`}
           </p>
         </CardHeader>
