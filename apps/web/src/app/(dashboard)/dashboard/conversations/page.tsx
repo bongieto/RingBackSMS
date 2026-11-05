@@ -193,7 +193,7 @@ export default function ConversationsPage() {
                       <Phone className="h-5 w-5 text-blue-500" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
+                      <div className="mb-0.5 flex flex-wrap items-center gap-1.5 sm:gap-2">
                         <span className="font-medium text-sm">{maskPhone(conv.callerPhone)}</span>
                         {conv.flowType && (
                           <Badge variant={FLOW_COLORS[conv.flowType] ?? 'outline'} className="text-xs">

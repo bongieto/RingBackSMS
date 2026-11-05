@@ -53,7 +53,7 @@ export default function AdminAgenciesPage() {
       </div>
 
       {/* Program totals */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
         <StatCard label="Active agencies" value={rows.length.toString()} />
         <StatCard label="Linked tenants" value={totals.tenants.toString()} />
         <StatCard label="Pending commissions" value={fmtUsd(totals.pending)} />
@@ -73,7 +73,7 @@ export default function AdminAgenciesPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full min-w-[46rem]">
               <thead>
                 <tr className="border-b border-slate-800 text-left text-xs text-slate-500 uppercase tracking-wide">
                   <th className="px-5 py-3">Agency</th>

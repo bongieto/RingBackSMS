@@ -60,7 +60,7 @@ export default function PartnerEarningsPage() {
           <div className="p-12 text-center text-slate-500">No commissions to show.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full min-w-[42rem]">
               <thead>
                 <tr className="border-b border-slate-800 text-left text-xs text-slate-500 uppercase tracking-wide">
                   <th className="px-5 py-3">Date</th>

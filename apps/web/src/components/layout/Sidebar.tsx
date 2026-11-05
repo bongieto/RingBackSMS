@@ -275,7 +275,13 @@ export function MobileHeader() {
     <>
       {/* Mobile top bar */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-slate-900 text-white h-14 flex items-center justify-between px-4">
-        <button onClick={() => setOpen(true)} className="p-1.5 -ml-1.5 rounded-lg hover:bg-slate-800">
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-label="Open navigation"
+          aria-expanded={open}
+          className="min-h-11 min-w-11 p-2 -ml-2 rounded-lg hover:bg-slate-800"
+        >
           <Menu className="h-6 w-6" />
         </button>
         <Logo size="sm" variant="dark" />
@@ -286,6 +292,7 @@ export function MobileHeader() {
       {open && (
         <div
           className="lg:hidden fixed inset-0 bg-black/50 z-40"
+          aria-hidden="true"
           onClick={() => setOpen(false)}
         />
       )}
@@ -293,14 +300,16 @@ export function MobileHeader() {
       {/* Drawer */}
       <aside
         className={cn(
-          'lg:hidden fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 text-white flex flex-col transition-transform duration-300 ease-in-out',
+          'lg:hidden fixed inset-y-0 left-0 z-50 w-[calc(100vw-2rem)] max-w-72 bg-slate-900 text-white flex flex-col shadow-2xl transition-transform duration-300 ease-in-out',
           open ? 'translate-x-0' : '-translate-x-full'
         )}
       >
         {/* Close button */}
         <button
+          type="button"
           onClick={() => setOpen(false)}
-          className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-slate-800 text-slate-400"
+          aria-label="Close navigation"
+          className="absolute top-3 right-3 z-10 min-h-11 min-w-11 p-2 rounded-lg hover:bg-slate-800 text-slate-400"
         >
           <X className="h-5 w-5" />
         </button>

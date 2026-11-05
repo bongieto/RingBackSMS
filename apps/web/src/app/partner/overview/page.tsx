@@ -19,6 +19,7 @@ interface AgencyMe {
   };
 }
 
+
 function fmtUsd(cents: number) {
   return (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 }
@@ -98,7 +99,8 @@ export default function PartnerOverviewPage() {
               their subscriptions.
             </p>
           ) : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[34rem] text-sm">
               <thead>
                 <tr className="text-left text-xs text-slate-500 uppercase">
                   <th className="pb-2">Client</th>
@@ -122,6 +124,7 @@ export default function PartnerOverviewPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -157,4 +160,3 @@ function StatCard({
     </Card>
   );
 }
-

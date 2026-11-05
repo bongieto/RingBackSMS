@@ -127,7 +127,7 @@ export default function ReplayEvaluatorPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white mb-1">Replay Evaluator</h1>
           <p className="text-sm text-slate-400 max-w-3xl">

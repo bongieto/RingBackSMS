@@ -85,7 +85,7 @@ export default function AdminApiStatusPage() {
 
   return (
     <div>
-      <div className="flex items-start justify-between mb-8">
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">API Connection Status</h1>
           <p className="text-slate-400 text-sm mt-1">
@@ -273,8 +273,8 @@ function SpamLogSection() {
           No spam blocks recorded.
         </div>
       ) : (
-        <div className="border border-slate-800 rounded-lg overflow-hidden bg-slate-900">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900">
+          <table className="w-full min-w-[36rem] text-sm">
             <thead className="bg-slate-950/60 text-slate-400">
               <tr className="border-b border-slate-800">
                 <th className="px-4 py-2 text-left font-medium">When</th>
@@ -385,7 +385,7 @@ function TenantIntegrationsSection() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full min-w-[58rem]">
               <thead>
                 <tr className="border-b border-slate-800 text-left text-xs text-slate-500 uppercase tracking-wide">
                   <th className="px-5 py-3">Tenant</th>

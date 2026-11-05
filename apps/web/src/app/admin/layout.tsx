@@ -44,20 +44,20 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </aside>
 
         {/* Compact navigation for phones and tablets */}
-        <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between border-b-2 border-[#171713] bg-[#F6F0E4]/95 px-4 backdrop-blur lg:hidden">
+        <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center justify-between border-b-2 border-[#171713] bg-[#F6F0E4]/95 px-3 backdrop-blur sm:px-4 lg:hidden">
           <Logo size="sm" variant="light" />
           <details className="group relative">
-            <summary className="cursor-pointer list-none border-2 border-[#171713] bg-[#F05A37] px-3 py-2 text-xs font-black uppercase tracking-[0.12em] shadow-[3px_3px_0_#171713]">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center border-2 border-[#171713] bg-[#F05A37] px-3 py-2 text-xs font-black uppercase tracking-[0.12em] shadow-[3px_3px_0_#171713]">
               Menu
             </summary>
-            <div className="absolute right-0 top-full mt-3 w-72 border-2 border-[#171713] bg-[#171713] p-3 shadow-[6px_6px_0_#F05A37]">
+            <div className="absolute right-0 top-full mt-3 max-h-[calc(100vh-5.5rem)] w-[calc(100vw-1.5rem)] max-w-72 overflow-y-auto border-2 border-[#171713] bg-[#171713] p-3 shadow-[6px_6px_0_#F05A37]">
               <AdminNavigation />
             </div>
           </details>
         </header>
 
         <AuthTokenProvider />
-        <main className="admin-content min-h-screen min-w-0 flex-1 px-4 pb-10 pt-24 sm:px-6 lg:ml-64 lg:p-10">
+        <main className="admin-content min-h-screen min-w-0 max-w-full flex-1 px-3 pb-10 pt-24 sm:px-6 lg:ml-64 lg:p-10">
           {children}
         </main>
       </div>

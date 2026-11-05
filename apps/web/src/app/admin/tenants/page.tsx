@@ -114,8 +114,8 @@ function AddTenantModal({ onClose, onCreated }: AddTenantModalProps) {
   const verticalOptions = VERTICAL_OPTIONS[form.businessType] ?? VERTICAL_OPTIONS.OTHER;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-lg p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-3 backdrop-blur-sm sm:p-4">
+      <div className="my-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-2xl sm:max-h-[calc(100dvh-2rem)] sm:p-6">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-bold text-white">Add New Tenant</h2>
           <button onClick={onClose} className="text-slate-500 hover:text-white">
@@ -134,7 +134,7 @@ function AddTenantModal({ onClose, onCreated }: AddTenantModalProps) {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="block text-xs text-slate-400 mb-1">Business Type</label>
               <select
@@ -179,7 +179,7 @@ function AddTenantModal({ onClose, onCreated }: AddTenantModalProps) {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="block text-xs text-slate-400 mb-1">Owner Email</label>
               <Input
@@ -212,7 +212,7 @@ function AddTenantModal({ onClose, onCreated }: AddTenantModalProps) {
           </div>
         </div>
 
-        <div className="flex gap-3 mt-6">
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row">
           <Button
             className="flex-1"
             onClick={() => mutation.mutate()}
@@ -251,8 +251,8 @@ function DeleteModal({ tenant, onClose, onDeleted }: DeleteModalProps) {
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-slate-900 border border-red-900/50 rounded-xl w-full max-w-md p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-3 backdrop-blur-sm sm:p-4">
+      <div className="my-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto rounded-xl border border-red-900/50 bg-slate-900 p-4 shadow-2xl sm:max-h-[calc(100dvh-2rem)] sm:p-6">
         <div className="flex items-center gap-3 mb-4">
           <Trash2 className="h-5 w-5 text-red-400" />
           <h2 className="text-lg font-bold text-white">Delete Tenant</h2>
@@ -281,7 +281,7 @@ function DeleteModal({ tenant, onClose, onDeleted }: DeleteModalProps) {
           />
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex flex-col-reverse gap-3 sm:flex-row">
           <Button
             variant="destructive"
             className="flex-1"
@@ -396,7 +396,7 @@ export default function AdminTenantsPage() {
           <div className="p-12 text-center text-slate-500">No tenants found</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full min-w-[52rem]">
               <thead>
                 <tr className="border-b border-slate-800 text-left text-xs text-slate-500 uppercase tracking-wide">
                   <th className="px-5 py-3">Organization</th>

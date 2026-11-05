@@ -35,7 +35,7 @@ export default function PartnerClientsPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full min-w-[48rem]">
               <thead>
                 <tr className="border-b border-slate-800 text-left text-xs text-slate-500 uppercase tracking-wide">
                   <th className="px-5 py-3">Client</th>

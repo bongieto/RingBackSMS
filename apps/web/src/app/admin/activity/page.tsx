@@ -17,7 +17,7 @@ export default function AdminActivityPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Activity Feed</h1>
           <p className="text-slate-400 text-sm mt-1">Live platform activity — auto-refreshes every 30s</p>
@@ -108,7 +108,7 @@ export default function AdminActivityPage() {
               <p className="text-slate-500 text-sm">No recent orders</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full min-w-[38rem] text-sm">
                   <thead>
                     <tr className="text-left text-xs text-slate-500 uppercase border-b border-slate-800">
                       <th className="pb-2 pr-4">Order #</th>

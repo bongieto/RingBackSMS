@@ -48,7 +48,13 @@ export function Tabs({
 
 export function TabList({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div role="tablist" className={cn('flex items-center gap-6 border-b', className)}>
+    <div
+      role="tablist"
+      className={cn(
+        'flex max-w-full items-center gap-4 overflow-x-auto border-b pb-px [scrollbar-width:thin] sm:gap-6',
+        className,
+      )}
+    >
       {children}
     </div>
   );
@@ -70,7 +76,7 @@ export function TabTrigger({
       aria-selected={selected}
       onClick={() => onChange(value)}
       className={cn(
-        'px-1 pb-2 text-sm font-medium transition-colors border-b-2 -mb-[1px]',
+        'mb-[-1px] shrink-0 whitespace-nowrap border-b-2 px-1 pb-2 text-sm font-medium transition-colors',
         selected
           ? 'border-primary text-primary'
           : 'border-transparent text-muted-foreground hover:text-foreground',

@@ -74,7 +74,7 @@ export default function AdminFinancePage() {
       </div>
 
       {/* Top KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* MRR */}
         <Card className="bg-slate-900 border-slate-800">
           <CardContent className="pt-5 pb-5">

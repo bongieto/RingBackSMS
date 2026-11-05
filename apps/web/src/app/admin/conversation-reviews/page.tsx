@@ -247,7 +247,7 @@ export default function AdminConversationReviewsPage() {
 
   return (
     <div>
-      <div className="flex items-start justify-between mb-8">
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Conversation Reviews</h1>
           <p className="text-slate-400 text-sm mt-1">
