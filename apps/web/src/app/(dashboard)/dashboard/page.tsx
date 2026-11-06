@@ -20,7 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ActionItemsCard } from '@/components/dashboard/ActionItemsCard';
 import { Badge } from '@/components/ui/badge';
 import { analyticsApi, conversationApi } from '@/lib/api';
-import { formatRelativeTime, maskPhone } from '@/lib/utils';
+import { formatRelativeTime, formatPhoneNumber } from '@/lib/utils';
 import { getProfile } from '@/lib/businessTypeProfile';
 import { useTenantId } from '@/components/providers/TenantProvider';
 
@@ -236,7 +236,7 @@ export default function DashboardPage() {
                         <Phone className="h-4 w-4 text-blue-500" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium">{maskPhone(conv.callerPhone)}</p>
+                        <p className="text-sm font-medium">{formatPhoneNumber(conv.callerPhone)}</p>
                         <p className="text-xs text-muted-foreground">{formatRelativeTime(conv.updatedAt)}</p>
                       </div>
                     </div>
