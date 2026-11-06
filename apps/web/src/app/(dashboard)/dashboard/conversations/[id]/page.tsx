@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { conversationApi } from '@/lib/api';
-import { formatDate, maskPhone } from '@/lib/utils';
+import { formatDate, formatPhoneNumber } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 
 const MESSAGE_PAGE_SIZE = 50;
@@ -247,7 +247,7 @@ export default function ConversationDetailPage() {
       </div>
 
       <Header
-        title={maskPhone(conversation.callerPhone)}
+        title={formatPhoneNumber(conversation.callerPhone)}
         description={`Started ${formatDate(conversation.createdAt)}`}
       />
 

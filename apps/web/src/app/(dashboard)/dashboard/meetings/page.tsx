@@ -32,7 +32,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { meetingApi } from '@/lib/api';
-import { maskPhone, cn } from '@/lib/utils';
+import { formatPhoneNumber, cn } from '@/lib/utils';
 import { CalendarSettingsCard } from '@/components/meetings/CalendarSettingsCard';
 import { useTenantId } from '@/components/providers/TenantProvider';
 
@@ -497,7 +497,7 @@ function ListViewContent({
                     : 'Not scheduled'}
                 </td>
                 <td className="p-4 text-sm font-mono">
-                  {maskPhone(meeting.callerPhone)}
+                  {formatPhoneNumber(meeting.callerPhone)}
                 </td>
                 <td className="p-4">
                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -803,7 +803,7 @@ function MeetingChip({
           : 'TBD'}
       </div>
       {!compact && (
-        <div className="truncate">{maskPhone(meeting.callerPhone)}</div>
+        <div className="truncate">{formatPhoneNumber(meeting.callerPhone)}</div>
       )}
     </button>
   );
@@ -850,7 +850,7 @@ function MeetingDetailPanel({
 
           <div>
             <Label className="text-muted-foreground text-xs">Customer Phone</Label>
-            <p className="text-sm font-mono mt-1">{maskPhone(meeting.callerPhone)}</p>
+            <p className="text-sm font-mono mt-1">{formatPhoneNumber(meeting.callerPhone)}</p>
           </div>
 
           <div>

@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { voicemailApi, replyTemplateApi } from '@/lib/api';
-import { maskPhone } from '@/lib/utils';
+import { formatPhoneNumber } from '@/lib/utils';
 import { useTenantId } from '@/components/providers/TenantProvider';
 
 interface VoicemailContact {
@@ -288,7 +288,7 @@ export default function VoicemailsPage() {
                     <td className="p-4">
                       <input
                         type="checkbox"
-                        aria-label={`Select voicemail from ${maskPhone(vm.callerPhone)}`}
+                        aria-label={`Select voicemail from ${formatPhoneNumber(vm.callerPhone)}`}
                         checked={selected.has(vm.id)}
                         onChange={() => toggleSelect(vm.id)}
                       />
@@ -305,7 +305,7 @@ export default function VoicemailsPage() {
                               {vm.contact.name}
                             </a>
                           ) : (
-                            <span className="text-sm font-mono">{maskPhone(vm.callerPhone)}</span>
+                            <span className="text-sm font-mono">{formatPhoneNumber(vm.callerPhone)}</span>
                           )}
                           {vm.contact && (
                             <Badge variant={statusBadgeVariant(vm.contact.status)} className="text-xs">
@@ -320,7 +320,7 @@ export default function VoicemailsPage() {
                         </div>
                         {vm.contact?.name && (
                           <span className="text-xs font-mono text-muted-foreground ml-6">
-                            {maskPhone(vm.callerPhone)}
+                            {formatPhoneNumber(vm.callerPhone)}
                           </span>
                         )}
                       </div>

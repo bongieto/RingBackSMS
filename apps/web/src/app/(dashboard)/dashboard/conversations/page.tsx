@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { conversationApi, webApi } from '@/lib/api';
-import { formatRelativeTime, maskPhone } from '@/lib/utils';
+import { formatRelativeTime, formatPhoneNumber } from '@/lib/utils';
 import Link from 'next/link';
 import { useTenantId } from '@/components/providers/TenantProvider';
 
@@ -194,7 +194,7 @@ export default function ConversationsPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="mb-0.5 flex flex-wrap items-center gap-1.5 sm:gap-2">
-                        <span className="font-medium text-sm">{maskPhone(conv.callerPhone)}</span>
+                        <span className="font-medium text-sm">{formatPhoneNumber(conv.callerPhone)}</span>
                         {conv.flowType && (
                           <Badge variant={FLOW_COLORS[conv.flowType] ?? 'outline'} className="text-xs">
                             {conv.flowType}

@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Clock, Phone, X, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { cn, formatPhoneNumber } from '@/lib/utils';
 import { webApi } from '@/lib/api';
 
 interface OrderItem {
@@ -35,13 +35,6 @@ const STATUS_ACTIONS: Record<string, { label: string; next: string; color: strin
   PREPARING: { label: 'Ready \u2713', next: 'READY', color: 'bg-green-600 hover:bg-green-700 text-white' },
   READY: { label: 'Picked Up', next: 'COMPLETED', color: 'bg-slate-700 hover:bg-slate-800 text-white' },
 };
-
-function maskPhone(phone: string): string {
-  if (phone.length >= 10) {
-    return `***-${phone.slice(-4)}`;
-  }
-  return phone;
-}
 
 function formatElapsed(createdAt: string): string {
   const diff = Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000);
@@ -152,7 +145,7 @@ export function OrderCard({ order, tenantId }: { order: Order; tenantId: string 
       <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
         <span className="flex items-center gap-1">
           <Phone className="h-3 w-3" />
-          {maskPhone(order.callerPhone)}
+          {formatPhoneNumber(order.callerPhone)}
         </span>
         <span className="font-semibold text-slate-900 text-sm">${total.toFixed(2)}</span>
       </div>

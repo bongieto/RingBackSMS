@@ -8,7 +8,7 @@ import { Header } from '@/components/layout/Header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { orderApi } from '@/lib/api';
-import { formatDate, formatRelativeTime, maskPhone, formatCurrency } from '@/lib/utils';
+import { formatDate, formatRelativeTime, formatPhoneNumber, formatCurrency } from '@/lib/utils';
 import { useTenantId } from '@/components/providers/TenantProvider';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -196,7 +196,7 @@ export default function OrdersPage() {
                                 <span aria-hidden="true">&middot;</span>
                               </>
                             )}
-                            <span>{maskPhone(order.callerPhone)}</span>
+                            <span>{formatPhoneNumber(order.callerPhone)}</span>
                             <span aria-hidden="true">&middot;</span>
                             <span className="truncate max-w-xs">{itemsSummary(items)}</span>
                           </div>
