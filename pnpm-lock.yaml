@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@ringback/flow-engine':
+        specifier: workspace:*
+        version: link:packages/flow-engine
     devDependencies:
       '@types/node':
         specifier: ^20.11.0

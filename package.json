@@ -13,11 +13,15 @@
     "lint": "eslint apps/web/src packages/flow-engine/src packages/shared-types/src --ext .ts,.tsx",
     "test": "turbo run test",
     "smoke:platform": "node scripts/smoke-platform.mjs",
+    "eval:replay": "pnpm --filter @ringback/flow-engine build && node scripts/eval/run-real-traffic.mjs",
     "clean": "turbo run clean && rimraf node_modules",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "db:generate": "turbo run db:generate",
     "db:push": "turbo run db:push",
     "db:seed": "turbo run db:seed"
+  },
+  "dependencies": {
+    "@ringback/flow-engine": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
