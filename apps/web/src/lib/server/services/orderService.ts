@@ -347,7 +347,9 @@ export async function createOrder(input: CreateOrderInput) {
         feeCents: paidViaStripe && feeCents > 0 ? feeCents : undefined,
         externalSource: paidViaStripe ? 'Stripe' : undefined,
         externalSourceId: paidViaStripe ? input.stripePaymentId : undefined,
-        customerName: input.customerName ?? null,
+        // effectiveName, not input.customerName: it includes the Contact-name
+        // fallback, so returning customers keep their name on the POS ticket.
+        customerName: effectiveName,
         pickupTime: input.pickupTime ?? null,
         tenantTimezone: cfg?.timezone ?? null,
       }).catch((err) => logger.error('POS push failed (non-fatal)', { err, orderId: order.id }))
@@ -461,6 +463,13 @@ export async function pushOrderToPos(
   const { posRegistry } = await import('../pos/registry');
   const adapter = posRegistry.get(tenant.posProvider);
 
+  // Never send an encrypted blob as the ticket name: decrypt legacy
+  // Contact-sourced values, and drop anything that still looks encrypted
+  // so the adapter falls back to its generic label.
+  const { decryptMaybePlaintext, looksEncrypted } = await import('../encryption');
+  const rawName = decryptMaybePlaintext(payment?.customerName);
+  const safeCustomerName = rawName && !looksEncrypted(rawName) ? rawName : null;
+
   const result = await adapter.createOrder(tenantId, posItems, {
     locationId: tenant.posLocationId,
     idempotencyKey: `ringback-${conversationId}-${orderId}`,
@@ -470,7 +479,7 @@ export async function pushOrderToPos(
     tipCents: payment?.tipCents,
     externalSource: payment?.externalSource,
     externalSourceId: payment?.externalSourceId,
-    customerName: payment?.customerName ?? null,
+    customerName: safeCustomerName,
     pickupTime: payment?.pickupTime ?? null,
     tenantTimezone: payment?.tenantTimezone ?? null,
   });

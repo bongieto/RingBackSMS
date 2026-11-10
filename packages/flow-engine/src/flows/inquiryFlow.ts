@@ -135,6 +135,7 @@ export async function processInquiryFlow(input: FlowInput): Promise<FlowOutput> 
             pickupTime: null,
             notes: 'Retail reservation from SMS inquiry',
             total: item.price,
+            customerName: currentState.customerName ?? input.callerMemory?.contactName ?? null,
           },
         },
       ];
