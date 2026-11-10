@@ -594,7 +594,13 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
         sideEffects: [
           {
             type: 'CREATE_PAYMENT_LINK',
-            payload: { items: orderItems, total, pickupTime, notes: null },
+            payload: {
+              items: orderItems,
+              total,
+              pickupTime,
+              notes: null,
+              customerName: currentState.customerName ?? callerMemory?.contactName ?? null,
+            },
           },
           {
             type: 'NOTIFY_OWNER',
@@ -646,7 +652,13 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       sideEffects: [
         {
           type: 'SAVE_ORDER',
-          payload: { items: orderItems, pickupTime, notes: null, total },
+          payload: {
+            items: orderItems,
+            pickupTime,
+            notes: null,
+            total,
+            customerName: currentState.customerName ?? callerMemory?.contactName ?? null,
+          },
         },
         {
           type: 'NOTIFY_OWNER',
@@ -690,7 +702,13 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
         sideEffects: [
           {
             type: 'CREATE_PAYMENT_LINK',
-            payload: { items: serviceItems, total, pickupTime: requestedTime, notes: serviceNotes },
+            payload: {
+              items: serviceItems,
+              total,
+              pickupTime: requestedTime,
+              notes: serviceNotes,
+              customerName: currentState.customerName ?? callerMemory?.contactName ?? null,
+            },
           },
           {
             type: 'NOTIFY_OWNER',
@@ -717,7 +735,16 @@ export async function processOrderFlow(input: FlowInput): Promise<FlowOutput> {
       nextState,
       smsReply: `Your appointment for ${serviceNames} has been requested for ${requestedTime}. Total: $${total.toFixed(2)}. We'll confirm your booking shortly!`,
       sideEffects: [
-        { type: 'SAVE_ORDER', payload: { items: serviceItems, pickupTime: requestedTime, notes: serviceNotes, total } },
+        {
+          type: 'SAVE_ORDER',
+          payload: {
+            items: serviceItems,
+            pickupTime: requestedTime,
+            notes: serviceNotes,
+            total,
+            customerName: currentState.customerName ?? callerMemory?.contactName ?? null,
+          },
+        },
         {
           type: 'NOTIFY_OWNER',
           payload: {
