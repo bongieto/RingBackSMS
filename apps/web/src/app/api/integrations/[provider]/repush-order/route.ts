@@ -38,10 +38,13 @@ export async function POST(
       items: true,
       total: true,
       tipAmount: true,
+      taxAmount: true,
+      feeAmount: true,
       stripePaymentId: true,
       customerName: true,
       pickupTime: true,
       squareOrderId: true,
+      tenant: { select: { config: { select: { timezone: true } } } },
     },
   });
   if (!order) return apiError('Order not found', 404);
@@ -57,20 +60,40 @@ export async function POST(
   const totalCents = Math.round(
     (Number(order.total) + Number(order.tipAmount ?? 0)) * 100,
   );
+  // Mirror the Stripe webhook's push exactly. Without tax / fee / tip the
+  // adapter builds a Square order for the items subtotal only, so the
+  // recovered order under-reports tax and drops the tip.
+  const taxCents = Math.round(Number(order.taxAmount ?? 0) * 100);
+  const feeCents = Math.round(Number(order.feeAmount ?? 0) * 100);
+  const tipCents = Math.round(Number(order.tipAmount ?? 0) * 100);
 
   try {
     await pushOrderToPos(order.id, tenantId, order.conversationId, items, {
       totalCents,
+      taxCents: taxCents > 0 ? taxCents : undefined,
+      feeCents: feeCents > 0 ? feeCents : undefined,
+      tipCents: tipCents > 0 ? tipCents : undefined,
       externalSource: 'Stripe',
       externalSourceId: order.stripePaymentId ?? undefined,
       customerName: order.customerName ?? null,
       pickupTime: order.pickupTime ?? null,
+      tenantTimezone: order.tenant?.config?.timezone ?? null,
     });
 
     const updated = await prisma.order.findUnique({
       where: { id: orderId },
       select: { squareOrderId: true },
     });
+
+    // pushOrderToPos returns quietly when it skips (no POS connected, or no
+    // item linked to the POS catalog). Don't report that as a success.
+    if (!updated?.squareOrderId) {
+      logger.warn('Manual POS repush skipped — order still has no POS id', { orderId, tenantId });
+      return apiError(
+        'Order was not sent to the POS. Check that the POS is connected and every item is linked to the POS catalog.',
+        422,
+      );
+    }
 
     logger.info('Manual POS repush succeeded', { orderId, tenantId, squareOrderId: updated?.squareOrderId });
     return apiSuccess({ repushed: true, squareOrderId: updated?.squareOrderId });
