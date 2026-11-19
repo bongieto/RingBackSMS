@@ -5,6 +5,7 @@ import {
   BasePosAdapter,
   PosMenuOption,
   PosMenuSelection,
+  PosCustomOrderItem,
   PosOrderItem,
   PosOrderResult,
   SyncResult,
@@ -122,6 +123,9 @@ export class SquareAdapter extends BasePosAdapter {
   readonly provider = 'square';
   readonly displayName = 'Square';
   readonly authType = 'oauth' as const;
+  // Square order lines are built from name + price, so a line needs no
+  // catalog link to appear on the ticket.
+  readonly supportsCustomLineItems = true;
 
   getOAuthUrl(tenantId: string, state: string): string {
     const baseUrl = getSquareBaseUrl();
@@ -781,6 +785,7 @@ export class SquareAdapter extends BasePosAdapter {
       customerName?: string | null;
       pickupTime?: string | null;
       tenantTimezone?: string | null;
+      customItems?: PosCustomOrderItem[];
     },
   ): Promise<PosOrderResult> {
     const tokens = await this.loadTokens(tenantId);
@@ -839,7 +844,7 @@ export class SquareAdapter extends BasePosAdapter {
     });
     const byVariationId = new Map(menuRows.map((m) => [m.posVariationId!, m]));
 
-    const menuLineItems = items.map((item) => {
+    const linkedLineItems = items.map((item) => {
       const ref = byVariationId.get(item.externalVariationId);
       const name = ref?.name ?? 'Item';
       const priceCents = ref ? Math.round(Number(ref.price) * 100) : 0;
@@ -849,6 +854,18 @@ export class SquareAdapter extends BasePosAdapter {
         basePriceMoney: { amount: BigInt(priceCents), currency: 'USD' },
       };
     });
+    // Lines whose MenuItem was never linked to the Square catalog. They go
+    // through as the same kind of ad-hoc line, so the order still reaches
+    // the kitchen instead of being skipped.
+    const customLineItems = (metadata.customItems ?? []).map((item) => ({
+      quantity: String(item.quantity),
+      name: item.name,
+      basePriceMoney: { amount: BigInt(item.priceCents), currency: 'USD' },
+    }));
+    const menuLineItems = [...linkedLineItems, ...customLineItems];
+    if (menuLineItems.length === 0) {
+      throw new Error('Square createOrder called with no line items');
+    }
 
     // Place sales tax and the card-fee passthrough in Square's dedicated
     // order fields rather than as ad-hoc line items, so KDS tickets show

@@ -3,10 +3,16 @@ import { getKitchenPaymentStatusFilter, isKitchenPaymentEligible } from '@ringba
 import { waitUntil } from '@vercel/functions';
 import { logger } from '../logger';
 import { prisma } from '../db';
-import { autoCompleteTasksForEntity } from './taskService';
+import { autoCompleteTasksForEntity, createTask } from './taskService';
 import { currentTurnId } from '../turn/TurnContext';
 import { enqueueIntegrationEvent } from '../commerce/outbox';
 import { delegateFulfillmentToMcInasal } from '../commerce/mcinasalClient';
+import {
+  buildPosPushAlert,
+  splitOrderItemsForPos,
+  type DroppedOrderLine,
+  type OrderLineInput,
+} from '../pos/orderItems';
 
 function generateOrderNumber(): string {
   const timestamp = Date.now().toString(36).toUpperCase();
@@ -359,11 +365,19 @@ export async function createOrder(input: CreateOrderInput) {
   return order;
 }
 
+export type PosPushOutcome =
+  | { status: 'pushed'; externalOrderId: string; dropped: DroppedOrderLine[] }
+  | { status: 'skipped'; reason: 'no_pos_connected' | 'no_sendable_items'; dropped: DroppedOrderLine[] };
+
 /**
  * Push a freshly-created order to the tenant's POS via its adapter and
- * record the external order id on the Order row. Non-fatal: we log on
- * failure so the customer still gets their SMS confirmation even if
- * Square is temporarily unreachable.
+ * record the external order id on the Order row. Non-fatal for callers:
+ * the customer still gets their SMS confirmation even if Square is
+ * temporarily unreachable.
+ *
+ * A POS-connected tenant relies on the POS ticket to know an order exists,
+ * so any outcome where the ticket is missing or incomplete (skipped, items
+ * dropped, adapter error) raises an owner alert before returning/throwing.
  */
 export async function pushOrderToPos(
   orderId: string,
@@ -381,7 +395,7 @@ export async function pushOrderToPos(
     pickupTime?: string | null;
     tenantTimezone?: string | null;
   }
-): Promise<void> {
+): Promise<PosPushOutcome> {
   const tenant = await prisma.tenant.findUnique({
     where: { id: tenantId },
     select: { posProvider: true, posLocationId: true },
@@ -393,120 +407,211 @@ export async function pushOrderToPos(
       hasProvider: !!tenant?.posProvider,
       hasLocationId: !!tenant?.posLocationId,
     });
-    return;
-  }
-
-  // Items need a variation id for the POS. Fetch the matching MenuItem
-  // rows to look up squareVariationId / posVariationId; our order items
-  // carry menuItemId but not the external ids.
-  const menuItemIds = items
-    .map((i) => (i as { menuItemId?: string }).menuItemId)
-    .filter((id): id is string => typeof id === 'string' && id.length > 0);
-  if (menuItemIds.length === 0) {
-    logger.warn('POS push skipped — no menuItemIds on order items', { orderId, tenantId });
-    return;
-  }
-
-  const menuRows = await prisma.menuItem.findMany({
-    where: { tenantId, id: { in: menuItemIds } },
-    select: { id: true, name: true, posVariationId: true, squareVariationId: true },
-  });
-  const byId = new Map(menuRows.map((m) => [m.id, m]));
-
-  // Track which items got dropped for diagnostics. Common failure
-  // mode: manually-created MenuItem that was never linked to Square.
-  const droppedItems: Array<{ menuItemId: string; name: string; reason: string }> = [];
-  const posItems = items
-    .map((i) => {
-      const itemTyped = i as { menuItemId: string; name?: string };
-      const ref = byId.get(itemTyped.menuItemId);
-      if (!ref) {
-        droppedItems.push({
-          menuItemId: itemTyped.menuItemId,
-          name: itemTyped.name ?? '(unknown)',
-          reason: 'menuItem row no longer exists (deleted?)',
-        });
-        return null;
-      }
-      const variationId = ref.posVariationId ?? ref.squareVariationId;
-      if (!variationId) {
-        droppedItems.push({
-          menuItemId: itemTyped.menuItemId,
-          name: ref.name,
-          reason: 'no posVariationId or squareVariationId (orphan item, not linked to POS)',
-        });
-        return null;
-      }
-      return { externalVariationId: variationId, quantity: i.quantity };
-    })
-    .filter((x): x is { externalVariationId: string; quantity: number } => x !== null);
-
-  if (droppedItems.length > 0) {
-    logger.warn('POS push: some items dropped (not linked to POS catalog)', {
-      orderId,
-      tenantId,
-      dropped: droppedItems,
-      kept: posItems.length,
-    });
-  }
-
-  if (posItems.length === 0) {
-    logger.warn('POS push skipped — no items survived linkage check', {
-      orderId,
-      tenantId,
-      totalItemsOnOrder: items.length,
-      droppedCount: droppedItems.length,
-    });
-    return;
+    return { status: 'skipped', reason: 'no_pos_connected', dropped: [] };
   }
 
   const { posRegistry } = await import('../pos/registry');
   const adapter = posRegistry.get(tenant.posProvider);
+  let dropped: DroppedOrderLine[] = [];
 
-  // Never send an encrypted blob as the ticket name: decrypt legacy
-  // Contact-sourced values, and drop anything that still looks encrypted
-  // so the adapter falls back to its generic label.
-  const { decryptMaybePlaintext, looksEncrypted } = await import('../encryption');
-  const rawName = decryptMaybePlaintext(payment?.customerName);
-  const safeCustomerName = rawName && !looksEncrypted(rawName) ? rawName : null;
+  try {
+    // Linked items go to the POS by variation id. Fetch the matching
+    // MenuItem rows to look up squareVariationId / posVariationId; our
+    // order items carry menuItemId but not the external ids.
+    const orderLines = items as unknown as OrderLineInput[];
+    const menuItemIds = orderLines
+      .map((i) => i.menuItemId)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    const menuRows =
+      menuItemIds.length > 0
+        ? await prisma.menuItem.findMany({
+            where: { tenantId, id: { in: menuItemIds } },
+            select: {
+              id: true,
+              name: true,
+              price: true,
+              posVariationId: true,
+              squareVariationId: true,
+            },
+          })
+        : [];
 
-  const result = await adapter.createOrder(tenantId, posItems, {
-    locationId: tenant.posLocationId,
-    idempotencyKey: `ringback-${conversationId}-${orderId}`,
-    totalCents: payment?.totalCents,
-    taxCents: payment?.taxCents,
-    feeCents: payment?.feeCents,
-    tipCents: payment?.tipCents,
-    externalSource: payment?.externalSource,
-    externalSourceId: payment?.externalSourceId,
-    customerName: safeCustomerName,
-    pickupTime: payment?.pickupTime ?? null,
-    tenantTimezone: payment?.tenantTimezone ?? null,
-  });
+    // Common failure mode: a manually-created MenuItem that was never
+    // linked to the POS catalog. Adapters that take custom lines (Square)
+    // still get it by name + price; for the rest it is dropped.
+    const lines = splitOrderItemsForPos(orderLines, menuRows, {
+      supportsCustomLineItems: adapter.supportsCustomLineItems,
+    });
+    dropped = lines.dropped;
 
-  await prisma.order.update({
-    where: { id: orderId },
-    data: {
-      squareOrderId: tenant.posProvider === 'square' ? result.externalOrderId : undefined,
-      posOrderId: result.externalOrderId,
-      // Also stamp the external-tender payment id when the adapter
-      // recorded one. Lets ops verify the Square order closed out paid
-      // without having to open the Square Dashboard.
-      ...(result.externalPaymentId
-        ? {
-            squarePaymentId: tenant.posProvider === 'square' ? result.externalPaymentId : undefined,
-            posPaymentId: result.externalPaymentId,
-          }
-        : {}),
-    },
-  });
+    if (lines.custom.length > 0) {
+      logger.warn('POS push: sending unlinked items as custom lines', {
+        orderId,
+        tenantId,
+        custom: lines.custom.map((c) => c.name),
+      });
+    }
+    if (dropped.length > 0) {
+      logger.warn('POS push: some items dropped (not linked to POS catalog)', {
+        orderId,
+        tenantId,
+        dropped,
+        kept: lines.linked.length + lines.custom.length,
+      });
+    }
 
-  logger.info('Order pushed to POS', {
-    orderId,
-    tenantId,
-    provider: tenant.posProvider,
-    externalOrderId: result.externalOrderId,
-  });
+    if (lines.linked.length + lines.custom.length === 0) {
+      logger.warn('POS push skipped — no items could be sent to the POS', {
+        orderId,
+        tenantId,
+        totalItemsOnOrder: items.length,
+        droppedCount: dropped.length,
+      });
+      await alertOwnerOfPosPushProblem({
+        orderId,
+        tenantId,
+        posName: adapter.displayName,
+        kind: 'not_sent',
+        dropped,
+      });
+      return { status: 'skipped', reason: 'no_sendable_items', dropped };
+    }
+
+    // Never send an encrypted blob as the ticket name: decrypt legacy
+    // Contact-sourced values, and drop anything that still looks encrypted
+    // so the adapter falls back to its generic label.
+    const { decryptMaybePlaintext, looksEncrypted } = await import('../encryption');
+    const rawName = decryptMaybePlaintext(payment?.customerName);
+    const safeCustomerName = rawName && !looksEncrypted(rawName) ? rawName : null;
+
+    const result = await adapter.createOrder(tenantId, lines.linked, {
+      locationId: tenant.posLocationId,
+      idempotencyKey: `ringback-${conversationId}-${orderId}`,
+      totalCents: payment?.totalCents,
+      taxCents: payment?.taxCents,
+      feeCents: payment?.feeCents,
+      tipCents: payment?.tipCents,
+      externalSource: payment?.externalSource,
+      externalSourceId: payment?.externalSourceId,
+      customerName: safeCustomerName,
+      pickupTime: payment?.pickupTime ?? null,
+      tenantTimezone: payment?.tenantTimezone ?? null,
+      ...(lines.custom.length > 0 && { customItems: lines.custom }),
+    });
+
+    await prisma.order.update({
+      where: { id: orderId },
+      data: {
+        squareOrderId: tenant.posProvider === 'square' ? result.externalOrderId : undefined,
+        posOrderId: result.externalOrderId,
+        // Also stamp the external-tender payment id when the adapter
+        // recorded one. Lets ops verify the Square order closed out paid
+        // without having to open the Square Dashboard.
+        ...(result.externalPaymentId
+          ? {
+              squarePaymentId: tenant.posProvider === 'square' ? result.externalPaymentId : undefined,
+              posPaymentId: result.externalPaymentId,
+            }
+          : {}),
+      },
+    });
+
+    logger.info('Order pushed to POS', {
+      orderId,
+      tenantId,
+      provider: tenant.posProvider,
+      externalOrderId: result.externalOrderId,
+    });
+
+    if (dropped.length > 0) {
+      await alertOwnerOfPosPushProblem({
+        orderId,
+        tenantId,
+        posName: adapter.displayName,
+        kind: 'partial',
+        dropped,
+      });
+    } else {
+      // A clean push (e.g. a manual re-push after an earlier failure)
+      // resolves any "not sent to POS" task left open for this order.
+      await autoCompleteTasksForEntity('ORDER', 'orderId', orderId).catch((err) =>
+        logger.warn('Failed to auto-complete POS push task', { err, orderId })
+      );
+    }
+    return { status: 'pushed', externalOrderId: result.externalOrderId, dropped };
+  } catch (err) {
+    await alertOwnerOfPosPushProblem({
+      orderId,
+      tenantId,
+      posName: adapter.displayName,
+      kind: 'not_sent',
+      dropped,
+      errorMessage: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+}
+
+/**
+ * Tell the owner an order did not (fully) reach the POS: an urgent task in
+ * the action-items inbox plus SMS / email / Slack. Before this existed the
+ * only trace of a skipped push was a warn-level log line, and a paid order
+ * could sit unmade until the customer showed up. Never throws.
+ */
+async function alertOwnerOfPosPushProblem(input: {
+  orderId: string;
+  tenantId: string;
+  posName: string;
+  kind: 'not_sent' | 'partial';
+  dropped: DroppedOrderLine[];
+  errorMessage?: string | null;
+}): Promise<void> {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: input.orderId },
+      select: { orderNumber: true, callerPhone: true },
+    });
+    const alert = buildPosPushAlert({
+      orderNumber: order?.orderNumber ?? input.orderId,
+      posName: input.posName,
+      kind: input.kind,
+      dropped: input.dropped,
+      errorMessage: input.errorMessage,
+    });
+
+    const { sendOwnerNotification } = await import('./notificationService');
+    const results = await Promise.allSettled([
+      createTask({
+        tenantId: input.tenantId,
+        source: 'ORDER',
+        priority: 'URGENT',
+        title: alert.subject,
+        description: alert.message,
+        orderId: input.orderId,
+        callerPhone: order?.callerPhone ?? undefined,
+      }),
+      sendOwnerNotification({
+        tenantId: input.tenantId,
+        subject: alert.subject,
+        message: alert.message,
+      }),
+    ]);
+    for (const r of results) {
+      if (r.status === 'rejected') {
+        logger.error('POS push alert delivery failed', {
+          orderId: input.orderId,
+          tenantId: input.tenantId,
+          err: r.reason instanceof Error ? r.reason.message : String(r.reason),
+        });
+      }
+    }
+  } catch (err) {
+    logger.error('POS push alert failed', {
+      orderId: input.orderId,
+      tenantId: input.tenantId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 export async function updateOrderStatus(

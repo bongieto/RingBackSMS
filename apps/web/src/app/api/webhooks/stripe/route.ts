@@ -332,8 +332,13 @@ export async function POST(request: NextRequest) {
                 pickupTime: paidOrder.pickupTime ?? null,
                 tenantTimezone: paidOrder.tenant?.config?.timezone ?? null,
               })
-                .then(() => {
-                  logger.info('POS push after payment completed', { orderId });
+                .then((outcome) => {
+                  // A skip is not a success: say which it was.
+                  logger.info('POS push after payment finished', {
+                    orderId,
+                    outcome: outcome.status,
+                    ...(outcome.status === 'skipped' && { reason: outcome.reason }),
+                  });
                 })
                 .catch((err) =>
                   logger.error('POS push after payment failed', { err: err?.message, orderId })

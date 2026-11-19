@@ -61,6 +61,14 @@ export interface PosOrderItem {
   quantity: number;
 }
 
+/** An order line with no POS catalog link, sent as a custom (ad-hoc) line. */
+export interface PosCustomOrderItem {
+  name: string;
+  /** Unit price in cents. */
+  priceCents: number;
+  quantity: number;
+}
+
 export interface PosOrderResult {
   externalOrderId: string;
   /** Opaque payment id from the POS when an external-tender Payment was
@@ -74,6 +82,11 @@ export abstract class BasePosAdapter {
   abstract readonly provider: string;
   abstract readonly displayName: string;
   abstract readonly authType: 'oauth' | 'apikey';
+
+  /** True when createOrder accepts `customItems`: lines sent by name +
+   *  price with no catalog link. Adapters that need a catalog id for every
+   *  line leave this false, and unlinked lines are dropped for them. */
+  readonly supportsCustomLineItems: boolean = false;
 
   abstract getOAuthUrl(tenantId: string, state: string): string;
   abstract exchangeCode(tenantId: string, code: string): Promise<void>;
@@ -111,6 +124,9 @@ export abstract class BasePosAdapter {
        *  resolving a human pickup string into an RFC 3339 timestamp so
        *  the Square fulfillment can be SCHEDULED instead of ASAP. */
       tenantTimezone?: string | null;
+      /** Lines with no POS catalog link. Only read by adapters whose
+       *  `supportsCustomLineItems` is true. */
+      customItems?: PosCustomOrderItem[];
     },
   ): Promise<PosOrderResult>;
   abstract verifyWebhook(
