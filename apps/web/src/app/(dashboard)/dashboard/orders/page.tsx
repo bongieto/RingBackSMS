@@ -9,6 +9,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { orderApi } from '@/lib/api';
 import { formatDate, formatRelativeTime, formatPhoneNumber, formatCurrency } from '@/lib/utils';
+import { getOrderPaymentBadge, type OrderPaymentBadge } from '@/lib/orderPayment';
 import { useTenantId } from '@/components/providers/TenantProvider';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -27,6 +28,7 @@ interface Order {
   callerPhone: string;
   customerName: string | null;
   status: string;
+  paymentStatus?: string | null;
   items: OrderItem[];
   total: number;
   pickupTime: string | null;
@@ -46,6 +48,13 @@ const STATUS_BADGE_CLASSES: Record<string, string> = {
   READY: 'bg-green-100 text-green-800 border-transparent',
   COMPLETED: 'bg-gray-100 text-gray-600 border-transparent',
   CANCELLED: 'bg-red-100 text-red-800 border-transparent',
+};
+
+const PAYMENT_BADGE_CLASSES: Record<OrderPaymentBadge['tone'], string> = {
+  paid: 'bg-green-100 text-green-800 border-transparent',
+  unpaid: 'bg-amber-100 text-amber-900 border-amber-300',
+  expired: 'bg-red-100 text-red-800 border-transparent',
+  refunded: 'bg-gray-100 text-gray-600 border-transparent',
 };
 
 interface StatusAction {
@@ -168,6 +177,7 @@ export default function OrdersPage() {
                 const actions = STATUS_ACTIONS[order.status] ?? [];
                 const items: OrderItem[] = Array.isArray(order.items) ? order.items : [];
                 const customerName = order.customerName?.trim() || null;
+                const payment = getOrderPaymentBadge(order.paymentStatus);
 
                 return (
                   <div key={order.id}>
@@ -186,6 +196,14 @@ export default function OrdersPage() {
                             >
                               {order.status}
                             </span>
+                            {payment && (
+                              <span
+                                title={payment.detail}
+                                className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${PAYMENT_BADGE_CLASSES[payment.tone]}`}
+                              >
+                                {payment.label}
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             {customerName && (
@@ -269,6 +287,7 @@ export default function OrdersPage() {
                           <div className="text-xs text-muted-foreground mb-4">
                             Created {formatDate(order.createdAt)}
                             {order.pickupTime && <> | Pickup: {formatDate(order.pickupTime)}</>}
+                            {payment && <> | Payment: {payment.detail}</>}
                           </div>
 
                           {/* Actions */}
